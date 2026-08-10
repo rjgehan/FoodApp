@@ -1,0 +1,23 @@
+# Local dev dependencies only — the backend itself runs via `./mvnw spring-boot:run`
+# (backend/src/main/resources/application.yml already defaults to these hosts/creds).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mealplanner
+      POSTGRES_USER: mealplanner
+      POSTGRES_PASSWORD: mealplanner
+    ports:
+      # Bound to localhost only — the backend on this same machine reaches it fine via
+      # localhost, but other devices on the network can't hit Postgres directly.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  postgres-dev-data:

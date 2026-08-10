@@ -1,0 +1,48 @@
+name: Build and deploy backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/foodapp-backend
+
+jobs:
+  build-and-deploy:
+    # Runs on the self-hosted runner living on the home server/cluster (see docker-compose.runner.yml),
+    # so it can build images and reach the k3s API without exposing anything to the internet.
+    runs-on: [self-hosted, mealplanner]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy to k3s
+        run: |
+          kubectl set image deployment/mealplanner-backend \
+            backend=${{ env.IMAGE }}:${{ github.sha }} \
+            -n mealplanner
+          kubectl rollout status deployment/mealplanner-backend -n mealplanner --timeout=120s

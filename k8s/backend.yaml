@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mealplanner-backend
+  namespace: mealplanner
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: mealplanner-backend }
+  template:
+    metadata:
+      labels: { app: mealplanner-backend }
+    spec:
+      # GHCR packages are private by default. Either make ghcr.io/rjgehan/foodapp-backend public in its
+      # package settings, or create this pull secret once and uncomment:
+      #   kubectl create secret docker-registry ghcr-pull -n mealplanner \
+      #     --docker-server=ghcr.io --docker-username=rjgehan --docker-password=<PAT with read:packages>
+      # imagePullSecrets:
+      #   - name: ghcr-pull
+      containers:
+        - name: backend
+          # GitHub Actions (.github/workflows/deploy-backend.yml) builds and pushes this on every push
+          # to main, then runs `kubectl set image` with the commit-sha tag — this `:latest` is just the
+          # bootstrap value for the first `kubectl apply`.
+          image: ghcr.io/rjgehan/foodapp-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: mealplanner
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: mealplanner-secrets, key: DB_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: mealplanner-secrets, key: DB_PASSWORD } }
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: mealplanner-secrets, key: JWT_SECRET } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mealplanner-backend
+  namespace: mealplanner
+spec:
+  selector: { app: mealplanner-backend }
+  ports:
+    - port: 8080
+      targetPort: 8080

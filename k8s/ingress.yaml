@@ -1,0 +1,21 @@
+# k3s ships with Traefik as its default ingress controller, so this Ingress is picked up automatically.
+# Point your Caddy/Nginx reverse proxy + domain at this cluster's node IP, and update `host` below
+# to match the hostname you route to it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mealplanner-backend
+  namespace: mealplanner
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: api.mealplanner.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mealplanner-backend
+                port:
+                  number: 8080
