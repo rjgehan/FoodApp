@@ -2,3 +2,4 @@
 k8s/secret.yaml
 .env.runner
 runner-kubeconfig
+.dev/
