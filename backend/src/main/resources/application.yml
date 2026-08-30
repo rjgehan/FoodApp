@@ -17,6 +17,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+  servlet:
+    multipart:
+      # The browser downscales before uploading; these are a backstop, not a target.
+      max-file-size: 4MB
+      max-request-size: 5MB
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -34,3 +40,7 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
+  auth:
+    # Small trusted app: a username plus a 4-digit PIN, throttled instead of made complex.
+    max-pin-attempts: ${AUTH_MAX_PIN_ATTEMPTS:5}
+    lockout-minutes: ${AUTH_LOCKOUT_MINUTES:15}

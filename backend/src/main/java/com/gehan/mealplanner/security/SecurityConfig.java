@@ -40,6 +40,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**", "/ws/**", "/actuator/health", "/error").permitAll()
+                        // Image bytes only: an <img> tag cannot carry a bearer token, and the
+                        // random UUID in the path is what keeps the URL unguessable.
+                        .requestMatchers(HttpMethod.GET, "/api/images/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

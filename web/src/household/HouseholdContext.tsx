@@ -8,12 +8,11 @@ import {
   type ReactNode,
 } from 'react';
 import { api } from '../api/client';
-import type { Household, RecipeVisibility } from '../api/types';
+import type { Household } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 
 interface HouseholdSettings {
   defaultServings: number;
-  defaultRecipeVisibility: RecipeVisibility;
   planningHorizonDays: number;
 }
 

@@ -1,243 +1,167 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Recipe, RecipeIngredientInput } from '../api/types';
+import type { Recipe, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, Input, Label } from '../components/Card';
-import { parseRecipeText, RecipeParseError, buildRecipePrompt } from '../utils/recipeParser';
+import { Card, cx, EmptyState, Input } from '../components/ui';
+import { PlusIcon } from '../components/icons';
+import { coverClass } from '../utils/recipeFormat';
+import { SECTION_OPTIONS, SHARED_KEY, sectionSlug } from '../utils/recipeMeta';
+import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
+import RecipeGrid from '../components/RecipeGrid';
 
-const emptyIngredient: RecipeIngredientInput = { ingredientName: '', quantity: 1, unit: '' };
-
+/**
+ * The front of the catalog: pick a drawer first. Searching skips straight to results, because
+ * when you already know what you want, browsing is in the way.
+ */
 export default function RecipesPage() {
   const { activeHouseholdId } = useHousehold();
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [name, setName] = useState('');
-  const [servings, setServings] = useState(4);
-  const [ingredients, setIngredients] = useState<RecipeIngredientInput[]>([{ ...emptyIngredient }]);
-  const [saving, setSaving] = useState(false);
-
-  async function refresh() {
-    if (!activeHouseholdId) return;
-    setRecipes(await api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`));
-  }
+  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
+  const [icons, setIcons] = useState<Partial<Record<RecipeSection, string>>>({});
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!activeHouseholdId) return;
+    setRecipes(null);
+    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`).then(setRecipes);
+    api<Partial<Record<RecipeSection, string>>>('GET', `/api/households/${activeHouseholdId}/section-icons`)
+      .then(setIcons)
+      .catch(() => setIcons({}));
   }, [activeHouseholdId]);
 
-  function updateIngredient(index: number, patch: Partial<RecipeIngredientInput>) {
-    setIngredients((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
-
-  async function togglePublish(recipe: Recipe) {
-    const visibility = recipe.visibility === 'GLOBAL' ? 'PRIVATE' : 'GLOBAL';
-    await api('PATCH', `/api/recipes/${recipe.id}/visibility`, { visibility });
-    await refresh();
-  }
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!activeHouseholdId || !name.trim()) return;
-    setSaving(true);
-    try {
-      await api('POST', `/api/households/${activeHouseholdId}/recipes`, {
-        name: name.trim(),
-        servings,
-        ingredients: ingredients.filter((i) => i.ingredientName.trim()),
-      });
-      setName('');
-      setServings(4);
-      setIngredients([{ ...emptyIngredient }]);
-      await refresh();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return (recipes ?? [])
+      .filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          (r.description ?? '').toLowerCase().includes(q) ||
+          r.categories.some((c) => c.toLowerCase().includes(q)) ||
+          r.ingredients.some((i) => i.ingredientName.toLowerCase().includes(q)),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [recipes, query]);
 
   if (!activeHouseholdId) {
-    return <p className="text-sm text-slate-500">Create or select a household first.</p>;
+    return (
+      <Card>
+        <EmptyState>Create or select a household first.</EmptyState>
+      </Card>
+    );
   }
 
+  const all = recipes ?? [];
+  const sharedCount = all.filter((r) => r.section === null).length;
+
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <div className="space-y-6">
-        <PasteRecipeCard householdId={activeHouseholdId} onCreated={refresh} />
-        <Card title="Recipes">
-          <ul className="space-y-2 text-sm">
-            {recipes.map((r) => {
-              const isMine = r.householdId === activeHouseholdId;
-              return (
-                <li key={r.id} className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
-                  <div>
-                    <div className="font-medium flex items-center gap-2">
-                      {r.name}
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          r.visibility === 'GLOBAL'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        }`}
-                      >
-                        {r.visibility === 'GLOBAL' ? 'Global' : 'Private'}
-                      </span>
-                    </div>
-                    <div className="text-slate-500">
-                      {r.ingredients.length} ingredients · serves {r.servings}
-                      {!isMine && ' · from another household'}
-                    </div>
-                  </div>
-                  {isMine && (
-                    <Button variant="secondary" onClick={() => togglePublish(r)}>
-                      {r.visibility === 'GLOBAL' ? 'Unpublish' : 'Publish'}
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-            {recipes.length === 0 && <p className="text-slate-500">No recipes yet.</p>}
-          </ul>
-        </Card>
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search recipes and ingredients"
+          aria-label="Search recipes"
+        />
+        <Link
+          to="/recipes/new"
+          aria-label="Add a recipe"
+          title="Add a recipe"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink"
+        >
+          <PlusIcon className="h-5 w-5" />
+        </Link>
       </div>
 
-      <Card title="New recipe">
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div>
-            <Label>Name</Label>
-            <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Spaghetti Bolognese" />
-          </div>
-          <div>
-            <Label>Servings (what these ingredient amounts actually make)</Label>
-            <Input
-              type="number"
-              min={1}
-              value={servings}
-              onChange={(e) => setServings(parseInt(e.target.value, 10) || 1)}
-            />
-          </div>
-          <div>
-            <Label>Ingredients</Label>
-            <div className="space-y-2">
-              {ingredients.map((row, i) => (
-                <div key={i} className="flex gap-2">
-                  <Input
-                    placeholder="ingredient"
-                    value={row.ingredientName}
-                    onChange={(e) => updateIngredient(i, { ingredientName: e.target.value })}
-                  />
-                  <Input
-                    type="number"
-                    className="max-w-20"
-                    value={row.quantity}
-                    onChange={(e) => updateIngredient(i, { quantity: parseFloat(e.target.value) || 0 })}
-                  />
-                  <Input
-                    className="max-w-24"
-                    placeholder="unit"
-                    value={row.unit}
-                    onChange={(e) => updateIngredient(i, { unit: e.target.value })}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setIngredients((rows) => rows.filter((_, idx) => idx !== i))}
-                  >
-                    x
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-2"
-              onClick={() => setIngredients((rows) => [...rows, { ...emptyIngredient }])}
-            >
-              + ingredient
-            </Button>
-          </div>
+      {recipes === null ? (
+        <p className="py-8 text-center text-sm text-muted">Loading…</p>
+      ) : query.trim() ? (
+        results.length === 0 ? (
+          <Card>
+            <EmptyState>Nothing matches that.</EmptyState>
+          </Card>
+        ) : (
+          <RecipeGrid recipes={results} />
+        )
+      ) : (
+        <>
+          <ul className="grid grid-cols-2 gap-3">
+            {SECTION_OPTIONS.map((s, i) => (
+              <li key={s.value}>
+                <SectionTile
+                  to={`/recipes/section/${sectionSlug(s.value)}`}
+                  label={s.label}
+                  count={all.filter((r) => r.section === s.value).length}
+                  tint={coverClass(String(i))}
+                  iconKey={icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value]}
+                />
+              </li>
+            ))}
+          </ul>
 
-          <Button type="submit" disabled={saving}>
-            Create recipe
-          </Button>
-        </form>
-      </Card>
+          {sharedCount > 0 && (
+            <SectionTile
+              to={`/recipes/section/${SHARED_KEY}`}
+              label="Shared with you"
+              count={sharedCount}
+              hint="From other households — move them into your own catalog"
+              wide
+            />
+          )}
+
+          {all.length === 0 && (
+            <Card>
+              <EmptyState>
+                No recipes yet —{' '}
+                <Link to="/recipes/new" className="font-medium text-accent underline">
+                  add your first
+                </Link>
+                .
+              </EmptyState>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function PasteRecipeCard({ householdId, onCreated }: { householdId: string; onCreated: () => Promise<void> }) {
-  const [promptServings, setPromptServings] = useState<number | ''>('');
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const canCopy = typeof promptServings === 'number' && promptServings >= 1;
-
-  async function copyPrompt() {
-    if (!canCopy) return;
-    await navigator.clipboard.writeText(buildRecipePrompt(promptServings));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      const parsed = parseRecipeText(text);
-      setSaving(true);
-      // The servings you told ChatGPT to target is authoritative — use it even if the reply's
-      // "Servings:" line doesn't match (or is missing), so the recipe is never scaled off a
-      // guess.
-      await api('POST', `/api/households/${householdId}/recipes`, {
-        ...parsed,
-        servings: canCopy ? promptServings : parsed.servings,
-      });
-      setText('');
-      await onCreated();
-    } catch (err) {
-      setError(err instanceof RecipeParseError ? err.message : 'Could not create recipe.');
-    } finally {
-      setSaving(false);
-    }
-  }
+function SectionTile({
+  to,
+  label,
+  count,
+  tint,
+  hint,
+  iconKey,
+  wide = false,
+}: {
+  to: string;
+  label: string;
+  count: number;
+  tint?: string;
+  hint?: string;
+  iconKey?: string;
+  wide?: boolean;
+}) {
+  const Icon = iconByKey(iconKey)?.Icon;
 
   return (
-    <Card title="Paste a recipe">
-      <div className="flex gap-2 items-end mb-3">
-        <div className="flex-1">
-          <Label>How many servings should this recipe make?</Label>
-          <Input
-            type="number"
-            min={1}
-            placeholder="e.g. 8"
-            value={promptServings}
-            onChange={(e) => setPromptServings(e.target.value ? parseInt(e.target.value, 10) : '')}
-          />
-        </div>
-        <Button type="button" variant="secondary" disabled={!canCopy} onClick={copyPrompt}>
-          {copied ? 'Copied!' : 'Copy ChatGPT prompt'}
-        </Button>
+    <Link
+      to={to}
+      className={cx(
+        'block overflow-hidden rounded-2xl border border-line transition-transform active:scale-[0.98]',
+        tint ?? 'bg-surface',
+      )}
+    >
+      <div className={cx('flex flex-col justify-end p-4', wide ? 'min-h-[4.5rem]' : 'aspect-[3/2]')}>
+        {Icon && !wide && <Icon className="mb-auto h-9 w-9 text-ink/55" />}
+        <p className="text-lg font-semibold leading-tight">{label}</p>
+        <p className="text-sm text-muted">
+          {count} {count === 1 ? 'recipe' : 'recipes'}
+        </p>
+        {hint && <p className="mt-1 text-xs text-subtle">{hint}</p>}
       </div>
-      <p className="text-xs text-slate-500 mb-2">
-        Set servings first so ChatGPT writes ingredient amounts that actually make sense (e.g. "1 egg" instead of a
-        fraction of one). Paste its reply below — or paste a recipe from anywhere else, as long as you set the
-        matching servings count above.
-      </p>
-      <form onSubmit={onSubmit} className="space-y-2">
-        <textarea
-          className="w-full text-sm border border-slate-300 dark:border-slate-700 bg-transparent rounded-md px-3 py-2 font-mono"
-          rows={10}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={'Name: ...\nServings: ...\nIngredients:\n- 1 | lb | ...\nInstructions:\n1. ...'}
-        />
-        {error && <p className="text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">{error}</p>}
-        <Button type="submit" disabled={saving || !text.trim() || !canCopy}>
-          Parse & create
-        </Button>
-      </form>
-    </Card>
+    </Link>
   );
 }

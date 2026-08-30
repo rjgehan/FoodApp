@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { GroceryListItem, MealPlanEntry } from '../api/types';
+import type { GroceryListItem, MealPlanEntry, MealType } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Card } from '../components/Card';
+import { Card, EmptyState } from '../components/ui';
+
+const MEAL_ORDER: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
 
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function titleCase(value: string): string {
+  return value.charAt(0) + value.slice(1).toLowerCase();
+}
+
+/** Deliberately only today: what's for dinner, and how much is left to buy. */
 export default function DashboardPage() {
   const { activeHouseholdId, households } = useHousehold();
   const [entries, setEntries] = useState<MealPlanEntry[]>([]);
@@ -16,71 +23,74 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!activeHouseholdId) return;
-    const today = new Date();
-    const weekOut = new Date(today.getTime() + 6 * 86400000);
-    api<MealPlanEntry[]>(
-      'GET',
-      `/api/households/${activeHouseholdId}/meal-plan?start=${isoDate(today)}&end=${isoDate(weekOut)}`,
-    ).then(setEntries);
+    const today = isoDate(new Date());
+    api<MealPlanEntry[]>('GET', `/api/households/${activeHouseholdId}/meal-plan?start=${today}&end=${today}`)
+      .then(setEntries);
     api<GroceryListItem[]>('GET', `/api/households/${activeHouseholdId}/grocery-list`).then(setItems);
   }, [activeHouseholdId]);
 
   if (households.length === 0) {
     return (
-      <p className="text-sm text-slate-500">
-        No household yet —{' '}
-        <Link to="/household" className="underline">
-          create one
-        </Link>{' '}
-        to get started.
-      </p>
+      <Card>
+        <EmptyState>
+          No household yet —{' '}
+          <Link to="/household" className="font-medium text-accent underline">
+            create one
+          </Link>
+          .
+        </EmptyState>
+      </Card>
     );
   }
 
-  const byDate = groupByDate(entries);
-  const unchecked = items.filter((i) => !i.checked);
+  const today = entries
+    .filter((e) => e.recipeName)
+    .sort((a, b) => MEAL_ORDER.indexOf(a.mealType) - MEAL_ORDER.indexOf(b.mealType));
+  const left = items.filter((i) => !i.checked).length;
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <Card title="This week">
-        {byDate.length === 0 && <p className="text-sm text-slate-500">Nothing planned yet.</p>}
-        <ul className="space-y-3">
-          {byDate.map(([date, dayEntries]) => (
-            <li key={date}>
-              <div className="text-xs font-semibold text-slate-500 mb-1">{date}</div>
-              <ul className="text-sm space-y-0.5">
-                {dayEntries.map((e) => (
-                  <li key={e.id} className="flex justify-between">
-                    <span className="text-slate-500">{e.mealType}</span>
-                    <span>{e.recipeName ?? '(empty)'}</span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      </Card>
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold leading-tight">Today</h1>
+        <p className="text-muted">
+          {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+        </p>
+      </div>
 
-      <Card title={`Grocery list (${unchecked.length} left)`}>
-        {unchecked.length === 0 && <p className="text-sm text-slate-500">Nothing left to buy.</p>}
-        <ul className="text-sm space-y-1">
-          {unchecked.slice(0, 10).map((i) => (
-            <li key={i.id}>
-              {i.name} <span className="text-slate-400">{i.quantity ?? ''} {i.unit ?? ''}</span>
+      {today.length === 0 ? (
+        <Card>
+          <EmptyState>
+            Nothing planned today —{' '}
+            <Link to="/meal-plan" className="font-medium text-accent underline">
+              plan something
+            </Link>
+            .
+          </EmptyState>
+        </Card>
+      ) : (
+        <ul className="space-y-3">
+          {today.map((e) => (
+            <li key={e.id}>
+              <Link
+                to={e.recipeId ? `/recipes/${e.recipeId}` : '/meal-plan'}
+                className="block rounded-2xl border border-line bg-surface p-4 transition-transform active:scale-[0.99]"
+              >
+                <p className="text-sm font-medium text-accent">{titleCase(e.mealType)}</p>
+                <p className="mt-0.5 text-lg font-semibold leading-tight">{e.recipeName}</p>
+                {e.servings ? <p className="mt-0.5 text-sm text-muted">Serves {e.servings}</p> : null}
+              </Link>
             </li>
           ))}
         </ul>
-        {unchecked.length > 10 && <p className="text-xs text-slate-400 mt-2">+{unchecked.length - 10} more</p>}
-      </Card>
+      )}
+
+      <Link
+        to="/grocery-list"
+        className="flex items-center justify-between rounded-2xl border border-line bg-surface p-4"
+      >
+        <span className="font-medium">Grocery list</span>
+        <span className="text-muted">{left ? `${left} to buy` : 'All done'}</span>
+      </Link>
     </div>
   );
-}
-
-function groupByDate(entries: MealPlanEntry[]): [string, MealPlanEntry[]][] {
-  const map = new Map<string, MealPlanEntry[]>();
-  for (const e of entries) {
-    if (!map.has(e.date)) map.set(e.date, []);
-    map.get(e.date)!.push(e);
-  }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
 }

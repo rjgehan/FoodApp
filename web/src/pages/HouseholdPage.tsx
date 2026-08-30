@@ -1,8 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
-import type { HouseholdMember, Recipe, RecipeVisibility } from '../api/types';
+import type { RecipeSection } from '../api/types';
+import type { HouseholdMember, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, Input, Label } from '../components/Card';
+import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
+import { SECTION_OPTIONS } from '../utils/recipeMeta';
+import {
+  Badge,
+  Button,
+  Card,
+  cx,
+  EmptyState,
+  ErrorText,
+  Field,
+  Input,
+  NumberInput,
+} from '../components/ui';
 
 export default function HouseholdPage() {
   const { households, activeHousehold, createHousehold } = useHousehold();
@@ -26,34 +39,107 @@ export default function HouseholdPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {justCreated && (
-        <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 text-sm px-4 py-2">
-          "{justCreated}" created — you're now in it.
+        <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
+          “{justCreated}” created — you're in it.
         </div>
       )}
 
       {households.length === 0 && (
         <Card title="Create a household">
-          <form onSubmit={onCreate} className="flex gap-2 items-end">
-            <div className="flex-1">
-              <Label>Name</Label>
+          <form onSubmit={onCreate} className="space-y-3">
+            <Field label="Name">
               <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Gehan House" />
-            </div>
-            <Button type="submit" disabled={creating}>
+            </Field>
+            <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
               Create
             </Button>
           </form>
-          <p className="text-sm text-slate-500 mt-3">
-            You're not in a household yet — create one above to start planning meals.
-          </p>
         </Card>
       )}
 
+      {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
+      {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <SettingsCard />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
-      {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
     </div>
+  );
+}
+
+/** Picks which built-in illustration each catalog drawer wears. */
+function CatalogIconsCard({ householdId }: { householdId: string }) {
+  const [icons, setIcons] = useState<Partial<Record<RecipeSection, string>>>({});
+  const [editing, setEditing] = useState<RecipeSection | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<Partial<Record<RecipeSection, string>>>('GET', `/api/households/${householdId}/section-icons`)
+      .then(setIcons)
+      .catch(() => setIcons({}));
+  }, [householdId]);
+
+  async function choose(section: RecipeSection, iconKey: string) {
+    setBusy(true);
+    try {
+      setIcons(
+        await api<Partial<Record<RecipeSection, string>>>(
+          'PUT',
+          `/api/households/${householdId}/section-icons/${section}`,
+          { iconKey },
+        ),
+      );
+      setEditing(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Catalog icons">
+      <ul className="space-y-2">
+        {SECTION_OPTIONS.map((s) => {
+          const current = icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value];
+          const Icon = iconByKey(current)?.Icon;
+          const open = editing === s.value;
+
+          return (
+            <li key={s.value} className="rounded-xl border border-line p-2">
+              <button
+                type="button"
+                onClick={() => setEditing(open ? null : s.value)}
+                className="flex min-h-touch w-full items-center gap-3 px-1 text-left"
+              >
+                {Icon && <Icon className="h-7 w-7 shrink-0 text-accent" />}
+                <span className="flex-1 font-medium">{s.label}</span>
+                <span className="text-sm text-muted">{open ? 'Close' : 'Change'}</span>
+              </button>
+
+              {open && (
+                <div className="mt-2 grid grid-cols-6 gap-2">
+                  {FOOD_ICONS.map(({ key, label, Icon: Option }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      title={label}
+                      aria-label={label}
+                      disabled={busy}
+                      onClick={() => choose(s.value, key)}
+                      className={cx(
+                        'flex aspect-square items-center justify-center rounded-xl border transition-colors',
+                        key === current ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted',
+                      )}
+                    >
+                      <Option className="h-6 w-6" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 
@@ -67,11 +153,11 @@ function RecipesCard({ householdId }: { householdId: string }) {
   const mine = recipes.filter((r) => r.householdId === householdId);
 
   return (
-    <Card title="Recipes">
+    <Card title={`Our recipes${mine.length ? ` · ${mine.length}` : ''}`}>
       {mine.length === 0 ? (
-        <p className="text-sm text-slate-500">No recipes yet — add some from the Recipes page.</p>
+        <EmptyState>No recipes yet — add some from the Recipes tab.</EmptyState>
       ) : (
-        <ul className="text-sm grid sm:grid-cols-2 gap-x-4 gap-y-1">
+        <ul className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
           {mine.map((r) => (
             <li key={r.id} className="truncate">
               {r.name}
@@ -85,16 +171,14 @@ function RecipesCard({ householdId }: { householdId: string }) {
 
 function SettingsCard() {
   const { activeHousehold, updateSettings } = useHousehold();
-  const [servings, setServings] = useState(activeHousehold?.defaultServings ?? 1);
-  const [visibility, setVisibility] = useState<RecipeVisibility>(activeHousehold?.defaultRecipeVisibility ?? 'PRIVATE');
-  const [horizonDays, setHorizonDays] = useState(activeHousehold?.planningHorizonDays ?? 7);
+  const [servings, setServings] = useState<number | null>(activeHousehold?.defaultServings ?? 1);
+  const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (activeHousehold) {
       setServings(activeHousehold.defaultServings);
-      setVisibility(activeHousehold.defaultRecipeVisibility);
       setHorizonDays(activeHousehold.planningHorizonDays);
     }
   }, [activeHousehold]);
@@ -103,7 +187,10 @@ function SettingsCard() {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateSettings({ defaultServings: servings, defaultRecipeVisibility: visibility, planningHorizonDays: horizonDays });
+      await updateSettings({
+        defaultServings: servings ?? 1,
+        planningHorizonDays: horizonDays ?? 7,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } finally {
@@ -114,37 +201,14 @@ function SettingsCard() {
   return (
     <Card title="Settings">
       <form onSubmit={onSubmit} className="space-y-3">
-        <div>
-          <Label>Default servings for new meal plan slots</Label>
-          <Input
-            type="number"
-            min={1}
-            value={servings}
-            onChange={(e) => setServings(parseInt(e.target.value, 10) || 1)}
-          />
-        </div>
-        <div>
-          <Label>Days ahead to plan (spotlighted on the meal plan calendar)</Label>
-          <Input
-            type="number"
-            min={1}
-            value={horizonDays}
-            onChange={(e) => setHorizonDays(parseInt(e.target.value, 10) || 1)}
-          />
-        </div>
-        <div>
-          <Label>Default visibility for new recipes</Label>
-          <select
-            className="w-full text-sm border border-slate-300 dark:border-slate-700 bg-transparent rounded-md px-3 py-1.5"
-            value={visibility}
-            onChange={(e) => setVisibility(e.target.value as RecipeVisibility)}
-          >
-            <option value="PRIVATE">Private — only this household can see it</option>
-            <option value="GLOBAL">Global — every household can see it</option>
-          </select>
-        </div>
-        <Button type="submit" disabled={saving}>
-          {saved ? 'Saved!' : 'Save'}
+        <Field label="Default servings">
+          <NumberInput min={1} value={servings} onChange={setServings} />
+        </Field>
+        <Field label="Days ahead to plan">
+          <NumberInput min={1} value={horizonDays} onChange={setHorizonDays} />
+        </Field>
+        <Button type="submit" full size="lg" disabled={saving}>
+          {saved ? 'Saved' : 'Save settings'}
         </Button>
       </form>
     </Card>
@@ -153,9 +217,6 @@ function SettingsCard() {
 
 function MembersCard({ householdId }: { householdId: string }) {
   const [members, setMembers] = useState<HouseholdMember[]>([]);
-  const [username, setUsername] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   async function refresh() {
     setMembers(await api<HouseholdMember[]>('GET', `/api/households/${householdId}/members`));
@@ -166,19 +227,92 @@ function MembersCard({ householdId }: { householdId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [householdId]);
 
-  async function onInvite(e: FormEvent) {
+  return (
+    <Card title="Who's here">
+      <ul className="divide-y divide-line">
+        {members.map((m) => (
+          <li key={m.userId} className="flex items-center gap-3 py-2.5 first:pt-0">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft
+                         font-semibold text-accent"
+              aria-hidden="true"
+            >
+              {m.displayName.charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{m.displayName}</span>
+              <span className="block truncate text-sm text-muted">{m.username}</span>
+            </span>
+            {m.pinSet ? (
+              m.role === 'OWNER' && <Badge>Owner</Badge>
+            ) : (
+              <Badge tone="accent">Needs a PIN</Badge>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 space-y-4 border-t border-line pt-4">
+        <AddPersonForm
+          householdId={householdId}
+          onDone={refresh}
+          path="users"
+          label="Add someone new"
+          hint="They pick a PIN the first time they sign in."
+          action="Create"
+          fallbackError="Could not create that account"
+        />
+        <AddPersonForm
+          householdId={householdId}
+          onDone={refresh}
+          path="members"
+          label="Invite someone who already has an account"
+          hint="Including people in another household."
+          action="Invite"
+          fallbackError="Could not add member"
+        />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Both ways of gaining a member take just a username, so they share a form. "users" creates a
+ * brand new account here; "members" pulls in one that already exists, including from another house.
+ */
+function AddPersonForm({
+  householdId,
+  onDone,
+  path,
+  label,
+  hint,
+  action,
+  fallbackError,
+}: {
+  householdId: string;
+  onDone: () => Promise<void>;
+  path: 'users' | 'members';
+  label: string;
+  hint: string;
+  action: string;
+  fallbackError: string;
+}) {
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!username.trim()) return;
     setError(null);
     setBusy(true);
     try {
-      await api('POST', `/api/households/${householdId}/members`, { username });
+      await api('POST', `/api/households/${householdId}/${path}`, { username: username.trim() });
       setUsername('');
-      await refresh();
+      await onDone();
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? (err.body as { message?: string })?.message ?? 'Could not add member'
-          : 'Could not add member',
+        err instanceof ApiError ? (err.body as { message?: string })?.message ?? fallbackError : fallbackError,
       );
     } finally {
       setBusy(false);
@@ -186,28 +320,21 @@ function MembersCard({ householdId }: { householdId: string }) {
   }
 
   return (
-    <Card title="Members">
-      <ul className="mb-4 space-y-1 text-sm">
-        {members.map((m) => (
-          <li key={m.userId} className="flex justify-between">
-            <span>
-              {m.displayName} <span className="text-slate-400">({m.username})</span>
-            </span>
-            <span className="text-slate-400">{m.role}</span>
-          </li>
-        ))}
-      </ul>
-
-      <form onSubmit={onInvite} className="flex gap-2 items-end">
-        <div className="flex-1">
-          <Label>Invite by username (must already have an account)</Label>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" />
+    <form onSubmit={onSubmit}>
+      <Field label={label} hint={hint}>
+        <div className="flex gap-2">
+          <Input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="username"
+            aria-label={label}
+          />
+          <Button type="submit" variant="secondary" disabled={busy || !username.trim()}>
+            {action}
+          </Button>
         </div>
-        <Button type="submit" disabled={busy}>
-          Add member
-        </Button>
-      </form>
-      {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-    </Card>
+      </Field>
+      {error && <div className="mt-2"><ErrorText>{error}</ErrorText></div>}
+    </form>
   );
 }

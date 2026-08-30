@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public interface HouseholdMemberRepository extends JpaRepository<HouseholdMember, UUID> {
     List<HouseholdMember> findByHouseholdId(UUID householdId);
+    long countByHouseholdId(UUID householdId);
     List<HouseholdMember> findByUserId(UUID userId);
     Optional<HouseholdMember> findByHouseholdIdAndUserId(UUID householdId, UUID userId);
     boolean existsByHouseholdIdAndUserId(UUID householdId, UUID userId);

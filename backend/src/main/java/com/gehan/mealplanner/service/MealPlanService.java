@@ -4,7 +4,8 @@ import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.Recipe;
 import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
-import com.gehan.mealplanner.dto.MealPlanDtos.UpsertMealPlanEntryRequest;
+import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
+import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.MealPlanEntryRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
@@ -43,32 +44,55 @@ public class MealPlanService {
                 .stream().map(this::toResponse).toList();
     }
 
-    /** Creates the meal plan entry for a date+mealType slot if none exists, otherwise substitutes it. */
+    /** Adds a dish to a slot. Call it again to put sides alongside a main. */
     @Transactional
-    public MealPlanEntryResponse upsert(UUID householdId, UUID requesterId, UpsertMealPlanEntryRequest request) {
+    public MealPlanEntryResponse add(UUID householdId, UUID requesterId, AddMealPlanEntryRequest request) {
         householdService.assertMember(householdId, requesterId);
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
-        MealPlanEntry entry = mealPlanEntryRepository
-                .findByHouseholdIdAndDateAndMealType(householdId, request.date(), request.mealType())
-                .orElseGet(() -> MealPlanEntry.builder()
-                        .household(household)
-                        .date(request.date())
-                        .mealType(request.mealType())
-                        .build());
-
-        Recipe recipe = null;
-        if (request.recipeId() != null) {
-            recipe = recipeRepository.findById(request.recipeId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+        boolean alreadyThere = mealPlanEntryRepository
+                .findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(householdId, request.date(), request.mealType())
+                .stream()
+                .anyMatch(e -> e.getRecipe() != null && e.getRecipe().getId().equals(request.recipeId()));
+        if (alreadyThere) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That's already on this meal.");
         }
 
-        entry.setRecipe(recipe);
-        entry.setServings(request.servings() != null ? request.servings() : household.getDefaultServings());
-        entry.setNotes(request.notes());
+        MealPlanEntry entry = MealPlanEntry.builder()
+                .household(household)
+                .date(request.date())
+                .mealType(request.mealType())
+                .recipe(requireRecipe(request.recipeId()))
+                .servings(request.servings() != null ? request.servings() : household.getDefaultServings())
+                .notes(request.notes())
+                .build();
 
         return toResponse(mealPlanEntryRepository.save(entry));
+    }
+
+    /** Changes one dish in place — swap the recipe, or just adjust how many it serves. */
+    @Transactional
+    public MealPlanEntryResponse update(UUID entryId, UUID requesterId, UpdateMealPlanEntryRequest request) {
+        MealPlanEntry entry = mealPlanEntryRepository.findById(entryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found"));
+        householdService.assertMember(entry.getHousehold().getId(), requesterId);
+
+        if (request.recipeId() != null) {
+            entry.setRecipe(requireRecipe(request.recipeId()));
+        }
+        if (request.servings() != null) {
+            entry.setServings(request.servings());
+        }
+        if (request.notes() != null) {
+            entry.setNotes(request.notes());
+        }
+        return toResponse(mealPlanEntryRepository.save(entry));
+    }
+
+    private Recipe requireRecipe(UUID recipeId) {
+        return recipeRepository.findById(recipeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
     }
 
     @Transactional

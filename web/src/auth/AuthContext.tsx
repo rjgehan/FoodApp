@@ -7,10 +7,20 @@ interface Session {
   displayName: string;
 }
 
+interface SetupInput {
+  householdName: string;
+  username: string;
+  displayName?: string;
+  pin: string;
+}
+
 interface AuthContextValue {
   session: Session | null;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string, displayName: string) => Promise<void>;
+  login: (username: string, pin: string) => Promise<void>;
+  /** First sign-in for an account someone else created: choosing the PIN also signs you in. */
+  setInitialPin: (username: string, pin: string) => Promise<void>;
+  /** Only reachable on a completely empty install — creates the first household and its owner. */
+  setup: (input: SetupInput) => Promise<void>;
   logout: () => void;
 }
 
@@ -37,14 +47,20 @@ function clearSession() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(loadSession);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const auth = await api<AuthResponse>('POST', '/api/auth/login', { username, password });
+  const login = useCallback(async (username: string, pin: string) => {
+    const auth = await api<AuthResponse>('POST', '/api/auth/login', { username, pin });
     storeSession(auth);
     setSession({ userId: auth.userId, displayName: auth.displayName });
   }, []);
 
-  const register = useCallback(async (username: string, password: string, displayName: string) => {
-    const auth = await api<AuthResponse>('POST', '/api/auth/register', { username, password, displayName });
+  const setInitialPin = useCallback(async (username: string, pin: string) => {
+    const auth = await api<AuthResponse>('POST', '/api/auth/pin', { username, pin });
+    storeSession(auth);
+    setSession({ userId: auth.userId, displayName: auth.displayName });
+  }, []);
+
+  const setup = useCallback(async (input: SetupInput) => {
+    const auth = await api<AuthResponse>('POST', '/api/auth/setup', input);
     storeSession(auth);
     setSession({ userId: auth.userId, displayName: auth.displayName });
   }, []);
@@ -54,7 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
-  const value = useMemo(() => ({ session, login, register, logout }), [session, login, register, logout]);
+  const value = useMemo(
+    () => ({ session, login, setInitialPin, setup, logout }),
+    [session, login, setInitialPin, setup, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -4,13 +4,44 @@ export interface AuthResponse {
   displayName: string;
 }
 
-export type RecipeVisibility = 'PRIVATE' | 'GLOBAL';
+export interface UserSummary {
+  username: string;
+  displayName: string;
+  /** false = never signed in; they choose a PIN on first use. */
+  pinSet: boolean;
+}
+
+export interface HouseholdSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+}
+
+export interface LandingResponse {
+  /** No accounts exist at all, so the login screen offers first-time setup instead. */
+  needsSetup: boolean;
+  households: HouseholdSummary[];
+}
+
+/** Top level of the catalog — the drawer a recipe is filed in. */
+export type RecipeSection = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACKS' | 'DRINKS' | 'OTHER';
+
+export interface ShareTarget {
+  householdId: string;
+  name: string;
+  shared: boolean;
+}
+
+export interface RecipeCategory {
+  id: string;
+  name: string;
+  recipeCount: number;
+}
 
 export interface Household {
   id: string;
   name: string;
   defaultServings: number;
-  defaultRecipeVisibility: RecipeVisibility;
   planningHorizonDays: number;
 }
 
@@ -21,6 +52,7 @@ export interface HouseholdMember {
   username: string;
   displayName: string;
   role: HouseholdRole;
+  pinSet: boolean;
 }
 
 export interface RecipeIngredientInput {
@@ -49,7 +81,20 @@ export interface Recipe {
   cookTimeMinutes: number | null;
   servings: number;
   sourceUrl: string | null;
-  visibility: RecipeVisibility;
+  /** Link to a video of it being made, usually TikTok. Guaranteed http(s) by the server. */
+  videoUrl: string | null;
+  /** Where this household filed it. null means unfiled, which shows up under "Shared". */
+  section: RecipeSection | null;
+  /** This household's sub-categories for it, by name. */
+  categories: string[];
+  /** Another household owns it: you can file it in your catalog, but not edit it. */
+  shared: boolean;
+  /** Households this recipe is shared with. Only meaningful when you own it. */
+  sharedWith: string[];
+  /** Optional single picture shown at the top of the recipe. */
+  coverImageId: string | null;
+  /** Everything else, in order. */
+  photoIds: string[];
   ingredients: RecipeIngredient[];
 }
 

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mealplanner-frontend
+  namespace: mealplanner
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: mealplanner-frontend }
+  template:
+    metadata:
+      labels: { app: mealplanner-frontend }
+    spec:
+      # See k8s/backend.yaml's comment on GHCR visibility — same deal applies here.
+      # imagePullSecrets:
+      #   - name: ghcr-pull
+      containers:
+        - name: frontend
+          # GitHub Actions (.github/workflows/deploy-frontend.yml) builds and pushes this on every
+          # push to main that touches web/, then runs `kubectl set image` with the commit-sha tag —
+          # this `:latest` is just the bootstrap value for the first `kubectl apply`.
+          image: ghcr.io/rjgehan/foodapp-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mealplanner-frontend
+  namespace: mealplanner
+spec:
+  selector: { app: mealplanner-frontend }
+  ports:
+    - port: 80
+      targetPort: 80

@@ -36,12 +36,6 @@ public class Household {
     @Builder.Default
     private int planningHorizonDays = 7;
 
-    /** Visibility newly-created recipes get unless separately published/unpublished afterward. */
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    @Builder.Default
-    private RecipeVisibility defaultRecipeVisibility = RecipeVisibility.PRIVATE;
-
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

@@ -6,13 +6,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public interface MealPlanEntryRepository extends JpaRepository<MealPlanEntry, UUID> {
     List<MealPlanEntry> findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(
             UUID householdId, LocalDate start, LocalDate end);
 
-    Optional<MealPlanEntry> findByHouseholdIdAndDateAndMealType(
+    /** A slot holds several recipes now — a main plus its sides — so this is a list, not an Optional. */
+    List<MealPlanEntry> findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(
             UUID householdId, LocalDate date, MealType mealType);
 }

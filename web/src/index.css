@@ -2,6 +2,130 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+@layer base {
+  /*
+   * One palette, defined once. Every component reads these instead of repeating
+   * `dark:` variants, so light and dark stay in step by construction.
+   * Warm neutrals (stone) + a food-friendly orange accent.
+   */
+  :root {
+    --bg: 250 250 249;
+    --surface: 255 255 255;
+    --elevated: 245 245 244;
+    --line: 231 229 228;
+    --ink: 28 25 23;
+    --muted: 120 113 108;
+    --subtle: 168 162 158;
+    --accent: 234 88 12;
+    --accent-soft: 255 237 213;
+    --accent-ink: 255 255 255;
+    --danger: 220 38 38;
+    --danger-soft: 254 226 226;
+    --success: 21 128 61;
+    --success-soft: 220 252 231;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: 12 10 9;
+      --surface: 28 25 23;
+      --elevated: 41 37 36;
+      --line: 51 47 45;
+      --ink: 250 250 249;
+      --muted: 168 162 158;
+      --subtle: 120 113 108;
+      --accent: 251 146 60;
+      --accent-soft: 67 20 7;
+      --accent-ink: 28 25 23;
+      --danger: 248 113 113;
+      --danger-soft: 69 10 10;
+      --success: 74 222 128;
+      --success-soft: 5 46 22;
+    }
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    font-family:
+      ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    /* Stops the whole page rubber-banding behind the fixed tab bar on iOS. */
+    overscroll-behavior-y: none;
+  }
+
+  /*
+   * Safari zooms the viewport when a focused field is under 16px. Every control
+   * starts at 16px for that reason — don't shrink them back down with text-sm.
+   */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer utilities {
+  /* Keeps content clear of the iPhone home indicator and notch. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@layer components {
+  /*
+   * Recipe cover tints for the catalog. Deterministic per recipe, so a given card always
+   * looks the same and becomes recognisable when you flip past it.
+   */
+  .cover-0 { background-color: #fbe3ce; }
+  .cover-1 { background-color: #f8ead0; }
+  .cover-2 { background-color: #e2ecdb; }
+  .cover-3 { background-color: #f2dee6; }
+  .cover-4 { background-color: #dde8f1; }
+  .cover-5 { background-color: #eee4d9; }
+
+  @media (prefers-color-scheme: dark) {
+    .cover-0 { background-color: #5a3620; }
+    .cover-1 { background-color: #53431d; }
+    .cover-2 { background-color: #2d4a2b; }
+    .cover-3 { background-color: #4c2c3c; }
+    .cover-4 { background-color: #27404f; }
+    .cover-5 { background-color: #473a2f; }
+  }
+
+  /*
+   * The index card. Paper stays paper in both themes — a cream card that flipped to dark
+   * would stop reading as the thing it is imitating.
+   */
+  .index-card {
+    background-color: #fbf6e9;
+    color: #2b2118;
+    font-family: 'Bradley Hand', 'Segoe Script', 'Chalkboard SE', 'Comic Sans MS', cursive, Georgia, serif;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 24px -12px rgb(0 0 0 / 0.45);
+  }
+
+  /* Faint blue rule every 1.75rem, the way a lined 4x6 card is printed. */
+  .index-card-ruled {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(1.75rem - 1px),
+      #b8cfe0 calc(1.75rem - 1px),
+      #b8cfe0 1.75rem
+    );
+    background-position: 0 0.35rem;
+    line-height: 1.75rem;
+  }
 }

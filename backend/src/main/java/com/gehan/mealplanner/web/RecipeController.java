@@ -2,7 +2,13 @@ package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
-import com.gehan.mealplanner.dto.RecipeDtos.UpdateRecipeVisibilityRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
+import com.gehan.mealplanner.domain.RecipeSection;
+import com.gehan.mealplanner.dto.RecipeDtos.RecipeCategoryResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
 import com.gehan.mealplanner.service.RecipeService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -11,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -35,15 +42,74 @@ public class RecipeController {
     }
 
     @GetMapping("/api/recipes/{recipeId}")
-    public RecipeResponse get(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId) {
-        return recipeService.get(recipeId, userId);
+    public RecipeResponse get(@AuthenticationPrincipal UUID userId,
+                               @PathVariable UUID recipeId,
+                               @RequestParam(required = false) UUID householdId) {
+        return recipeService.get(recipeId, householdId, userId);
     }
 
-    @PatchMapping("/api/recipes/{recipeId}/visibility")
-    public RecipeResponse updateVisibility(@AuthenticationPrincipal UUID userId,
-                                            @PathVariable UUID recipeId,
-                                            @Valid @RequestBody UpdateRecipeVisibilityRequest request) {
-        return recipeService.updateVisibility(recipeId, userId, request);
+    @GetMapping("/api/recipes/{recipeId}/share-targets")
+    public List<ShareTargetResponse> shareTargets(@AuthenticationPrincipal UUID userId,
+                                                   @PathVariable UUID recipeId) {
+        return recipeService.shareTargets(recipeId, userId);
+    }
+
+    @PutMapping("/api/recipes/{recipeId}/shares")
+    public RecipeResponse updateShares(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID recipeId,
+                                        @Valid @RequestBody UpdateSharesRequest request) {
+        return recipeService.updateShares(recipeId, userId, request);
+    }
+
+    /** Files (or re-files) a recipe into this household's catalog — including a shared one. */
+    @PutMapping("/api/households/{householdId}/recipes/{recipeId}/filing")
+    public RecipeResponse file(@AuthenticationPrincipal UUID userId,
+                                @PathVariable UUID householdId,
+                                @PathVariable UUID recipeId,
+                                @Valid @RequestBody FilingRequest request) {
+        return recipeService.file(householdId, recipeId, userId, request);
+    }
+
+    @GetMapping("/api/households/{householdId}/section-icons")
+    public Map<RecipeSection, String> sectionIcons(@AuthenticationPrincipal UUID userId,
+                                                    @PathVariable UUID householdId) {
+        return recipeService.sectionIcons(householdId, userId);
+    }
+
+    @PutMapping("/api/households/{householdId}/section-icons/{section}")
+    public Map<RecipeSection, String> setSectionIcon(@AuthenticationPrincipal UUID userId,
+                                                      @PathVariable UUID householdId,
+                                                      @PathVariable RecipeSection section,
+                                                      @RequestBody Map<String, String> body) {
+        return recipeService.setSectionIcon(householdId, userId, section, body.get("iconKey"));
+    }
+
+    @GetMapping("/api/households/{householdId}/recipe-categories")
+    public List<RecipeCategoryResponse> listCategories(@AuthenticationPrincipal UUID userId,
+                                                        @PathVariable UUID householdId) {
+        return recipeService.listCategories(householdId, userId);
+    }
+
+    @DeleteMapping("/api/households/{householdId}/recipe-categories/{categoryId}")
+    public ResponseEntity<Void> deleteCategory(@AuthenticationPrincipal UUID userId,
+                                                @PathVariable UUID householdId,
+                                                @PathVariable UUID categoryId) {
+        recipeService.deleteCategory(householdId, categoryId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/api/recipes/{recipeId}/video")
+    public RecipeResponse updateVideo(@AuthenticationPrincipal UUID userId,
+                                       @PathVariable UUID recipeId,
+                                       @Valid @RequestBody UpdateVideoRequest request) {
+        return recipeService.updateVideo(recipeId, userId, request);
+    }
+
+    @PutMapping("/api/recipes/{recipeId}/images")
+    public RecipeResponse updateImages(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID recipeId,
+                                        @Valid @RequestBody UpdateImagesRequest request) {
+        return recipeService.updateImages(recipeId, userId, request);
     }
 
     @DeleteMapping("/api/recipes/{recipeId}")

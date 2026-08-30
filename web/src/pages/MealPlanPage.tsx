@@ -1,83 +1,72 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api } from '../api/client';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api, ApiError } from '../api/client';
 import type { MealPlanEntry, MealType, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, Input, Label } from '../components/Card';
+import { Button, Card, Chip, cx, EmptyState, ErrorText, IconButton, Input, NumberInput, Sheet } from '../components/ui';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, TrashIcon } from '../components/icons';
 
-const MEAL_TYPES: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
-const MEAL_TYPE_ABBR: Record<MealType, string> = { BREAKFAST: 'B', LUNCH: 'L', DINNER: 'D', SNACK: 'S' };
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
+const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
-
 function addDays(d: Date, days: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 }
-
+function startOfWeek(d: Date): Date {
+  return addDays(startOfDay(d), -d.getDay());
+}
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
-
-function buildMonthGrid(monthCursor: Date): Date[] {
-  const firstOfMonth = startOfMonth(monthCursor);
-  const gridStart = addDays(firstOfMonth, -firstOfMonth.getDay());
-  const lastOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
-  const gridEnd = addDays(lastOfMonth, 6 - lastOfMonth.getDay());
-
-  const days: Date[] = [];
-  for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) {
-    days.push(d);
-  }
-  return days;
+function titleCase(v: string): string {
+  return v.charAt(0) + v.slice(1).toLowerCase();
 }
 
 export default function MealPlanPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [entries, setEntries] = useState<MealPlanEntry[]>([]);
+  // The week is the working view; the calendar is for looking back over what you ate.
+  const [mode, setMode] = useState<'week' | 'calendar'>('week');
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
-  const [selectedDate, setSelectedDate] = useState<string>(() => isoDate(new Date()));
+  const [entries, setEntries] = useState<MealPlanEntry[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [openDay, setOpenDay] = useState<string | null>(null);
 
-  const today = startOfDay(new Date());
-  const horizonDays = activeHousehold?.planningHorizonDays ?? 7;
-  const horizonEnd = addDays(today, horizonDays - 1);
+  const range = useMemo(() => {
+    if (mode === 'week') return { start: weekStart, end: addDays(weekStart, 6) };
+    const first = startOfMonth(monthCursor);
+    const gridStart = addDays(first, -first.getDay());
+    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    return { start: gridStart, end: addDays(last, 6 - last.getDay()) };
+  }, [mode, weekStart, monthCursor]);
 
-  const grid = useMemo(() => buildMonthGrid(monthCursor), [monthCursor]);
-  const gridStart = grid[0];
-  const gridEnd = grid[grid.length - 1];
-
-  async function refreshRecipes() {
-    if (!activeHouseholdId) return;
-    setRecipes(await api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`));
-  }
-
-  async function refreshEntries() {
+  const refresh = useCallback(async () => {
     if (!activeHouseholdId) return;
     setEntries(
       await api<MealPlanEntry[]>(
         'GET',
-        `/api/households/${activeHouseholdId}/meal-plan?start=${isoDate(gridStart)}&end=${isoDate(gridEnd)}`,
+        `/api/households/${activeHouseholdId}/meal-plan?start=${isoDate(range.start)}&end=${isoDate(range.end)}`,
       ),
     );
-  }
+  }, [activeHouseholdId, range.start, range.end]);
 
   useEffect(() => {
-    refreshRecipes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!activeHouseholdId) return;
+    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`).then(setRecipes);
   }, [activeHouseholdId]);
 
-  useEffect(() => {
-    refreshEntries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeHouseholdId, monthCursor]);
-
-  const entriesByDate = useMemo(() => {
+  const byDate = useMemo(() => {
     const map = new Map<string, MealPlanEntry[]>();
     for (const e of entries) {
       const list = map.get(e.date) ?? [];
@@ -87,127 +76,257 @@ export default function MealPlanPage() {
     return map;
   }, [entries]);
 
-  async function addAllHorizonToList() {
-    if (!activeHouseholdId) return;
-    await api(
-      'POST',
-      `/api/households/${activeHouseholdId}/grocery-list/add-all?start=${isoDate(today)}&end=${isoDate(horizonEnd)}`,
+  if (!activeHouseholdId) {
+    return (
+      <Card>
+        <EmptyState>Create or select a household first.</EmptyState>
+      </Card>
     );
   }
 
-  if (!activeHouseholdId) {
-    return <p className="text-sm text-slate-500">Create or select a household first.</p>;
+  const today = startOfDay(new Date());
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  async function addRangeToList(start: Date, end: Date) {
+    await api('POST', `/api/households/${activeHouseholdId}/grocery-list/add-all?start=${isoDate(start)}&end=${isoDate(end)}`);
   }
 
   return (
-    <div className="space-y-6">
-      <Card
-        title={monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              title="Previous month"
-              onClick={() => setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
-            >
-              ‹
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setMonthCursor(startOfMonth(new Date()));
-                setSelectedDate(isoDate(new Date()));
-              }}
-            >
-              Today
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              title="Next month"
-              onClick={() => setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-            >
-              ›
-            </Button>
-            <Button type="button" onClick={addAllHorizonToList}>
-              + Add next {horizonDays}d to list
-            </Button>
-          </div>
-        }
-      >
-        <div className="grid grid-cols-7 text-xs font-medium text-slate-500 mb-1">
-          {WEEKDAY_LABELS.map((w) => (
-            <div key={w} className="text-center py-1">
-              {w}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {grid.map((day) => {
-            const dateStr = isoDate(day);
-            const inMonth = day.getMonth() === monthCursor.getMonth();
-            const isToday = dateStr === isoDate(today);
-            const inHorizon = day >= today && day <= horizonEnd;
-            const dayEntries = (entriesByDate.get(dateStr) ?? []).filter((e) => e.recipeName);
-            const isSelected = dateStr === selectedDate;
+    <div className="space-y-4">
+      <div className="flex items-center gap-1">
+        <IconButton
+          label={mode === 'week' ? 'Previous week' : 'Previous month'}
+          onClick={() =>
+            mode === 'week'
+              ? setWeekStart((w) => addDays(w, -7))
+              : setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
+          }
+        >
+          <ChevronLeftIcon className="h-5 w-5" />
+        </IconButton>
 
-            return (
-              <button
-                type="button"
-                key={dateStr}
-                onClick={() => setSelectedDate(dateStr)}
-                className={`min-h-20 text-left rounded-md p-1.5 border transition-colors ${
-                  isSelected
-                    ? 'border-slate-900 dark:border-slate-100'
-                    : inHorizon
-                      ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
-                      : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800'
-                } ${!inMonth ? 'opacity-40' : ''}`}
-              >
-                <div
-                  className={`text-xs font-medium w-5 h-5 flex items-center justify-center rounded-full ${
-                    isToday ? 'bg-red-500 text-white' : 'text-slate-600 dark:text-slate-300'
-                  }`}
-                >
-                  {day.getDate()}
-                </div>
-                <div className="mt-1 space-y-0.5">
-                  {dayEntries.slice(0, 3).map((e) => (
-                    <div key={e.id} className="text-[10px] leading-tight truncate text-slate-600 dark:text-slate-300">
-                      {MEAL_TYPE_ABBR[e.mealType]}: {e.recipeName}
-                    </div>
-                  ))}
-                  {inHorizon && dayEntries.length === 0 && (
-                    <div className="text-[10px] leading-tight text-amber-600 dark:text-amber-400">needs meals</div>
+        <h1 className="flex-1 text-center font-semibold">
+          {mode === 'week'
+            ? `${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${addDays(weekStart, 6).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+            : monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+        </h1>
+
+        <IconButton
+          label={mode === 'week' ? 'Next week' : 'Next month'}
+          onClick={() =>
+            mode === 'week'
+              ? setWeekStart((w) => addDays(w, 7))
+              : setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
+          }
+        >
+          <ChevronRightIcon className="h-5 w-5" />
+        </IconButton>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          className="flex-1"
+          onClick={() => {
+            setWeekStart(startOfWeek(new Date()));
+            setMonthCursor(startOfMonth(new Date()));
+            setMode('week');
+          }}
+        >
+          This week
+        </Button>
+        <Button
+          variant={mode === 'calendar' ? 'primary' : 'secondary'}
+          className="flex-1"
+          onClick={() => setMode(mode === 'calendar' ? 'week' : 'calendar')}
+        >
+          <CalendarIcon className="h-5 w-5" />
+          Calendar
+        </Button>
+      </div>
+
+      {mode === 'week' ? (
+        <>
+          {/* Seven across, so the week reads as a week. Detail lives in the day sheet. */}
+          <div className="grid grid-cols-7 gap-1">
+            {weekDays.map((day) => {
+              const key = isoDate(day);
+              const planned = (byDate.get(key) ?? []).filter((e) => e.recipeName);
+              const isToday = key === isoDate(today);
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setOpenDay(key)}
+                  className={cx(
+                    'flex min-h-28 flex-col items-center rounded-xl border p-1.5 text-left transition-colors',
+                    isToday ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface hover:bg-elevated',
                   )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
+                >
+                  <span className={cx('text-[0.7rem] font-medium', isToday ? 'text-accent' : 'text-muted')}>
+                    {WEEKDAY_LABELS[day.getDay()]}
+                  </span>
+                  <span
+                    className={cx(
+                      'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                      isToday ? 'bg-accent text-accent-ink' : 'text-ink',
+                    )}
+                  >
+                    {day.getDate()}
+                  </span>
 
-      <DayPanel
-        date={selectedDate}
-        householdId={activeHouseholdId}
-        recipes={recipes}
-        entries={entriesByDate.get(selectedDate) ?? []}
-        defaultServings={activeHousehold?.defaultServings ?? 4}
-        onChanged={refreshEntries}
-      />
+                  {/* Phones get dots — a recipe name is unreadable in a seventh of the screen. */}
+                  <span className="mt-1.5 flex flex-wrap items-center justify-center gap-0.5 sm:hidden">
+                    {planned.slice(0, 4).map((e) => (
+                      <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-accent" />
+                    ))}
+                  </span>
+
+                  <span className="mt-1 hidden min-w-0 flex-1 flex-col gap-0.5 self-stretch sm:flex">
+                    {planned.slice(0, 3).map((e) => (
+                      <span key={e.id} className="truncate text-[11px] leading-tight text-muted">
+                        {e.recipeName}
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* The names the strip can no longer show, for the days that have any. */}
+          <ul className="space-y-2 sm:hidden">
+            {weekDays
+              .map((day) => ({ day, planned: (byDate.get(isoDate(day)) ?? []).filter((e) => e.recipeName) }))
+              .filter(({ planned }) => planned.length > 0)
+              .map(({ day, planned }) => (
+                <li key={isoDate(day)}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenDay(isoDate(day))}
+                    className="flex w-full items-baseline gap-3 rounded-xl border border-line bg-surface p-3 text-left"
+                  >
+                    <span className="w-10 shrink-0 text-sm font-medium text-muted">
+                      {day.toLocaleDateString(undefined, { weekday: 'short' })}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      {planned.map((e) => (
+                        <span key={e.id} className="block truncate text-sm">
+                          <span className="text-muted">{titleCase(e.mealType)}</span> · {e.recipeName}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                </li>
+              ))}
+          </ul>
+
+          <Button full size="lg" onClick={() => addRangeToList(weekStart, addDays(weekStart, 6))}>
+            Add this week to the list
+          </Button>
+        </>
+      ) : (
+        <CalendarGrid
+          monthCursor={monthCursor}
+          byDate={byDate}
+          today={today}
+          onPick={(key) => setOpenDay(key)}
+        />
+      )}
+
+      {openDay && (
+        <DaySheet
+          date={openDay}
+          householdId={activeHouseholdId}
+          recipes={recipes}
+          entries={byDate.get(openDay) ?? []}
+          defaultServings={activeHousehold?.defaultServings ?? 4}
+          onChanged={refresh}
+          onAddToList={() => addRangeToList(new Date(`${openDay}T00:00:00`), new Date(`${openDay}T00:00:00`))}
+          onClose={() => setOpenDay(null)}
+        />
+      )}
     </div>
   );
 }
 
-function DayPanel({
+/** Read-only overview: which days have meals on them. Tapping still opens the day. */
+function CalendarGrid({
+  monthCursor,
+  byDate,
+  today,
+  onPick,
+}: {
+  monthCursor: Date;
+  byDate: Map<string, MealPlanEntry[]>;
+  today: Date;
+  onPick: (key: string) => void;
+}) {
+  const first = startOfMonth(monthCursor);
+  const gridStart = addDays(first, -first.getDay());
+  const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+  const gridEnd = addDays(last, 6 - last.getDay());
+
+  const days: Date[] = [];
+  for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
+
+  return (
+    <Card bodyClassName="px-2 pb-2 sm:px-4 sm:pb-4">
+      <div className="mb-1 grid grid-cols-7">
+        {WEEKDAY_LABELS.map((w, i) => (
+          <div key={i} className="py-1 text-center text-xs font-semibold text-subtle">
+            {w}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day) => {
+          const key = isoDate(day);
+          const planned = (byDate.get(key) ?? []).filter((e) => e.recipeName);
+          const inMonth = day.getMonth() === monthCursor.getMonth();
+          const isToday = key === isoDate(today);
+
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onPick(key)}
+              className={cx(
+                'flex aspect-square flex-col items-center rounded-xl p-1 transition-colors hover:bg-elevated',
+                !inMonth && 'opacity-35',
+              )}
+            >
+              <span
+                className={cx(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium',
+                  isToday ? 'bg-accent text-accent-ink' : 'text-ink',
+                )}
+              >
+                {day.getDate()}
+              </span>
+              <span className="mt-1 flex flex-wrap items-center justify-center gap-0.5">
+                {planned.slice(0, 4).map((e) => (
+                  <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-accent" />
+                ))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function DaySheet({
   date,
   householdId,
   recipes,
   entries,
   defaultServings,
   onChanged,
+  onAddToList,
+  onClose,
 }: {
   date: string;
   householdId: string;
@@ -215,129 +334,288 @@ function DayPanel({
   entries: MealPlanEntry[];
   defaultServings: number;
   onChanged: () => Promise<void>;
+  onAddToList: () => Promise<void>;
+  onClose: () => void;
 }) {
+  // entryId set => swapping that dish; null => adding another one alongside.
+  const [picking, setPicking] = useState<{ meal: MealType; entryId: string | null } | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [extraMeals, setExtraMeals] = useState<MealType[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState(false);
+
   const label = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
 
-  return (
-    <Card title={label}>
-      <div className="space-y-3">
-        {MEAL_TYPES.map((mt) => (
-          <MealSlotRow
-            key={mt}
-            date={date}
-            mealType={mt}
-            householdId={householdId}
-            recipes={recipes}
-            entry={entries.find((e) => e.mealType === mt)}
-            defaultServings={defaultServings}
-            onChanged={onChanged}
-          />
-        ))}
-      </div>
-    </Card>
+  // The three staples, plus any other slot that already has something in it.
+  const slots = ALL_MEALS.filter(
+    (m) => BASE_MEALS.includes(m) || extraMeals.includes(m) || entries.some((e) => e.mealType === m),
   );
-}
+  const missing = ALL_MEALS.filter((m) => !slots.includes(m));
 
-function MealSlotRow({
-  date,
-  mealType,
-  householdId,
-  recipes,
-  entry,
-  defaultServings,
-  onChanged,
-}: {
-  date: string;
-  mealType: MealType;
-  householdId: string;
-  recipes: Recipe[];
-  entry?: MealPlanEntry;
-  defaultServings: number;
-  onChanged: () => Promise<void>;
-}) {
-  const [recipeId, setRecipeId] = useState(entry?.recipeId ?? '');
-  const [servings, setServings] = useState(entry?.servings ?? defaultServings);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setRecipeId(entry?.recipeId ?? '');
-    setServings(entry?.servings ?? defaultServings);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, entry?.id, entry?.recipeId, entry?.servings]);
-
-  async function save() {
-    setSaving(true);
+  async function choose(recipe: Recipe) {
+    if (!picking) return;
+    setBusy(true);
+    setError(null);
     try {
-      await api('PUT', `/api/households/${householdId}/meal-plan`, {
-        date,
-        mealType,
-        recipeId: recipeId || null,
-        servings,
-      });
+      if (picking.entryId) {
+        await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${picking.entryId}`, {
+          recipeId: recipe.id,
+        });
+      } else {
+        await api('POST', `/api/households/${householdId}/meal-plan/entries`, {
+          date,
+          mealType: picking.meal,
+          recipeId: recipe.id,
+          servings: defaultServings,
+        });
+      }
       await onChanged();
+      setPicking(null);
+      setExpanded(null);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? "That's already on this meal."
+          : 'Could not add that.',
+      );
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  async function clear() {
-    if (!entry) return;
-    setSaving(true);
+  async function setServings(entry: MealPlanEntry, servings: number) {
+    setBusy(true);
+    try {
+      await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${entry.id}`, { servings });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(entry: MealPlanEntry) {
+    setBusy(true);
     try {
       await api('DELETE', `/api/households/${householdId}/meal-plan/${entry.id}`);
       await onChanged();
+      setExpanded(null);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  async function addToList() {
-    if (!entry) return;
-    await api('POST', `/api/households/${householdId}/grocery-list/add-meal/${entry.id}`);
+  if (picking) {
+    return (
+      <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)}>
+        {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
+        <RecipePicker recipes={recipes} onPick={choose} disabled={busy} />
+      </Sheet>
+    );
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0 last:pb-0">
-      <div className="w-20 shrink-0">
-        <Label>{mealType[0] + mealType.slice(1).toLowerCase()}</Label>
-      </div>
-      <div className="flex-1 min-w-40">
-        <select
-          className="w-full text-sm border border-slate-300 dark:border-slate-700 bg-transparent rounded-md px-3 py-1.5"
-          value={recipeId}
-          onChange={(e) => setRecipeId(e.target.value)}
-        >
-          <option value="">(none)</option>
-          {recipes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <Input
-        type="number"
-        min={1}
-        className="w-20"
-        value={servings}
-        onChange={(e) => setServings(parseInt(e.target.value, 10) || 1)}
-      />
-      <Button type="button" variant="secondary" disabled={saving} onClick={save}>
-        Save
-      </Button>
-      {entry?.recipeId && (
-        <Button type="button" variant="secondary" onClick={addToList}>
-          + list
+    <Sheet title={label} onClose={onClose}>
+      <ul className="space-y-2">
+        {slots.map((meal) => {
+          // A slot is a whole meal: a main, its sides, or just the one side you fancied.
+          const dishes = entries.filter((e) => e.mealType === meal && e.recipeName);
+
+          return (
+            <li key={meal} className="rounded-xl border border-line">
+              <div className="flex items-center justify-between gap-2 px-3 pt-2">
+                <span className="text-sm font-medium text-muted">{titleCase(meal)}</span>
+                <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
+                  <PlusIcon className="h-4 w-4" />
+                  {dishes.length ? 'Add side' : 'Add'}
+                </Button>
+              </div>
+
+              {dishes.length === 0 ? (
+                <p className="px-3 pb-3 text-sm text-subtle">Nothing yet</p>
+              ) : (
+                <ul className="divide-y divide-line border-t border-line">
+                  {dishes.map((entry) => {
+                    const open = expanded === entry.id;
+                    return (
+                      <li key={entry.id}>
+                        <button
+                          type="button"
+                          onClick={() => setExpanded(open ? null : entry.id)}
+                          className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{entry.recipeName}</span>
+                            {entry.servings ? (
+                              <span className="block text-sm text-muted">Serves {entry.servings}</span>
+                            ) : null}
+                          </span>
+                        </button>
+
+                        {open && (
+                          <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+                            <Button size="sm" variant="secondary" onClick={() => setPicking({ meal, entryId: entry.id })}>
+                              Change
+                            </Button>
+                            {entry.recipeId && (
+                              <Link to={`/recipes/${entry.recipeId}`}>
+                                <Button size="sm" variant="secondary">
+                                  View recipe
+                                </Button>
+                              </Link>
+                            )}
+                            <ServingsControl
+                              value={entry.servings ?? defaultServings}
+                              disabled={busy}
+                              onChange={(v) => setServings(entry, v)}
+                            />
+                            <IconButton label="Remove dish" disabled={busy} onClick={() => remove(entry)}>
+                              <TrashIcon className="h-5 w-5" />
+                            </IconButton>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {missing.length > 0 && (
+        <Button variant="ghost" full className="mt-2" onClick={() => setExtraMeals((m) => [...m, missing[0]])}>
+          <PlusIcon className="h-5 w-5" />
+          Add {titleCase(missing[0])}
         </Button>
       )}
-      {entry && (
-        <Button type="button" variant="danger" disabled={saving} onClick={clear}>
-          Clear
-        </Button>
+
+      <Button
+        full
+        size="lg"
+        className="mt-4"
+        disabled={busy}
+        onClick={async () => {
+          await onAddToList();
+          setAdded(true);
+          setTimeout(() => setAdded(false), 2000);
+        }}
+      >
+        {added ? 'Added to the list' : 'Add this day to the list'}
+      </Button>
+    </Sheet>
+  );
+}
+
+function ServingsControl({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState<number | null>(value);
+
+  return (
+    <span className="flex items-center gap-1">
+      <NumberInput
+        min={1}
+        className="w-16"
+        value={draft}
+        onChange={setDraft}
+        aria-label="Servings"
+        disabled={disabled}
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={disabled || draft === null || draft === value}
+        onClick={() => draft !== null && onChange(draft)}
+      >
+        Set
+      </Button>
+    </span>
+  );
+}
+
+function RecipePicker({
+  recipes,
+  onPick,
+  disabled,
+}: {
+  recipes: Recipe[];
+  onPick: (recipe: Recipe) => void;
+  disabled: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
+
+  // Filing categories double as the "mains vs sides" filter — no separate concept needed.
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of recipes) for (const c of r.categories) counts.set(c, (counts.get(c) ?? 0) + 1);
+    return [...counts.keys()].sort((a, b) => a.localeCompare(b));
+  }, [recipes]);
+
+  const q = query.trim().toLowerCase();
+  const shown = recipes
+    .filter((r) => (!category || r.categories.includes(category)) && (!q || r.name.toLowerCase().includes(q)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="space-y-3">
+      <Input
+        type="search"
+        autoFocus
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search recipes"
+        aria-label="Search recipes"
+      />
+
+      {categories.length > 0 && (
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          <Chip active={!category} onClick={() => setCategory(null)}>
+            All
+          </Chip>
+          {categories.map((c) => (
+            <Chip key={c} active={category === c} onClick={() => setCategory(category === c ? null : c)}>
+              {c}
+            </Chip>
+          ))}
+        </div>
+      )}
+
+      {shown.length === 0 ? (
+        <EmptyState>No recipes match.</EmptyState>
+      ) : (
+        <ul className="divide-y divide-line">
+          {shown.map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onPick(r)}
+                className="flex min-h-touch w-full items-center justify-between gap-3 py-3 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{r.name}</span>
+                  {r.categories.length > 0 && (
+                    <span className="block truncate text-sm text-muted">{r.categories.join(' · ')}</span>
+                  )}
+                </span>
+                <span className="shrink-0 text-sm text-muted">Serves {r.servings}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

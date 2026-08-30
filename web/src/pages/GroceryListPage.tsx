@@ -4,16 +4,18 @@ import SockJS from 'sockjs-client';
 import { api, apiBaseUrl, getToken } from '../api/client';
 import type { BlacklistEntry, GroceryListEvent, GroceryListItem as Item } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, Input, Label } from '../components/Card';
+import { Badge, Button, Card, CheckCircle, cx, EmptyState, IconButton, Input, NumberInput } from '../components/ui';
+import { PlusIcon, TrashIcon } from '../components/icons';
 
 export default function GroceryListPage() {
   const { activeHouseholdId } = useHousehold();
   const [items, setItems] = useState<Item[]>([]);
   const [blacklist, setBlacklist] = useState<BlacklistEntry[]>([]);
   const [connected, setConnected] = useState(false);
+  const [showBlacklist, setShowBlacklist] = useState(false);
 
   const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState<number | null>(1);
   const [unit, setUnit] = useState('');
   const [blacklistName, setBlacklistName] = useState('');
 
@@ -76,7 +78,7 @@ export default function GroceryListPage() {
     if (!activeHouseholdId || !name.trim()) return;
     await api('POST', `/api/households/${activeHouseholdId}/grocery-list/items`, {
       ingredientName: name.trim(),
-      quantity,
+      quantity: quantity ?? 1,
       unit,
     });
     setName('');
@@ -115,88 +117,127 @@ export default function GroceryListPage() {
   }
 
   if (!activeHouseholdId) {
-    return <p className="text-sm text-slate-500">Create or select a household first.</p>;
+    return (
+      <Card>
+        <EmptyState>Create or select a household first.</EmptyState>
+      </Card>
+    );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card title="Add item">
-          <form onSubmit={onAddItem} className="flex gap-2 items-end flex-wrap">
-            <div className="flex-1 min-w-32">
-              <Label>Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="paper towels" />
-            </div>
-            <div className="w-20">
-              <Label>Qty</Label>
-              <Input type="number" value={quantity} onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)} />
-            </div>
-            <div className="w-24">
-              <Label>Unit</Label>
-              <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ct" />
-            </div>
-            <Button type="submit">Add</Button>
-          </form>
-        </Card>
+  const remaining = items.filter((i) => !i.checked).length;
+  const sorted = [...items].sort((a, b) => Number(a.checked) - Number(b.checked));
 
-        <Card title="Blacklist (never auto-added from meals)">
-          <form onSubmit={onAddBlacklist} className="flex gap-2 items-end mb-3">
-            <div className="flex-1">
-              <Label>Ingredient</Label>
-              <Input value={blacklistName} onChange={(e) => setBlacklistName(e.target.value)} placeholder="salt" />
-            </div>
-            <Button type="submit">Add</Button>
-          </form>
-          <ul className="text-sm space-y-1">
-            {blacklist.map((b) => (
-              <li key={b.ingredientId} className="flex justify-between">
-                <span>{b.name}</span>
+  return (
+    <div className="space-y-4">
+      <Card title="Add to the list">
+        <form onSubmit={onAddItem} className="space-y-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="paper towels"
+            aria-label="Item name"
+          />
+          <div className="flex gap-2">
+            <NumberInput
+              className="w-24"
+              value={quantity}
+              onChange={setQuantity}
+              aria-label="Quantity"
+            />
+            <Input
+              className="w-24"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              placeholder="ct"
+              aria-label="Unit"
+            />
+            <Button type="submit" className="flex-1" disabled={!name.trim()}>
+              <PlusIcon className="h-5 w-5" />
+              Add
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card
+        title={remaining ? `${remaining} to buy` : 'List'}
+        actions={<Badge tone={connected ? 'success' : 'neutral'}>{connected ? 'Live' : 'Offline'}</Badge>}
+        bodyClassName="px-2 pb-2 sm:px-4 sm:pb-4"
+      >
+        {sorted.length === 0 ? (
+          <EmptyState>Nothing on the list yet.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-line">
+            {sorted.map((item) => (
+              <li key={item.id} className="flex items-center gap-1">
+                {/* The whole row toggles — a 16px checkbox is not a real target on a phone. */}
                 <button
-                  onClick={() => removeBlacklist(b.ingredientId)}
-                  className="text-slate-400 hover:text-red-500"
+                  type="button"
+                  onClick={() => toggleItem(item)}
+                  aria-pressed={item.checked}
+                  className="flex min-h-touch flex-1 items-center gap-3 py-3 pl-2 text-left"
                 >
-                  x
+                  <CheckCircle checked={item.checked} />
+                  <span className="min-w-0 flex-1">
+                    <span className={cx('block truncate', item.checked && 'text-muted line-through')}>
+                      {item.name}
+                    </span>
+                    {(item.quantity || item.unit || (item.checked && item.checkedByName)) && (
+                      <span className="block truncate text-sm text-muted">
+                        {[item.quantity, item.unit].filter(Boolean).join(' ')}
+                        {item.checked && item.checkedByName && ` · got by ${item.checkedByName}`}
+                      </span>
+                    )}
+                  </span>
                 </button>
+                <IconButton label={`Remove ${item.name}`} onClick={() => removeItem(item.id)}>
+                  <TrashIcon className="h-5 w-5" />
+                </IconButton>
               </li>
             ))}
           </ul>
-        </Card>
-      </div>
+        )}
+      </Card>
 
       <Card
-        title="Items"
+        title="Pantry staples"
         actions={
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              connected
-                ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
-                : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-            }`}
-          >
-            {connected ? 'live' : 'offline'}
-          </span>
+          <Button size="sm" variant="ghost" onClick={() => setShowBlacklist((v) => !v)}>
+            {showBlacklist ? 'Hide' : `Show${blacklist.length ? ` (${blacklist.length})` : ''}`}
+          </Button>
         }
       >
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {items.map((item) => (
-            <li key={item.id} className="flex items-center gap-3 py-2">
-              <input type="checkbox" checked={item.checked} onChange={() => toggleItem(item)} className="h-4 w-4" />
-              <div className={`flex-1 ${item.checked ? 'line-through text-slate-400' : ''}`}>
-                {item.name}
-                <span className="text-slate-400 ml-2">
-                  {item.quantity ?? ''} {item.unit ?? ''}
-                </span>
-              </div>
-              {item.checked && item.checkedByName && (
-                <span className="text-xs text-slate-400">by {item.checkedByName}</span>
-              )}
-              <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 text-sm">
-                x
-              </button>
-            </li>
-          ))}
-          {items.length === 0 && <p className="text-slate-500 text-sm py-2">Nothing on the list yet.</p>}
-        </ul>
+        <p className="text-sm text-muted">Things you always have. Meals never add these to the list.</p>
+
+        {showBlacklist && (
+          <div className="mt-3 space-y-3">
+            <form onSubmit={onAddBlacklist} className="flex gap-2">
+              <Input
+                value={blacklistName}
+                onChange={(e) => setBlacklistName(e.target.value)}
+                placeholder="salt"
+                aria-label="Pantry staple"
+              />
+              <Button type="submit" variant="secondary" disabled={!blacklistName.trim()}>
+                Add
+              </Button>
+            </form>
+            {blacklist.length === 0 ? (
+              <EmptyState>Nothing here yet.</EmptyState>
+            ) : (
+              <ul className="divide-y divide-line">
+                {blacklist.map((b) => (
+                  <li key={b.ingredientId} className="flex items-center justify-between gap-2 py-1">
+                    <span className="truncate">{b.name}</span>
+                    <IconButton label={`Remove ${b.name}`} onClick={() => removeBlacklist(b.ingredientId)}>
+                      <TrashIcon className="h-5 w-5" />
+                    </IconButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );

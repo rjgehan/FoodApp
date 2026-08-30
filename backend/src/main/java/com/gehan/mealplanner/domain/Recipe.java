@@ -47,11 +47,22 @@ public class Recipe {
 
     private String sourceUrl;
 
-    /** PRIVATE recipes are visible only to the owning household; GLOBAL ones to every household. */
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    /** Link to a video of the recipe being made — usually TikTok. Always http(s); see RecipeService. */
+    private String videoUrl;
+
+    /** The one picture shown at the top of the recipe. Optional. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cover_image_id")
+    private StoredImage coverImage;
+
+    /** Everything else worth keeping — process shots, the finished plate, grandma's handwriting. */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "recipe_photos",
+            joinColumns = @JoinColumn(name = "recipe_id"),
+            inverseJoinColumns = @JoinColumn(name = "image_id"))
+    @OrderColumn(name = "position")
     @Builder.Default
-    private RecipeVisibility visibility = RecipeVisibility.PRIVATE;
+    private List<StoredImage> photos = new ArrayList<>();
 
     @OneToMany(mappedBy = "recipe", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

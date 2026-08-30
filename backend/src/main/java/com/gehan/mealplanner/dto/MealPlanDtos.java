@@ -8,10 +8,20 @@ import java.util.UUID;
 
 public class MealPlanDtos {
 
-    /** Assigns or substitutes the meal for a given date + meal-type slot. A null recipeId clears the slot. */
-    public record UpsertMealPlanEntryRequest(
+    /**
+     * Adds one recipe to a date + meal-type slot. Called once for the main and again for each
+     * side, so "mac and cheese with dinner" is just a slot holding a single side.
+     */
+    public record AddMealPlanEntryRequest(
             @NotNull LocalDate date,
             @NotNull MealType mealType,
+            @NotNull UUID recipeId,
+            Integer servings,
+            String notes) {
+    }
+
+    /** Swaps the recipe or changes the servings on one dish already in a slot. */
+    public record UpdateMealPlanEntryRequest(
             UUID recipeId,
             Integer servings,
             String notes) {

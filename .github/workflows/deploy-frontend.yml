@@ -1,0 +1,53 @@
+name: Build and deploy frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/foodapp-frontend
+  # Vite bakes this into the static bundle at build time — update it if the backend's public
+  # hostname ever changes (see k8s/ingress.yaml).
+  VITE_API_URL: https://api.mealplanner.home
+
+jobs:
+  build-and-deploy:
+    # Runs on the self-hosted runner living on the home server/cluster (see docker-compose.runner.yml),
+    # so it can build images and reach the k3s API without exposing anything to the internet.
+    runs-on: [self-hosted, mealplanner]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: web
+          push: true
+          build-args: |
+            VITE_API_URL=${{ env.VITE_API_URL }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy to k3s
+        run: |
+          kubectl set image deployment/mealplanner-frontend \
+            frontend=${{ env.IMAGE }}:${{ github.sha }} \
+            -n mealplanner
+          kubectl rollout status deployment/mealplanner-frontend -n mealplanner --timeout=120s

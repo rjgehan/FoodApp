@@ -2,6 +2,7 @@ package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
@@ -48,6 +49,14 @@ public class HouseholdController {
                                                       @Valid @RequestBody AddMemberRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(householdService.addMember(householdId, userId, request));
+    }
+
+    @PostMapping("/{householdId}/users")
+    public ResponseEntity<MemberResponse> createUser(@AuthenticationPrincipal UUID userId,
+                                                      @PathVariable UUID householdId,
+                                                      @Valid @RequestBody CreateUserRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(householdService.createUser(householdId, userId, request));
     }
 
     @PatchMapping("/{householdId}/settings")
