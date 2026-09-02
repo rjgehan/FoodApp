@@ -85,6 +85,29 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 
 `docker compose down` leaves the volume alone. `docker compose down -v` destroys it.
 
+## Two ways to lock yourself out
+
+**Use hex secrets, not base64.** Docker Compose treats `$` in a value as a variable reference
+and silently drops it plus the following word, so `openssl rand -base64 48` can arrive at the
+container shorter than you wrote it. `openssl rand -hex 32` has no special characters at all.
+If you must keep a `$`, escape it as `$$`.
+
+**`DB_PASSWORD` is fixed the first time the database starts.** Postgres writes it into the data
+directory and never reads the variable again. Changing it later means the backend gets
+`password authentication failed` while Postgres itself looks perfectly healthy. Either wipe the
+data directory, or change it inside the database:
+
+```bash
+docker exec -it mealplanner-postgres psql -U mealplanner -d mealplanner \
+  -c "ALTER USER mealplanner WITH PASSWORD '<the value compose actually passes>';"
+```
+
+To see what the container really received (rather than what you typed):
+
+```bash
+docker exec mealplanner-backend printenv DB_PASSWORD | tr -d '\n' | md5sum
+```
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and
