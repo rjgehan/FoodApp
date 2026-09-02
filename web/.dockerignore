@@ -1,0 +1,6 @@
+# Never ship host-installed dependencies into the image. They contain platform-specific
+# binaries (@esbuild/darwin-arm64, @rollup/rollup-darwin-*) that would overwrite the Linux
+# ones `npm ci` just installed, and the Vite build would fail.
+node_modules
+dist
+.env

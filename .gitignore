@@ -1,5 +1,18 @@
+# OS
 .DS_Store
+
+# Secrets and local env
 k8s/secret.yaml
+.env
 .env.runner
+.env.prod
 runner-kubeconfig
+
+# Local dev logs
 .dev/
+
+# Dependencies and build output — CI and Docker build these from source
+node_modules/
+dist/
+target/
+*.tsbuildinfo

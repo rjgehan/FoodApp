@@ -1,23 +1,21 @@
-name: Build and deploy frontend
+name: Build frontend image
 
+# Builds the web app and pushes it to GHCR. Deployment is a pull on the server
+# (see DEPLOY.md) — nothing here touches the running app.
 on:
   push:
     branches: [main]
     paths:
       - "web/**"
       - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/foodapp-frontend
-  # Vite bakes this into the static bundle at build time — update it if the backend's public
-  # hostname ever changes (see k8s/ingress.yaml).
-  VITE_API_URL: https://api.mealplanner.home
 
 jobs:
-  build-and-deploy:
-    # Runs on the self-hosted runner living on the home server/cluster (see docker-compose.runner.yml),
-    # so it can build images and reach the k3s API without exposing anything to the internet.
-    runs-on: [self-hosted, mealplanner]
+  build:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -31,23 +29,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      # Vite inlines the API URL at build time, so it has to be known here rather than in
+      # the container's environment. Leave the VITE_API_URL repo variable unset and the app
+      # falls back to <the host that served the page>:8080, which is what docker-compose
+      # publishes — set it only if the API lives somewhere else (a domain, a reverse proxy).
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: web
           push: true
           build-args: |
-            VITE_API_URL=${{ env.VITE_API_URL }}
+            VITE_API_URL=${{ vars.VITE_API_URL }}
           tags: |
-            ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Deploy to k3s
+      - name: Summary
         run: |
-          kubectl set image deployment/mealplanner-frontend \
-            frontend=${{ env.IMAGE }}:${{ github.sha }} \
-            -n mealplanner
-          kubectl rollout status deployment/mealplanner-frontend -n mealplanner --timeout=120s
+          echo "Pushed \`${{ env.IMAGE }}:latest\` and \`:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "VITE_API_URL: \`${{ vars.VITE_API_URL || '(unset — falls back to <host>:8080)' }}\`" >> $GITHUB_STEP_SUMMARY

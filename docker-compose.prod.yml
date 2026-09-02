@@ -1,0 +1,58 @@
+# Production stack. Images come from GHCR (built by GitHub Actions on push to main);
+# nothing is built on the server. See DEPLOY.md.
+name: mealplanner
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mealplanner}
+      POSTGRES_USER: ${DB_USER:-mealplanner}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The backend waits on this, so it never starts against a database that isn't listening.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mealplanner} -d ${DB_NAME:-mealplanner}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-rjgehan}/foodapp-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-mealplanner}
+      DB_USER: ${DB_USER:-mealplanner}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    ports:
+      # The web app calls the API on this port of whatever host served the page, so it has
+      # to be reachable from phones on the network — not bound to localhost.
+      - "${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-rjgehan}/foodapp-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-80}:80"
+
+volumes:
+  # Named volume: `docker compose down` leaves it alone. Only `down -v` destroys the data.
+  postgres-data:
