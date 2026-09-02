@@ -11,5 +11,10 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /build/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# A template, not conf.d: the base image runs envsubst over /etc/nginx/templates at startup,
+# which is how ${NGINX_LOCAL_RESOLVERS} gets filled in from the real resolv.conf.
+# 15-local-resolvers.envsh returns early unless this is set, leaving ${NGINX_LOCAL_RESOLVERS}
+# literal in the config and nginx refusing to start. It is opt-in, not automatic.
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 EXPOSE 80

@@ -4,6 +4,7 @@ name: mealplanner
 
 services:
   postgres:
+    networks: [mealplanner]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -20,10 +21,12 @@ services:
       retries: 12
 
   redis:
+    networks: [mealplanner]
     image: redis:7-alpine
     restart: unless-stopped
 
   backend:
+    networks: [mealplanner]
     image: ghcr.io/${GHCR_OWNER:-rjgehan}/foodapp-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -44,6 +47,7 @@ services:
     # compose network, so the app needs exactly one port on the host.
 
   frontend:
+    networks: [mealplanner]
     image: ghcr.io/${GHCR_OWNER:-rjgehan}/foodapp-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -54,3 +58,11 @@ services:
 volumes:
   # Named volume: `docker compose down` leaves it alone. Only `down -v` destroys the data.
   postgres-data:
+
+# Declared explicitly, not left to compose's implicit default. Some hosts (CasaOS's YAML
+# import among them) run the containers on Docker's DEFAULT bridge, which has no embedded
+# DNS at all — so `postgres` and `backend` resolve to nothing and every service fails to
+# find every other one. A named network guarantees name resolution wherever this runs.
+networks:
+  mealplanner:
+    name: mealplanner

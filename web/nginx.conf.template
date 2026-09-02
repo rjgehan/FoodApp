@@ -19,11 +19,17 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Docker's embedded DNS, read from the container's own resolv.conf by the nginx image's
+    # 15-local-resolvers.envsh. Hard-coding 127.0.0.11 breaks on any network that lacks it.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
     location /api/ {
-        # Resolved once at startup from the container's own resolv.conf. Pinning Docker's
-        # embedded resolver at 127.0.0.11 is not portable — it is refused outright on some
-        # hosts, which takes the whole proxy down. depends_on guarantees the name exists.
-        proxy_pass http://backend:8080;
+        # Going through a variable forces per-request resolution. With a literal name here,
+        # nginx resolves once at boot and REFUSES TO START if the backend isn't up yet —
+        # one slow container takes the whole site down, which is not what you want on a box
+        # that reboots. This way the UI still serves while the backend is booting.
+        set $mp_backend "backend:8080";
+        proxy_pass http://$mp_backend$request_uri;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -36,7 +42,8 @@ server {
     }
 
     location /ws/ {
-        proxy_pass http://backend:8080;
+        set $mp_backend_ws "backend:8080";
+        proxy_pass http://$mp_backend_ws$request_uri;
 
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
