@@ -55,6 +55,22 @@ services:
     ports:
       - "${WEB_PORT:-80}:80"
 
+  # Opt-in: `docker compose --profile tunnel up -d`. Publishes the site on a public hostname
+  # without opening a single router port — cloudflared dials OUT to Cloudflare and traffic
+  # comes back down that connection, so it works behind CGNAT and survives the home IP
+  # changing. It talks to `frontend`, not the backend, so the SPA and /api stay same-origin.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: mealplanner-cloudflared
+    restart: unless-stopped
+    profiles: [tunnel]
+    networks: [mealplanner]
+    depends_on: [frontend]
+    # Plain default, not ${CF_TUNNEL_TOKEN:?...}: compose interpolates EVERY service, including
+    # ones outside the active profile, so a required-variable form here breaks a LAN-only
+    # `docker compose up` that never asked for the tunnel.
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN:-}
+
 volumes:
   # Named volume: `docker compose down` leaves it alone. Only `down -v` destroys the data.
   postgres-data:
