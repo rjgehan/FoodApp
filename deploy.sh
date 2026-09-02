@@ -17,9 +17,10 @@ echo "Pulling images..."
 echo "Starting..."
 "${COMPOSE[@]}" up -d --remove-orphans
 
+# Hitting the API through the frontend also proves the /api proxy is wired up.
 echo "Waiting for the API..."
 for _ in $(seq 1 60); do
-  if curl -fsS "http://localhost:${BACKEND_PORT:-8080}/actuator/health" >/dev/null 2>&1; then
+  if curl -fsS "http://localhost:${WEB_PORT:-80}/api/auth/landing" >/dev/null 2>&1; then
     echo "Healthy."
     "${COMPOSE[@]}" ps
     exit 0

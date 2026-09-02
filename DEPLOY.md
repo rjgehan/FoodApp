@@ -44,7 +44,7 @@ $EDITOR .env          # set JWT_SECRET and DB_PASSWORD at minimum
 
 `deploy.sh` pulls, starts, and waits for `/actuator/health` before reporting success.
 
-The app is then at `http://<server>` and the API at `http://<server>:8080`.
+The app is then at `http://<server>` — and that is the only port it needs.
 
 ## Deploying again
 
@@ -56,23 +56,17 @@ git pull            # only needed if compose/env changed
 `IMAGE_TAG=latest` picks up whatever Actions built most recently. To roll back, set
 `IMAGE_TAG` in `.env` to a specific commit SHA and re-run `./deploy.sh`.
 
-## The API URL is baked in at build time
+## One port, no API URL to configure
 
-Vite inlines `VITE_API_URL` into the JavaScript bundle — it cannot be changed by a container
-environment variable afterwards.
+The frontend's nginx proxies `/api` and `/ws` to the backend over the compose network, so the
+browser only ever talks to one origin. Consequences worth knowing:
 
-Leave the `VITE_API_URL` repo variable **unset** and the app calls
-`<whatever host served the page>:8080`, which is exactly what this compose file publishes.
-That works for `http://server-ip` and for a LAN hostname, with no configuration.
+- **Only `WEB_PORT` is published.** The backend has no host port at all.
+- **Nothing is baked into the bundle**, so the app works from `localhost`, a LAN IP, a
+  hostname or a domain without rebuilding.
+- **No CORS involved**, since the API is same-origin.
 
-Set it (repo → Settings → Secrets and variables → Actions → Variables) only if the API is
-somewhere else — behind a reverse proxy, or on a domain:
-
-```
-VITE_API_URL = https://api.yourdomain.com
-```
-
-Then re-run the frontend workflow so a new bundle is built.
+`VITE_API_URL` stays unset unless the API genuinely lives on another origin.
 
 ## Data
 

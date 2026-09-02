@@ -1,10 +1,19 @@
-// Default the API URL to whatever host served this page (works the same from localhost, a LAN
-// IP, or a hostname), not a hardcoded "localhost" that would break when opened from another device.
-const DEFAULT_BASE_URL =
-  import.meta.env.VITE_API_URL ?? `${location.protocol}//${location.hostname}:8080`;
+/**
+ * Empty means same-origin: the API is reached through /api on whatever host served the page.
+ * nginx proxies that to the backend in production, and the Vite dev server does the same
+ * locally, so the app needs no knowledge of where the backend lives and there is no second
+ * port to publish. Set VITE_API_URL only when the API really is on another origin.
+ */
+const DEFAULT_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
 export function apiBaseUrl(): string {
   return localStorage.getItem('mp_baseUrl') || DEFAULT_BASE_URL;
+}
+
+/** sockjs-client wants an absolute URL, which a same-origin base does not give it. */
+export function absoluteUrl(path: string): string {
+  const base = apiBaseUrl();
+  return base ? base + path : new URL(path, window.location.origin).toString();
 }
 
 export function setApiBaseUrl(url: string) {

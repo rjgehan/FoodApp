@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-import { api, apiBaseUrl, getToken } from '../api/client';
+import { absoluteUrl, api, getToken } from '../api/client';
 import type { BlacklistEntry, GroceryListEvent, GroceryListItem as Item } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { Badge, Button, Card, CheckCircle, cx, EmptyState, IconButton, Input, NumberInput } from '../components/ui';
@@ -43,7 +43,7 @@ export default function GroceryListPage() {
     if (!token) return;
 
     const client = new Client({
-      webSocketFactory: () => new SockJS(apiBaseUrl() + '/ws'),
+      webSocketFactory: () => new SockJS(absoluteUrl('/ws')),
       connectHeaders: { Authorization: `Bearer ${token}` },
       reconnectDelay: 3000,
       onConnect: () => {
