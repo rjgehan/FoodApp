@@ -22,6 +22,7 @@ export default function HouseholdPage() {
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [justCreated, setJustCreated] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -31,6 +32,7 @@ export default function HouseholdPage() {
       const name = newName.trim();
       await createHousehold(name);
       setNewName('');
+      setOpen(false);
       setJustCreated(name);
       setTimeout(() => setJustCreated(null), 4000);
     } finally {
@@ -46,23 +48,44 @@ export default function HouseholdPage() {
         </div>
       )}
 
-      {households.length === 0 && (
-        <Card title="Create a household">
-          <form onSubmit={onCreate} className="space-y-3">
-            <Field label="Name">
-              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Gehan House" />
-            </Field>
-            <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
-              Create
-            </Button>
-          </form>
-        </Card>
-      )}
-
       {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
       {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <SettingsCard />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
+
+      {/*
+       * Always available, not just to people with no household. You can belong to several —
+       * one for your own place, one for your parents' — and either lets you start another.
+       * Opens expanded only when there is nothing else on the page to look at.
+       */}
+      <Card title={households.length === 0 ? 'Create a household' : 'New household'}>
+        {open || households.length === 0 ? (
+          <form onSubmit={onCreate} className="space-y-3">
+            <Field label="Name">
+              <Input
+                autoFocus={households.length > 0}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Gehan House"
+              />
+            </Field>
+            <div className="flex gap-2">
+              <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
+                Create
+              </Button>
+              {households.length > 0 && (
+                <Button type="button" variant="ghost" size="lg" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+        ) : (
+          <Button type="button" variant="secondary" full size="lg" onClick={() => setOpen(true)}>
+            Start another household
+          </Button>
+        )}
+      </Card>
     </div>
   );
 }
