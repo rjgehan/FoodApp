@@ -43,6 +43,8 @@ export interface Household {
   name: string;
   defaultServings: number;
   planningHorizonDays: number;
+  /** Your role in this household, not a property of the household itself. */
+  role: HouseholdRole;
 }
 
 export type HouseholdRole = 'OWNER' | 'MEMBER';

@@ -4,6 +4,7 @@ import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
+import com.gehan.mealplanner.dto.HouseholdDtos.RenameHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
 import com.gehan.mealplanner.service.HouseholdService;
@@ -57,6 +58,14 @@ public class HouseholdController {
                                                       @Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(householdService.createUser(householdId, userId, request));
+    }
+
+    /** Owner only — see HouseholdService.rename. */
+    @PatchMapping("/{householdId}/name")
+    public HouseholdResponse rename(@AuthenticationPrincipal UUID userId,
+                                    @PathVariable UUID householdId,
+                                    @Valid @RequestBody RenameHouseholdRequest request) {
+        return householdService.rename(householdId, userId, request.name());
     }
 
     @PatchMapping("/{householdId}/settings")

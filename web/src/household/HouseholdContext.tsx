@@ -24,6 +24,7 @@ interface HouseholdContextValue {
   loading: boolean;
   refresh: () => Promise<void>;
   createHousehold: (name: string) => Promise<void>;
+  renameHousehold: (name: string) => Promise<void>;
   updateSettings: (settings: HouseholdSettings) => Promise<void>;
 }
 
@@ -76,6 +77,15 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     [refresh, setActiveHouseholdId],
   );
 
+  const renameHousehold = useCallback(
+    async (name: string) => {
+      if (!activeHouseholdId) return;
+      await api('PATCH', `/api/households/${activeHouseholdId}/name`, { name });
+      await refresh();
+    },
+    [activeHouseholdId, refresh],
+  );
+
   const updateSettings = useCallback(
     async (settings: HouseholdSettings) => {
       if (!activeHouseholdId) return;
@@ -96,9 +106,10 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       loading,
       refresh,
       createHousehold,
+      renameHousehold,
       updateSettings,
     }),
-    [households, activeHouseholdId, activeHousehold, setActiveHouseholdId, loading, refresh, createHousehold, updateSettings],
+    [households, activeHouseholdId, activeHousehold, setActiveHouseholdId, loading, refresh, createHousehold, renameHousehold, updateSettings],
   );
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;

@@ -193,7 +193,10 @@ function RecipesCard({ householdId }: { householdId: string }) {
 }
 
 function SettingsCard() {
-  const { activeHousehold, updateSettings } = useHousehold();
+  const { activeHousehold, updateSettings, renameHousehold } = useHousehold();
+  const [name, setName] = useState(activeHousehold?.name ?? '');
+  const [renaming, setRenaming] = useState(false);
+  const [renamed, setRenamed] = useState(false);
   const [servings, setServings] = useState<number | null>(activeHousehold?.defaultServings ?? 1);
   const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
   const [saving, setSaving] = useState(false);
@@ -201,10 +204,25 @@ function SettingsCard() {
 
   useEffect(() => {
     if (activeHousehold) {
+      setName(activeHousehold.name);
       setServings(activeHousehold.defaultServings);
       setHorizonDays(activeHousehold.planningHorizonDays);
     }
   }, [activeHousehold]);
+
+  async function onRename(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === activeHousehold?.name) return;
+    setRenaming(true);
+    try {
+      await renameHousehold(trimmed);
+      setRenamed(true);
+      setTimeout(() => setRenamed(false), 1500);
+    } finally {
+      setRenaming(false);
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -221,8 +239,27 @@ function SettingsCard() {
     }
   }
 
+  const isOwner = activeHousehold?.role === 'OWNER';
+
   return (
     <Card title="Settings">
+      {isOwner && (
+        <form onSubmit={onRename} className="mb-4 border-b border-line pb-4">
+          <Field label="Household name">
+            <div className="flex gap-2">
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={renaming || !name.trim() || name.trim() === activeHousehold?.name}
+              >
+                {renamed ? 'Saved' : 'Rename'}
+              </Button>
+            </div>
+          </Field>
+        </form>
+      )}
+
       <form onSubmit={onSubmit} className="space-y-3">
         <Field label="Default servings">
           <NumberInput min={1} value={servings} onChange={setServings} />

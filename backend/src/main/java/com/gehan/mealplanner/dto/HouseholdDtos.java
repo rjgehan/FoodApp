@@ -13,8 +13,12 @@ public class HouseholdDtos {
     public record CreateHouseholdRequest(@NotBlank String name) {
     }
 
+    /** `role` is the *requesting* user's role in this household, not a property of the household. */
     public record HouseholdResponse(
-            UUID id, String name, int defaultServings, int planningHorizonDays) {
+            UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role) {
+    }
+
+    public record RenameHouseholdRequest(@NotBlank @Size(max = 60) String name) {
     }
 
     public record UpdateHouseholdSettingsRequest(

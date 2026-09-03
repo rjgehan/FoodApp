@@ -58,14 +58,13 @@ public class HouseholdService {
         DEFAULT_CATEGORIES.forEach(name -> categoryRepository.save(
                 RecipeCategory.builder().household(household).name(name).build()));
 
-        return toResponse(household);
+        return toResponse(household, HouseholdRole.OWNER);
     }
 
     @Transactional(readOnly = true)
     public List<HouseholdResponse> listForUser(UUID userId) {
         return memberRepository.findByUserId(userId).stream()
-                .map(HouseholdMember::getHousehold)
-                .map(this::toResponse)
+                .map(m -> toResponse(m.getHousehold(), m.getRole()))
                 .toList();
     }
 
@@ -76,13 +75,27 @@ public class HouseholdService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
         household.setDefaultServings(request.defaultServings());
         household.setPlanningHorizonDays(request.planningHorizonDays());
-        return toResponse(householdRepository.save(household));
+        return toResponse(householdRepository.save(household), roleOf(householdId, requesterId));
     }
 
-    private HouseholdResponse toResponse(Household household) {
+    /**
+     * Renaming is owner-only, unlike the other settings. The name is how everyone else in the
+     * app finds this household — on the login screen, in the share list — so changing it is not
+     * the same kind of act as changing your own default serving size.
+     */
+    @Transactional
+    public HouseholdResponse rename(UUID householdId, UUID requesterId, String name) {
+        assertOwner(householdId, requesterId);
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        household.setName(name.trim());
+        return toResponse(householdRepository.save(household), HouseholdRole.OWNER);
+    }
+
+    private HouseholdResponse toResponse(Household household, HouseholdRole role) {
         return new HouseholdResponse(
                 household.getId(), household.getName(), household.getDefaultServings(),
-                household.getPlanningHorizonDays());
+                household.getPlanningHorizonDays(), role);
     }
 
     @Transactional(readOnly = true)
@@ -156,5 +169,19 @@ public class HouseholdService {
         if (!memberRepository.existsByHouseholdIdAndUserId(householdId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this household");
         }
+    }
+
+    /** The first enforcement of HouseholdRole in the app — everywhere else, members are equal. */
+    public void assertOwner(UUID householdId, UUID userId) {
+        if (roleOf(householdId, userId) != HouseholdRole.OWNER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the household owner can do that");
+        }
+    }
+
+    private HouseholdRole roleOf(UUID householdId, UUID userId) {
+        return memberRepository.findByHouseholdIdAndUserId(householdId, userId)
+                .map(HouseholdMember::getRole)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Not a member of this household"));
     }
 }
