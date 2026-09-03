@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Badge, Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input } from '../components/ui';
+import { Badge, Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
 import RecipeIndexCard from '../components/RecipeIndexCard';
 import RecipeClassifier from '../components/RecipeClassifier';
@@ -216,8 +216,8 @@ export default function RecipeDetailPage() {
           </Button>
         )}
         {mine && !asCard && (
-          <Button variant={sharing ? 'primary' : 'secondary'} onClick={() => (sharing ? setSharing(false) : openSharing())}>
-            {sharing ? 'Done' : recipe.sharedWith.length ? `Shared · ${recipe.sharedWith.length}` : 'Share'}
+          <Button variant="secondary" onClick={openSharing}>
+            {recipe.sharedWith.length ? `Shared · ${recipe.sharedWith.length}` : 'Share'}
           </Button>
         )}
       </div>
@@ -267,61 +267,6 @@ export default function RecipeDetailPage() {
               </a>
             )}
           </Card>
-
-          {sharing && (
-            <Card title="Anyone with the link">
-              <p className="text-sm text-muted">
-                Opens the recipe on its own. No account needed.
-              </p>
-              {linkToken ? (
-                <div className="mt-3 space-y-2">
-                  <Input readOnly value={publicUrl(linkToken)} onFocus={(e) => e.target.select()} />
-                  <div className="flex gap-2">
-                    <Button className="flex-1" disabled={busy} onClick={() => copyLink(linkToken)}>
-                      {copied ? 'Copied' : 'Copy link'}
-                    </Button>
-                    <Button variant="danger" disabled={busy} onClick={revokeLink}>
-                      Revoke
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button className="mt-3" full disabled={busy} onClick={createLink}>
-                  Create a link
-                </Button>
-              )}
-            </Card>
-          )}
-
-          {sharing && (
-            <Card title="Share with">
-              {targets.length === 0 ? (
-                <EmptyState>No other households yet.</EmptyState>
-              ) : (
-                <ul className="divide-y divide-line">
-                  {targets.map((t) => (
-                    <li key={t.householdId}>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          setShares(
-                            t.shared
-                              ? recipe.sharedWith.filter((id) => id !== t.householdId)
-                              : [...recipe.sharedWith, t.householdId],
-                          )
-                        }
-                        className="flex min-h-touch w-full items-center gap-3 py-3 text-left"
-                      >
-                        <CheckCircle checked={t.shared} />
-                        <span className="flex-1 font-medium">{t.name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          )}
 
           {organizing && draft && activeHouseholdId && (
             <Card title={recipe.section ? 'Organize' : 'Move to my catalog'}>
@@ -491,6 +436,63 @@ export default function RecipeDetailPage() {
             </Card>
           )}
         </>
+      )}
+
+      {sharing && (
+        <Sheet title="Share" onClose={() => setSharing(false)}>
+          <div className="space-y-5">
+            <section>
+              <h3 className="font-semibold">Anyone with the link</h3>
+              <p className="mt-0.5 text-sm text-muted">Opens the recipe on its own. No account needed.</p>
+              {linkToken ? (
+                <div className="mt-3 space-y-2">
+                  <Input readOnly value={publicUrl(linkToken)} onFocus={(e) => e.target.select()} />
+                  <div className="flex gap-2">
+                    <Button className="flex-1" disabled={busy} onClick={() => copyLink(linkToken)}>
+                      {copied ? 'Copied' : 'Copy link'}
+                    </Button>
+                    <Button variant="danger" disabled={busy} onClick={revokeLink}>
+                      Revoke
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button className="mt-3" full disabled={busy} onClick={createLink}>
+                  Create a link
+                </Button>
+              )}
+            </section>
+
+            <section className="border-t border-line pt-4">
+              <h3 className="font-semibold">Share with a household</h3>
+              {targets.length === 0 ? (
+                <EmptyState>No other households yet.</EmptyState>
+              ) : (
+                <ul className="mt-1 divide-y divide-line">
+                  {targets.map((t) => (
+                    <li key={t.householdId}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setShares(
+                            t.shared
+                              ? recipe.sharedWith.filter((id) => id !== t.householdId)
+                              : [...recipe.sharedWith, t.householdId],
+                          )
+                        }
+                        className="flex min-h-touch w-full items-center gap-3 py-3 text-left"
+                      >
+                        <CheckCircle checked={t.shared} />
+                        <span className="flex-1 font-medium">{t.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </Sheet>
       )}
 
     </div>
