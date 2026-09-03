@@ -14,6 +14,8 @@ export default function EditRecipePage() {
   const navigate = useNavigate();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!recipeId || !activeHouseholdId) return;
@@ -21,6 +23,18 @@ export default function EditRecipePage() {
       .then(setRecipe)
       .catch(() => setError('Could not load that recipe.'));
   }, [recipeId, activeHouseholdId]);
+
+  async function remove() {
+    if (!recipe) return;
+    setDeleting(true);
+    try {
+      await api('DELETE', `/api/recipes/${recipe.id}`);
+      navigate('/recipes', { replace: true });
+    } catch {
+      setError('Could not delete that.');
+      setDeleting(false);
+    }
+  }
 
   if (error) {
     return (
@@ -52,6 +66,33 @@ export default function EditRecipePage() {
         recipe={recipe}
         onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })}
       />
+
+      {/*
+       * Two taps, not a browser confirm(): a native dialog is ugly on a phone and easy to
+       * dismiss by accident. Deleting a recipe cannot be undone, so it asks first.
+       */}
+      <Card title="Delete this recipe">
+        {confirming ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              This removes “{recipe.name}” for good, takes it off any planned meals, and stops any
+              share link working. It can't be undone.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="danger" className="flex-1" disabled={deleting} onClick={remove}>
+                {deleting ? 'Deleting…' : 'Delete forever'}
+              </Button>
+              <Button variant="secondary" disabled={deleting} onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="danger" full onClick={() => setConfirming(true)}>
+            Delete recipe
+          </Button>
+        )}
+      </Card>
     </div>
   );
 }

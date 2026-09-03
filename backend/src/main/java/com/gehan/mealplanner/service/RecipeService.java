@@ -22,6 +22,8 @@ import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.RecipeCategoryRepository;
 import com.gehan.mealplanner.repository.RecipeFilingRepository;
 import com.gehan.mealplanner.repository.SectionIconRepository;
+import com.gehan.mealplanner.repository.MealPlanEntryRepository;
+import com.gehan.mealplanner.repository.RecipeLinkRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
 import com.gehan.mealplanner.repository.RecipeShareRepository;
 import com.gehan.mealplanner.repository.StoredImageRepository;
@@ -56,6 +58,8 @@ public class RecipeService {
     private final RecipeShareRepository shareRepository;
     private final SectionIconRepository sectionIconRepository;
     private final HouseholdRepository householdRepository;
+    private final RecipeLinkRepository linkRepository;
+    private final MealPlanEntryRepository mealPlanEntryRepository;
     private final HouseholdService householdService;
     private final IngredientService ingredientService;
 
@@ -66,6 +70,8 @@ public class RecipeService {
                           RecipeShareRepository shareRepository,
                           SectionIconRepository sectionIconRepository,
                           HouseholdRepository householdRepository,
+                          RecipeLinkRepository linkRepository,
+                          MealPlanEntryRepository mealPlanEntryRepository,
                           HouseholdService householdService,
                           IngredientService ingredientService) {
         this.recipeRepository = recipeRepository;
@@ -75,6 +81,8 @@ public class RecipeService {
         this.shareRepository = shareRepository;
         this.sectionIconRepository = sectionIconRepository;
         this.householdRepository = householdRepository;
+        this.linkRepository = linkRepository;
+        this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdService = householdService;
         this.ingredientService = ingredientService;
     }
@@ -346,8 +354,14 @@ public class RecipeService {
         Recipe recipe = recipeRepository.findById(recipeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
         householdService.assertMember(recipe.getHousehold().getId(), requesterId);
+
+        // Everything that points at this recipe has to go first, or the delete fails on a
+        // foreign key. Planned meals included: a slot naming a recipe that no longer exists
+        // would be a row with nothing in it — invisible in the app, still in the database.
         shareRepository.deleteByRecipeId(recipeId);
         filingRepository.deleteByRecipeId(recipeId);
+        linkRepository.deleteByRecipeId(recipeId);
+        mealPlanEntryRepository.deleteByRecipeId(recipeId);
         recipeRepository.delete(recipe);
     }
 
