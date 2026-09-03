@@ -6,6 +6,7 @@ import type { BlacklistEntry, GroceryListEvent, GroceryListItem as Item } from '
 import { useHousehold } from '../household/HouseholdContext';
 import { Badge, Button, Card, CheckCircle, cx, EmptyState, IconButton, Input, NumberInput } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/icons';
+import UnitInput from '../components/UnitInput';
 
 export default function GroceryListPage() {
   const { activeHouseholdId } = useHousehold();
@@ -144,11 +145,11 @@ export default function GroceryListPage() {
               onChange={setQuantity}
               aria-label="Quantity"
             />
-            <Input
-              className="w-24"
+            <UnitInput
+              className="w-28"
               value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="ct"
+              onChange={setUnit}
+              placeholder="unit"
               aria-label="Unit"
             />
             <Button type="submit" className="flex-1" disabled={!name.trim()}>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, imageUrl } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
+import UnitInput from '../components/UnitInput';
 import {
   Button,
   Card,
@@ -148,11 +149,10 @@ function WriteRecipe({
                   onChange={(v) => updateIngredient(i, { quantity: v })}
                   aria-label={`Ingredient ${i + 1} quantity`}
                 />
-                <Input
+                <UnitInput
                   className="flex-1"
-                  placeholder="unit"
                   value={row.unit}
-                  onChange={(e) => updateIngredient(i, { unit: e.target.value })}
+                  onChange={(unit) => updateIngredient(i, { unit })}
                   aria-label={`Ingredient ${i + 1} unit`}
                 />
                 <IconButton

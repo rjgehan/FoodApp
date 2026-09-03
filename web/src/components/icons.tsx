@@ -89,6 +89,12 @@ export const ChevronRightIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M5 9.5 12 16l7-6.5" />
+  </Icon>
+);
+
 export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p} strokeWidth={2.5}>
     <path d="M5 12.5 10 17.5 19 7" />
