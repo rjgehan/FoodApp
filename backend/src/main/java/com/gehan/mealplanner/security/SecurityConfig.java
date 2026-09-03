@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.security;
 
+import com.gehan.mealplanner.integration.IntegrationAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,9 +22,11 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final IntegrationAuthFilter integrationAuthFilter;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, IntegrationAuthFilter integrationAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.integrationAuthFilter = integrationAuthFilter;
     }
 
     @Bean
@@ -47,6 +50,10 @@ public class SecurityConfig {
                         // is the credential, and the response carries only the recipe itself.
                         .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
                         .anyRequest().authenticated())
+                // Runs before the JWT filter: /api/integration/** authenticates with a shared
+                // key and no user, and the filter answers 401/503 itself rather than falling
+                // through to a login the caller has no way to complete.
+                .addFilterBefore(integrationAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

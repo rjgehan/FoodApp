@@ -40,6 +40,9 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
+  integration:
+    # Read-only API for a home dashboard. Unset means off; the endpoints answer 503.
+    api-key: ${INTEGRATION_API_KEY:}
   auth:
     # Small trusted app: a username plus a 4-digit PIN, throttled instead of made complex.
     max-pin-attempts: ${AUTH_MAX_PIN_ATTEMPTS:5}

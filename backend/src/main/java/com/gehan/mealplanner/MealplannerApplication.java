@@ -1,8 +1,11 @@
 package com.gehan.mealplanner;
 
 import org.springframework.boot.SpringApplication;
+import com.gehan.mealplanner.integration.IntegrationProperties;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
+@EnableConfigurationProperties(IntegrationProperties.class)
 @SpringBootApplication
 public class MealplannerApplication {
 
