@@ -60,7 +60,19 @@ public class GroceryListService {
 
     @Transactional
     public GroceryListItemResponse addManualItem(UUID householdId, UUID requesterId, AddItemRequest request) {
-        Household household = requireMember(householdId, requesterId);
+        householdService.assertMember(householdId, requesterId);
+        return addItem(householdId, request);
+    }
+
+    /**
+     * The same add with no user behind it, for the integration API. Kept here rather than
+     * reimplemented by the caller so the websocket broadcast still fires — a dashboard adding
+     * milk has to show up on the phone in the kitchen without a refresh.
+     */
+    @Transactional
+    public GroceryListItemResponse addItem(UUID householdId, AddItemRequest request) {
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
         GroceryListItem item = GroceryListItem.builder()
                 .household(household)
@@ -82,11 +94,17 @@ public class GroceryListService {
     @Transactional
     public GroceryListItemResponse setChecked(UUID householdId, UUID itemId, UUID requesterId, boolean checked) {
         householdService.assertMember(householdId, requesterId);
+        return setChecked(householdId, itemId, checked, userRepository.findById(requesterId).orElse(null));
+    }
+
+    /** `by` is null when nobody in particular did it — a dashboard, say. */
+    @Transactional
+    public GroceryListItemResponse setChecked(UUID householdId, UUID itemId, boolean checked, User by) {
         GroceryListItem item = findItem(householdId, itemId);
 
         item.setChecked(checked);
         if (checked) {
-            User user = userRepository.findById(requesterId).orElse(null);
+            User user = by;
             item.setCheckedBy(user);
             item.setCheckedAt(Instant.now());
         } else {
@@ -103,6 +121,11 @@ public class GroceryListService {
     @Transactional
     public void removeItem(UUID householdId, UUID itemId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
+        removeItem(householdId, itemId);
+    }
+
+    @Transactional
+    public void removeItem(UUID householdId, UUID itemId) {
         GroceryListItem item = findItem(householdId, itemId);
         groceryListItemRepository.delete(item);
         eventPublisher.itemRemoved(householdId, itemId);

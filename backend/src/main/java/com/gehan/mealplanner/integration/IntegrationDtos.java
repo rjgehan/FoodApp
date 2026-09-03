@@ -3,6 +3,7 @@ package com.gehan.mealplanner.integration;
 import com.gehan.mealplanner.domain.MealType;
 import com.gehan.mealplanner.domain.RecipeSection;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -81,6 +82,13 @@ public class IntegrationDtos {
     }
 
     public record GroceryItem(UUID id, String name, String quantity, String unit, boolean checked) {
+    }
+
+    /** `name` is free text — it does not have to match an ingredient the app already knows. */
+    public record AddGroceryItemRequest(String name, BigDecimal quantity, String unit) {
+    }
+
+    public record SetCheckedRequest(Boolean checked) {
     }
 
     public record PlaceSummary(UUID id, String name, String menuUrl, String phone, String notes, String imageUrl) {

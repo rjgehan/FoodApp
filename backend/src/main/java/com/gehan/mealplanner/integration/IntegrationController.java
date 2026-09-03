@@ -3,6 +3,7 @@ package com.gehan.mealplanner.integration;
 import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.integration.IntegrationDtos.*;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -10,8 +11,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Read-only endpoints for other services on the home network. Nothing here writes, so a broken
- * dashboard can never damage the meal plan.
+ * Endpoints for other services on the home network. Reads cover the plan, the recipe box, the
+ * grocery list and the places; the only writes are to the grocery list, so a broken dashboard
+ * can add "milk" but can never touch a recipe or the meal plan.
  */
 @RestController
 @RequestMapping("/api/integration")
@@ -74,6 +76,30 @@ public class IntegrationController {
     @GetMapping("/households/{householdId}/grocery-list")
     public List<GroceryItem> groceries(@PathVariable UUID householdId) {
         return service.groceries(householdId);
+    }
+
+    /**
+     * The only writes in this API. Adding is what a dashboard wants; ticking off and removing
+     * come with it, because a dashboard that renders the list will be tapped on.
+     */
+    @PostMapping("/households/{householdId}/grocery-list")
+    public GroceryItem addGroceryItem(@PathVariable UUID householdId,
+                                      @RequestBody AddGroceryItemRequest request) {
+        return service.addGroceryItem(householdId, request);
+    }
+
+    @PatchMapping("/households/{householdId}/grocery-list/{itemId}")
+    public GroceryItem setChecked(@PathVariable UUID householdId,
+                                  @PathVariable UUID itemId,
+                                  @RequestBody SetCheckedRequest request) {
+        return service.setGroceryItemChecked(householdId, itemId,
+                request != null && Boolean.TRUE.equals(request.checked()));
+    }
+
+    @DeleteMapping("/households/{householdId}/grocery-list/{itemId}")
+    public ResponseEntity<Void> removeGroceryItem(@PathVariable UUID householdId, @PathVariable UUID itemId) {
+        service.removeGroceryItem(householdId, itemId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/households/{householdId}/places")

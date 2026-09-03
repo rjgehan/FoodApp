@@ -2,7 +2,9 @@ package com.gehan.mealplanner.integration;
 
 import com.gehan.mealplanner.domain.*;
 import com.gehan.mealplanner.integration.IntegrationDtos.*;
+import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.repository.*;
+import com.gehan.mealplanner.service.GroceryListService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,19 +29,22 @@ public class IntegrationService {
     private final RecipeFilingRepository filingRepository;
     private final GroceryListItemRepository groceryRepository;
     private final PlaceRepository placeRepository;
+    private final GroceryListService groceryListService;
 
     public IntegrationService(HouseholdRepository householdRepository,
                               MealPlanEntryRepository mealPlanEntryRepository,
                               RecipeRepository recipeRepository,
                               RecipeFilingRepository filingRepository,
                               GroceryListItemRepository groceryRepository,
-                              PlaceRepository placeRepository) {
+                              PlaceRepository placeRepository,
+                              GroceryListService groceryListService) {
         this.householdRepository = householdRepository;
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.recipeRepository = recipeRepository;
         this.filingRepository = filingRepository;
         this.groceryRepository = groceryRepository;
         this.placeRepository = placeRepository;
+        this.groceryListService = groceryListService;
     }
 
     @Transactional(readOnly = true)
@@ -151,6 +156,42 @@ public class IntegrationService {
                 .sorted(Comparator.comparing(GroceryItem::checked)
                         .thenComparing(GroceryItem::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    /**
+     * Goes through GroceryListService rather than the repository so the websocket broadcast
+     * fires: something added from a dashboard has to appear on the phone in the kitchen
+     * straight away, not on the next refresh.
+     */
+    @Transactional
+    public GroceryItem addGroceryItem(UUID householdId, AddGroceryItemRequest request) {
+        requireHousehold(householdId);
+        if (request == null || request.name() == null || request.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An item needs a name.");
+        }
+        var added = groceryListService.addItem(householdId,
+                new AddItemRequest(request.name().trim(), request.quantity(), blankToNull(request.unit())));
+        return new GroceryItem(added.id(), added.name(), formatQuantity(added.quantity()),
+                added.unit(), added.checked());
+    }
+
+    /** No user is recorded as having ticked it — nobody in particular did. */
+    @Transactional
+    public GroceryItem setGroceryItemChecked(UUID householdId, UUID itemId, boolean checked) {
+        requireHousehold(householdId);
+        var updated = groceryListService.setChecked(householdId, itemId, checked, null);
+        return new GroceryItem(updated.id(), updated.name(), formatQuantity(updated.quantity()),
+                updated.unit(), updated.checked());
+    }
+
+    @Transactional
+    public void removeGroceryItem(UUID householdId, UUID itemId) {
+        requireHousehold(householdId);
+        groceryListService.removeItem(householdId, itemId);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Transactional(readOnly = true)

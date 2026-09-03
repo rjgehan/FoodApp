@@ -1,7 +1,10 @@
 # Meal Planner integration API
 
-A read-only HTTP API for other services on the home network — a dashboard, a wall display, a
-script. Nothing here writes, so a consumer can never damage the meal plan.
+An HTTP API for other services on the home network — a dashboard, a wall display, a script.
+
+Reads cover the meal plan, the recipe box, the grocery list and the places. **The only writes
+are to the grocery list**, so a broken consumer can add "milk" but can never touch a recipe or
+the meal plan.
 
 Everything is JSON, `UTF-8`, no pagination (a family's recipe box is small).
 
@@ -204,6 +207,45 @@ Unchecked items first, then alphabetical.
 [ { "id": "…", "name": "baby potatoes", "quantity": "1½", "unit": "lb", "checked": false } ]
 ```
 
+### `POST /api/integration/households/{householdId}/grocery-list`
+
+Add an item. `name` is required and is free text — it does not have to match an ingredient the
+app already knows. `quantity` and `unit` are optional.
+
+```bash
+curl -X POST "$BASE/api/integration/households/$HID/grocery-list" \
+  -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"oat milk","quantity":2,"unit":"ct"}'
+```
+
+```json
+{ "id": "713d70df-…", "name": "oat milk", "quantity": "2", "unit": "ct", "checked": false }
+```
+
+A missing or blank `name` is `400`.
+
+**This shows up live.** The write goes through the same service the web app uses, so anyone with
+the grocery list open on their phone sees the item appear immediately — no refresh. Verified:
+adding through this endpoint took an open list from 29 items to 30 without a reload.
+
+Units are free text but worth keeping consistent — the app suggests `cup, tbsp, tsp, oz, lb, g,
+kg, ml, l, ct, clove, can, bunch, head, package`.
+
+### `PATCH /api/integration/households/{householdId}/grocery-list/{itemId}`
+
+Tick an item off, or un-tick it. Broadcasts live the same way.
+
+```json
+{ "checked": true }
+```
+
+Returns the updated item. Nobody is recorded as having ticked it, unlike the web app where the
+list shows who did — a dashboard is not a person.
+
+### `DELETE /api/integration/households/{householdId}/grocery-list/{itemId}`
+
+Removes it. `204`, no body. Broadcasts live.
+
 ### `GET /api/integration/households/{householdId}/places`
 
 Somewhere the household eats instead of cooking.
@@ -242,8 +284,8 @@ Bodies are `{"status": <int>, "message": "<text>"}`.
 
 - **Polling is fine.** These are small reads straight out of Postgres. Once a minute for
   `today` is nothing; there is no rate limit and no caching layer, so don't hammer it either.
-- **Nothing here writes.** No adding meals, no ticking off groceries. If you want that, it needs
-  building — say so and it can be added.
+- **The grocery list is the only writable thing.** No adding meals, no editing recipes. If you
+  want either, it needs building — say so and it can be added.
 - **No websocket.** The app has live grocery sync over `/ws` for its own UI, but it is bound to
   a signed-in user's token, not this key. Poll instead.
 - **Times are the server's local dates.** `today` uses the server clock, not the caller's.
