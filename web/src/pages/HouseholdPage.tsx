@@ -17,7 +17,8 @@ import {
   NumberInput,
   Sheet,
 } from '../components/ui';
-import { StoreIcon } from '../components/icons';
+import { PlusIcon, StoreIcon } from '../components/icons';
+import PlaceActions from '../components/PlaceActions';
 import ImagePicker from '../components/ImagePicker';
 
 export default function HouseholdPage() {
@@ -203,6 +204,7 @@ function RecipesCard({ householdId }: { householdId: string }) {
 function PlacesCard({ householdId }: { householdId: string }) {
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [editing, setEditing] = useState<Place | null>(null);
+  const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -212,6 +214,22 @@ function PlacesCard({ householdId }: { householdId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const created = await api<Place>('POST', `/api/households/${householdId}/places`, { name });
+      setNewName('');
+      await load();
+      // Straight into the details, since adding a name is never the actual goal.
+      setEditing(created);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save(place: Place) {
     setBusy(true);
@@ -246,7 +264,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
       {places === null ? (
         <p className="py-2 text-sm text-muted">Loading…</p>
       ) : places.length === 0 ? (
-        <EmptyState>Add one from the Plan page when you're not cooking.</EmptyState>
+        <EmptyState>Nowhere saved yet.</EmptyState>
       ) : (
         <ul className="divide-y divide-line">
           {places.map((place) => (
@@ -274,6 +292,19 @@ function PlacesCard({ householdId }: { householdId: string }) {
           ))}
         </ul>
       )}
+
+      <form onSubmit={add} className="mt-3 flex gap-2">
+        <Input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Tony's, Chinese, pizza…"
+          aria-label="New place"
+        />
+        <Button type="submit" variant="secondary" disabled={busy || !newName.trim()}>
+          <PlusIcon className="h-5 w-5" />
+          Add
+        </Button>
+      </form>
 
       {editing && (
         <PlaceSheet
@@ -309,6 +340,11 @@ function PlaceSheet({
   return (
     <Sheet title={place.name} onClose={onClose}>
       <div className="space-y-4">
+        {/* The saved values, not the draft: these open things, so unsaved edits must not. */}
+        <div className="flex gap-2">
+          <PlaceActions place={place} size="md" />
+        </div>
+
         {draft.imageId && (
           <img
             src={imageUrl(draft.imageId)}

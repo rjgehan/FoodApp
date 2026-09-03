@@ -4,7 +4,7 @@ import { api, ApiError, imageUrl } from '../api/client';
 import type { MealPlanEntry, MealType, Place, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, isPlanned } from '../utils/planEntry';
-import { isSafeLink } from '../utils/videoLink';
+import PlaceActions from '../components/PlaceActions';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, IconButton, Input, NumberInput, Sheet } from '../components/ui';
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
@@ -595,29 +595,6 @@ function ServingsControl({
         Set
       </Button>
     </span>
-  );
-}
-
-/** The menu and the phone number, which is all you want from a place at dinner time. */
-function PlaceActions({ place }: { place: Place | undefined }) {
-  if (!place) return null;
-  return (
-    <>
-      {isSafeLink(place.menuUrl) && (
-        <a href={place.menuUrl!} target="_blank" rel="noreferrer noopener">
-          <Button size="sm" variant="secondary">
-            Menu
-          </Button>
-        </a>
-      )}
-      {place.phone && (
-        <a href={`tel:${place.phone.replace(/[^+\d]/g, '')}`}>
-          <Button size="sm" variant="secondary">
-            Call
-          </Button>
-        </a>
-      )}
-    </>
   );
 }
 
