@@ -25,6 +25,8 @@ export default function RecipeDetailPage() {
   const [organizing, setOrganizing] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [targets, setTargets] = useState<ShareTarget[]>([]);
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [draft, setDraft] = useState<Filing | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
   const [videoDraft, setVideoDraft] = useState('');
@@ -58,7 +60,48 @@ export default function RecipeDetailPage() {
   async function openSharing() {
     if (!recipe) return;
     setTargets(await api<ShareTarget[]>('GET', `/api/recipes/${recipe.id}/share-targets`));
+    const { token } = await api<{ token: string | null }>('GET', `/api/recipes/${recipe.id}/link`);
+    setLinkToken(token);
     setSharing(true);
+  }
+
+  function publicUrl(token: string): string {
+    return `${window.location.origin}/r/${token}`;
+  }
+
+  async function createLink() {
+    if (!recipe) return;
+    setBusy(true);
+    try {
+      const { token } = await api<{ token: string }>('POST', `/api/recipes/${recipe.id}/link`);
+      setLinkToken(token);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeLink() {
+    if (!recipe) return;
+    setBusy(true);
+    try {
+      await api('DELETE', `/api/recipes/${recipe.id}/link`);
+      setLinkToken(null);
+      setCopied(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Clipboard writes fail on http origins and when the tab is not focused, so the readonly
+   *  input above stays the fallback: the text is already selectable. */
+  async function copyLink(token: string) {
+    try {
+      await navigator.clipboard.writeText(publicUrl(token));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setCopied(false);
+    }
   }
 
   async function setShares(householdIds: string[]) {
@@ -224,6 +267,31 @@ export default function RecipeDetailPage() {
               </a>
             )}
           </Card>
+
+          {sharing && (
+            <Card title="Anyone with the link">
+              <p className="text-sm text-muted">
+                Opens the recipe on its own. No account needed.
+              </p>
+              {linkToken ? (
+                <div className="mt-3 space-y-2">
+                  <Input readOnly value={publicUrl(linkToken)} onFocus={(e) => e.target.select()} />
+                  <div className="flex gap-2">
+                    <Button className="flex-1" disabled={busy} onClick={() => copyLink(linkToken)}>
+                      {copied ? 'Copied' : 'Copy link'}
+                    </Button>
+                    <Button variant="danger" disabled={busy} onClick={revokeLink}>
+                      Revoke
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button className="mt-3" full disabled={busy} onClick={createLink}>
+                  Create a link
+                </Button>
+              )}
+            </Card>
+          )}
 
           {sharing && (
             <Card title="Share with">

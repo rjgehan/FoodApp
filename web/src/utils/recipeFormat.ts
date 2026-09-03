@@ -1,4 +1,3 @@
-import type { Recipe } from '../api/types';
 
 const FRACTIONS: [number, string][] = [
   [0.125, '⅛'], [0.25, '¼'], [0.333, '⅓'], [0.375, '⅜'], [0.5, '½'],
@@ -17,7 +16,8 @@ export function formatQuantity(value: number | null | undefined): string {
   return whole ? `${whole}${match[1]}` : match[1];
 }
 
-export function totalMinutes(recipe: Recipe): number | null {
+/** Structural, not `Recipe`: a share-link recipe has these two fields and nothing else in common. */
+export function totalMinutes(recipe: { prepTimeMinutes: number | null; cookTimeMinutes: number | null }): number | null {
   const total = (recipe.prepTimeMinutes ?? 0) + (recipe.cookTimeMinutes ?? 0);
   return total > 0 ? total : null;
 }

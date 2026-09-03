@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.web;
 
+import com.gehan.mealplanner.dto.RecipeDtos.RecipeLinkResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
@@ -9,6 +10,7 @@ import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
+import com.gehan.mealplanner.service.RecipeLinkService;
 import com.gehan.mealplanner.service.RecipeService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -25,7 +27,10 @@ public class RecipeController {
 
     private final RecipeService recipeService;
 
-    public RecipeController(RecipeService recipeService) {
+    private final RecipeLinkService linkService;
+
+    public RecipeController(RecipeService recipeService, RecipeLinkService linkService) {
+        this.linkService = linkService;
         this.recipeService = recipeService;
     }
 
@@ -110,6 +115,24 @@ public class RecipeController {
                                         @PathVariable UUID recipeId,
                                         @Valid @RequestBody UpdateImagesRequest request) {
         return recipeService.updateImages(recipeId, userId, request);
+    }
+
+    /** Creates the share link, or hands back the one that already exists. */
+    @PostMapping("/api/recipes/{recipeId}/link")
+    public RecipeLinkResponse createLink(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId) {
+        return new RecipeLinkResponse(linkService.createOrGet(recipeId, userId));
+    }
+
+    /** Null token means this recipe has no public link. */
+    @GetMapping("/api/recipes/{recipeId}/link")
+    public RecipeLinkResponse getLink(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId) {
+        return new RecipeLinkResponse(linkService.current(recipeId, userId).orElse(null));
+    }
+
+    @DeleteMapping("/api/recipes/{recipeId}/link")
+    public ResponseEntity<Void> revokeLink(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId) {
+        linkService.revoke(recipeId, userId);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/api/recipes/{recipeId}")

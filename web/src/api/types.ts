@@ -98,6 +98,28 @@ export interface Recipe {
   ingredients: RecipeIngredient[];
 }
 
+/** What someone with a share link sees. No household, no sharing state, no filing. */
+export interface PublicRecipe {
+  name: string;
+  description: string | null;
+  instructions: string | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  servings: number;
+  sourceUrl: string | null;
+  videoUrl: string | null;
+  coverImageId: string | null;
+  photoIds: string[];
+  ingredients: PublicIngredient[];
+}
+
+export interface PublicIngredient {
+  ingredientName: string;
+  quantity: number;
+  unit: string;
+  notes: string | null;
+}
+
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
 
 export interface MealPlanEntry {

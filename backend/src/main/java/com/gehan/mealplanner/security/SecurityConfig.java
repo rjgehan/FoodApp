@@ -43,6 +43,9 @@ public class SecurityConfig {
                         // Image bytes only: an <img> tag cannot carry a bearer token, and the
                         // random UUID in the path is what keeps the URL unguessable.
                         .requestMatchers(HttpMethod.GET, "/api/images/**").permitAll()
+                        // A share link opens this with no account. The 256-bit token in the URL
+                        // is the credential, and the response carries only the recipe itself.
+                        .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

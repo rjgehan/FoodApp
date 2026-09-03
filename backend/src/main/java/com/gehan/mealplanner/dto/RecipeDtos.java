@@ -55,6 +55,29 @@ public class RecipeDtos {
             List<String> categories) {
     }
 
+    /** What a guest with a link gets back: the recipe, and deliberately nothing else. */
+    public record PublicRecipeResponse(
+            String name,
+            String description,
+            String instructions,
+            Integer prepTimeMinutes,
+            Integer cookTimeMinutes,
+            int servings,
+            String sourceUrl,
+            String videoUrl,
+            UUID coverImageId,
+            List<UUID> photoIds,
+            List<PublicIngredientResponse> ingredients) {
+    }
+
+    public record PublicIngredientResponse(
+            String ingredientName, BigDecimal quantity, String unit, String notes) {
+    }
+
+    /** The share link for a recipe. A null token means no link exists yet. */
+    public record RecipeLinkResponse(String token) {
+    }
+
     public record RecipeIngredientResponse(
             UUID id, String ingredientName, BigDecimal quantity, String unit, String notes) {
     }
