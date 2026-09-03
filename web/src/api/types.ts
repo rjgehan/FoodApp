@@ -124,14 +124,27 @@ export interface PublicIngredient {
 
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
 
+/** A slot holds either a recipe you cook or a place you eat at — never both. */
 export interface MealPlanEntry {
   id: string;
   date: string;
   mealType: MealType;
   recipeId: string | null;
   recipeName: string | null;
+  placeId: string | null;
+  placeName: string | null;
   servings: number | null;
   notes: string | null;
+}
+
+/** Somewhere you eat instead of cooking. Only the name is required. */
+export interface Place {
+  id: string;
+  name: string;
+  menuUrl: string | null;
+  phone: string | null;
+  notes: string | null;
+  imageId: string | null;
 }
 
 export interface GroceryListItem {

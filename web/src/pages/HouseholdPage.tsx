@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { api, ApiError } from '../api/client';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { api, ApiError, imageUrl } from '../api/client';
 import type { RecipeSection } from '../api/types';
-import type { HouseholdMember, Recipe } from '../api/types';
+import type { HouseholdMember, Place, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
@@ -15,7 +15,10 @@ import {
   Field,
   Input,
   NumberInput,
+  Sheet,
 } from '../components/ui';
+import { StoreIcon } from '../components/icons';
+import ImagePicker from '../components/ImagePicker';
 
 export default function HouseholdPage() {
   const { households, activeHousehold, createHousehold } = useHousehold();
@@ -50,6 +53,7 @@ export default function HouseholdPage() {
 
       {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
       {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
+      {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
       {activeHousehold && <SettingsCard />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
 
@@ -189,6 +193,169 @@ function RecipesCard({ householdId }: { householdId: string }) {
         </ul>
       )}
     </Card>
+  );
+}
+
+/**
+ * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
+ * card exists to fill in the details afterwards — the menu link and the phone number.
+ */
+function PlacesCard({ householdId }: { householdId: string }) {
+  const [places, setPlaces] = useState<Place[] | null>(null);
+  const [editing, setEditing] = useState<Place | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setPlaces(await api<Place[]>('GET', `/api/households/${householdId}/places`).catch(() => []));
+  }, [householdId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function save(place: Place) {
+    setBusy(true);
+    try {
+      await api('PUT', `/api/places/${place.id}`, {
+        name: place.name,
+        menuUrl: place.menuUrl,
+        phone: place.phone,
+        notes: place.notes,
+        imageId: place.imageId,
+      });
+      setEditing(null);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(place: Place) {
+    setBusy(true);
+    try {
+      await api('DELETE', `/api/places/${place.id}`);
+      setEditing(null);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Places we eat">
+      {places === null ? (
+        <p className="py-2 text-sm text-muted">Loading…</p>
+      ) : places.length === 0 ? (
+        <EmptyState>Add one from the Plan page when you're not cooking.</EmptyState>
+      ) : (
+        <ul className="divide-y divide-line">
+          {places.map((place) => (
+            <li key={place.id}>
+              <button
+                type="button"
+                onClick={() => setEditing(place)}
+                className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+              >
+                {place.imageId ? (
+                  <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                ) : (
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                    <StoreIcon className="h-5 w-5" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{place.name}</span>
+                  <span className="block truncate text-sm text-muted">
+                    {[place.phone, place.menuUrl ? 'menu saved' : null].filter(Boolean).join(' · ') || 'Add details'}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing && (
+        <PlaceSheet
+          householdId={householdId}
+          place={editing}
+          busy={busy}
+          onSave={save}
+          onDelete={remove}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
+function PlaceSheet({
+  householdId,
+  place,
+  busy,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  householdId: string;
+  place: Place;
+  busy: boolean;
+  onSave: (place: Place) => void;
+  onDelete: (place: Place) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<Place>(place);
+
+  return (
+    <Sheet title={place.name} onClose={onClose}>
+      <div className="space-y-4">
+        {draft.imageId && (
+          <img
+            src={imageUrl(draft.imageId)}
+            alt=""
+            className="aspect-[4/3] w-full rounded-xl border border-line object-cover"
+          />
+        )}
+        <ImagePicker householdId={householdId} onUploaded={(ids) => setDraft({ ...draft, imageId: ids[0] ?? null })}>
+          {draft.imageId ? 'Replace photo' : 'Add a photo'}
+        </ImagePicker>
+
+        <Field label="Name">
+          <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </Field>
+        <Field label="Menu link">
+          <Input
+            type="url"
+            inputMode="url"
+            placeholder="https://…"
+            value={draft.menuUrl ?? ''}
+            onChange={(e) => setDraft({ ...draft, menuUrl: e.target.value || null })}
+          />
+        </Field>
+        <Field label="Phone">
+          <Input
+            type="tel"
+            inputMode="tel"
+            placeholder="(555) 123-4567"
+            value={draft.phone ?? ''}
+            onChange={(e) => setDraft({ ...draft, phone: e.target.value || null })}
+          />
+        </Field>
+        <Field label="Notes" hint="What to order, where to park.">
+          <Input value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })} />
+        </Field>
+
+        <div className="flex gap-2">
+          <Button className="flex-1" disabled={busy || !draft.name.trim()} onClick={() => onSave(draft)}>
+            Save
+          </Button>
+          <Button variant="danger" disabled={busy} onClick={() => onDelete(place)}>
+            Delete
+          </Button>
+        </div>
+        <p className="text-sm text-muted">Deleting also clears any planned nights at this place.</p>
+      </div>
+    </Sheet>
   );
 }
 

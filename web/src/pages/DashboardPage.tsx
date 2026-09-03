@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { GroceryListItem, MealPlanEntry, MealType } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
+import { entryLabel, isPlanned } from '../utils/planEntry';
 import { Card, EmptyState } from '../components/ui';
 
 const MEAL_ORDER: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -44,7 +45,7 @@ export default function DashboardPage() {
   }
 
   const today = entries
-    .filter((e) => e.recipeName)
+    .filter(isPlanned)
     .sort((a, b) => MEAL_ORDER.indexOf(a.mealType) - MEAL_ORDER.indexOf(b.mealType));
   const left = items.filter((i) => !i.checked).length;
 
@@ -76,7 +77,7 @@ export default function DashboardPage() {
                 className="block rounded-2xl border border-line bg-surface p-4 transition-transform active:scale-[0.99]"
               >
                 <p className="text-sm font-medium text-accent">{titleCase(e.mealType)}</p>
-                <p className="mt-0.5 text-lg font-semibold leading-tight">{e.recipeName}</p>
+                <p className="mt-0.5 text-lg font-semibold leading-tight">{entryLabel(e)}</p>
                 {e.servings ? <p className="mt-0.5 text-sm text-muted">Serves {e.servings}</p> : null}
               </Link>
             </li>

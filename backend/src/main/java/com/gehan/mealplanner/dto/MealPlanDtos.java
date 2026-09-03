@@ -15,7 +15,9 @@ public class MealPlanDtos {
     public record AddMealPlanEntryRequest(
             @NotNull LocalDate date,
             @NotNull MealType mealType,
-            @NotNull UUID recipeId,
+            UUID recipeId,
+            /** Send this instead of recipeId to plan a night out or a takeaway. */
+            UUID placeId,
             Integer servings,
             String notes) {
     }
@@ -23,6 +25,7 @@ public class MealPlanDtos {
     /** Swaps the recipe or changes the servings on one dish already in a slot. */
     public record UpdateMealPlanEntryRequest(
             UUID recipeId,
+            UUID placeId,
             Integer servings,
             String notes) {
     }
@@ -33,6 +36,8 @@ public class MealPlanDtos {
             MealType mealType,
             UUID recipeId,
             String recipeName,
+            UUID placeId,
+            String placeName,
             Integer servings,
             String notes) {
     }

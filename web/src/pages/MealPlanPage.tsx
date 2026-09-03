@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
-import type { MealPlanEntry, MealType, Recipe } from '../api/types';
+import { api, ApiError, imageUrl } from '../api/client';
+import type { MealPlanEntry, MealType, Place, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
+import { entryLabel, isPlanned } from '../utils/planEntry';
+import { isSafeLink } from '../utils/videoLink';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, IconButton, Input, NumberInput, Sheet } from '../components/ui';
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, TrashIcon } from '../components/icons';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -151,7 +153,7 @@ export default function MealPlanPage() {
           <div className="grid grid-cols-7 gap-1">
             {weekDays.map((day) => {
               const key = isoDate(day);
-              const planned = (byDate.get(key) ?? []).filter((e) => e.recipeName);
+              const planned = (byDate.get(key) ?? []).filter(isPlanned);
               const isToday = key === isoDate(today);
 
               return (
@@ -186,7 +188,7 @@ export default function MealPlanPage() {
                   <span className="mt-1 hidden min-w-0 flex-1 flex-col gap-0.5 self-stretch sm:flex">
                     {planned.slice(0, 3).map((e) => (
                       <span key={e.id} className="truncate text-[11px] leading-tight text-muted">
-                        {e.recipeName}
+                        {entryLabel(e)}
                       </span>
                     ))}
                   </span>
@@ -198,7 +200,7 @@ export default function MealPlanPage() {
           {/* The names the strip can no longer show, for the days that have any. */}
           <ul className="space-y-2 sm:hidden">
             {weekDays
-              .map((day) => ({ day, planned: (byDate.get(isoDate(day)) ?? []).filter((e) => e.recipeName) }))
+              .map((day) => ({ day, planned: (byDate.get(isoDate(day)) ?? []).filter(isPlanned) }))
               .filter(({ planned }) => planned.length > 0)
               .map(({ day, planned }) => (
                 <li key={isoDate(day)}>
@@ -213,7 +215,7 @@ export default function MealPlanPage() {
                     <span className="min-w-0 flex-1">
                       {planned.map((e) => (
                         <span key={e.id} className="block truncate text-sm">
-                          <span className="text-muted">{titleCase(e.mealType)}</span> · {e.recipeName}
+                          <span className="text-muted">{titleCase(e.mealType)}</span> · {entryLabel(e)}
                         </span>
                       ))}
                     </span>
@@ -283,7 +285,7 @@ function CalendarGrid({
       <div className="grid grid-cols-7 gap-1">
         {days.map((day) => {
           const key = isoDate(day);
-          const planned = (byDate.get(key) ?? []).filter((e) => e.recipeName);
+          const planned = (byDate.get(key) ?? []).filter(isPlanned);
           const inMonth = day.getMonth() === monthCursor.getMonth();
           const isToday = key === isoDate(today);
 
@@ -339,6 +341,7 @@ function DaySheet({
 }) {
   // entryId set => swapping that dish; null => adding another one alongside.
   const [picking, setPicking] = useState<{ meal: MealType; entryId: string | null } | null>(null);
+  const [places, setPlaces] = useState<Place[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [extraMeals, setExtraMeals] = useState<MealType[]>([]);
   const [busy, setBusy] = useState(false);
@@ -350,6 +353,10 @@ function DaySheet({
     month: 'long',
     day: 'numeric',
   });
+
+  useEffect(() => {
+    api<Place[]>('GET', `/api/households/${householdId}/places`).then(setPlaces).catch(() => setPlaces([]));
+  }, [householdId]);
 
   // The three staples, plus any other slot that already has something in it.
   const slots = ALL_MEALS.filter(
@@ -388,6 +395,42 @@ function DaySheet({
     }
   }
 
+  /** Typing a name that is not saved yet creates the place, the way a new category works. */
+  async function choosePlace(place: Place | { name: string }) {
+    if (!picking) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved =
+        'id' in place
+          ? place
+          : await api<Place>('POST', `/api/households/${householdId}/places`, { name: place.name });
+      if (!('id' in place)) {
+        setPlaces((all) => (all.some((p) => p.id === saved.id) ? all : [...all, saved].sort((a, b) => a.name.localeCompare(b.name))));
+      }
+      if (picking.entryId) {
+        await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${picking.entryId}`, {
+          placeId: saved.id,
+        });
+      } else {
+        await api('POST', `/api/households/${householdId}/meal-plan/entries`, {
+          date,
+          mealType: picking.meal,
+          placeId: saved.id,
+        });
+      }
+      await onChanged();
+      setPicking(null);
+      setExpanded(null);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 409 ? "That's already on this meal." : 'Could not add that.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setServings(entry: MealPlanEntry, servings: number) {
     setBusy(true);
     try {
@@ -413,7 +456,13 @@ function DaySheet({
     return (
       <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)}>
         {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
-        <RecipePicker recipes={recipes} onPick={choose} disabled={busy} />
+        <PickerTabs
+          recipes={recipes}
+          places={places}
+          disabled={busy}
+          onPickRecipe={choose}
+          onPickPlace={choosePlace}
+        />
       </Sheet>
     );
   }
@@ -423,7 +472,7 @@ function DaySheet({
       <ul className="space-y-2">
         {slots.map((meal) => {
           // A slot is a whole meal: a main, its sides, or just the one side you fancied.
-          const dishes = entries.filter((e) => e.mealType === meal && e.recipeName);
+          const dishes = entries.filter((e) => e.mealType === meal && isPlanned(e));
 
           return (
             <li key={meal} className="rounded-xl border border-line">
@@ -449,8 +498,8 @@ function DaySheet({
                           className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">{entry.recipeName}</span>
-                            {entry.servings ? (
+                            <span className="block truncate font-medium">{entryLabel(entry)}</span>
+                            {entry.recipeId && entry.servings ? (
                               <span className="block text-sm text-muted">Serves {entry.servings}</span>
                             ) : null}
                           </span>
@@ -468,11 +517,15 @@ function DaySheet({
                                 </Button>
                               </Link>
                             )}
-                            <ServingsControl
-                              value={entry.servings ?? defaultServings}
-                              disabled={busy}
-                              onChange={(v) => setServings(entry, v)}
-                            />
+                            {entry.placeId && <PlaceActions place={places.find((p) => p.id === entry.placeId)} />}
+                            {/* Servings are about cooking; nobody portions a takeaway in the app. */}
+                            {entry.recipeId && (
+                              <ServingsControl
+                                value={entry.servings ?? defaultServings}
+                                disabled={busy}
+                                onChange={(v) => setServings(entry, v)}
+                              />
+                            )}
                             <IconButton label="Remove dish" disabled={busy} onClick={() => remove(entry)}>
                               <TrashIcon className="h-5 w-5" />
                             </IconButton>
@@ -542,6 +595,141 @@ function ServingsControl({
         Set
       </Button>
     </span>
+  );
+}
+
+/** The menu and the phone number, which is all you want from a place at dinner time. */
+function PlaceActions({ place }: { place: Place | undefined }) {
+  if (!place) return null;
+  return (
+    <>
+      {isSafeLink(place.menuUrl) && (
+        <a href={place.menuUrl!} target="_blank" rel="noreferrer noopener">
+          <Button size="sm" variant="secondary">
+            Menu
+          </Button>
+        </a>
+      )}
+      {place.phone && (
+        <a href={`tel:${place.phone.replace(/[^+\d]/g, '')}`}>
+          <Button size="sm" variant="secondary">
+            Call
+          </Button>
+        </a>
+      )}
+    </>
+  );
+}
+
+/**
+ * Cook something, or go out. Two tabs rather than one merged list: when you have decided you are
+ * not cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
+ */
+function PickerTabs({
+  recipes,
+  places,
+  disabled,
+  onPickRecipe,
+  onPickPlace,
+}: {
+  recipes: Recipe[];
+  places: Place[];
+  disabled: boolean;
+  onPickRecipe: (recipe: Recipe) => void;
+  onPickPlace: (place: Place | { name: string }) => void;
+}) {
+  const [tab, setTab] = useState<'cook' | 'out'>('cook');
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <Button
+          variant={tab === 'cook' ? 'primary' : 'secondary'}
+          className="flex-1"
+          onClick={() => setTab('cook')}
+        >
+          Cook something
+        </Button>
+        <Button
+          variant={tab === 'out' ? 'primary' : 'secondary'}
+          className="flex-1"
+          onClick={() => setTab('out')}
+        >
+          Eat out
+        </Button>
+      </div>
+
+      {tab === 'cook' ? (
+        <RecipePicker recipes={recipes} onPick={onPickRecipe} disabled={disabled} />
+      ) : (
+        <PlacePicker places={places} onPick={onPickPlace} disabled={disabled} />
+      )}
+    </div>
+  );
+}
+
+function PlacePicker({
+  places,
+  onPick,
+  disabled,
+}: {
+  places: Place[];
+  onPick: (place: Place | { name: string }) => void;
+  disabled: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim();
+  const shown = places.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()));
+  // Only offer to create when nothing already has that exact name.
+  const canCreate = q.length > 0 && !places.some((p) => p.name.toLowerCase() === q.toLowerCase());
+
+  return (
+    <div className="space-y-3">
+      <Input
+        type="search"
+        autoFocus
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Tony's, Chinese, pizza…"
+        aria-label="Search places"
+      />
+
+      {canCreate && (
+        <Button full disabled={disabled} onClick={() => onPick({ name: q })}>
+          <PlusIcon className="h-5 w-5" />
+          Add “{q}”
+        </Button>
+      )}
+
+      {shown.length === 0 && !canCreate ? (
+        <EmptyState>Nowhere saved yet — type a name to add one.</EmptyState>
+      ) : (
+        <ul className="divide-y divide-line">
+          {shown.map((place) => (
+            <li key={place.id}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onPick(place)}
+                className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+              >
+                {place.imageId ? (
+                  <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                ) : (
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                    <StoreIcon className="h-5 w-5" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{place.name}</span>
+                  {place.notes && <span className="block truncate text-sm text-muted">{place.notes}</span>}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

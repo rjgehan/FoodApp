@@ -13,8 +13,8 @@ import java.util.UUID;
 
 /**
  * A single meal slot on the household calendar (e.g. "Tuesday dinner").
- * {@link #recipe} can be swapped to change/substitute the planned meal, or left null
- * for an unplanned/eating-out slot.
+ * Holds either a {@link #recipe} you cook or a {@link #place} you eat at — never both, and a
+ * slot with neither is simply empty.
  */
 @Entity
 @Table(name = "meal_plan_entries")
@@ -43,6 +43,11 @@ public class MealPlanEntry {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "recipe_id")
     private Recipe recipe;
+
+    /** Set instead of {@link #recipe} when the plan is to eat out rather than cook. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "place_id")
+    private Place place;
 
     private Integer servings;
 

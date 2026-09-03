@@ -9,6 +9,10 @@ import java.util.List;
 import java.util.UUID;
 
 public interface MealPlanEntryRepository extends JpaRepository<MealPlanEntry, UUID> {
+
+    /** Used when a place is deleted, so the plan never points at something that is gone. */
+    void deleteByPlaceId(UUID placeId);
+
     List<MealPlanEntry> findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(
             UUID householdId, LocalDate start, LocalDate end);
 

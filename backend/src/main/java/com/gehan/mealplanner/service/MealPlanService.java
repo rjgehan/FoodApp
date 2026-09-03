@@ -2,12 +2,14 @@ package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.MealPlanEntry;
+import com.gehan.mealplanner.domain.Place;
 import com.gehan.mealplanner.domain.Recipe;
 import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
 import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.MealPlanEntryRepository;
+import com.gehan.mealplanner.repository.PlaceRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,15 +26,18 @@ public class MealPlanService {
     private final MealPlanEntryRepository mealPlanEntryRepository;
     private final HouseholdRepository householdRepository;
     private final RecipeRepository recipeRepository;
+    private final PlaceRepository placeRepository;
     private final HouseholdService householdService;
 
     public MealPlanService(MealPlanEntryRepository mealPlanEntryRepository,
                             HouseholdRepository householdRepository,
                             RecipeRepository recipeRepository,
+                            PlaceRepository placeRepository,
                             HouseholdService householdService) {
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdRepository = householdRepository;
         this.recipeRepository = recipeRepository;
+        this.placeRepository = placeRepository;
         this.householdService = householdService;
     }
 
@@ -51,10 +56,17 @@ public class MealPlanService {
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
+        // Exactly one of the two: a slot holds a dish you cook or a place you go, not both.
+        if ((request.recipeId() == null) == (request.placeId() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send either a recipe or a place.");
+        }
+
         boolean alreadyThere = mealPlanEntryRepository
                 .findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(householdId, request.date(), request.mealType())
                 .stream()
-                .anyMatch(e -> e.getRecipe() != null && e.getRecipe().getId().equals(request.recipeId()));
+                .anyMatch(e -> request.recipeId() != null
+                        ? e.getRecipe() != null && e.getRecipe().getId().equals(request.recipeId())
+                        : e.getPlace() != null && e.getPlace().getId().equals(request.placeId()));
         if (alreadyThere) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That's already on this meal.");
         }
@@ -63,8 +75,11 @@ public class MealPlanService {
                 .household(household)
                 .date(request.date())
                 .mealType(request.mealType())
-                .recipe(requireRecipe(request.recipeId()))
-                .servings(request.servings() != null ? request.servings() : household.getDefaultServings())
+                .recipe(request.recipeId() == null ? null : requireRecipe(request.recipeId()))
+                .place(request.placeId() == null ? null : requirePlace(request.placeId(), householdId))
+                // Servings describe cooking. A table booking does not have them.
+                .servings(request.placeId() != null ? null
+                        : request.servings() != null ? request.servings() : household.getDefaultServings())
                 .notes(request.notes())
                 .build();
 
@@ -78,8 +93,14 @@ public class MealPlanService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found"));
         householdService.assertMember(entry.getHousehold().getId(), requesterId);
 
+        // Swapping one kind for the other clears the other side, so an entry is never both.
         if (request.recipeId() != null) {
             entry.setRecipe(requireRecipe(request.recipeId()));
+            entry.setPlace(null);
+        }
+        if (request.placeId() != null) {
+            entry.setPlace(requirePlace(request.placeId(), entry.getHousehold().getId()));
+            entry.setRecipe(null);
         }
         if (request.servings() != null) {
             entry.setServings(request.servings());
@@ -93,6 +114,16 @@ public class MealPlanService {
     private Recipe requireRecipe(UUID recipeId) {
         return recipeRepository.findById(recipeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+    }
+
+    /** Places are not shared between households, so one can only be planned by its own. */
+    private Place requirePlace(UUID placeId, UUID householdId) {
+        Place place = placeRepository.findById(placeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Place not found"));
+        if (!place.getHousehold().getId().equals(householdId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "That place belongs to another household");
+        }
+        return place;
     }
 
     @Transactional
@@ -110,6 +141,8 @@ public class MealPlanService {
                 entry.getMealType(),
                 entry.getRecipe() != null ? entry.getRecipe().getId() : null,
                 entry.getRecipe() != null ? entry.getRecipe().getName() : null,
+                entry.getPlace() != null ? entry.getPlace().getId() : null,
+                entry.getPlace() != null ? entry.getPlace().getName() : null,
                 entry.getServings(),
                 entry.getNotes());
     }
