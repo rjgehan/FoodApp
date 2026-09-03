@@ -133,6 +133,8 @@ export interface MealPlanEntry {
   recipeName: string | null;
   placeId: string | null;
   placeName: string | null;
+  /** "HH:mm" when the occasion has a time — a booking, a pickup slot. Optional. */
+  time: string | null;
   servings: number | null;
   notes: string | null;
 }

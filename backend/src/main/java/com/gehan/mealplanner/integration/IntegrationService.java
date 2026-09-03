@@ -89,16 +89,16 @@ public class IntegrationService {
         Recipe recipe = entry.getRecipe();
         Place place = entry.getPlace();
         if (recipe != null) {
-            return new PlannedItem("RECIPE", recipe.getName(), entry.getServings(), entry.getNotes(),
+            return new PlannedItem("RECIPE", recipe.getName(), entry.getTime(), entry.getServings(), entry.getNotes(),
                     recipe.getId(), imageUrl(recipe.getCoverImage()), totalMinutes(recipe),
                     null, null, null);
         }
         if (place != null) {
-            return new PlannedItem("PLACE", place.getName(), null, entry.getNotes(),
+            return new PlannedItem("PLACE", place.getName(), entry.getTime(), null, entry.getNotes(),
                     null, imageUrl(place.getImage()), null,
                     place.getId(), place.getMenuUrl(), place.getPhone());
         }
-        return new PlannedItem(null, null, null, null, null, null, null, null, null, null);
+        return new PlannedItem(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Transactional(readOnly = true)

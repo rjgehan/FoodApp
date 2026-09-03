@@ -78,6 +78,7 @@ The common case, so it has its own URL. Returns one `Day`.
         {
           "kind": "PLACE",
           "name": "Golden Dragon",
+          "time": "17:00:00",
           "servings": null,
           "notes": null,
           "recipeId": null,
@@ -95,6 +96,7 @@ The common case, so it has its own URL. Returns one `Day`.
         {
           "kind": "RECIPE",
           "name": "Spaghetti Bolognese",
+          "time": null,
           "servings": 4,
           "notes": null,
           "recipeId": "ec2a53d5-…",
@@ -112,6 +114,9 @@ The common case, so it has its own URL. Returns one `Day`.
 
 **`kind` is the discriminator.** `"RECIPE"` is something being cooked; `"PLACE"` is eating out.
 The fields for the other kind are null, so you can switch on one value.
+
+`time` is `"HH:mm:ss"` when the occasion has one — a booking, a pickup slot — and null when it
+does not, which is most of the time. It is a wall-clock time with no date or zone attached.
 
 `mealType` is one of `BREAKFAST`, `LUNCH`, `DINNER`, `SNACK`. Meals with nothing in them are
 omitted, and they come back in eating order.

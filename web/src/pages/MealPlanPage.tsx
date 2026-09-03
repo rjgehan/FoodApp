@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { MealPlanEntry, MealType, Place, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { entryLabel, isPlanned } from '../utils/planEntry';
+import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import PlaceActions from '../components/PlaceActions';
-import { Button, Card, Chip, cx, EmptyState, ErrorText, IconButton, Input, NumberInput, Sheet } from '../components/ui';
+import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, NumberInput, Sheet } from '../components/ui';
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
@@ -189,6 +189,7 @@ export default function MealPlanPage() {
                     {planned.slice(0, 3).map((e) => (
                       <span key={e.id} className="truncate text-[11px] leading-tight text-muted">
                         {entryLabel(e)}
+                        {e.time && <span className="text-muted"> · {formatTime(e.time)}</span>}
                       </span>
                     ))}
                   </span>
@@ -342,6 +343,8 @@ function DaySheet({
   // entryId set => swapping that dish; null => adding another one alongside.
   const [picking, setPicking] = useState<{ meal: MealType; entryId: string | null } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
+  // Lives here, not in the picker, so it survives switching tabs while deciding.
+  const [outTime, setOutTime] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [extraMeals, setExtraMeals] = useState<MealType[]>([]);
   const [busy, setBusy] = useState(false);
@@ -411,21 +414,38 @@ function DaySheet({
       if (picking.entryId) {
         await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${picking.entryId}`, {
           placeId: saved.id,
+          time: outTime || null,
+          clearTime: !outTime,
         });
       } else {
         await api('POST', `/api/households/${householdId}/meal-plan/entries`, {
           date,
           mealType: picking.meal,
           placeId: saved.id,
+          time: outTime || null,
         });
       }
       await onChanged();
       setPicking(null);
       setExpanded(null);
+      setOutTime('');
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 409 ? "That's already on this meal." : 'Could not add that.',
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setTime(entry: MealPlanEntry, time: string) {
+    setBusy(true);
+    try {
+      await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${entry.id}`, {
+        time: time || null,
+        clearTime: !time,
+      });
+      await onChanged();
     } finally {
       setBusy(false);
     }
@@ -460,6 +480,8 @@ function DaySheet({
           recipes={recipes}
           places={places}
           disabled={busy}
+          time={outTime}
+          onTimeChange={setOutTime}
           onPickRecipe={choose}
           onPickPlace={choosePlace}
         />
@@ -498,7 +520,12 @@ function DaySheet({
                           className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">{entryLabel(entry)}</span>
+                            <span className="block truncate font-medium">
+                              {entryLabel(entry)}
+                              {entry.time && (
+                                <span className="font-normal text-muted"> · {formatTime(entry.time)}</span>
+                              )}
+                            </span>
                             {entry.recipeId && entry.servings ? (
                               <span className="block text-sm text-muted">Serves {entry.servings}</span>
                             ) : null}
@@ -518,6 +545,17 @@ function DaySheet({
                               </Link>
                             )}
                             {entry.placeId && <PlaceActions place={places.find((p) => p.id === entry.placeId)} />}
+                            {entry.placeId && (
+                              <Input
+                                type="time"
+                                className="w-32"
+                                // The server sends "17:00:00"; a time input wants "17:00".
+                                value={entry.time?.slice(0, 5) ?? ''}
+                                disabled={busy}
+                                onChange={(e) => setTime(entry, e.target.value)}
+                                aria-label="Time"
+                              />
+                            )}
                             {/* Servings are about cooking; nobody portions a takeaway in the app. */}
                             {entry.recipeId && (
                               <ServingsControl
@@ -606,12 +644,16 @@ function PickerTabs({
   recipes,
   places,
   disabled,
+  time,
+  onTimeChange,
   onPickRecipe,
   onPickPlace,
 }: {
   recipes: Recipe[];
   places: Place[];
   disabled: boolean;
+  time: string;
+  onTimeChange: (time: string) => void;
   onPickRecipe: (recipe: Recipe) => void;
   onPickPlace: (place: Place | { name: string }) => void;
 }) {
@@ -639,7 +681,13 @@ function PickerTabs({
       {tab === 'cook' ? (
         <RecipePicker recipes={recipes} onPick={onPickRecipe} disabled={disabled} />
       ) : (
-        <PlacePicker places={places} onPick={onPickPlace} disabled={disabled} />
+        <PlacePicker
+          places={places}
+          onPick={onPickPlace}
+          disabled={disabled}
+          time={time}
+          onTimeChange={onTimeChange}
+        />
       )}
     </div>
   );
@@ -649,10 +697,14 @@ function PlacePicker({
   places,
   onPick,
   disabled,
+  time,
+  onTimeChange,
 }: {
   places: Place[];
   onPick: (place: Place | { name: string }) => void;
   disabled: boolean;
+  time: string;
+  onTimeChange: (time: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const q = query.trim();
@@ -670,6 +722,24 @@ function PlacePicker({
         placeholder="Tony's, Chinese, pizza…"
         aria-label="Search places"
       />
+
+      {/* Filled in before picking, so booking a table is one screen and not an extra step. */}
+      <Field label="Time" hint="Optional — for a booking or a pickup slot.">
+        <div className="flex gap-2">
+          <Input
+            type="time"
+            className="w-40"
+            value={time}
+            onChange={(e) => onTimeChange(e.target.value)}
+            aria-label="Time"
+          />
+          {time && (
+            <Button type="button" variant="ghost" onClick={() => onTimeChange('')}>
+              Clear
+            </Button>
+          )}
+        </div>
+      </Field>
 
       {canCreate && (
         <Button full disabled={disabled} onClick={() => onPick({ name: q })}>

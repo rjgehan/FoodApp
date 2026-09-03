@@ -4,6 +4,7 @@ import com.gehan.mealplanner.domain.MealType;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 public class MealPlanDtos {
@@ -18,6 +19,8 @@ public class MealPlanDtos {
             UUID recipeId,
             /** Send this instead of recipeId to plan a night out or a takeaway. */
             UUID placeId,
+            /** Optional "HH:mm". Null simply means no particular time. */
+            LocalTime time,
             Integer servings,
             String notes) {
     }
@@ -26,6 +29,13 @@ public class MealPlanDtos {
     public record UpdateMealPlanEntryRequest(
             UUID recipeId,
             UUID placeId,
+            LocalTime time,
+            /**
+             * Set a time by sending `time`; remove one by sending `clearTime: true`. A null
+             * `time` on its own means "leave it alone", which is what every other field here
+             * means, and there is no way for JSON to tell that apart from "set it to nothing".
+             */
+            Boolean clearTime,
             Integer servings,
             String notes) {
     }
@@ -38,6 +48,7 @@ public class MealPlanDtos {
             String recipeName,
             UUID placeId,
             String placeName,
+            LocalTime time,
             Integer servings,
             String notes) {
     }

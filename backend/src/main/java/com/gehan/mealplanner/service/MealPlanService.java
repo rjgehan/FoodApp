@@ -78,6 +78,7 @@ public class MealPlanService {
                 .recipe(request.recipeId() == null ? null : requireRecipe(request.recipeId()))
                 .place(request.placeId() == null ? null : requirePlace(request.placeId(), householdId))
                 // Servings describe cooking. A table booking does not have them.
+                .time(request.time())
                 .servings(request.placeId() != null ? null
                         : request.servings() != null ? request.servings() : household.getDefaultServings())
                 .notes(request.notes())
@@ -101,6 +102,11 @@ public class MealPlanService {
         if (request.placeId() != null) {
             entry.setPlace(requirePlace(request.placeId(), entry.getHousehold().getId()));
             entry.setRecipe(null);
+        }
+        if (Boolean.TRUE.equals(request.clearTime())) {
+            entry.setTime(null);
+        } else if (request.time() != null) {
+            entry.setTime(request.time());
         }
         if (request.servings() != null) {
             entry.setServings(request.servings());
@@ -143,6 +149,7 @@ public class MealPlanService {
                 entry.getRecipe() != null ? entry.getRecipe().getName() : null,
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
+                entry.getTime(),
                 entry.getServings(),
                 entry.getNotes());
     }

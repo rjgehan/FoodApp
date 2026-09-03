@@ -5,6 +5,7 @@ import com.gehan.mealplanner.domain.RecipeSection;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,6 +33,8 @@ public class IntegrationDtos {
     public record PlannedItem(
             String kind,
             String name,
+            /** "17:00" when the occasion has a time, null when it does not. */
+            LocalTime time,
             Integer servings,
             String notes,
             UUID recipeId,

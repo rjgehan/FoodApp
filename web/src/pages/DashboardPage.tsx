@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { GroceryListItem, MealPlanEntry, MealType } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { entryLabel, isPlanned } from '../utils/planEntry';
+import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { Card, EmptyState } from '../components/ui';
 
 const MEAL_ORDER: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -77,7 +77,10 @@ export default function DashboardPage() {
                 className="block rounded-2xl border border-line bg-surface p-4 transition-transform active:scale-[0.99]"
               >
                 <p className="text-sm font-medium text-accent">{titleCase(e.mealType)}</p>
-                <p className="mt-0.5 text-lg font-semibold leading-tight">{entryLabel(e)}</p>
+                <p className="mt-0.5 text-lg font-semibold leading-tight">
+                  {entryLabel(e)}
+                  {e.time && <span className="font-normal text-muted"> · {formatTime(e.time)}</span>}
+                </p>
                 {e.servings ? <p className="mt-0.5 text-sm text-muted">Serves {e.servings}</p> : null}
               </Link>
             </li>

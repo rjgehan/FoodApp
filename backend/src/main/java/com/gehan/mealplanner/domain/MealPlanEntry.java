@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 /**
@@ -48,6 +49,13 @@ public class MealPlanEntry {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id")
     private Place place;
+
+    /**
+     * When you are sitting down, for the occasions that have a time — a booking, a pickup slot.
+     * Optional, and on the entry rather than the Place: "Columns" is somewhere you go often,
+     * "Columns at 5" is one particular Tuesday.
+     */
+    private LocalTime time;
 
     private Integer servings;
 
