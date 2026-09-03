@@ -114,6 +114,59 @@ public class RecipeService {
         return toResponse(saved, filing, householdId);
     }
 
+    /**
+     * Rewrites a recipe in place. Owner household only — a household you shared it with can file
+     * it in their catalog but never change the recipe itself.
+     *
+     * Ingredients are replaced wholesale rather than diffed: they have no identity worth
+     * preserving (no notes history, nothing references a row), and orphanRemoval cleans up the
+     * old ones. Photos are left alone unless the caller sends a list, because the recipe form
+     * does not manage the photo strip and would otherwise silently wipe it on every save.
+     */
+    @Transactional
+    public RecipeResponse update(UUID recipeId, UUID requesterId, RecipeRequest request) {
+        Recipe recipe = recipeRepository.findById(recipeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+        UUID ownerId = recipe.getHousehold().getId();
+        householdService.assertMember(ownerId, requesterId);
+
+        recipe.setName(request.name());
+        recipe.setDescription(request.description());
+        recipe.setInstructions(request.instructions());
+        recipe.setPrepTimeMinutes(request.prepTimeMinutes());
+        recipe.setCookTimeMinutes(request.cookTimeMinutes());
+        recipe.setServings(request.servings());
+        recipe.setSourceUrl(request.sourceUrl());
+        recipe.setVideoUrl(normalizeLink(request.videoUrl()));
+
+        recipe.setCoverImage(request.coverImageId() == null ? null
+                : requireOwnImage(request.coverImageId(), ownerId));
+        if (request.photoIds() != null) {
+            List<StoredImage> photos = new ArrayList<>();
+            for (UUID id : request.photoIds()) {
+                if (id != null) {
+                    photos.add(requireOwnImage(id, ownerId));
+                }
+            }
+            recipe.getPhotos().clear();
+            recipe.getPhotos().addAll(photos);
+        }
+
+        recipe.getIngredients().clear();
+        request.ingredients().forEach(i -> recipe.getIngredients().add(
+                RecipeIngredient.builder()
+                        .recipe(recipe)
+                        .ingredient(ingredientService.findOrCreate(i.ingredientName(), i.unit()))
+                        .quantity(i.quantity())
+                        .unit(i.unit())
+                        .notes(i.notes())
+                        .build()));
+
+        Recipe saved = recipeRepository.save(recipe);
+        RecipeFiling filing = upsertFiling(saved.getHousehold(), saved, request.section(), request.categories());
+        return toResponse(saved, filing, ownerId);
+    }
+
     /** A household's own recipes plus every recipe any household has published globally. */
     @Transactional(readOnly = true)
     public List<RecipeResponse> list(UUID householdId, UUID requesterId) {

@@ -216,6 +216,11 @@ export default function RecipeDetailPage() {
           </Button>
         )}
         {mine && !asCard && (
+          <Button variant="secondary" onClick={() => navigate(`/recipes/${recipe.id}/edit`)}>
+            Edit
+          </Button>
+        )}
+        {mine && !asCard && (
           <Button variant="secondary" onClick={openSharing}>
             {recipe.sharedWith.length ? `Shared · ${recipe.sharedWith.length}` : 'Share'}
           </Button>

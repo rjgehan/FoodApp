@@ -9,6 +9,7 @@ import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeSectionPage from './pages/RecipeSectionPage';
 import NewRecipePage from './pages/NewRecipePage';
+import EditRecipePage from './pages/EditRecipePage';
 import MealPlanPage from './pages/MealPlanPage';
 import GroceryListPage from './pages/GroceryListPage';
 import PublicRecipePage from './pages/PublicRecipePage';
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />
           <Route path="/recipes/:recipeId" element={<RecipeDetailPage />} />
+          <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

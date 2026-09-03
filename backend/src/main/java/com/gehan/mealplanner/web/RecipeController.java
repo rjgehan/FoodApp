@@ -117,6 +117,13 @@ public class RecipeController {
         return recipeService.updateImages(recipeId, userId, request);
     }
 
+    @PutMapping("/api/recipes/{recipeId}")
+    public RecipeResponse update(@AuthenticationPrincipal UUID userId,
+                                 @PathVariable UUID recipeId,
+                                 @Valid @RequestBody RecipeRequest request) {
+        return recipeService.update(recipeId, userId, request);
+    }
+
     /** Creates the share link, or hands back the one that already exists. */
     @PostMapping("/api/recipes/{recipeId}/link")
     public RecipeLinkResponse createLink(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId) {
