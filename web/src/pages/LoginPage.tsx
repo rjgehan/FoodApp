@@ -41,7 +41,7 @@ export default function LoginPage() {
           setStep('setup-form');
         }
       })
-      .catch(() => setLanding({ needsSetup: false, households: [] }));
+      .catch(() => setLanding({ needsSetup: false, households: [], unassigned: [] }));
   }, []);
 
   /** Clear the entered PIN with a bit of visible feedback before the dots empty out. */
@@ -178,6 +178,8 @@ export default function LoginPage() {
         {landing !== null && step === 'household' && (
           <HouseholdStep
             households={landing.households}
+            unassigned={landing.unassigned}
+            onPickUser={chooseUser}
             onPick={openHousehold}
             onUseUsername={() => {
               setUsername('');
@@ -266,12 +268,16 @@ export default function LoginPage() {
 
 function HouseholdStep({
   households,
+  unassigned,
   onPick,
+  onPickUser,
   onUseUsername,
   error,
 }: {
   households: HouseholdSummary[];
+  unassigned: UserSummary[];
   onPick: (h: HouseholdSummary) => void;
+  onPickUser: (u: UserSummary) => void;
   onUseUsername: () => void;
   error: string | null;
 }) {
@@ -290,6 +296,18 @@ function HouseholdStep({
           </Tile>
         ))}
       </div>
+
+      {unassigned.length > 0 && (
+        <div className="space-y-2 pt-1">
+          {/* Someone made an account for them before there was a house to put them in. */}
+          <p className="text-center text-sm text-muted">Not in a house yet</p>
+          {unassigned.map((u) => (
+            <Tile key={u.username} onClick={() => onPickUser(u)} initial={u.displayName} title={u.displayName}>
+              {!u.pinSet && <span className="text-sm text-muted">Set up a PIN</span>}
+            </Tile>
+          ))}
+        </div>
+      )}
 
       {error && <ErrorText>{error}</ErrorText>}
 

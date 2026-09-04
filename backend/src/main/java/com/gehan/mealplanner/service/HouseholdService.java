@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -163,6 +164,58 @@ public class HouseholdService {
     private MemberResponse toMemberResponse(User user, HouseholdRole role) {
         return new MemberResponse(user.getId(), user.getUsername(), user.getDisplayName(),
                 role, user.getPinHash() != null);
+    }
+
+    /**
+     * Leaves a household. Recipes, plans and places belong to the household rather than to a
+     * person, so nothing of theirs disappears — only the membership row goes.
+     */
+    @Transactional
+    public void leave(UUID householdId, UUID userId) {
+        HouseholdMember leaving = memberRepository.findByHouseholdIdAndUserId(householdId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this household"));
+
+        List<HouseholdMember> remaining = memberRepository.findByHouseholdId(householdId).stream()
+                .filter(m -> !m.getId().equals(leaving.getId()))
+                .toList();
+
+        // Nobody left means nobody can ever sign in again, and the recipes go with it. Deleting a
+        // household should be a thing you choose, not a side effect of walking out.
+        if (remaining.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "You're the only one here. Add someone else first, or delete the household.");
+        }
+
+        // An ownerless household could never be renamed again, so the longest-standing member
+        // inherits it rather than leaving everyone stuck.
+        if (leaving.getRole() == HouseholdRole.OWNER) {
+            remaining.stream()
+                    .min(Comparator.comparing(HouseholdMember::getJoinedAt))
+                    .ifPresent(m -> {
+                        m.setRole(HouseholdRole.OWNER);
+                        memberRepository.save(m);
+                    });
+        }
+
+        memberRepository.delete(leaving);
+    }
+
+    /**
+     * Makes an account that belongs to no household — for someone who will have their own, or
+     * who you just want to be able to share with. They pick a PIN when they first sign in.
+     */
+    @Transactional
+    public MemberResponse createUnassignedUser(CreateUserRequest request) {
+        String username = request.username().trim();
+        if (userRepository.existsByUsername(username)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Someone already uses that name — invite them instead.");
+        }
+        User user = userRepository.save(User.builder()
+                .username(username)
+                .displayName(AuthService.displayNameOr(request.displayName(), username))
+                .build());
+        return toMemberResponse(user, null);
     }
 
     public void assertMember(UUID householdId, UUID userId) {

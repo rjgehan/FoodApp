@@ -56,6 +56,8 @@ export default function HouseholdPage() {
       {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
       {activeHousehold && <SettingsCard />}
+      <AddPersonCard />
+      {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
 
       {/*
@@ -201,6 +203,117 @@ function RecipesCard({ householdId }: { householdId: string }) {
  * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
  * card exists to fill in the details afterwards — the menu link and the phone number.
  */
+/**
+ * An account that joins no household — for someone who will have their own, or who you just
+ * want to be able to share recipes with. They pick a PIN the first time they sign in, and until
+ * then they show on the login screen under "Not in a house yet".
+ */
+function AddPersonCard() {
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [made, setMade] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    const name = username.trim();
+    if (!name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api('POST', '/api/users', { username: name, displayName: displayName.trim() || null });
+      setMade(displayName.trim() || name);
+      setUsername('');
+      setDisplayName('');
+      setTimeout(() => setMade(null), 4000);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? 'Someone already uses that name.'
+          : 'Could not add them.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Add someone to the app">
+      {made && (
+        <div className="mb-3 rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
+          “{made}” added. They'll see their name on the sign-in screen.
+        </div>
+      )}
+      <form onSubmit={onSubmit} className="space-y-3">
+        <p className="text-sm text-muted">
+          Makes an account that isn't in any household. They can start their own, or you can
+          invite them to yours later.
+        </p>
+        <Field label="Username">
+          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" />
+        </Field>
+        <Field label="Name" hint="Optional — what they're called on screen.">
+          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Grandad" />
+        </Field>
+        {error && <ErrorText>{error}</ErrorText>}
+        <Button type="submit" variant="secondary" full disabled={busy || !username.trim()}>
+          Add them
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+/** Walking out. Blocked when you are the last one in, because the recipes would go with you. */
+function LeaveCard({ householdId, name }: { householdId: string; name: string }) {
+  const { refresh, setActiveHouseholdId, households } = useHousehold();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function leave() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('DELETE', `/api/households/${householdId}/members/me`);
+      const other = households.find((h) => h.id !== householdId);
+      if (other) setActiveHouseholdId(other.id);
+      await refresh();
+    } catch (err) {
+      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
+      setError(message ?? 'Could not leave.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Leave this household">
+      {confirming ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            You'll lose access to “{name}” — its recipes, plan and grocery list stay with everyone
+            else. You can be invited back.
+          </p>
+          {error && <ErrorText>{error}</ErrorText>}
+          <div className="flex gap-2">
+            <Button variant="danger" className="flex-1" disabled={busy} onClick={leave}>
+              {busy ? 'Leaving…' : 'Leave'}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="danger" full onClick={() => setConfirming(true)}>
+          Leave “{name}”
+        </Button>
+      )}
+    </Card>
+  );
+}
+
 function PlacesCard({ householdId }: { householdId: string }) {
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [editing, setEditing] = useState<Place | null>(null);

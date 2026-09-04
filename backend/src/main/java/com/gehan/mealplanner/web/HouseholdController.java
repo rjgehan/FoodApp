@@ -60,6 +60,13 @@ public class HouseholdController {
                 .body(householdService.createUser(householdId, userId, request));
     }
 
+    /** Walk out of a household. Blocked if you are the last one in it. */
+    @DeleteMapping("/{householdId}/members/me")
+    public ResponseEntity<Void> leave(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
+        householdService.leave(householdId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
     /** Owner only — see HouseholdService.rename. */
     @PatchMapping("/{householdId}/name")
     public HouseholdResponse rename(@AuthenticationPrincipal UUID userId,

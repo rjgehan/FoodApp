@@ -38,7 +38,9 @@ public class AuthDtos {
     }
 
     /** Everything the login screen needs to draw its first page. */
-    public record LandingResponse(boolean needsSetup, List<HouseholdSummary> households) {
+    /** `unassigned` are accounts in no household yet — they still need somewhere to tap. */
+    public record LandingResponse(
+            boolean needsSetup, List<HouseholdSummary> households, List<UserSummary> unassigned) {
     }
 
     public record HouseholdSummary(UUID id, String name, int memberCount) {

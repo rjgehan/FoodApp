@@ -61,14 +61,20 @@ public class AuthService {
     @Transactional(readOnly = true)
     public LandingResponse landing() {
         if (userRepository.count() == 0) {
-            return new LandingResponse(true, List.of());
+            return new LandingResponse(true, List.of(), List.of());
         }
         List<HouseholdSummary> households = householdRepository.findAll().stream()
                 .map(h -> new HouseholdSummary(h.getId(), h.getName(),
                         (int) memberRepository.countByHouseholdId(h.getId())))
                 .sorted(Comparator.comparing(HouseholdSummary::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
-        return new LandingResponse(false, households);
+        // Somebody has to be able to sign in as them, and the whole design is tap-your-name.
+        List<UserSummary> unassigned = userRepository.findAll().stream()
+                .filter(u -> memberRepository.findByUserId(u.getId()).isEmpty())
+                .map(this::toSummary)
+                .sorted(Comparator.comparing(UserSummary::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        return new LandingResponse(false, households, unassigned);
     }
 
     @Transactional(readOnly = true)

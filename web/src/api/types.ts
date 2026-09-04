@@ -21,6 +21,8 @@ export interface LandingResponse {
   /** No accounts exist at all, so the login screen offers first-time setup instead. */
   needsSetup: boolean;
   households: HouseholdSummary[];
+  /** Accounts in no household yet. They still need somewhere to tap. */
+  unassigned: UserSummary[];
 }
 
 /** Top level of the catalog — the drawer a recipe is filed in. */
