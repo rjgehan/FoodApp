@@ -86,7 +86,8 @@ public class RecipeAiService {
         // default read timeout, and this is the only outbound call the app makes.
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
-        factory.setReadTimeout(Duration.ofSeconds(90));
+        // Google's latency swings: the same request has come back in 2 seconds and in 90.
+        factory.setReadTimeout(Duration.ofSeconds(150));
         this.client = RestClient.builder().requestFactory(factory).build();
     }
 
@@ -121,6 +122,7 @@ public class RecipeAiService {
                 case 404 -> "This key can't use the model \"%s\". Set RECIPE_AI_MODEL to one it can."
                         .formatted(properties.model());
                 case 401, 403 -> "The recipe writer key was rejected.";
+                case 500, 503 -> "The recipe writer is busy right now. Give it a moment and try again.";
                 default -> "The recipe writer wouldn't answer. Try again, or write it out yourself.";
             });
         } catch (Exception e) {
@@ -146,6 +148,10 @@ public class RecipeAiService {
         generationConfig.put("responseMimeType", "application/json");
         generationConfig.put("responseSchema", SCHEMA);
         generationConfig.put("maxOutputTokens", properties.maxTokens());
+        // Measured against the live API: the default spends ~1000 tokens deliberating before
+        // writing, for 30 seconds a call. At "low" it spends none and answers in a fraction of
+        // the time, and a chicken parmesan does not need deliberating over.
+        generationConfig.put("thinkingConfig", Map.of("thinkingLevel", "low"));
 
         return Map.of(
                 "contents", List.of(Map.of("parts", List.of(Map.of("text", instruction)))),
