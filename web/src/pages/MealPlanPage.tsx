@@ -35,6 +35,8 @@ export default function MealPlanPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
   // The week is the working view; the calendar is for looking back over what you ate.
   const [mode, setMode] = useState<'week' | 'calendar'>('week');
+  const [confirmingWeek, setConfirmingWeek] = useState(false);
+  const [addingWeek, setAddingWeek] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
   const [entries, setEntries] = useState<MealPlanEntry[]>([]);
@@ -93,8 +95,33 @@ export default function MealPlanPage() {
     await api('POST', `/api/households/${activeHouseholdId}/grocery-list/add-all?start=${isoDate(start)}&end=${isoDate(end)}`);
   }
 
+  const weekEnd = addDays(weekStart, 6);
+  const weekWeight = weigh(
+    entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd)),
+    recipes,
+  );
+
   return (
     <div className="space-y-4">
+      {confirmingWeek && (
+        <ConfirmAddToGroceries
+          what="this week"
+          meals={weekWeight.meals}
+          ingredients={weekWeight.ingredients}
+          busy={addingWeek}
+          onCancel={() => setConfirmingWeek(false)}
+          onConfirm={async () => {
+            setAddingWeek(true);
+            try {
+              await addRangeToList(weekStart, weekEnd);
+              setConfirmingWeek(false);
+            } finally {
+              setAddingWeek(false);
+            }
+          }}
+        />
+      )}
+
       <div className="flex items-center gap-1">
         <IconButton
           label={mode === 'week' ? 'Previous week' : 'Previous month'}
@@ -227,11 +254,7 @@ export default function MealPlanPage() {
 
           {/* Secondary, not filled: a filled button at the bottom of a screen reads as "save",
               and this one has a side effect on a different page entirely. */}
-          <Button
-            full
-            variant="secondary"
-            onClick={() => addRangeToList(weekStart, addDays(weekStart, 6))}
-          >
+          <Button full variant="secondary" onClick={() => setConfirmingWeek(true)}>
             <CartIcon className="h-5 w-5" />
             Add this week to Groceries
           </Button>
@@ -357,6 +380,7 @@ function DaySheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const label = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
@@ -479,6 +503,30 @@ function DaySheet({
     }
   }
 
+  if (confirming) {
+    const w = weigh(entries, recipes);
+    return (
+      <ConfirmAddToGroceries
+        what={`on ${label}`}
+        meals={w.meals}
+        ingredients={w.ingredients}
+        busy={busy}
+        onCancel={() => setConfirming(false)}
+        onConfirm={async () => {
+          setBusy(true);
+          try {
+            await onAddToList();
+            setConfirming(false);
+            setAdded(true);
+            setTimeout(() => setAdded(false), 2000);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    );
+  }
+
   if (picking) {
     return (
       <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)}>
@@ -596,17 +644,7 @@ function DaySheet({
       {/* The bottom of a sheet is where "done" lives, so this cannot look like the filled
           primary action — people press it reflexively on the way out. It is a side trip to
           another page, and it is labelled and weighted as one. */}
-      <Button
-        full
-        variant="secondary"
-        className="mt-4"
-        disabled={busy}
-        onClick={async () => {
-          await onAddToList();
-          setAdded(true);
-          setTimeout(() => setAdded(false), 2000);
-        }}
-      >
+      <Button full variant="secondary" className="mt-4" disabled={busy} onClick={() => setConfirming(true)}>
         <CartIcon className="h-5 w-5" />
         {added ? 'Added to Groceries' : 'Add this day to Groceries'}
       </Button>
@@ -651,6 +689,68 @@ function ServingsControl({
  * Cook something, or go out. Two tabs rather than one merged list: when you have decided you are
  * not cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
  */
+/**
+ * Adding a week of meals writes a lot of rows to a page you are not looking at, and undoing it
+ * means ticking or deleting each item by hand. People were flooding their list by catching the
+ * button on the way past, so it asks first — and says how much is about to arrive.
+ */
+function ConfirmAddToGroceries({
+  what,
+  meals,
+  ingredients,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  what: string;
+  meals: number;
+  ingredients: number;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Sheet title="Add to Groceries" onClose={onCancel}>
+      <div className="space-y-4">
+        {meals === 0 ? (
+          <EmptyState>Nothing is planned {what}, so there is nothing to add.</EmptyState>
+        ) : (
+          <p className="text-muted">
+            This puts the ingredients from{' '}
+            <span className="font-medium text-ink">
+              {meals} {meals === 1 ? 'meal' : 'meals'}
+            </span>{' '}
+            {what} into your grocery list — up to{' '}
+            <span className="font-medium text-ink">{ingredients}</span>{' '}
+            {ingredients === 1 ? 'item' : 'items'}. Fewer, where they merge with something already
+            on the list or you have marked them as always in.
+          </p>
+        )}
+        <div className="flex gap-2">
+          <Button className="flex-1" disabled={busy || meals === 0} onClick={onConfirm}>
+            <CartIcon className="h-5 w-5" />
+            {busy ? 'Adding…' : 'Add them'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/** How much a set of planned meals would put on the list, for the confirmation to quote. */
+function weigh(entries: MealPlanEntry[], recipes: Recipe[]): { meals: number; ingredients: number } {
+  // Places contribute nothing — there is no shopping to do for a restaurant.
+  const cooked = entries.filter((e) => e.recipeId);
+  const count = cooked.reduce(
+    (n, e) => n + (recipes.find((r) => r.id === e.recipeId)?.ingredients.length ?? 0),
+    0,
+  );
+  return { meals: cooked.length, ingredients: count };
+}
+
 function PickerTabs({
   recipes,
   places,
