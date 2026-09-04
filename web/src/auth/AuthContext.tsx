@@ -22,6 +22,8 @@ interface AuthContextValue {
   /** Only reachable on a completely empty install — creates the first household and its owner. */
   setup: (input: SetupInput) => Promise<void>;
   logout: () => void;
+  /** After renaming yourself, so the header stops showing the old name. */
+  setDisplayName: (name: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,9 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
+  const setDisplayName = useCallback((name: string) => {
+    localStorage.setItem('mp_displayName', name);
+    setSession((s) => (s ? { ...s, displayName: name } : s));
+  }, []);
+
   const value = useMemo(
-    () => ({ session, login, setInitialPin, setup, logout }),
-    [session, login, setInitialPin, setup, logout],
+    () => ({ session, login, setInitialPin, setup, logout, setDisplayName }),
+    [session, login, setInitialPin, setup, logout, setDisplayName],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

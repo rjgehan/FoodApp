@@ -3,6 +3,7 @@ import { api, ApiError, imageUrl } from '../api/client';
 import type { RecipeSection } from '../api/types';
 import type { HouseholdMember, Place, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
+import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
 import {
@@ -55,6 +56,7 @@ export default function HouseholdPage() {
       {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
       {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
+      <ProfileCard />
       {activeHousehold && <SettingsCard />}
       <AddPersonCard />
       {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
@@ -203,6 +205,76 @@ function RecipesCard({ householdId }: { householdId: string }) {
  * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
  * card exists to fill in the details afterwards — the menu link and the phone number.
  */
+/**
+ * Renaming yourself. Two different things: the name everyone sees, and the username you sign in
+ * with — which also changes which name you tap on the login screen, so it says so.
+ */
+function ProfileCard() {
+  const { session, setDisplayName } = useAuth();
+  const [displayName, setName] = useState(session?.displayName ?? '');
+  const [username, setUsername] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The session carries the display name but not the username, so ask who we are.
+  useEffect(() => {
+    if (!session) return;
+    api<{ username: string; displayName: string }>('GET', '/api/users/me')
+      .then((me) => {
+        setUsername(me.username);
+        setName(me.displayName);
+      })
+      .finally(() => setLoaded(true));
+  }, [session]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api<{ username: string; displayName: string }>('PATCH', '/api/users/me', {
+        username: username.trim() || null,
+        displayName: displayName.trim() || null,
+      });
+      setDisplayName(updated.displayName);
+      setUsername(updated.username);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? 'Someone already uses that name.'
+          : 'Could not save that.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="You">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <Field label="Name" hint="What everyone sees.">
+          <Input value={displayName} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Username" hint="What you sign in with, and the name you tap on the sign-in screen.">
+          <Input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={loaded ? '' : 'Loading…'}
+          />
+        </Field>
+        {error && <ErrorText>{error}</ErrorText>}
+        <Button type="submit" variant="secondary" full disabled={busy || !displayName.trim()}>
+          {saved ? 'Saved' : 'Save'}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 /**
  * An account that joins no household — for someone who will have their own, or who you just
  * want to be able to share recipes with. They pick a PIN the first time they sign in, and until

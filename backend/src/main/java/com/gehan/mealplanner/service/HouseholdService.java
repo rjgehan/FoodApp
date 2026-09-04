@@ -8,6 +8,7 @@ import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
@@ -216,6 +217,36 @@ public class HouseholdService {
                 .displayName(AuthService.displayNameOr(request.displayName(), username))
                 .build());
         return toMemberResponse(user, null);
+    }
+
+    /** Who you are, for a form that needs to show your current username back to you. */
+    @Transactional(readOnly = true)
+    public MemberResponse me(UUID userId) {
+        return toMemberResponse(
+                userRepository.findById(userId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED)),
+                null);
+    }
+
+    /** Renames you. The username has to stay unique, since it is what you sign in with. */
+    @Transactional
+    public MemberResponse updateProfile(UUID userId, UpdateProfileRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+
+        if (request.username() != null && !request.username().isBlank()) {
+            String username = request.username().trim();
+            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsername(username)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already uses that name.");
+            }
+            user.setUsername(username);
+        }
+        if (request.displayName() != null && !request.displayName().isBlank()) {
+            user.setDisplayName(request.displayName().trim());
+        }
+
+        User saved = userRepository.save(user);
+        return toMemberResponse(saved, null);
     }
 
     public void assertMember(UUID householdId, UUID userId) {

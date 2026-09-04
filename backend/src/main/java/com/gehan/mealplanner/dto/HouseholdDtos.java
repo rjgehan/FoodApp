@@ -36,6 +36,15 @@ public class HouseholdDtos {
             @Size(max = 50) String displayName) {
     }
 
+    /**
+     * Renaming yourself. Both optional — send whichever you are changing. The username is what
+     * you sign in with, so changing it changes how you find yourself on the login screen.
+     */
+    public record UpdateProfileRequest(
+            @Size(min = 2, max = 50) String username,
+            @Size(max = 50) String displayName) {
+    }
+
     public record MemberResponse(
             UUID userId, String username, String displayName, HouseholdRole role, boolean pinSet) {
     }
