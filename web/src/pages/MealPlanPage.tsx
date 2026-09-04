@@ -96,6 +96,17 @@ export default function MealPlanPage() {
   }
 
   const weekEnd = addDays(weekStart, 6);
+
+  /*
+   * The planning window from Settings, drawn on the week so "how far ahead do we plan" is
+   * something you can see rather than a number buried in a form. It runs from today, so it
+   * slides out of view as you page back and shrinks as the week runs out.
+   */
+  const horizonDays = activeHousehold?.planningHorizonDays ?? 7;
+  const horizonEnd = addDays(today, horizonDays - 1);
+  const inWindow = weekDays.map((d) => d >= today && d <= horizonEnd);
+  const windowStart = inWindow.indexOf(true);
+  const windowLength = inWindow.filter(Boolean).length;
   const weekDates = contributingDates(
     entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd)),
   );
@@ -221,6 +232,23 @@ export default function MealPlanPage() {
               );
             })}
           </div>
+
+          {windowLength > 0 && (
+            <div className="-mt-2">
+              {/* The same seven-column grid, so the bracket lines up under the tiles.
+                  gridColumn is inline because Tailwind cannot see a class it has to compute. */}
+              <div className="grid grid-cols-7 gap-1">
+                <div
+                  style={{ gridColumn: `${windowStart + 1} / span ${windowLength}` }}
+                  className="h-2 rounded-b-md border-x-2 border-b-2 border-accent/50"
+                />
+              </div>
+              <p className="mt-1.5 text-center text-xs text-subtle">
+                Planning {horizonDays} {horizonDays === 1 ? 'day' : 'days'} ahead — through{' '}
+                {horizonEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </p>
+            </div>
+          )}
 
           {/* The names the strip can no longer show, for the days that have any. */}
           <ul className="space-y-2 sm:hidden">
