@@ -42,8 +42,8 @@ app:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
   ai:
     # Writing a recipe from a name. Unset means the feature is hidden entirely.
-    api-key: ${ANTHROPIC_API_KEY:}
-    model: ${RECIPE_AI_MODEL:claude-haiku-4-5-20251001}
+    api-key: ${GEMINI_API_KEY:}
+    model: ${RECIPE_AI_MODEL:gemini-2.5-flash}
     max-tokens: ${RECIPE_AI_MAX_TOKENS:2000}
     base-url: ${RECIPE_AI_BASE_URL:}
   integration:

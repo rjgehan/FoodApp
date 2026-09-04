@@ -110,7 +110,7 @@ docker exec mealplanner-backend printenv DB_PASSWORD | tr -d '\n' | md5sum
 
 ## Optional: have recipes written for you
 
-Set `ANTHROPIC_API_KEY` and the recipe page gains a **Write it for me** button — a name and a
+Set `GEMINI_API_KEY` and the recipe page gains a **Write it for me** button — a name and a
 serving count, and the form comes back filled in. Leave it unset and the button never appears;
 nothing else changes.
 
@@ -118,15 +118,25 @@ nothing else changes.
 services:
   backend:
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
 ```
 
-Get a key from console.anthropic.com. It is billed per use, but a recipe is a fraction of a
-cent — pennies a year at family scale. The call is made by the backend, never the browser: a key
-in the frontend bundle is readable by anyone who opens devtools.
+Get a key from aistudio.google.com. Gemini has a free tier that comfortably covers a household's
+recipe habit; past it, a recipe costs a fraction of a cent. The call is made by the backend,
+never the browser: a key in the frontend bundle is readable by anyone who opens devtools, and
+the key goes in the `x-goog-api-key` header rather than the query string so it stays out of
+access logs.
 
-`RECIPE_AI_MODEL` overrides the model (default `claude-haiku-4-5-20251001`; point it at
-`claude-sonnet-5` for better recipes at slightly more cost).
+| Variable | Default | |
+|---|---|---|
+| `GEMINI_API_KEY` | *(unset — feature hidden)* | turns it on |
+| `RECIPE_AI_MODEL` | `gemini-2.5-flash` | any model your key can reach |
+| `RECIPE_AI_MAX_TOKENS` | `2000` | plenty for a recipe |
+| `RECIPE_AI_BASE_URL` | Google's endpoint | only for pointing at a stub |
+
+If a call fails the app answers 502 and tells you to write it out yourself — a wrong key, a
+model your account cannot reach, or a reply that ignored the schema all land there. The backend
+log carries the actual reason.
 
 ## Things worth knowing
 
