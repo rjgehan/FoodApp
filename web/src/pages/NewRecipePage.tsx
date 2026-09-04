@@ -44,8 +44,8 @@ export default function NewRecipePage() {
           Recipes
         </Button>
         {writerAvailable && (
-          <Button variant="ghost" size="sm" onClick={() => setAssisted((v) => !v)}>
-            {assisted ? 'Write it out' : 'Write it for me'}
+          <Button variant="secondary" size="sm" onClick={() => setAssisted((v) => !v)}>
+            {assisted ? 'Write it out' : '✨ Write it for me'}
           </Button>
         )}
       </div>
