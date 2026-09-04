@@ -32,9 +32,16 @@ export default {
           '20%, 60%': { transform: 'translateX(-6px)' },
           '40%, 80%': { transform: 'translateX(6px)' },
         },
+        // An indeterminate bar: it sweeps rather than fills, because there is no percentage to
+        // report on a single request that either answers or does not.
+        slide: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
       },
       animation: {
         shake: 'shake 0.4s ease-in-out',
+        slide: 'slide 1.4s ease-in-out infinite',
       },
     },
   },
