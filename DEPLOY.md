@@ -130,7 +130,7 @@ access logs.
 | Variable | Default | |
 |---|---|---|
 | `GEMINI_API_KEY` | *(unset — feature hidden)* | turns it on |
-| `RECIPE_AI_MODEL` | `gemini-2.5-flash` | any model your key can reach |
+| `RECIPE_AI_MODEL` | `gemini-3.6-flash` | any model your key can reach |
 | `RECIPE_AI_MAX_TOKENS` | `2000` | plenty for a recipe |
 | `RECIPE_AI_BASE_URL` | Google's endpoint | only for pointing at a stub |
 

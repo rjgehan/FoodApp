@@ -43,7 +43,7 @@ app:
   ai:
     # Writing a recipe from a name. Unset means the feature is hidden entirely.
     api-key: ${GEMINI_API_KEY:}
-    model: ${RECIPE_AI_MODEL:gemini-2.5-flash}
+    model: ${RECIPE_AI_MODEL:gemini-3.6-flash}
     max-tokens: ${RECIPE_AI_MAX_TOKENS:2000}
     base-url: ${RECIPE_AI_BASE_URL:}
   integration:

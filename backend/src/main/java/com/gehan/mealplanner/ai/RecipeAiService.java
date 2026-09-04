@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
@@ -110,6 +111,18 @@ public class RecipeAiService {
                     .body(requestBody(name, servings))
                     .retrieve()
                     .body(JsonNode.class);
+        } catch (HttpStatusCodeException e) {
+            // Google's own status says what is wrong, and "couldn't reach it" would be a lie when
+            // the call plainly arrived. These three are the ones a person can actually act on.
+            log.warn("Recipe generation failed for \"{}\": {} {}", name, e.getStatusCode(),
+                    e.getResponseBodyAsString());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, switch (e.getStatusCode().value()) {
+                case 429 -> "The recipe writer is out of credit, or over its rate limit for now.";
+                case 404 -> "This key can't use the model \"%s\". Set RECIPE_AI_MODEL to one it can."
+                        .formatted(properties.model());
+                case 401, 403 -> "The recipe writer key was rejected.";
+                default -> "The recipe writer wouldn't answer. Try again, or write it out yourself.";
+            });
         } catch (Exception e) {
             log.warn("Recipe generation failed for \"{}\"", name, e);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,

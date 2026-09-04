@@ -13,7 +13,7 @@ public record RecipeAiProperties(String apiKey, String model, int maxTokens, Str
 
     public RecipeAiProperties {
         if (model == null || model.isBlank()) {
-            model = "gemini-2.5-flash";
+            model = "gemini-3.6-flash";
         }
         if (maxTokens <= 0) {
             maxTokens = 2000;
