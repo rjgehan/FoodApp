@@ -96,18 +96,15 @@ export default function MealPlanPage() {
   }
 
   const weekEnd = addDays(weekStart, 6);
-  const weekWeight = weigh(
+  const weekDates = contributingDates(
     entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd)),
-    recipes,
   );
 
   return (
     <div className="space-y-4">
       {confirmingWeek && (
         <ConfirmAddToGroceries
-          what="this week"
-          meals={weekWeight.meals}
-          ingredients={weekWeight.ingredients}
+          dates={weekDates}
           busy={addingWeek}
           onCancel={() => setConfirmingWeek(false)}
           onConfirm={async () => {
@@ -504,12 +501,9 @@ function DaySheet({
   }
 
   if (confirming) {
-    const w = weigh(entries, recipes);
     return (
       <ConfirmAddToGroceries
-        what={`on ${label}`}
-        meals={w.meals}
-        ingredients={w.ingredients}
+        dates={contributingDates(entries)}
         busy={busy}
         onCancel={() => setConfirming(false)}
         onConfirm={async () => {
@@ -690,44 +684,35 @@ function ServingsControl({
  * not cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
  */
 /**
- * Adding a week of meals writes a lot of rows to a page you are not looking at, and undoing it
- * means ticking or deleting each item by hand. People were flooding their list by catching the
- * button on the way past, so it asks first — and says how much is about to arrive.
+ * People were flooding their list by catching the button in passing, and undoing that means
+ * ticking or deleting each item by hand. One question, naming the days that will contribute,
+ * so it is obvious at a glance whether you meant one day or seven.
  */
 function ConfirmAddToGroceries({
-  what,
-  meals,
-  ingredients,
+  dates,
   busy,
   onConfirm,
   onCancel,
 }: {
-  what: string;
-  meals: number;
-  ingredients: number;
+  dates: string[];
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const listed = dates
+    .map((d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+    .join(', ');
+
   return (
     <Sheet title="Add to Groceries" onClose={onCancel}>
       <div className="space-y-4">
-        {meals === 0 ? (
-          <EmptyState>Nothing is planned {what}, so there is nothing to add.</EmptyState>
-        ) : (
-          <p className="text-muted">
-            This puts the ingredients from{' '}
-            <span className="font-medium text-ink">
-              {meals} {meals === 1 ? 'meal' : 'meals'}
-            </span>{' '}
-            {what} into your grocery list — up to{' '}
-            <span className="font-medium text-ink">{ingredients}</span>{' '}
-            {ingredients === 1 ? 'item' : 'items'}. Fewer, where they merge with something already
-            on the list or you have marked them as always in.
-          </p>
-        )}
+        <p className="text-lg">
+          {dates.length === 0
+            ? 'Nothing planned to add.'
+            : `Confirm adding ${listed} meals to grocery list?`}
+        </p>
         <div className="flex gap-2">
-          <Button className="flex-1" disabled={busy || meals === 0} onClick={onConfirm}>
+          <Button className="flex-1" disabled={busy || dates.length === 0} onClick={onConfirm}>
             <CartIcon className="h-5 w-5" />
             {busy ? 'Adding…' : 'Add them'}
           </Button>
@@ -740,15 +725,10 @@ function ConfirmAddToGroceries({
   );
 }
 
-/** How much a set of planned meals would put on the list, for the confirmation to quote. */
-function weigh(entries: MealPlanEntry[], recipes: Recipe[]): { meals: number; ingredients: number } {
+/** The days in a set of entries that would actually put something on the list. */
+function contributingDates(entries: MealPlanEntry[]): string[] {
   // Places contribute nothing — there is no shopping to do for a restaurant.
-  const cooked = entries.filter((e) => e.recipeId);
-  const count = cooked.reduce(
-    (n, e) => n + (recipes.find((r) => r.id === e.recipeId)?.ingredients.length ?? 0),
-    0,
-  );
-  return { meals: cooked.length, ingredients: count };
+  return [...new Set(entries.filter((e) => e.recipeId).map((e) => e.date))].sort();
 }
 
 function PickerTabs({
