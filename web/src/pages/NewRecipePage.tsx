@@ -1,28 +1,32 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import RecipeForm from '../components/RecipeForm';
+import RecipeForm, { type RecipeDraft } from '../components/RecipeForm';
 import {
   Button,
   Card,
-  Chip,
   EmptyState,
   ErrorText,
   Field,
+  Input,
   NumberInput,
-  Textarea,
 } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
-import { SECTION_OPTIONS, DEFAULT_FILING, type Filing } from '../utils/recipeMeta';
-import { buildRecipePrompt, parseRecipeText, RecipeParseError } from '../utils/recipeParser';
 
 export default function NewRecipePage() {
   const { activeHouseholdId } = useHousehold();
   const navigate = useNavigate();
-  // Writing it out is the normal way in; pasting is the shortcut you opt into.
-  const [pasting, setPasting] = useState(false);
+  // Writing it out yourself is the normal way in; having it written is the shortcut.
+  const [assisted, setAssisted] = useState(false);
+  const [writerAvailable, setWriterAvailable] = useState(false);
+
+  useEffect(() => {
+    api<{ enabled: boolean }>('GET', '/api/recipe-writer')
+      .then((r) => setWriterAvailable(r.enabled))
+      .catch(() => setWriterAvailable(false));
+  }, []);
 
   if (!activeHouseholdId) {
     return (
@@ -39,13 +43,15 @@ export default function NewRecipePage() {
           <ChevronLeftIcon className="h-5 w-5" />
           Recipes
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => setPasting((v) => !v)}>
-          {pasting ? 'Write it out' : 'Paste from ChatGPT'}
-        </Button>
+        {writerAvailable && (
+          <Button variant="ghost" size="sm" onClick={() => setAssisted((v) => !v)}>
+            {assisted ? 'Write it out' : 'Write it for me'}
+          </Button>
+        )}
       </div>
 
-      {pasting ? (
-        <PasteRecipe householdId={activeHouseholdId} onCreated={(r) => navigate(`/recipes/${r.id}`, { replace: true })} />
+      {assisted ? (
+        <WriteForMe householdId={activeHouseholdId} onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })} />
       ) : (
         <RecipeForm householdId={activeHouseholdId} onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })} />
       )}
@@ -53,89 +59,89 @@ export default function NewRecipePage() {
   );
 }
 
-
-function PasteRecipe({
+/**
+ * Give it a name and a serving count and it writes the recipe, then drops it into the ordinary
+ * form. Nothing is saved until you press the button yourself: a written recipe gets quantities
+ * wrong often enough that you want a look at it first.
+ */
+function WriteForMe({
   householdId,
-  onCreated,
+  onSaved,
 }: {
   householdId: string;
-  onCreated: (recipe: Recipe) => void;
+  onSaved: (recipe: Recipe) => void;
 }) {
-  const [promptServings, setPromptServings] = useState<number | null>(null);
-  const [text, setText] = useState('');
-  const [filing, setFiling] = useState<Filing>(DEFAULT_FILING);
+  const [name, setName] = useState('');
+  const [servings, setServings] = useState<number | null>(4);
+  const [draft, setDraft] = useState<RecipeDraft | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
 
-  const canCopy = promptServings !== null && promptServings >= 1;
-
-  async function copyPrompt() {
-    if (!canCopy) return;
-    await navigator.clipboard.writeText(buildRecipePrompt(promptServings));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
-  async function onSubmit(e: FormEvent) {
+  async function generate(e: FormEvent) {
     e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
     setError(null);
     try {
-      const parsed = parseRecipeText(text);
-      setSaving(true);
-      // The servings you asked for wins over whatever the reply claims, so nothing is scaled off a guess.
-      onCreated(
-        await api<Recipe>('POST', `/api/households/${householdId}/recipes`, {
-          ...parsed,
-          servings: canCopy ? promptServings : parsed.servings,
-          ...filing,
+      setDraft(
+        await api<RecipeDraft>('POST', `/api/households/${householdId}/recipes/generate`, {
+          name: name.trim(),
+          servings: servings ?? 4,
         }),
       );
     } catch (err) {
-      setError(err instanceof RecipeParseError ? err.message : 'Could not create recipe.');
+      setError(
+        err instanceof ApiError && err.status === 503
+          ? 'Recipe writing is not switched on for this server.'
+          : "Couldn't write that one. Try again, or write it out yourself.",
+      );
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
+  if (draft) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <p className="text-sm text-muted">
+            Here's a draft — check the amounts, change anything, then save it.
+          </p>
+          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setDraft(null)}>
+            Start over
+          </Button>
+        </Card>
+        {/* Keyed on the name so asking twice really does replace the fields. */}
+        <RecipeForm key={draft.name} householdId={householdId} draft={draft} onSaved={onSaved} />
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <Card title="1. Get the recipe">
-        <Field label="How many should it serve?">
-          <div className="flex gap-2">
-            <NumberInput min={1} placeholder="8" className="w-24" value={promptServings} onChange={setPromptServings} />
-            <Button type="button" variant="secondary" className="flex-1" disabled={!canCopy} onClick={copyPrompt}>
-              {copied ? 'Copied!' : 'Copy prompt'}
-            </Button>
-          </div>
-        </Field>
-      </Card>
-
-      <Card title="2. Paste the reply">
-        <Textarea
-          rows={8}
-          className="font-mono"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={'Name: ...\nServings: ...\nIngredients:\n- 1 | lb | ...'}
-          aria-label="Recipe text"
-        />
-        {error && <div className="mt-2"><ErrorText>{error}</ErrorText></div>}
-      </Card>
-
-      <Card title="Where does it go?">
-        <div className="flex flex-wrap gap-2">
-          {SECTION_OPTIONS.map((s) => (
-            <Chip key={s.value} active={filing.section === s.value} onClick={() => setFiling({ ...filing, section: s.value })}>
-              {s.label}
-            </Chip>
-          ))}
+    <form onSubmit={generate} className="space-y-4">
+      <Card>
+        <div className="space-y-3">
+          <Field label="What do you want to make?">
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Chicken parmesan"
+            />
+          </Field>
+          <Field label="Serves">
+            <NumberInput min={1} className="w-24" value={servings} onChange={setServings} />
+          </Field>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" full size="lg" disabled={busy || !name.trim()}>
+            {busy ? 'Writing…' : 'Write it for me'}
+          </Button>
+          <p className="text-sm text-muted">
+            It makes the recipe up rather than looking one up, so it's for ideas — not for
+            getting a family recipe back.
+          </p>
         </div>
       </Card>
-
-      <Button type="submit" full size="lg" disabled={saving || !text.trim() || !canCopy}>
-        Add recipe
-      </Button>
     </form>
   );
 }

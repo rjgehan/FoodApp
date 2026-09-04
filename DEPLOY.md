@@ -108,6 +108,26 @@ To see what the container really received (rather than what you typed):
 docker exec mealplanner-backend printenv DB_PASSWORD | tr -d '\n' | md5sum
 ```
 
+## Optional: have recipes written for you
+
+Set `ANTHROPIC_API_KEY` and the recipe page gains a **Write it for me** button — a name and a
+serving count, and the form comes back filled in. Leave it unset and the button never appears;
+nothing else changes.
+
+```yaml
+services:
+  backend:
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+```
+
+Get a key from console.anthropic.com. It is billed per use, but a recipe is a fraction of a
+cent — pennies a year at family scale. The call is made by the backend, never the browser: a key
+in the frontend bundle is readable by anyone who opens devtools.
+
+`RECIPE_AI_MODEL` overrides the model (default `claude-haiku-4-5-20251001`; point it at
+`claude-sonnet-5` for better recipes at slightly more cost).
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

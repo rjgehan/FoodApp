@@ -40,6 +40,12 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
+  ai:
+    # Writing a recipe from a name. Unset means the feature is hidden entirely.
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${RECIPE_AI_MODEL:claude-haiku-4-5-20251001}
+    max-tokens: ${RECIPE_AI_MAX_TOKENS:2000}
+    base-url: ${RECIPE_AI_BASE_URL:}
   integration:
     # Read-only API for a home dashboard. Unset means off; the endpoints answer 503.
     api-key: ${INTEGRATION_API_KEY:}

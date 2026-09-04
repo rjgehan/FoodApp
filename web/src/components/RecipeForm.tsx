@@ -25,6 +25,17 @@ export interface DraftIngredient {
 
 export const emptyIngredient: DraftIngredient = { ingredientName: '', quantity: null, unit: '' };
 
+/** What the recipe writer hands back: fields to start from, with no saved recipe behind them. */
+export interface RecipeDraft {
+  name: string;
+  description: string | null;
+  instructions: string | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  servings: number;
+  ingredients: { ingredientName: string; quantity: number | null; unit: string }[];
+}
+
 /**
  * The recipe form, used to write a new one and to fix an existing one. Passing `recipe` seeds
  * every field from it and switches the save to a PUT, so create and edit can never drift apart
@@ -33,25 +44,30 @@ export const emptyIngredient: DraftIngredient = { ingredientName: '', quantity: 
 export default function RecipeForm({
   householdId,
   recipe,
+  draft,
   onSaved,
 }: {
   householdId: string;
   recipe?: Recipe;
+  /** Starting values with nothing saved behind them — a written-for-you recipe, say. */
+  draft?: RecipeDraft;
   onSaved: (recipe: Recipe) => void;
 }) {
+  // `recipe` means "this already exists, save over it"; `draft` only seeds the fields.
   const editing = recipe !== undefined;
-  const [name, setName] = useState(recipe?.name ?? '');
-  const [servings, setServings] = useState<number | null>(recipe?.servings ?? 4);
+  const seed = recipe ?? draft;
+  const [name, setName] = useState(seed?.name ?? '');
+  const [servings, setServings] = useState<number | null>(seed?.servings ?? 4);
   const [ingredients, setIngredients] = useState<DraftIngredient[]>(
-    recipe?.ingredients.length
-      ? recipe.ingredients.map((i) => ({
+    seed?.ingredients.length
+      ? seed.ingredients.map((i) => ({
           ingredientName: i.ingredientName,
           quantity: i.quantity,
           unit: i.unit ?? '',
         }))
       : [{ ...emptyIngredient }],
   );
-  const [instructions, setInstructions] = useState(recipe?.instructions ?? '');
+  const [instructions, setInstructions] = useState(seed?.instructions ?? '');
   const [filing, setFiling] = useState<Filing>(
     // A recipe you own is normally filed, but an unfiled one still has to land somewhere.
     recipe
@@ -63,12 +79,12 @@ export default function RecipeForm({
   // Opened by default when editing: if any of it is already filled in, hiding it would look
   // like the edit form had quietly dropped the values.
   const [showExtras, setShowExtras] = useState(
-    Boolean(recipe?.description || recipe?.prepTimeMinutes || recipe?.cookTimeMinutes
+    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes
       || recipe?.coverImageId || recipe?.videoUrl),
   );
-  const [description, setDescription] = useState(recipe?.description ?? '');
-  const [prep, setPrep] = useState<number | null>(recipe?.prepTimeMinutes ?? null);
-  const [cook, setCook] = useState<number | null>(recipe?.cookTimeMinutes ?? null);
+  const [description, setDescription] = useState(seed?.description ?? '');
+  const [prep, setPrep] = useState<number | null>(seed?.prepTimeMinutes ?? null);
+  const [cook, setCook] = useState<number | null>(seed?.cookTimeMinutes ?? null);
   const [coverImageId, setCoverImageId] = useState<string | null>(recipe?.coverImageId ?? null);
   const [videoUrl, setVideoUrl] = useState(recipe?.videoUrl ?? '');
 
