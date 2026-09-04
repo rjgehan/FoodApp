@@ -6,7 +6,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import PlaceActions from '../components/PlaceActions';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, NumberInput, Sheet } from '../components/ui';
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
+import { CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -225,8 +225,15 @@ export default function MealPlanPage() {
               ))}
           </ul>
 
-          <Button full size="lg" onClick={() => addRangeToList(weekStart, addDays(weekStart, 6))}>
-            Add this week to the list
+          {/* Secondary, not filled: a filled button at the bottom of a screen reads as "save",
+              and this one has a side effect on a different page entirely. */}
+          <Button
+            full
+            variant="secondary"
+            onClick={() => addRangeToList(weekStart, addDays(weekStart, 6))}
+          >
+            <CartIcon className="h-5 w-5" />
+            Add this week to Groceries
           </Button>
         </>
       ) : (
@@ -586,9 +593,12 @@ function DaySheet({
         </Button>
       )}
 
+      {/* The bottom of a sheet is where "done" lives, so this cannot look like the filled
+          primary action — people press it reflexively on the way out. It is a side trip to
+          another page, and it is labelled and weighted as one. */}
       <Button
         full
-        size="lg"
+        variant="secondary"
         className="mt-4"
         disabled={busy}
         onClick={async () => {
@@ -597,7 +607,8 @@ function DaySheet({
           setTimeout(() => setAdded(false), 2000);
         }}
       >
-        {added ? 'Added to the list' : 'Add this day to the list'}
+        <CartIcon className="h-5 w-5" />
+        {added ? 'Added to Groceries' : 'Add this day to Groceries'}
       </Button>
     </Sheet>
   );
