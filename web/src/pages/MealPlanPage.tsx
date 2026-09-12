@@ -130,6 +130,10 @@ export default function MealPlanPage() {
   const windowStart = inWindow.indexOf(true);
   const windowLength = inWindow.filter(Boolean).length;
   const weekEntries = entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd));
+  const awayFromToday =
+    mode === 'week'
+      ? isoDate(weekStart) !== isoDate(startOfWeek(today))
+      : monthCursor.getMonth() !== today.getMonth() || monthCursor.getFullYear() !== today.getFullYear();
 
   return (
     <div className="space-y-4">
@@ -180,28 +184,26 @@ export default function MealPlanPage() {
         >
           <ChevronRightIcon className="h-5 w-5" />
         </IconButton>
-      </div>
-
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          className="flex-1"
-          onClick={() => {
-            setWeekStart(startOfWeek(new Date()));
-            setMonthCursor(startOfMonth(new Date()));
-            setMode('week');
-          }}
-        >
-          This week
-        </Button>
-        <Button
-          variant={mode === 'calendar' ? 'primary' : 'secondary'}
-          className="flex-1"
+        {/* Only offered once you have paged away — on this week it would do nothing. */}
+        {awayFromToday && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setWeekStart(startOfWeek(new Date()));
+              setMonthCursor(startOfMonth(new Date()));
+            }}
+          >
+            Today
+          </Button>
+        )}
+        <IconButton
+          label={mode === 'calendar' ? 'Show the week' : 'Show the month'}
+          variant={mode === 'calendar' ? 'secondary' : 'ghost'}
           onClick={() => setMode(mode === 'calendar' ? 'week' : 'calendar')}
         >
           <CalendarIcon className="h-5 w-5" />
-          Calendar
-        </Button>
+        </IconButton>
       </div>
 
       {mode === 'week' ? (
@@ -273,7 +275,7 @@ export default function MealPlanPage() {
           )}
 
           {/* The names the strip can no longer show, for the days that have any. */}
-          <ul className="space-y-2 sm:hidden">
+          <ul className="divide-y divide-line sm:hidden">
             {weekDays
               .map((day) => ({ day, planned: (byDate.get(isoDate(day)) ?? []).filter(isPlanned) }))
               .filter(({ planned }) => planned.length > 0)
@@ -282,7 +284,7 @@ export default function MealPlanPage() {
                   <button
                     type="button"
                     onClick={() => setOpenDay(isoDate(day))}
-                    className="flex w-full items-baseline gap-3 rounded-xl border border-line bg-surface p-3 text-left"
+                    className="flex w-full items-baseline gap-3 py-2.5 text-left"
                   >
                     <span className="w-10 shrink-0 text-sm font-medium text-muted">
                       {day.toLocaleDateString(undefined, { weekday: 'short' })}
@@ -301,7 +303,7 @@ export default function MealPlanPage() {
 
           {/* Secondary, not filled: a filled button at the bottom of a screen reads as "save",
               and this one has a side effect on a different page entirely. */}
-          <Button full variant="secondary" onClick={() => setConfirmingWeek(true)}>
+          <Button full variant="ghost" onClick={() => setConfirmingWeek(true)}>
             <CartIcon className="h-5 w-5" />
             Add this week to Groceries
           </Button>
@@ -353,7 +355,7 @@ function CalendarGrid({
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
 
   return (
-    <Card bodyClassName="px-2 pb-2 sm:px-4 sm:pb-4">
+    <div>
       <div className="mb-1 grid grid-cols-7">
         {WEEKDAY_LABELS.map((w, i) => (
           <div key={i} className="py-1 text-center text-xs font-semibold text-subtle">
@@ -395,7 +397,7 @@ function CalendarGrid({
           );
         })}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -601,7 +603,7 @@ function DaySheet({
 
   if (picking && creating !== null) {
     return (
-      <Sheet title={`New recipe · ${titleCase(picking.meal)}`} onClose={() => setCreating(null)}>
+      <Sheet title={`New recipe · ${titleCase(picking.meal)}`} onClose={() => setCreating(null)} tall>
         {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
         <NewRecipeFromPlan
           householdId={householdId}
@@ -616,7 +618,7 @@ function DaySheet({
 
   if (picking) {
     return (
-      <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)}>
+      <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)} tall>
         {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
         <PickerTabs
           recipes={recipes}
@@ -639,15 +641,15 @@ function DaySheet({
 
   return (
     <Sheet title={label} onClose={onClose}>
-      <ul className="space-y-2">
+      <ul className="divide-y divide-line">
         {slots.map((meal) => {
           // A slot is a whole meal: a main, its sides, or just the one side you fancied.
           const dishes = entries.filter((e) => e.mealType === meal && isPlanned(e));
 
           return (
-            <li key={meal} className="rounded-xl border border-line">
-              <div className="flex items-center justify-between gap-2 px-3 pt-2">
-                <span className="text-sm font-medium text-muted">{titleCase(meal)}</span>
+            <li key={meal} className="py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-muted">{titleCase(meal)}</span>
                 <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
                   <PlusIcon className="h-4 w-4" />
                   {dishes.length ? 'Add side' : 'Add'}
@@ -655,9 +657,9 @@ function DaySheet({
               </div>
 
               {dishes.length === 0 ? (
-                <p className="px-3 pb-3 text-sm text-subtle">Nothing yet</p>
+                <p className="pb-1 text-sm text-subtle">Nothing yet</p>
               ) : (
-                <ul className="divide-y divide-line border-t border-line">
+                <ul className="divide-y divide-line">
                   {dishes.map((entry) => {
                     const open = expanded === entry.id;
                     return (
@@ -665,7 +667,7 @@ function DaySheet({
                         <button
                           type="button"
                           onClick={() => setExpanded(open ? null : entry.id)}
-                          className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
+                          className="flex min-h-touch w-full items-center gap-3 py-2 text-left"
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">
@@ -679,7 +681,7 @@ function DaySheet({
                         </button>
 
                         {open && (
-                          <div className="flex flex-wrap items-center gap-2 px-3 pb-3">
+                          <div className="flex flex-wrap items-center gap-2 pb-3">
                             <Button size="sm" variant="secondary" onClick={() => setPicking({ meal, entryId: entry.id })}>
                               Change
                             </Button>
@@ -746,7 +748,7 @@ function DaySheet({
       {/* The bottom of a sheet is where "done" lives, so this cannot look like the filled
           primary action — people press it reflexively on the way out. It is a side trip to
           another page, and it is labelled and weighted as one. */}
-      <Button full variant="secondary" className="mt-4" disabled={busy} onClick={() => setConfirming(true)}>
+      <Button full variant="ghost" className="mt-2" disabled={busy} onClick={() => setConfirming(true)}>
         <CartIcon className="h-5 w-5" />
         {added ? 'Added to Groceries' : 'Add this day to Groceries'}
       </Button>
@@ -917,21 +919,23 @@ function PickerTabs({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <Button
-          variant={tab === 'home' ? 'primary' : 'secondary'}
-          className="flex-1"
-          onClick={() => setTab('home')}
-        >
-          At home
-        </Button>
-        <Button
-          variant={tab === 'out' ? 'primary' : 'secondary'}
-          className="flex-1"
-          onClick={() => setTab('out')}
-        >
-          Eat out
-        </Button>
+      {/* A two-way switch, sized like one — not two big buttons competing with the results. */}
+      <div className="flex rounded-xl bg-elevated p-0.5" role="tablist">
+        {(['home', 'out'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={cx(
+              'h-9 flex-1 rounded-lg text-sm font-medium transition-colors',
+              tab === t ? 'bg-surface text-ink shadow-sm' : 'text-muted',
+            )}
+          >
+            {t === 'home' ? 'At home' : 'Eat out'}
+          </button>
+        ))}
       </div>
 
       {tab === 'home' ? (

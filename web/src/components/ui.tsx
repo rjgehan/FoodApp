@@ -11,6 +11,11 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
 }
 
+/**
+ * A titled section of a page — deliberately not a box. Pages used to be a stack of bordered
+ * cards with bordered rows inside them, and the borders said nothing the headings did not.
+ * A heading and some space do the grouping now; dividers are kept for rows in a list.
+ */
 export function Card({
   title,
   actions,
@@ -25,23 +30,32 @@ export function Card({
   bodyClassName?: string;
 }) {
   return (
-    <section className={cx('rounded-2xl border border-line bg-surface', className)}>
+    <section className={cx('py-2', className)}>
       {(title || actions) && (
-        <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
-          {title && <h2 className="font-semibold leading-tight">{title}</h2>}
-          {actions && <div className="shrink-0">{actions}</div>}
+        <header className="mb-1.5 flex min-h-9 items-center justify-between gap-3">
+          {title && <h2 className="text-lg font-semibold leading-tight">{title}</h2>}
+          {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
         </header>
       )}
-      <div className={cx('px-4 pb-4', !title && !actions && 'pt-4', bodyClassName)}>{children}</div>
+      <div className={bodyClassName}>{children}</div>
     </section>
   );
 }
 
+/** A quiet heading inside a section or sheet — the aisle names on the grocery list, say. */
+export function SubHeading({ children, className }: { children: ReactNode; className?: string }) {
+  return <h3 className={cx('pb-1 pt-4 text-sm font-semibold text-muted first:pt-0', className)}>{children}</h3>;
+}
+
+/*
+ * Filled rather than outlined. An outlined button is one more box, and a screen with a dozen of
+ * them reads as a grid of boxes before it reads as anything else.
+ */
 const BUTTON_VARIANTS = {
   primary: 'bg-accent text-accent-ink active:brightness-95',
-  secondary: 'border border-line bg-surface text-ink active:bg-elevated',
+  secondary: 'bg-elevated text-ink active:bg-line',
   ghost: 'text-muted active:bg-elevated',
-  danger: 'border border-line text-danger active:bg-danger-soft',
+  danger: 'bg-danger-soft text-danger active:brightness-95',
 };
 
 const BUTTON_SIZES = {
@@ -205,18 +219,53 @@ export function Field({ label, hint, children }: { label?: ReactNode; hint?: Rea
 }
 
 /**
+ * The part of the window the on-screen keyboard is not covering. iOS does not shrink the page
+ * when the keyboard opens — it slides over the bottom of it — so anything pinned to the bottom
+ * of the screen ends up underneath. The visual viewport is the only honest measure of what can
+ * actually be seen.
+ */
+function useVisibleViewport() {
+  const [viewport, setViewport] = useState(() => ({
+    top: 0,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  }));
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setViewport({ top: vv.offsetTop, height: vv.height });
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  return viewport;
+}
+
+/**
  * A bottom sheet on phones, a centred dialog on wider screens. Used for the meal-plan day
  * editor so planning happens where you tapped instead of in a panel far below the calendar.
+ *
+ * It sits on top of the keyboard, not under it. `tall` is for sheets you search in: they keep
+ * one height as the results narrow, instead of shrinking and sliding down out of sight.
  */
 export function Sheet({
   title,
   onClose,
   children,
+  tall = false,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  tall?: boolean;
 }) {
+  const viewport = useVisibleViewport();
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -232,16 +281,21 @@ export function Sheet({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center">
+    <div
+      className="fixed inset-x-0 z-40 flex items-end justify-center sm:items-center"
+      style={{ top: viewport.top, height: viewport.height }}
+    >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl border border-line bg-bg
-                   pb-safe sm:max-w-md sm:rounded-2xl"
+        className={cx(
+          'relative flex w-full flex-col rounded-t-2xl bg-bg pb-safe shadow-xl sm:max-w-md sm:rounded-2xl',
+          tall ? 'h-[calc(100%-1.5rem)] sm:h-[min(40rem,85vh)]' : 'max-h-[calc(100%-1.5rem)] sm:max-h-[85vh]',
+        )}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="min-w-0 truncate font-semibold">{title}</h2>
+        <header className="flex items-center justify-between gap-3 py-2 pl-4 pr-2">
+          <h2 className="min-w-0 truncate text-lg font-semibold">{title}</h2>
           <IconButton label="Close" onClick={onClose}>
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}
                  strokeLinecap="round" aria-hidden="true">
@@ -249,7 +303,7 @@ export function Sheet({
             </svg>
           </IconButton>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">{children}</div>
       </div>
     </div>
   );

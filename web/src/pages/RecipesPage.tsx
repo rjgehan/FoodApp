@@ -150,8 +150,8 @@ function SectionTile({
     <Link
       to={to}
       className={cx(
-        'block overflow-hidden rounded-2xl border border-line transition-transform active:scale-[0.98]',
-        tint ?? 'bg-surface',
+        'block overflow-hidden rounded-2xl transition-transform active:scale-[0.98]',
+        tint ?? 'bg-elevated',
       )}
     >
       <div className={cx('flex flex-col justify-end p-4', wide ? 'min-h-[4.5rem]' : 'aspect-[3/2]')}>

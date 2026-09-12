@@ -7,23 +7,21 @@ import type { GroceryListEvent, GroceryListItem as Item, StoreSection } from '..
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
+import { splitAmount } from '../utils/amount';
 import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
 import {
-  Badge,
   Button,
-  Card,
   CheckCircle,
   cx,
   EmptyState,
   ErrorText,
   IconButton,
   Input,
-  NumberInput,
   Select,
   Sheet,
+  SubHeading,
 } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/icons';
-import UnitInput from '../components/UnitInput';
 
 export default function GroceryListPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
@@ -33,10 +31,7 @@ export default function GroceryListPage() {
   const [moving, setMoving] = useState(false);
   const [sheet, setSheet] = useState<'sort' | 'putAway' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState<number | null>(1);
-  const [unit, setUnit] = useState('');
+  const [draft, setDraft] = useState('');
 
   const clientRef = useRef<Client | null>(null);
 
@@ -101,17 +96,17 @@ export default function GroceryListPage() {
     window.setTimeout(() => setNotice(null), 4000);
   }
 
+  /** One box: "2 lb chicken" becomes 2, lb, chicken; "milk" is just milk. */
   async function onAddItem(e: FormEvent) {
     e.preventDefault();
-    if (!activeHouseholdId || !name.trim()) return;
+    if (!activeHouseholdId || !draft.trim()) return;
+    const { quantity, unit, name } = splitAmount(draft);
     await api('POST', `/api/households/${activeHouseholdId}/grocery-list/items`, {
-      ingredientName: name.trim(),
-      quantity: quantity ?? 1,
+      ingredientName: name,
+      quantity,
       unit,
     });
-    setName('');
-    setQuantity(1);
-    setUnit('');
+    setDraft('');
     await refreshItems();
   }
 
@@ -140,11 +135,7 @@ export default function GroceryListPage() {
   }
 
   if (!activeHouseholdId) {
-    return (
-      <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
-      </Card>
-    );
+    return <EmptyState>Create or select a household first.</EmptyState>;
   }
 
   const toBuy = items.filter((i) => !i.checked);
@@ -153,127 +144,108 @@ export default function GroceryListPage() {
   const unsorted = new Set(items.filter((i) => !i.sorted && i.ingredientId).map((i) => i.ingredientId)).size;
 
   return (
-    <div className="space-y-4">
-      <Card title="Add to the list">
-        <form onSubmit={onAddItem} className="space-y-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="paper towels"
-            aria-label="Item name"
-          />
-          <div className="flex gap-2">
-            <NumberInput
-              className="w-24"
-              value={quantity}
-              onChange={setQuantity}
-              aria-label="Quantity"
-            />
-            <UnitInput
-              className="w-28"
-              value={unit}
-              onChange={setUnit}
-              placeholder="unit"
-              aria-label="Unit"
-            />
-            <Button type="submit" className="flex-1" disabled={!name.trim()}>
-              <PlusIcon className="h-5 w-5" />
-              Add
+    <div className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold leading-tight">Groceries</h1>
+          <p className="text-sm text-muted">
+            {toBuy.length ? `${toBuy.length} to buy` : 'Nothing to buy'}
+            {/* Only worth mentioning when it is not working. */}
+            {!connected && ' · offline, changes from others may be missing'}
+          </p>
+        </div>
+        {toBuy.length > 0 && (
+          <div className="flex shrink-0 gap-1">
+            {aiAvailable && unsorted > 0 && !moving && (
+              <Button size="sm" variant="ghost" onClick={() => setSheet('sort')}>
+                ✨ Sort
+              </Button>
+            )}
+            <Button size="sm" variant={moving ? 'primary' : 'ghost'} onClick={() => setMoving((m) => !m)}>
+              {moving ? 'Done' : 'Move'}
             </Button>
           </div>
-        </form>
-      </Card>
+        )}
+      </div>
 
-      {notice && (
-        <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">{notice}</div>
+      <form onSubmit={onAddItem} className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add something — 2 lb chicken, milk…"
+          aria-label="Add to the list"
+          enterKeyHint="done"
+        />
+        <IconButton type="submit" label="Add" variant="primary" disabled={!draft.trim()}>
+          <PlusIcon className="h-5 w-5" />
+        </IconButton>
+      </form>
+
+      {notice && <p className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">{notice}</p>}
+
+      {moving && (
+        <p className="text-sm text-muted">
+          Pick the aisle each item is in at your store — it sticks for next time. The order of the aisles is on the{' '}
+          <Link to="/household" className="font-medium text-accent underline">
+            House
+          </Link>{' '}
+          page.
+        </p>
       )}
 
-      <Card
-        title={toBuy.length ? `${toBuy.length} to buy` : 'List'}
-        actions={<Badge tone={connected ? 'success' : 'neutral'}>{connected ? 'Live' : 'Offline'}</Badge>}
-        bodyClassName="px-2 pb-2 sm:px-4 sm:pb-4"
-      >
-        {items.length === 0 ? (
-          <EmptyState>Nothing on the list yet.</EmptyState>
-        ) : (
-          <>
-            {toBuy.length > 0 && (
-              <div className="flex flex-wrap gap-2 px-2 pb-1 sm:px-0">
-                {aiAvailable && unsorted > 0 && !moving && (
-                  <Button size="sm" variant="secondary" onClick={() => setSheet('sort')}>
-                    ✨ Sort {unsorted} {unsorted === 1 ? 'item' : 'items'}
-                  </Button>
-                )}
-                <Button size="sm" variant={moving ? 'primary' : 'ghost'} onClick={() => setMoving((m) => !m)}>
-                  {moving ? 'Done moving' : 'Move items'}
+      {items.length === 0 ? (
+        <EmptyState>Nothing on the list yet.</EmptyState>
+      ) : (
+        <div>
+          {groups.map(({ section, items: rows }) => (
+            <section key={section}>
+              <SubHeading>{STORE_SECTION_LABELS[section]}</SubHeading>
+              <ul className="divide-y divide-line">
+                {rows.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    moving={moving}
+                    onToggle={toggleItem}
+                    onRemove={removeItem}
+                    onMove={moveItem}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+
+          {inCart.length > 0 && (
+            <section className={cx(toBuy.length > 0 && 'mt-4')}>
+              <div className="flex items-center justify-between gap-2 pb-1">
+                <SubHeading className="pt-0">In the cart · {inCart.length}</SubHeading>
+                <Button size="sm" onClick={() => setSheet('putAway')}>
+                  Done shopping
                 </Button>
               </div>
-            )}
-            {moving && (
-              <p className="px-2 pb-1 pt-1 text-sm text-muted sm:px-0">
-                Pick the aisle each item is in at your store — it sticks for next time. The order of the
-                aisles is on the{' '}
-                <Link to="/household" className="font-medium text-accent underline">
-                  House
-                </Link>{' '}
-                page.
-              </p>
-            )}
+              <ul className="divide-y divide-line">
+                {inCart.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    moving={false}
+                    onToggle={toggleItem}
+                    onRemove={removeItem}
+                    onMove={moveItem}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
 
-            {groups.map(({ section, items: rows }) => (
-              <section key={section}>
-                <h3 className="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-subtle">
-                  {STORE_SECTION_LABELS[section]}
-                </h3>
-                <ul className="divide-y divide-line">
-                  {rows.map((item) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      moving={moving}
-                      onToggle={toggleItem}
-                      onRemove={removeItem}
-                      onMove={moveItem}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))}
-
-            {inCart.length > 0 && (
-              <section className={cx(toBuy.length > 0 && 'mt-3 border-t border-line pt-1')}>
-                <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-subtle">
-                    In the cart · {inCart.length}
-                  </h3>
-                  <Button size="sm" onClick={() => setSheet('putAway')}>
-                    Done shopping
-                  </Button>
-                </div>
-                <ul className="divide-y divide-line">
-                  {inCart.map((item) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      moving={false}
-                      onToggle={toggleItem}
-                      onRemove={removeItem}
-                      onMove={moveItem}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
-          </>
-        )}
-      </Card>
-
-      <p className="px-1 text-sm text-muted">
-        Things you always have, like salt and oil, are marked “Always have” in the{' '}
+      <p className="pt-2 text-sm text-subtle">
+        Salt, oil and other things you always have are marked “Always have” in the{' '}
         <Link to="/cupboard" className="font-medium text-accent underline">
           Cupboard
         </Link>
-        . Meals leave them off this list.
+        , so meals leave them off.
       </p>
 
       {sheet === 'sort' && (
@@ -286,7 +258,7 @@ export default function GroceryListPage() {
             await refreshItems();
             flash(
               (sorted ? `Sorted ${sorted} ${sorted === 1 ? 'item' : 'items'}.` : 'Nothing new to sort.') +
-                (left ? ` ${left} couldn't be placed — use Move items for those.` : ''),
+                (left ? ` ${left} couldn't be placed — use Move for those.` : ''),
             );
           }}
         />
@@ -335,7 +307,7 @@ function ItemRow({
         type="button"
         onClick={() => onToggle(item)}
         aria-pressed={item.checked}
-        className="flex min-h-touch min-w-0 flex-1 items-center gap-3 py-3 pl-2 text-left"
+        className="flex min-h-touch min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
       >
         <CheckCircle checked={item.checked} />
         <span className="min-w-0 flex-1">
@@ -362,7 +334,7 @@ function ItemRow({
           ))}
         </Select>
       ) : (
-        <IconButton label={`Remove ${item.name}`} onClick={() => onRemove(item.id)}>
+        <IconButton label={`Remove ${item.name}`} className="text-subtle" onClick={() => onRemove(item.id)}>
           <TrashIcon className="h-5 w-5" />
         </IconButton>
       )}
@@ -402,11 +374,10 @@ function SortSheet({
   }
 
   return (
-    <Sheet title="Sort the list" onClose={onClose}>
+    <Sheet title="Is the list finished?" onClose={onClose}>
       <div className="space-y-4">
-        <p className="text-lg">Is the list finished?</p>
-        <p className="text-sm text-muted">
-          This puts the {count} {count === 1 ? 'item' : 'items'} the app couldn't place into aisles, using one of
+        <p className="text-muted">
+          Sorting puts the {count} {count === 1 ? 'item' : 'items'} the app couldn't place into aisles, using one of
           your 20 AI requests for today — the same ones “Write it for me” uses. Add everything first and sort once:
           anything added afterwards would need another request.
         </p>
@@ -472,11 +443,11 @@ function PutAwaySheet({
 
   return (
     <Sheet title="Done shopping" onClose={onClose}>
-      <div className="space-y-4">
+      <div className="space-y-3">
         <p className="text-sm text-muted">
           Untick anything that isn't for the house. The rest goes in the cupboard, and all of it comes off the list.
         </p>
-        <ul className="divide-y divide-line rounded-xl border border-line">
+        <ul className="divide-y divide-line">
           {items.map((item) => {
             const on = selected.has(item.id);
             return (
@@ -485,7 +456,7 @@ function PutAwaySheet({
                   type="button"
                   aria-pressed={on}
                   onClick={() => toggle(item.id)}
-                  className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
+                  className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
                 >
                   <CheckCircle checked={on} />
                   <span className={cx('min-w-0 flex-1 truncate', !on && 'text-muted')}>{item.name}</span>
@@ -496,7 +467,7 @@ function PutAwaySheet({
           })}
         </ul>
         {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-1">
           <Button className="flex-1" disabled={busy} onClick={putAway}>
             {busy ? 'Putting away…' : selected.size ? `Put away ${selected.size}` : 'Just clear them'}
           </Button>

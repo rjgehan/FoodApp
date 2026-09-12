@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   Card,
+  Chip,
   cx,
   EmptyState,
   ErrorText,
@@ -55,15 +56,15 @@ export default function HouseholdPage() {
         </div>
       )}
 
+      {/* Most-used first: who is here and where you eat, then settings, then the rare things. */}
       {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
-      {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
-      <ProfileCard />
-      {activeHousehold && <SettingsCard />}
       {activeHousehold && <StoreLayoutCard />}
-      <AddPersonCard />
-      {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
+      {activeHousehold && <SettingsCard />}
+      <ProfileCard />
+      {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
+      {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
 
       {/*
        * Always available, not just to people with no household. You can belong to several —
@@ -132,14 +133,14 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
 
   return (
     <Card title="Catalog icons">
-      <ul className="space-y-2">
+      <ul className="divide-y divide-line">
         {SECTION_OPTIONS.map((s) => {
           const current = icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value];
           const Icon = iconByKey(current)?.Icon;
           const open = editing === s.value;
 
           return (
-            <li key={s.value} className="rounded-xl border border-line p-2">
+            <li key={s.value} className="py-1">
               <button
                 type="button"
                 onClick={() => setEditing(open ? null : s.value)}
@@ -283,7 +284,7 @@ function ProfileCard() {
  * want to be able to share recipes with. They pick a PIN the first time they sign in, and until
  * then they show on the login screen under "Not in a house yet".
  */
-function AddPersonCard() {
+function LooseAccountForm() {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -314,7 +315,7 @@ function AddPersonCard() {
   }
 
   return (
-    <Card title="Add someone to the app">
+    <div>
       {made && (
         <div className="mb-3 rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
           “{made}” added. They'll see their name on the sign-in screen.
@@ -322,8 +323,8 @@ function AddPersonCard() {
       )}
       <form onSubmit={onSubmit} className="space-y-3">
         <p className="text-sm text-muted">
-          Makes an account that isn't in any household. They can start their own, or you can
-          invite them to yours later.
+          An account that isn't in any household. They can start their own, or you can invite
+          them to yours later.
         </p>
         <Field label="Username">
           <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" />
@@ -336,7 +337,66 @@ function AddPersonCard() {
           Add them
         </Button>
       </form>
-    </Card>
+    </div>
+  );
+}
+
+/**
+ * Three ways to get someone in, behind one button. They used to be three forms open on the page
+ * at once — a lot of boxes for something done a few times a year.
+ */
+function AddSomeone({ householdId, onDone }: { householdId: string; onDone: () => Promise<void> }) {
+  const [mode, setMode] = useState<'new' | 'invite' | 'loose' | null>(null);
+
+  if (!mode) {
+    return (
+      <Button variant="ghost" size="sm" className="-ml-3 mt-1" onClick={() => setMode('new')}>
+        <PlusIcon className="h-4 w-4" />
+        Add someone
+      </Button>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip active={mode === 'new'} onClick={() => setMode('new')}>
+          New to the app
+        </Chip>
+        <Chip active={mode === 'invite'} onClick={() => setMode('invite')}>
+          Has an account
+        </Chip>
+        <Chip active={mode === 'loose'} onClick={() => setMode('loose')}>
+          Account only
+        </Chip>
+        <Button size="sm" variant="ghost" onClick={() => setMode(null)}>
+          Cancel
+        </Button>
+      </div>
+      {mode === 'new' && (
+        <AddPersonForm
+          householdId={householdId}
+          onDone={onDone}
+          path="users"
+          label="Their username"
+          hint="They join this household and pick a PIN the first time they sign in."
+          action="Create"
+          fallbackError="Could not create that account"
+        />
+      )}
+      {mode === 'invite' && (
+        <AddPersonForm
+          householdId={householdId}
+          onDone={onDone}
+          path="members"
+          label="Their username"
+          hint="Anyone who already has an account, including people in another household."
+          action="Invite"
+          fallbackError="Could not add member"
+        />
+      )}
+      {mode === 'loose' && <LooseAccountForm />}
+    </div>
   );
 }
 
@@ -537,7 +597,7 @@ function PlaceSheet({
           <img
             src={imageUrl(draft.imageId)}
             alt=""
-            className="aspect-[4/3] w-full rounded-xl border border-line object-cover"
+            className="aspect-[4/3] w-full rounded-xl object-cover"
           />
         )}
         <ImagePicker householdId={householdId} onUploaded={(ids) => setDraft({ ...draft, imageId: ids[0] ?? null })}>
@@ -759,26 +819,7 @@ function MembersCard({ householdId }: { householdId: string }) {
         ))}
       </ul>
 
-      <div className="mt-4 space-y-4 border-t border-line pt-4">
-        <AddPersonForm
-          householdId={householdId}
-          onDone={refresh}
-          path="users"
-          label="Add someone new"
-          hint="They pick a PIN the first time they sign in."
-          action="Create"
-          fallbackError="Could not create that account"
-        />
-        <AddPersonForm
-          householdId={householdId}
-          onDone={refresh}
-          path="members"
-          label="Invite someone who already has an account"
-          hint="Including people in another household."
-          action="Invite"
-          fallbackError="Could not add member"
-        />
-      </div>
+      <AddSomeone householdId={householdId} onDone={refresh} />
     </Card>
   );
 }

@@ -52,7 +52,7 @@ export default function PublicRecipePage() {
         <img
           src={imageUrl(recipe.coverImageId)}
           alt={recipe.name}
-          className="aspect-[4/3] w-full rounded-2xl border border-line object-cover"
+          className="aspect-[4/3] w-full rounded-2xl object-cover"
         />
       )}
 
@@ -119,7 +119,7 @@ export default function PublicRecipePage() {
                 key={id}
                 src={imageUrl(id)}
                 alt=""
-                className="aspect-square w-full rounded-xl border border-line object-cover"
+                className="aspect-square w-full rounded-xl object-cover"
               />
             ))}
           </div>

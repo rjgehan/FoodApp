@@ -71,7 +71,7 @@ export default function EditRecipePage() {
        * Two taps, not a browser confirm(): a native dialog is ugly on a phone and easy to
        * dismiss by accident. Deleting a recipe cannot be undone, so it asks first.
        */}
-      <Card title="Delete this recipe">
+      <Card>
         {confirming ? (
           <div className="space-y-3">
             <p className="text-sm text-muted">
@@ -88,8 +88,9 @@ export default function EditRecipePage() {
             </div>
           </div>
         ) : (
-          <Button variant="danger" full onClick={() => setConfirming(true)}>
-            Delete recipe
+          // A red text link, not a red slab: it is the rarest thing on the page, and the last.
+          <Button variant="ghost" className="-ml-4 text-danger" onClick={() => setConfirming(true)}>
+            Delete this recipe
           </Button>
         )}
       </Card>

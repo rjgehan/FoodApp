@@ -149,7 +149,7 @@ export default function CupboardPage() {
         </Card>
       ) : (
         groups.map(({ section, items: rows }) => (
-          <Card key={section} title={STORE_SECTION_LABELS[section]} bodyClassName="px-4 pb-2">
+          <Card key={section} title={STORE_SECTION_LABELS[section]}>
             <ul className="divide-y divide-line">
               {rows.map((item) => {
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
@@ -166,14 +166,14 @@ export default function CupboardPage() {
                         <span className="block truncate font-medium">{item.name}</span>
                         {detail && <span className="block truncate text-sm text-muted">{detail}</span>}
                       </button>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1">
                         <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
-                        <Button size="sm" variant="secondary" onClick={() => remove(item)} aria-label={`Remove ${item.name}`}>
+                        <Button size="sm" variant="ghost" onClick={() => remove(item)} aria-label={`Remove ${item.name}`}>
                           Remove
                         </Button>
                         <Button
                           size="sm"
-                          variant="secondary"
+                          variant="ghost"
                           onClick={() => buyAgain(item)}
                           aria-label={`Buy ${item.name} again — moves it to the grocery list`}
                         >
@@ -218,7 +218,7 @@ export default function CupboardPage() {
 /** How much is left, in the two answers that stay true without anyone counting. */
 function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) => void }) {
   return (
-    <div className="flex shrink-0 rounded-xl border border-line p-0.5" role="group" aria-label="How much is left">
+    <div className="flex shrink-0 rounded-xl bg-elevated p-0.5" role="group" aria-label="How much is left">
       {[false, true].map((isLow) => (
         <button
           key={String(isLow)}

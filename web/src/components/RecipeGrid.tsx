@@ -22,10 +22,16 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
   return (
     <Link
       to={`/recipes/${recipe.id}`}
-      className="block overflow-hidden rounded-2xl border border-line bg-surface transition-transform active:scale-[0.98]"
+      className="block transition-transform active:scale-[0.98]"
     >
-      {/* A real cover when one exists; otherwise a tinted plate with the initial set large. */}
-      <div className={cx('relative flex aspect-[5/4] items-center justify-center', coverClass(recipe.id))}>
+      {/* A real cover when one exists; otherwise a tinted plate with the initial set large.
+          The picture is the tile — no frame round it and the words, just the words under it. */}
+      <div
+        className={cx(
+          'relative flex aspect-[5/4] items-center justify-center overflow-hidden rounded-2xl',
+          coverClass(recipe.id),
+        )}
+      >
         {recipe.coverImageId ? (
           <img src={imageUrl(recipe.coverImageId)} alt="" className="h-full w-full object-cover" />
         ) : (
@@ -40,7 +46,7 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
         )}
       </div>
 
-      <div className="p-3">
+      <div className="px-0.5 pt-2">
         <p className="line-clamp-2 font-medium leading-snug">{recipe.name}</p>
         <p className="mt-1 text-sm text-muted">
           Serves {recipe.servings}

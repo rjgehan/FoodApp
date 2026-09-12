@@ -2,20 +2,12 @@ import { useState, type FormEvent } from 'react';
 import { api, imageUrl } from '../api/client';
 import type { Recipe, RecipeSection } from '../api/types';
 import UnitInput from './UnitInput';
-import {
-  Button,
-  Card,
-  Chip,
-  Field,
-  IconButton,
-  Input,
-  NumberInput,
-  Textarea,
-} from './ui';
+import { Button, Chip, Field, IconButton, Input, NumberInput, Textarea } from './ui';
 import { PlusIcon, TrashIcon } from './icons';
 import ImagePicker from './ImagePicker';
 import RecipeClassifier from './RecipeClassifier';
 import { SECTION_OPTIONS, DEFAULT_FILING, type Filing } from '../utils/recipeMeta';
+import { splitAmount } from '../utils/amount';
 
 export interface DraftIngredient {
   ingredientName: string;
@@ -40,6 +32,10 @@ export interface RecipeDraft {
  * The recipe form, used to write a new one and to fix an existing one. Passing `recipe` seeds
  * every field from it and switches the save to a PUT, so create and edit can never drift apart
  * — a field added here shows up in both.
+ *
+ * Laid out as one page of plain sections rather than a stack of cards, and each ingredient is a
+ * single line — amount, unit, name — the way a recipe is written, so a list of twelve fits on
+ * a phone screen instead of three.
  */
 export default function RecipeForm({
   householdId,
@@ -70,6 +66,8 @@ export default function RecipeForm({
         }))
       : [{ ...emptyIngredient }],
   );
+  // The row just added with Enter, so it can take the cursor.
+  const [focusRow, setFocusRow] = useState<number | null>(null);
   const [instructions, setInstructions] = useState(seed?.instructions ?? '');
   const [filing, setFiling] = useState<Filing>(
     // A recipe you own is normally filed, but an unfiled one still has to land somewhere.
@@ -95,6 +93,24 @@ export default function RecipeForm({
 
   function updateIngredient(index: number, patch: Partial<DraftIngredient>) {
     setIngredients((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+
+  function addRow() {
+    setFocusRow(ingredients.length);
+    setIngredients((rows) => [...rows, { ...emptyIngredient }]);
+  }
+
+  /**
+   * "2 cups flour" typed into the name, with the amount boxes still empty, is split into them.
+   * Typing a line the way it is written on the card is faster than hopping between three boxes.
+   */
+  function splitTyped(index: number) {
+    const row = ingredients[index];
+    if (!row || row.quantity !== null || row.unit) return;
+    const amount = splitAmount(row.ingredientName);
+    if (amount.quantity !== null) {
+      updateIngredient(index, { quantity: amount.quantity, unit: amount.unit, ingredientName: amount.name });
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -127,76 +143,88 @@ export default function RecipeForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <Card>
-        <div className="space-y-3">
-          <Field label="Name">
-            <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Spaghetti Bolognese" />
-          </Field>
-          <Field label="Serves">
-            <NumberInput min={1} className="w-24" value={servings} onChange={setServings} />
-          </Field>
-        </div>
-      </Card>
+    <form onSubmit={onSubmit} className="space-y-6">
+      <div className="space-y-2">
+        <Input
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Recipe name"
+          aria-label="Recipe name"
+          className="h-12 text-lg font-semibold"
+        />
+        <label className="flex items-center gap-3 text-muted">
+          Serves
+          <NumberInput min={1} className="w-20" value={servings} onChange={setServings} aria-label="Serves" />
+        </label>
+      </div>
 
-      <Card title="Ingredients">
-        <div className="space-y-3">
+      <section>
+        <h2 className="text-lg font-semibold">Ingredients</h2>
+        <p className="mb-1 text-sm text-muted">Type a line like “2 cups flour” — the amount fills itself in.</p>
+        <ul className="divide-y divide-line">
           {ingredients.map((row, i) => (
-            <div key={i} className="rounded-xl border border-line p-2">
+            <li key={i} className="flex items-center gap-1.5 py-1.5">
+              <NumberInput
+                className="w-16 shrink-0"
+                placeholder="qty"
+                value={row.quantity}
+                onChange={(v) => updateIngredient(i, { quantity: v })}
+                aria-label={`Ingredient ${i + 1} amount`}
+              />
+              <UnitInput
+                className="w-[5.5rem] shrink-0"
+                value={row.unit}
+                onChange={(unit) => updateIngredient(i, { unit })}
+                aria-label={`Ingredient ${i + 1} unit`}
+              />
               <Input
+                className="min-w-0 flex-1"
                 placeholder="ingredient"
                 value={row.ingredientName}
+                autoFocus={focusRow === i}
+                enterKeyHint="next"
                 onChange={(e) => updateIngredient(i, { ingredientName: e.target.value })}
+                onBlur={() => splitTyped(i)}
+                onKeyDown={(e) => {
+                  // Enter moves on to a fresh line rather than submitting half a recipe.
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  splitTyped(i);
+                  if (i === ingredients.length - 1 && row.ingredientName.trim()) addRow();
+                }}
                 aria-label={`Ingredient ${i + 1}`}
               />
-              <div className="mt-2 flex gap-2">
-                <NumberInput
-                  className="w-24"
-                  placeholder="qty"
-                  value={row.quantity}
-                  onChange={(v) => updateIngredient(i, { quantity: v })}
-                  aria-label={`Ingredient ${i + 1} quantity`}
-                />
-                <UnitInput
-                  className="flex-1"
-                  value={row.unit}
-                  onChange={(unit) => updateIngredient(i, { unit })}
-                  aria-label={`Ingredient ${i + 1} unit`}
-                />
-                <IconButton
-                  label={`Remove ingredient ${i + 1}`}
-                  disabled={ingredients.length === 1}
-                  onClick={() => setIngredients((rows) => rows.filter((_, idx) => idx !== i))}
-                >
-                  <TrashIcon className="h-5 w-5" />
-                </IconButton>
-              </div>
-            </div>
+              <IconButton
+                label={`Remove ingredient ${i + 1}`}
+                className="text-subtle"
+                disabled={ingredients.length === 1}
+                onClick={() => setIngredients((rows) => rows.filter((_, idx) => idx !== i))}
+              >
+                <TrashIcon className="h-5 w-5" />
+              </IconButton>
+            </li>
           ))}
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          full
-          className="mt-3"
-          onClick={() => setIngredients((rows) => [...rows, { ...emptyIngredient }])}
-        >
-          <PlusIcon className="h-5 w-5" />
+        </ul>
+        <Button type="button" variant="ghost" size="sm" className="mt-1" onClick={addRow}>
+          <PlusIcon className="h-4 w-4" />
           Add ingredient
         </Button>
-      </Card>
+      </section>
 
-      <Card title="Method">
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Method</h2>
         <Textarea
           rows={6}
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder={'One step per line.'}
+          placeholder="One step per line."
           aria-label="Method"
         />
-      </Card>
+      </section>
 
-      <Card title="Where does it go?">
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Filed under</h2>
         <div className="flex flex-wrap gap-2">
           {SECTION_OPTIONS.map((s) => (
             <Chip key={s.value} active={filing.section === s.value} onClick={() => setFiling({ ...filing, section: s.value })}>
@@ -204,25 +232,22 @@ export default function RecipeForm({
             </Chip>
           ))}
         </div>
-      </Card>
+      </section>
 
-      <Card
-        title="Extras"
-        actions={
-          <Button type="button" variant="ghost" size="sm" onClick={() => setShowExtras((v) => !v)}>
-            {showExtras ? 'Hide' : 'Show'}
-          </Button>
-        }
-      >
+      <section>
         {!showExtras ? (
-          <p className="text-sm text-muted">Photo, times, sub-categories.</p>
+          <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setShowExtras(true)}>
+            <PlusIcon className="h-4 w-4" />
+            Photo, times, video, sub-categories
+          </Button>
         ) : (
           <div className="space-y-4">
+            <h2 className="text-lg font-semibold">More</h2>
             {coverImageId && (
               <img
                 src={imageUrl(coverImageId)}
                 alt=""
-                className="aspect-[4/3] w-full rounded-xl border border-line object-cover"
+                className="aspect-[4/3] w-full rounded-xl object-cover"
               />
             )}
             <ImagePicker householdId={householdId} onUploaded={(ids) => setCoverImageId(ids[0] ?? null)}>
@@ -241,7 +266,7 @@ export default function RecipeForm({
                 onChange={(e) => setVideoUrl(e.target.value)}
               />
             </Field>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Field label="Prep (min)">
                 <NumberInput min={0} className="w-24" value={prep} onChange={setPrep} />
               </Field>
@@ -258,7 +283,7 @@ export default function RecipeForm({
             />
           </div>
         )}
-      </Card>
+      </section>
 
       <Button type="submit" full size="lg" disabled={saving || !name.trim()}>
         {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}

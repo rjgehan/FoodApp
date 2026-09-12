@@ -122,23 +122,18 @@ export default function DashboardPage() {
       </div>
 
       {today.length === 0 ? (
-        <Card>
-          <EmptyState>
-            Nothing planned today —{' '}
-            <Link to="/meal-plan" className="font-medium text-accent underline">
-              plan something
-            </Link>
-            .
-          </EmptyState>
-        </Card>
+        <p className="text-muted">
+          Nothing planned today —{' '}
+          <Link to="/meal-plan" className="font-medium text-accent underline">
+            plan something
+          </Link>
+          .
+        </p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y divide-line">
           {today.map((e) => (
             <li key={e.id}>
-              <Link
-                to={e.recipeId ? `/recipes/${e.recipeId}` : '/meal-plan'}
-                className="block rounded-2xl border border-line bg-surface p-4 transition-transform active:scale-[0.99]"
-              >
+              <Link to={e.recipeId ? `/recipes/${e.recipeId}` : '/meal-plan'} className="block py-3">
                 <p className="text-sm font-medium text-accent">{titleCase(e.mealType)}</p>
                 <p className="mt-0.5 text-lg font-semibold leading-tight">
                   {entryLabel(e)}
@@ -151,11 +146,10 @@ export default function DashboardPage() {
         </ul>
       )}
 
+      {/* The two things worth a glance, as plain rows between hairlines rather than two more boxes. */}
+      <div className="divide-y divide-line border-y border-line">
       {emptyDays.length > 0 && (
-        <Link
-          to="/meal-plan"
-          className="flex items-center justify-between rounded-2xl border border-line bg-surface p-4"
-        >
+        <Link to="/meal-plan" className="flex items-center justify-between gap-3 py-3">
           <span className="min-w-0">
             <span className="block font-medium">
               {emptyDays.length} {emptyDays.length === 1 ? 'day' : 'days'} with nothing planned
@@ -171,6 +165,11 @@ export default function DashboardPage() {
           <span className="shrink-0 text-sm text-accent">Plan</span>
         </Link>
       )}
+      <Link to="/grocery-list" className="flex items-center justify-between gap-3 py-3">
+        <span className="font-medium">Grocery list</span>
+        <span className="text-muted">{left ? `${left} to buy` : 'All done'}</span>
+      </Link>
+      </div>
 
       {suggestion && (
         <Card title="Not made in a while">
@@ -191,14 +190,6 @@ export default function DashboardPage() {
           </Link>
         </Card>
       )}
-
-      <Link
-        to="/grocery-list"
-        className="flex items-center justify-between rounded-2xl border border-line bg-surface p-4"
-      >
-        <span className="font-medium">Grocery list</span>
-        <span className="text-muted">{left ? `${left} to buy` : 'All done'}</span>
-      </Link>
     </div>
   );
 }

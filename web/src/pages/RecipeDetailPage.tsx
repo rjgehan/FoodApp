@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Badge, Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
+import { Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
 import RecipeIndexCard from '../components/RecipeIndexCard';
 import RecipeClassifier from '../components/RecipeClassifier';
@@ -203,28 +203,30 @@ export default function RecipeDetailPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant={asCard ? 'primary' : 'secondary'} onClick={() => setAsCard((v) => !v)}>
-          {asCard ? 'Normal view' : 'Index card'}
-        </Button>
-        {!asCard && (
-          <Button
-            variant={organizing ? 'primary' : 'secondary'}
-            onClick={() => (organizing ? setOrganizing(false) : startOrganizing())}
-          >
-            {organizing ? 'Done' : recipe.section ? 'Organize' : 'Move to my catalog'}
-          </Button>
-        )}
+      {/* Quiet text actions: the recipe is the thing on this page, not a toolbar above it. */}
+      <div className="-mx-3 flex flex-wrap items-center gap-1">
         {mine && !asCard && (
-          <Button variant="secondary" onClick={() => navigate(`/recipes/${recipe.id}/edit`)}>
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/recipes/${recipe.id}/edit`)}>
             Edit
           </Button>
         )}
         {mine && !asCard && (
-          <Button variant="secondary" onClick={openSharing}>
-            {recipe.sharedWith.length ? `Shared · ${recipe.sharedWith.length}` : 'Share'}
+          <Button size="sm" variant="ghost" onClick={openSharing}>
+            {recipe.sharedWith.length ? `Shared with ${recipe.sharedWith.length}` : 'Share'}
           </Button>
         )}
+        {!asCard && (
+          <Button
+            size="sm"
+            variant={organizing ? 'secondary' : 'ghost'}
+            onClick={() => (organizing ? setOrganizing(false) : startOrganizing())}
+          >
+            {recipe.section ? 'Organize' : 'Move to my catalog'}
+          </Button>
+        )}
+        <Button size="sm" variant={asCard ? 'secondary' : 'ghost'} onClick={() => setAsCard((v) => !v)}>
+          {asCard ? 'Normal view' : 'Index card'}
+        </Button>
       </div>
 
       {asCard ? (
@@ -235,43 +237,40 @@ export default function RecipeDetailPage() {
             <img
               src={imageUrl(recipe.coverImageId)}
               alt={recipe.name}
-              className="aspect-[4/3] w-full rounded-2xl border border-line object-cover"
+              className="aspect-[4/3] w-full rounded-2xl object-cover"
             />
           )}
 
-          <Card>
+          {/* Two lines of plain facts where there used to be eight badges. */}
+          <div>
             <h1 className="text-2xl font-semibold leading-tight">{recipe.name}</h1>
             {recipe.description && <p className="mt-1.5 text-muted">{recipe.description}</p>}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Badge>Serves {recipe.servings}</Badge>
-              {recipe.prepTimeMinutes ? <Badge>Prep {formatMinutes(recipe.prepTimeMinutes)}</Badge> : null}
-              {recipe.cookTimeMinutes ? <Badge>Cook {formatMinutes(recipe.cookTimeMinutes)}</Badge> : null}
-              {total ? <Badge tone="accent">Total {formatMinutes(total)}</Badge> : null}
-              {recipe.shared && <Badge>From another household</Badge>}
-              {mine && recipe.sharedWith.length > 0 && (
-                <Badge tone="success">Shared with {recipe.sharedWith.length}</Badge>
-              )}
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Badge tone={recipe.section ? 'accent' : 'neutral'}>{sectionLabel(recipe.section)}</Badge>
-              {recipe.categories.map((c) => (
-                <Badge key={c}>{c}</Badge>
-              ))}
-            </div>
-
+            <p className="mt-2 text-sm text-muted">
+              {[
+                `Serves ${recipe.servings}`,
+                recipe.prepTimeMinutes ? `Prep ${formatMinutes(recipe.prepTimeMinutes)}` : null,
+                recipe.cookTimeMinutes ? `Cook ${formatMinutes(recipe.cookTimeMinutes)}` : null,
+                total && recipe.prepTimeMinutes && recipe.cookTimeMinutes ? `${formatMinutes(total)} in all` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            <p className="text-sm text-muted">
+              {[sectionLabel(recipe.section), ...recipe.categories, recipe.shared ? 'from another household' : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
             {recipe.sourceUrl && (
               <a
                 href={recipe.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-3 inline-block break-all text-sm font-medium text-accent underline"
+                className="mt-2 inline-block break-all text-sm font-medium text-accent underline"
               >
                 {recipe.sourceUrl}
               </a>
             )}
-          </Card>
+          </div>
 
           {organizing && draft && activeHouseholdId && (
             <Card title={recipe.section ? 'Organize' : 'Move to my catalog'}>
@@ -337,7 +336,7 @@ export default function RecipeDetailPage() {
                       <img
                         src={imageUrl(id)}
                         alt=""
-                        className="aspect-square w-full rounded-xl border border-line object-cover"
+                        className="aspect-square w-full rounded-xl object-cover"
                       />
                       {mine && (
                         <div className="mt-1 flex gap-1">
