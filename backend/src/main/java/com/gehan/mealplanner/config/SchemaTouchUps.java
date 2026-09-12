@@ -35,6 +35,22 @@ public class SchemaTouchUps {
     }
 
     /**
+     * The cupboard briefly tracked Have/Low/Out. A database started on that version has NOT NULL
+     * status and updated_at columns that nothing writes any more, so every new cupboard item would
+     * fail on them. IF EXISTS makes this a no-op everywhere else.
+     */
+    @Bean
+    public ApplicationRunner dropCupboardStockColumns(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.execute("ALTER TABLE cupboard_items DROP COLUMN IF EXISTS status, DROP COLUMN IF EXISTS updated_at");
+            } catch (Exception e) {
+                log.warn("Could not drop the old cupboard stock columns: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
      * The unit box used to send "" for no unit, and planned items send nothing at all — so the
      * same "eggs" could sit on the list twice, once per spelling of empty. Empty is null now.
      */

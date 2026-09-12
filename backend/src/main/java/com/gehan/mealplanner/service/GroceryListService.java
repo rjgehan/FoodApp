@@ -74,9 +74,10 @@ public class GroceryListService {
             return item != null && item.isStaple();
         }
 
-        boolean have(Ingredient ingredient) {
+        /** Enough to count on: in the cupboard, and not running low. */
+        boolean has(Ingredient ingredient) {
             CupboardItem item = cupboard.get(ingredient.getId());
-            return item != null && item.getStatus() == StockStatus.HAVE;
+            return item != null && !item.isRunningLow();
         }
     }
 
@@ -124,26 +125,24 @@ public class GroceryListService {
                 .build();
         item = groceryListItemRepository.save(item);
 
-        // Putting something on the list by hand means you are running out, so the cupboard should
-        // stop saying you have plenty. Meals do not do this: needing eggs for a recipe says
-        // nothing about how many are in the fridge.
-        if (ingredient != null) {
-            cupboardRepository.findByHouseholdIdAndIngredientId(householdId, ingredient.getId())
-                    .filter(c -> c.getStatus() == StockStatus.HAVE)
-                    .ifPresent(c -> {
-                        c.setStatus(StockStatus.LOW);
-                        c.setUpdatedAt(Instant.now());
-                    });
-        }
-
         GroceryListItemResponse response = toItemResponse(item, context(householdId));
         eventPublisher.itemChanged(householdId, response);
         return response;
     }
 
-    /** For the cupboard's Low and Out: on the list, unless it is already there waiting. */
+    /**
+     * The cupboard's Buy again: on the list, unless it is already there waiting — so two phones
+     * doing it at once still means one row. No amount: you know how many you buy.
+     */
     @Transactional
-    public void ensureOnList(Household household, Ingredient ingredient) {
+    public void ensureOnList(UUID householdId, UUID ingredientId, UUID requesterId) {
+        Household household = requireMember(householdId, requesterId);
+        Ingredient ingredient = ingredientRepository.findById(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        ensureOnList(household, ingredient);
+    }
+
+    private void ensureOnList(Household household, Ingredient ingredient) {
         if (!groceryListItemRepository
                 .findByHouseholdIdAndIngredientIdAndCheckedFalse(household.getId(), ingredient.getId()).isEmpty()) {
             return;
@@ -224,15 +223,19 @@ public class GroceryListService {
                 });
     }
 
+    /** Just bought: in the cupboard, and no longer running low if it was. */
     private void stock(Household household, Ingredient ingredient) {
         CupboardItem item = cupboardRepository.findByHouseholdIdAndIngredientId(household.getId(), ingredient.getId())
                 .orElseGet(() -> CupboardItem.builder().household(household).ingredient(ingredient).build());
-        item.setStatus(StockStatus.HAVE);
-        item.setUpdatedAt(Instant.now());
+        item.setRunningLow(false);
         cupboardRepository.save(item);
     }
 
-    /** Adds one meal's ingredients to the household's list, skipping cupboard staples. */
+    /**
+     * One planned entry, on purpose. For a single item this is the only way onto the list —
+     * planning eggs for breakfast says nothing about needing to buy eggs, so the week and day
+     * buttons leave items alone. Asked for by hand, it goes on even if the cupboard has some.
+     */
     @Transactional
     public List<GroceryListItemResponse> addMealToList(UUID householdId, UUID mealPlanEntryId, UUID requesterId) {
         Household household = requireMember(householdId, requesterId);
@@ -242,10 +245,14 @@ public class GroceryListService {
         if (!entry.getHousehold().getId().equals(householdId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found");
         }
-        return addEntry(household, entry, context(householdId));
+        Context ctx = context(householdId);
+        if (entry.getItem() != null) {
+            return List.of(upsertIngredient(household, entry.getItem(), null, null, ctx));
+        }
+        return addRecipe(household, entry, ctx);
     }
 
-    /** Adds everything planned in the date range, skipping cupboard staples. */
+    /** Adds the meals planned in the date range. Meals only: single items have their own button. */
     @Transactional
     public List<GroceryListItemResponse> addAllPlannedToList(UUID householdId, UUID requesterId,
                                                                LocalDate start, LocalDate end) {
@@ -254,26 +261,17 @@ public class GroceryListService {
 
         return mealPlanEntryRepository
                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end).stream()
-                .flatMap(e -> addEntry(household, e, ctx).stream())
+                .flatMap(e -> addRecipe(household, e, ctx).stream())
                 .toList();
     }
 
-    private List<GroceryListItemResponse> addEntry(Household household, MealPlanEntry entry, Context ctx) {
-        if (entry.getRecipe() != null) {
-            int wantedServings = entry.getServings() != null ? entry.getServings() : household.getDefaultServings();
-            return upsertFromRecipe(household, entry.getRecipe(), wantedServings, ctx);
+    /** A planned recipe's ingredients. Anything else — a night out, a single item — adds nothing here. */
+    private List<GroceryListItemResponse> addRecipe(Household household, MealPlanEntry entry, Context ctx) {
+        if (entry.getRecipe() == null) {
+            return List.of();
         }
-        if (entry.getItem() != null) {
-            // Picked out of the cupboard means you have it. The strawberries you have not bought
-            // yet are shopping — that is the whole point of planning them.
-            Ingredient item = entry.getItem();
-            if (ctx.isStaple(item) || ctx.have(item)) {
-                return List.of();
-            }
-            return List.of(upsertIngredient(household, item, null, null, ctx));
-        }
-        // A night out: nothing to buy.
-        return List.of();
+        int wantedServings = entry.getServings() != null ? entry.getServings() : household.getDefaultServings();
+        return upsertFromRecipe(household, entry.getRecipe(), wantedServings, ctx);
     }
 
     /**
@@ -415,6 +413,6 @@ public class GroceryListService {
                 item.getCheckedAt(),
                 ingredient != null ? IngredientSections.resolve(ingredient, ctx.sections()) : StoreSection.OTHER,
                 ingredient == null || IngredientSections.isSorted(ingredient, ctx.sections()),
-                ingredient != null && ctx.have(ingredient));
+                ingredient != null && ctx.has(ingredient));
     }
 }

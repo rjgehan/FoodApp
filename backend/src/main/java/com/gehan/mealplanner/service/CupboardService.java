@@ -5,7 +5,6 @@ import com.gehan.mealplanner.domain.CupboardItem;
 import com.gehan.mealplanner.domain.GroceryListItem;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.Ingredient;
-import com.gehan.mealplanner.domain.StockStatus;
 import com.gehan.mealplanner.domain.StoreSection;
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +25,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** What the household has in the house. See {@link CupboardItem}. */
+/**
+ * What the household has in the house. See {@link CupboardItem}. Remove and Buy again are
+ * separate on purpose: most of the time a finished jar just goes, and only sometimes do you want
+ * another — so the grocery list is only touched when you say so.
+ */
 @Service
 public class CupboardService {
 
@@ -69,7 +71,7 @@ public class CupboardService {
                 .toList();
     }
 
-    /** Adding something already in the cupboard just says you have it again. */
+    /** Adding something already in the cupboard says you have it again, no longer running low. */
     @Transactional
     public CupboardItemResponse add(UUID householdId, UUID requesterId, AddCupboardItemRequest request) {
         Household household = requireMember(householdId, requesterId);
@@ -77,38 +79,44 @@ public class CupboardService {
 
         CupboardItem item = cupboardRepository.findByHouseholdIdAndIngredientId(householdId, ingredient.getId())
                 .orElseGet(() -> CupboardItem.builder().household(household).ingredient(ingredient).build());
-        item.setStatus(StockStatus.HAVE);
+        item.setRunningLow(false);
         if (Boolean.TRUE.equals(request.staple())) {
             item.setStaple(true);
         }
-        item.setUpdatedAt(Instant.now());
         return toResponse(cupboardRepository.save(item), householdId);
     }
 
-    /** Low and Out put it on the grocery list — that is what running low is for. */
     @Transactional
     public CupboardItemResponse update(UUID householdId, UUID itemId, UUID requesterId,
                                        UpdateCupboardItemRequest request) {
         householdService.assertMember(householdId, requesterId);
         CupboardItem item = findItem(householdId, itemId);
-
-        if (request.status() != null && request.status() != item.getStatus()) {
-            item.setStatus(request.status());
-            if (request.status() != StockStatus.HAVE) {
-                groceryListService.ensureOnList(item.getHousehold(), item.getIngredient());
-            }
+        if (request.runningLow() != null) {
+            item.setRunningLow(request.runningLow());
         }
         if (request.staple() != null) {
             item.setStaple(request.staple());
         }
-        item.setUpdatedAt(Instant.now());
         return toResponse(cupboardRepository.save(item), householdId);
     }
 
+    /** Used up, and that is all. */
     @Transactional
     public void remove(UUID householdId, UUID itemId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
         cupboardRepository.delete(findItem(householdId, itemId));
+    }
+
+    /**
+     * Used up and wanted again: out of the cupboard and onto the grocery list in one go, so the
+     * two can never disagree. "Done shopping" brings it back once it is bought.
+     */
+    @Transactional
+    public void buyAgain(UUID householdId, UUID itemId, UUID requesterId) {
+        householdService.assertMember(householdId, requesterId);
+        CupboardItem item = findItem(householdId, itemId);
+        groceryListService.ensureOnList(householdId, item.getIngredient().getId(), requesterId);
+        cupboardRepository.delete(item);
     }
 
     /**
@@ -166,7 +174,7 @@ public class CupboardService {
                 item.getId(),
                 ingredient.getId(),
                 ingredient.getName(),
-                item.getStatus(),
+                item.isRunningLow(),
                 item.isStaple(),
                 IngredientSections.resolve(ingredient, overrides),
                 IngredientSections.isSorted(ingredient, overrides),

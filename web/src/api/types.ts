@@ -64,14 +64,12 @@ export type StoreSection =
   | 'HOUSEHOLD'
   | 'OTHER';
 
-/** Whether you have something, not how much. LOW and OUT put it on the grocery list. */
-export type StockStatus = 'HAVE' | 'LOW' | 'OUT';
-
+/** Have it, or running low — no count. Nothing in the cupboard adds to the grocery list by itself. */
 export interface CupboardItem {
   id: string;
   ingredientId: string;
   name: string;
-  status: StockStatus;
+  runningLow: boolean;
   /** Always have it — planned meals never add it to the grocery list. */
   staple: boolean;
   section: StoreSection;
@@ -170,8 +168,10 @@ export interface MealPlanEntry {
   placeName: string | null;
   /** A single food, no recipe — "eggs". */
   itemName: string | null;
-  /** For a single item: the cupboard has it, so it stays off the grocery list. */
+  /** For a single item: whether the cupboard has it. Single items only reach the list by hand. */
   inCupboard: boolean;
+  /** In the cupboard, but running low. */
+  runningLow: boolean;
   /** "HH:mm" when the occasion has a time — a booking, a pickup slot. Optional. */
   time: string | null;
   servings: number | null;

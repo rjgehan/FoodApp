@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection, StockStatus } from '../api/types';
+import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { useOnResume } from '../utils/useOnResume';
@@ -23,8 +23,6 @@ const SECTION_FOR_MEAL: Record<MealType, RecipeSection> = {
   DINNER: 'DINNER',
   SNACK: 'SNACKS',
 };
-
-const STOCK_WORDS: Record<StockStatus, string> = { HAVE: 'Have it', LOW: 'Running low', OUT: 'Out' };
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -139,6 +137,7 @@ export default function MealPlanPage() {
         <ConfirmAddToGroceries
           dates={contributingDates(weekEntries)}
           missing={missingIngredients(weekEntries)}
+          items={singleItems(weekEntries)}
           busy={addingWeek}
           onCancel={() => setConfirmingWeek(false)}
           onConfirm={async () => {
@@ -435,6 +434,8 @@ function DaySheet({
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Single items put on the list from this sheet, so their button can say so.
+  const [listed, setListed] = useState<string[]>([]);
 
   const label = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
@@ -553,6 +554,17 @@ function DaySheet({
     }
   }
 
+  /** The only way a single item reaches the list — the day and week buttons add meals. */
+  async function addItemToList(entry: MealPlanEntry) {
+    setBusy(true);
+    try {
+      await api('POST', `/api/households/${householdId}/grocery-list/add-meal/${entry.id}`);
+      setListed((ids) => [...ids, entry.id]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(entry: MealPlanEntry) {
     setBusy(true);
     try {
@@ -569,6 +581,7 @@ function DaySheet({
       <ConfirmAddToGroceries
         dates={contributingDates(entries)}
         missing={missingIngredients(entries)}
+        items={singleItems(entries)}
         busy={busy}
         onCancel={() => setConfirming(false)}
         onConfirm={async () => {
@@ -677,6 +690,17 @@ function DaySheet({
                                 </Button>
                               </Link>
                             )}
+                            {entry.itemName && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={busy || listed.includes(entry.id)}
+                                onClick={() => addItemToList(entry)}
+                              >
+                                <CartIcon className="h-4 w-4" />
+                                {listed.includes(entry.id) ? 'On the list' : 'Add to grocery list'}
+                              </Button>
+                            )}
                             {entry.placeId && <PlaceActions place={places.find((p) => p.id === entry.placeId)} />}
                             {entry.placeId && (
                               <Input
@@ -741,7 +765,7 @@ function EntryDetail({ entry }: { entry: MealPlanEntry }) {
   if (entry.itemName) {
     return (
       <span className="block text-sm text-muted">
-        {entry.inCupboard ? 'In the cupboard' : 'Goes on the grocery list'}
+        {entry.runningLow ? 'Running low' : entry.inCupboard ? 'In the cupboard' : 'Not in the cupboard'}
       </span>
     );
   }
@@ -789,6 +813,7 @@ function ServingsControl({
 function ConfirmAddToGroceries({
   dates,
   missing,
+  items,
   busy,
   onConfirm,
   onCancel,
@@ -796,6 +821,8 @@ function ConfirmAddToGroceries({
   dates: string[];
   /** Recipes saved with just a name — planned, but with nothing to add. */
   missing: string[];
+  /** How many single items are planned here, which this deliberately leaves out. */
+  items: number;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -818,6 +845,11 @@ function ConfirmAddToGroceries({
             add anything.
           </p>
         )}
+        {items > 0 && (
+          <p className="text-sm text-muted">
+            Single items aren't included — tap one on its day to add it to the list.
+          </p>
+        )}
         <div className="flex gap-2">
           <Button className="flex-1" disabled={busy || dates.length === 0} onClick={onConfirm}>
             <CartIcon className="h-5 w-5" />
@@ -833,11 +865,16 @@ function ConfirmAddToGroceries({
 }
 
 /**
- * Whether an entry puts anything on the list. Places never do; a name-only recipe has nothing to
- * give yet; a single item only when the cupboard does not already have it.
+ * Whether the week and day buttons put anything on the list for an entry. Meals only: a place has
+ * nothing to buy, a name-only recipe has nothing to give yet, and a single item goes on only from
+ * its own button — planning eggs does not mean needing eggs.
  */
 function contributes(entry: MealPlanEntry): boolean {
-  return (Boolean(entry.recipeId) && !entry.needsIngredients) || (Boolean(entry.itemName) && !entry.inCupboard);
+  return Boolean(entry.recipeId) && !entry.needsIngredients;
+}
+
+function singleItems(entries: MealPlanEntry[]): number {
+  return entries.filter((e) => e.itemName).length;
 }
 
 /** The days in a set of entries that would actually put something on the list. */
@@ -1090,7 +1127,9 @@ function HomePicker({
                   className="flex min-h-touch w-full items-center justify-between gap-3 py-2.5 text-left"
                 >
                   <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
-                  <span className="shrink-0 text-sm text-muted">{STOCK_WORDS[c.status]}</span>
+                  {(c.runningLow || c.staple) && (
+                    <span className="shrink-0 text-sm text-muted">{c.runningLow ? 'Running low' : 'Always have'}</span>
+                  )}
                 </button>
               </li>
             ))}

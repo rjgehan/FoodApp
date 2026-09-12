@@ -1,6 +1,5 @@
 package com.gehan.mealplanner.dto;
 
-import com.gehan.mealplanner.domain.StockStatus;
 import com.gehan.mealplanner.domain.StoreSection;
 import jakarta.validation.constraints.NotBlank;
 
@@ -8,19 +7,19 @@ import java.util.UUID;
 
 public class CupboardDtos {
 
-    /** Adding something you already have in the cupboard just marks it as HAVE again. */
+    /** Adding something already in the cupboard says you have it again — no longer running low. */
     public record AddCupboardItemRequest(@NotBlank String name, Boolean staple) {
     }
 
     /** Both optional — send whichever is changing. */
-    public record UpdateCupboardItemRequest(StockStatus status, Boolean staple) {
+    public record UpdateCupboardItemRequest(Boolean runningLow, Boolean staple) {
     }
 
     public record CupboardItemResponse(
             UUID id,
             UUID ingredientId,
             String name,
-            StockStatus status,
+            boolean runningLow,
             boolean staple,
             StoreSection section,
             /** False means neither the keyword list nor Gemini has placed it yet. */

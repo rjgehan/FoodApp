@@ -43,6 +43,15 @@ public class CupboardController {
         return cupboardService.update(householdId, itemId, userId, request);
     }
 
+    /** Used up and wanted again — off the cupboard, onto the grocery list. */
+    @PostMapping("/{itemId}/buy-again")
+    public ResponseEntity<Void> buyAgain(@AuthenticationPrincipal UUID userId,
+                                          @PathVariable UUID householdId,
+                                          @PathVariable UUID itemId) {
+        cupboardService.buyAgain(householdId, itemId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{itemId}")
     public ResponseEntity<Void> remove(@AuthenticationPrincipal UUID userId,
                                         @PathVariable UUID householdId,

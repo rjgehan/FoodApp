@@ -55,8 +55,13 @@ public class MealPlanDtos {
             UUID placeId,
             String placeName,
             String itemName,
-            /** For a single item: the cupboard has some. Such items stay off the grocery list. */
+            /**
+             * For a single item: whether the cupboard has it, shown so you can decide whether to
+             * put it on the grocery list — nothing adds a single item to the list by itself.
+             */
             boolean inCupboard,
+            /** In the cupboard, but running low. */
+            boolean runningLow,
             LocalTime time,
             Integer servings,
             String notes) {

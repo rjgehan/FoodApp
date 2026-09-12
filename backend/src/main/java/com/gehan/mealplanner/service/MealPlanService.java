@@ -6,7 +6,6 @@ import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.Place;
 import com.gehan.mealplanner.domain.Recipe;
-import com.gehan.mealplanner.domain.StockStatus;
 import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
 import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
@@ -192,7 +191,8 @@ public class MealPlanService {
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
                 item != null ? item.getName() : null,
-                stocked != null && (stocked.isStaple() || stocked.getStatus() == StockStatus.HAVE),
+                stocked != null,
+                stocked != null && stocked.isRunningLow(),
                 entry.getTime(),
                 entry.getServings(),
                 entry.getNotes());

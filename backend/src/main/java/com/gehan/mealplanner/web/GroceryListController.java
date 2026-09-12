@@ -70,7 +70,7 @@ public class GroceryListController {
         return groceryListService.sort(householdId, userId);
     }
 
-    /** Adds one planned meal's ingredients to the list (skipping cupboard staples). */
+    /** Adds one planned entry: a meal's ingredients (skipping staples), or a single item as it is. */
     @PostMapping("/grocery-list/add-meal/{mealPlanEntryId}")
     public List<GroceryListItemResponse> addMeal(@AuthenticationPrincipal UUID userId,
                                                   @PathVariable UUID householdId,
@@ -78,7 +78,7 @@ public class GroceryListController {
         return groceryListService.addMealToList(householdId, mealPlanEntryId, userId);
     }
 
-    /** Adds everything planned in the date range (skipping cupboard staples). */
+    /** Adds the meals planned in the date range (skipping staples). Single items are left out. */
     @PostMapping("/grocery-list/add-all")
     public List<GroceryListItemResponse> addAll(@AuthenticationPrincipal UUID userId,
                                                  @PathVariable UUID householdId,

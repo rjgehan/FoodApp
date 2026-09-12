@@ -11,11 +11,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Something a household keeps in the house, so you can check whether you have it without going
- * to look. Goes in through "Done shopping" on the grocery list, or by hand.
+ * Something a household has in the house, so you can check without going to look. Goes in
+ * through "Done shopping" on the grocery list, or by hand, and comes out when it is used up.
  *
- * An item marked OUT stays here rather than disappearing: the cupboard doubles as the list of
- * things you normally have, and putting the shopping away flips it straight back to HAVE.
+ * Have it, or running low — no count. When it is used up it either just goes (Remove, most of
+ * the time) or goes onto the grocery list (Buy again). Nothing here adds to the list by itself.
  */
 @Entity
 @Table(name = "cupboard_items",
@@ -40,11 +40,6 @@ public class CupboardItem {
     @JoinColumn(name = "ingredient_id", nullable = false)
     private Ingredient ingredient;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    @Builder.Default
-    private StockStatus status = StockStatus.HAVE;
-
     /**
      * Something you always have — salt, oil. Planned meals never put a staple on the grocery
      * list. This is what the grocery list's old "Pantry staples" became.
@@ -53,9 +48,17 @@ public class CupboardItem {
     @Builder.Default
     private boolean staple = false;
 
-    @Column(nullable = false)
+    /**
+     * Some left, but not much — a note for whoever checks, and nothing more. It does not put
+     * anything on the grocery list. Planning does count it as not having enough, though, so a
+     * planned item that is running low still goes on the list.
+     *
+     * The column carries its own default: Hibernate adds new columns to a table that already has
+     * rows, and a bare NOT NULL there fails.
+     */
+    @Column(columnDefinition = "boolean not null default false")
     @Builder.Default
-    private Instant updatedAt = Instant.now();
+    private boolean runningLow = false;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default

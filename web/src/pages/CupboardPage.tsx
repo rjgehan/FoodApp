@@ -1,29 +1,27 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { CupboardItem, StockStatus, StoreSection } from '../api/types';
+import type { CupboardItem, StoreSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
-import { Button, Card, cx, EmptyState, IconButton, Input, Select } from '../components/ui';
-import { PlusIcon, TrashIcon } from '../components/icons';
-
-const STATUSES: { value: StockStatus; label: string; active: string }[] = [
-  { value: 'HAVE', label: 'Have', active: 'bg-success-soft text-success' },
-  { value: 'LOW', label: 'Low', active: 'bg-accent-soft text-accent' },
-  { value: 'OUT', label: 'Out', active: 'bg-danger-soft text-danger' },
-];
+import { Button, Card, cx, EmptyState, Input, Select } from '../components/ui';
+import { PlusIcon } from '../components/icons';
 
 /**
  * What is in the house, so you can check without going to look. Filled mostly by "Done
  * shopping" on the grocery list; the search box doubles as the way to add something by hand.
+ *
+ * Every row says the same four things. Have and Low are how much is left, for whoever checks.
+ * Remove and Buy again are for when it is used up — most of the time it just goes, and when you
+ * want another, Buy again moves it to the grocery list. Nothing here adds to the list by itself,
+ * and nothing asks a follow-up question.
  */
 export default function CupboardPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
   const [items, setItems] = useState<CupboardItem[] | null>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -56,9 +54,9 @@ export default function CupboardPage() {
     });
   }
 
-  function flash(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 3000);
+  function drop(item: CupboardItem) {
+    setItems((prev) => (prev ?? []).filter((i) => i.id !== item.id));
+    setOpen(null);
   }
 
   async function add(e: FormEvent) {
@@ -74,15 +72,22 @@ export default function CupboardPage() {
     }
   }
 
-  async function setStatus(item: CupboardItem, status: StockStatus) {
-    if (item.status === status) return;
-    replace({ ...item, status });
-    const updated = await api<CupboardItem>('PATCH', `/api/households/${activeHouseholdId}/cupboard/${item.id}`, {
-      status,
-    });
-    replace(updated);
-    // Said out loud, because a change on this page landing on another one is otherwise invisible.
-    if (status !== 'HAVE' && !item.onList) flash(`${item.name} is on the grocery list.`);
+  async function setRunningLow(item: CupboardItem, runningLow: boolean) {
+    if (item.runningLow === runningLow) return;
+    replace({ ...item, runningLow });
+    replace(
+      await api<CupboardItem>('PATCH', `/api/households/${activeHouseholdId}/cupboard/${item.id}`, { runningLow }),
+    );
+  }
+
+  async function remove(item: CupboardItem) {
+    drop(item);
+    await api('DELETE', `/api/households/${activeHouseholdId}/cupboard/${item.id}`);
+  }
+
+  async function buyAgain(item: CupboardItem) {
+    drop(item);
+    await api('POST', `/api/households/${activeHouseholdId}/cupboard/${item.id}/buy-again`);
   }
 
   async function setStaple(item: CupboardItem, staple: boolean) {
@@ -97,19 +102,12 @@ export default function CupboardPage() {
     await api('PUT', `/api/households/${activeHouseholdId}/ingredients/${item.ingredientId}/section`, { section });
   }
 
-  async function remove(item: CupboardItem) {
-    setItems((prev) => (prev ?? []).filter((i) => i.id !== item.id));
-    setOpen(null);
-    await api('DELETE', `/api/households/${activeHouseholdId}/cupboard/${item.id}`);
-  }
-
   const all = items ?? [];
   const q = query.trim().toLowerCase();
   const shown = all.filter((i) => !q || i.name.toLowerCase().includes(q));
   const exact = all.some((i) => i.name.toLowerCase() === q);
   const groups = groupBySection(shown, activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
-  const low = all.filter((i) => i.status === 'LOW').length;
-  const out = all.filter((i) => i.status === 'OUT').length;
+  const low = all.filter((i) => i.runningLow).length;
 
   return (
     <div className="space-y-4">
@@ -118,7 +116,7 @@ export default function CupboardPage() {
         <p className="text-muted">
           {all.length === 0
             ? 'What’s in the house.'
-            : [`${all.length} ${all.length === 1 ? 'thing' : 'things'}`, low && `${low} running low`, out && `${out} out`]
+            : [`${all.length} ${all.length === 1 ? 'thing' : 'things'}`, low && `${low} running low`]
                 .filter(Boolean)
                 .join(' · ')}
         </p>
@@ -140,10 +138,6 @@ export default function CupboardPage() {
           </Button>
         )}
       </form>
-
-      {notice && (
-        <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">{notice}</div>
-      )}
 
       {items === null ? (
         <p className="py-6 text-center text-sm text-muted">Loading…</p>
@@ -169,23 +163,35 @@ export default function CupboardPage() {
                 const expanded = open === item.id;
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
                 return (
-                  <li key={item.id} className="py-1">
-                    <div className="flex items-center gap-2">
+                  <li key={item.id} className="py-2.5">
+                    {/* Name above the buttons on a phone, beside them once there is room. */}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <button
                         type="button"
                         onClick={() => setOpen(expanded ? null : item.id)}
-                        className="flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left"
+                        className="min-w-0 flex-1 text-left"
                       >
-                        <span className={cx('block truncate font-medium', item.status === 'OUT' && 'text-muted')}>
-                          {item.name}
-                        </span>
+                        <span className="block truncate font-medium">{item.name}</span>
                         {detail && <span className="block truncate text-sm text-muted">{detail}</span>}
                       </button>
-                      <StatusPicker value={item.status} onChange={(s) => setStatus(item, s)} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
+                        <Button size="sm" variant="secondary" onClick={() => remove(item)} aria-label={`Remove ${item.name}`}>
+                          Remove
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => buyAgain(item)}
+                          aria-label={`Buy ${item.name} again — moves it to the grocery list`}
+                        >
+                          Buy again
+                        </Button>
+                      </div>
                     </div>
 
                     {expanded && (
-                      <div className="space-y-2 pb-2 pt-1">
+                      <div className="space-y-2 pt-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
                             size="sm"
@@ -207,9 +213,6 @@ export default function CupboardPage() {
                               </option>
                             ))}
                           </Select>
-                          <IconButton label={`Remove ${item.name}`} onClick={() => remove(item)}>
-                            <TrashIcon className="h-5 w-5" />
-                          </IconButton>
                         </div>
                         <p className="text-xs text-muted">
                           “Always have” is for things like salt and oil — meals leave them off the grocery list.
@@ -223,26 +226,32 @@ export default function CupboardPage() {
           </Card>
         ))
       )}
+
+      {all.length > 0 && (
+        <p className="px-1 text-sm text-muted">
+          Used something up? Remove takes it out. Buy again takes it out and puts it on the grocery list.
+        </p>
+      )}
     </div>
   );
 }
 
-/** Three states and one tap each. A count would be wrong within a week; these stay true. */
-function StatusPicker({ value, onChange }: { value: StockStatus; onChange: (status: StockStatus) => void }) {
+/** How much is left, in the two answers that stay true without anyone counting. */
+function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) => void }) {
   return (
     <div className="flex shrink-0 rounded-xl border border-line p-0.5" role="group" aria-label="How much is left">
-      {STATUSES.map((s) => (
+      {[false, true].map((isLow) => (
         <button
-          key={s.value}
+          key={String(isLow)}
           type="button"
-          aria-pressed={value === s.value}
-          onClick={() => onChange(s.value)}
+          aria-pressed={low === isLow}
+          onClick={() => onChange(isLow)}
           className={cx(
-            'h-9 rounded-lg px-2.5 text-sm font-medium transition-colors',
-            value === s.value ? s.active : 'text-muted',
+            'h-8 rounded-lg px-3 text-sm font-medium transition-colors',
+            low === isLow ? (isLow ? 'bg-accent-soft text-accent' : 'bg-success-soft text-success') : 'text-muted',
           )}
         >
-          {s.label}
+          {isLow ? 'Low' : 'Have'}
         </button>
       ))}
     </div>
