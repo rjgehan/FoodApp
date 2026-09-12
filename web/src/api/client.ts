@@ -30,6 +30,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What to do when the server says the session is over. AuthContext registers it; a plain
+ * callback so this module needs no React.
+ */
+let signedOutHandler: (() => void) | null = null;
+
+export function onSignedOut(handler: (() => void) | null) {
+  signedOutHandler = handler;
+}
+
+/**
+ * A 401 on a request that carried a token means the token is no good any more. Before this, the
+ * app kept showing you as signed in while the server quietly refused every change, and the only
+ * way out was signing out by hand. The sign-in endpoints are excluded: a wrong PIN is also a 401.
+ */
+function noticeSignedOut(status: number, sentToken: boolean, path: string) {
+  const signInCall = path.startsWith('/api/auth/') && path !== '/api/auth/refresh';
+  if (status === 401 && sentToken && !signInCall) signedOutHandler?.();
+}
+
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = getToken();
@@ -44,7 +64,10 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
 
-  if (!res.ok) throw new ApiError(res.status, data);
+  if (!res.ok) {
+    noticeSignedOut(res.status, Boolean(token), path);
+    throw new ApiError(res.status, data);
+  }
   return data as T;
 }
 
@@ -65,13 +88,17 @@ export async function uploadImage(householdId: string, blob: Blob): Promise<{ id
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${apiBaseUrl()}/api/households/${householdId}/images`, {
+  const path = `/api/households/${householdId}/images`;
+  const res = await fetch(apiBaseUrl() + path, {
     method: 'POST',
     headers,
     body: form,
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data);
+  if (!res.ok) {
+    noticeSignedOut(res.status, Boolean(token), path);
+    throw new ApiError(res.status, data);
+  }
   return data as { id: string };
 }

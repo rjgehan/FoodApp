@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { api, imageUrl } from '../api/client';
-import type { Recipe } from '../api/types';
+import type { Recipe, RecipeSection } from '../api/types';
 import UnitInput from './UnitInput';
 import {
   Button,
@@ -45,12 +45,15 @@ export default function RecipeForm({
   householdId,
   recipe,
   draft,
+  section,
   onSaved,
 }: {
   householdId: string;
   recipe?: Recipe;
   /** Starting values with nothing saved behind them — a written-for-you recipe, say. */
   draft?: RecipeDraft;
+  /** Where a new recipe is filed to begin with — Breakfast, when made from the breakfast slot. */
+  section?: RecipeSection;
   onSaved: (recipe: Recipe) => void;
 }) {
   // `recipe` means "this already exists, save over it"; `draft` only seeds the fields.
@@ -72,7 +75,7 @@ export default function RecipeForm({
     // A recipe you own is normally filed, but an unfiled one still has to land somewhere.
     recipe
       ? { section: recipe.section ?? DEFAULT_FILING.section, categories: recipe.categories }
-      : DEFAULT_FILING,
+      : { ...DEFAULT_FILING, section: section ?? DEFAULT_FILING.section },
   );
 
   // Everything optional lives behind this, so the first screen is just the recipe.

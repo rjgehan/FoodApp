@@ -7,22 +7,22 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The old "Pantry staples": an ingredient a household never wanted added from planned meals.
- * Replaced by {@link CupboardItem#isStaple()}; kept only so StartupBackfills can move the rows
- * across. Delete once every install has started on a version with the cupboard.
+ * One household moving one ingredient to a different aisle — tortillas with the bread at their
+ * store, say. Wins over {@link Ingredient#getSection()}, which is only a best guess shared by
+ * everyone. Per household, because stores really do differ.
  */
 @Entity
-@Table(name = "blacklisted_ingredients", uniqueConstraints = @UniqueConstraint(columnNames = {"household_id", "ingredient_id"}))
+@Table(name = "ingredient_sections",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"household_id", "ingredient_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class BlacklistedIngredient {
+public class IngredientSection {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -36,7 +36,7 @@ public class BlacklistedIngredient {
     @JoinColumn(name = "ingredient_id", nullable = false)
     private Ingredient ingredient;
 
-    @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private Instant createdAt = Instant.now();
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private StoreSection section;
 }

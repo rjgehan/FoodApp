@@ -98,6 +98,10 @@ public class IntegrationService {
                     null, imageUrl(place.getImage()), null,
                     place.getId(), place.getMenuUrl(), place.getPhone());
         }
+        if (entry.getItem() != null) {
+            return new PlannedItem("ITEM", entry.getItem().getName(), entry.getTime(), null, entry.getNotes(),
+                    null, null, null, null, null, null);
+        }
         return new PlannedItem(null, null, null, null, null, null, null, null, null, null, null);
     }
 

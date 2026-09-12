@@ -4,12 +4,14 @@ import com.gehan.mealplanner.integration.IntegrationAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -50,6 +52,10 @@ public class SecurityConfig {
                         // is the credential, and the response carries only the recipe itself.
                         .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
                         .anyRequest().authenticated())
+                // A missing or expired token means "sign in again" (401), not "you may not" (403).
+                // Spring answers 403 to both by default, and then the app cannot tell a lapsed
+                // session from a household you are not in — so it never signed anyone out.
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 // Runs before the JWT filter: /api/integration/** authenticates with a shared
                 // key and no user, and the filter answers 401/503 itself rather than falling
                 // through to a login the caller has no way to complete.

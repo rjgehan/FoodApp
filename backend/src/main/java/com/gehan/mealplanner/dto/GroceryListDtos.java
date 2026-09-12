@@ -1,8 +1,12 @@
 package com.gehan.mealplanner.dto;
 
+import com.gehan.mealplanner.domain.StoreSection;
+import jakarta.validation.constraints.NotNull;
+
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public class GroceryListDtos {
@@ -11,6 +15,20 @@ public class GroceryListDtos {
             String ingredientName,
             BigDecimal quantity,
             String unit) {
+    }
+
+    /**
+     * "Done shopping". Everything in either list comes off the grocery list; only `putAway` goes
+     * into the cupboard. The split is for the things you bought for someone else.
+     */
+    public record PutAwayRequest(List<UUID> putAway, List<UUID> leaveOut) {
+    }
+
+    public record MoveSectionRequest(@NotNull StoreSection section) {
+    }
+
+    /** `left` is what Gemini could not place either — rare, and those can be moved by hand. */
+    public record SortResponse(int sorted, int left) {
     }
 
     public record GroceryListItemResponse(
@@ -23,6 +41,12 @@ public class GroceryListDtos {
             boolean checked,
             UUID checkedByUserId,
             String checkedByName,
-            Instant checkedAt) implements Serializable {
+            Instant checkedAt,
+            /** The aisle, for this household. Other when nobody has placed it yet. */
+            StoreSection section,
+            /** False means neither the keyword list nor Gemini has placed it — Sort would. */
+            boolean sorted,
+            /** The cupboard says you have this. Only meals put such things on the list. */
+            boolean inCupboard) implements Serializable {
     }
 }

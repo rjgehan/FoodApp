@@ -12,7 +12,7 @@ type Step = 'household' | 'user' | 'username' | 'setup-form' | 'pin' | 'pin-conf
 type Mode = 'login' | 'claim' | 'setup';
 
 export default function LoginPage() {
-  const { login, setInitialPin, setup } = useAuth();
+  const { login, setInitialPin, setup, expired } = useAuth();
 
   const [landing, setLanding] = useState<LandingResponse | null>(null);
   const [step, setStep] = useState<Step>('household');
@@ -172,6 +172,13 @@ export default function LoginPage() {
       <div className="w-full max-w-xs">
         <h1 className="mb-1 text-center text-3xl font-semibold tracking-tight">Meal Planner</h1>
         <p className="mb-7 text-center text-sm text-muted">Who’s cooking?</p>
+
+        {/* Said out loud, so being bounced here does not look like the app forgot you at random. */}
+        {expired && (
+          <p className="mb-5 rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
+            You were signed out. Sign in again to carry on.
+          </p>
+        )}
 
         {landing === null && <p className="text-center text-sm text-muted">Loading…</p>}
 

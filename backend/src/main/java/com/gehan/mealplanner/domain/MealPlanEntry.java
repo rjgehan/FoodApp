@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /**
  * A single meal slot on the household calendar (e.g. "Tuesday dinner").
- * Holds either a {@link #recipe} you cook or a {@link #place} you eat at — never both, and a
- * slot with neither is simply empty.
+ * Holds exactly one of: a {@link #recipe} you cook, a {@link #place} you eat at, or a single
+ * {@link #item} — just eggs, just strawberries. A slot with none of them is simply empty.
  */
 @Entity
 @Table(name = "meal_plan_entries")
@@ -49,6 +49,15 @@ public class MealPlanEntry {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id")
     private Place place;
+
+    /**
+     * A single food rather than a dish — eggs for breakfast. The shared ingredient, so it lines up
+     * with the cupboard and the grocery list: if it is not in the cupboard, planning it is what
+     * puts it on the list. Making eggs a one-ingredient recipe would clutter the recipe book.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ingredient_id")
+    private Ingredient item;
 
     /**
      * When you are sitting down, for the occasions that have a time — a booking, a pickup slot.

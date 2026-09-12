@@ -7,6 +7,7 @@ import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.RenameHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.UpdateStoreSectionOrderRequest;
 import com.gehan.mealplanner.service.HouseholdService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -80,5 +81,12 @@ public class HouseholdController {
                                              @PathVariable UUID householdId,
                                              @Valid @RequestBody UpdateHouseholdSettingsRequest request) {
         return householdService.updateSettings(householdId, userId, request);
+    }
+
+    @PutMapping("/{householdId}/store-sections")
+    public HouseholdResponse updateStoreSectionOrder(@AuthenticationPrincipal UUID userId,
+                                                     @PathVariable UUID householdId,
+                                                     @Valid @RequestBody UpdateStoreSectionOrderRequest request) {
+        return householdService.updateStoreSectionOrder(householdId, userId, request.order());
     }
 }

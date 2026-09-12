@@ -7,6 +7,7 @@ import {
   BookIcon,
   CalendarIcon,
   CartIcon,
+  CupboardIcon,
   HomeIcon,
   HouseholdIcon,
   LogOutIcon,
@@ -17,6 +18,7 @@ const navItems = [
   { to: '/meal-plan', label: 'Plan', Icon: CalendarIcon },
   { to: '/recipes', label: 'Recipes', Icon: BookIcon },
   { to: '/grocery-list', label: 'Groceries', Icon: CartIcon },
+  { to: '/cupboard', label: 'Cupboard', Icon: CupboardIcon },
   { to: '/household', label: 'House', Icon: HouseholdIcon },
 ];
 

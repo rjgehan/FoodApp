@@ -6,6 +6,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { Card, EmptyState } from '../components/ui';
 import { imageUrl } from '../api/client';
+import { useOnResume } from '../utils/useOnResume';
 
 const MEAL_ORDER: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
 
@@ -41,6 +42,10 @@ export default function DashboardPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [history, setHistory] = useState<MealPlanEntry[]>([]);
 
+  // A counter rather than a function, so coming back to the tab just re-runs the effect below.
+  const [resumed, setResumed] = useState(0);
+  useOnResume(() => setResumed((n) => n + 1));
+
   useEffect(() => {
     if (!activeHouseholdId) return;
     const now = new Date();
@@ -57,7 +62,7 @@ export default function DashboardPage() {
     )
       .then(setHistory)
       .catch(() => setHistory([]));
-  }, [activeHouseholdId]);
+  }, [activeHouseholdId, resumed]);
 
   if (households.length === 0) {
     return (

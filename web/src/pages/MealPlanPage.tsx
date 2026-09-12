@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { MealPlanEntry, MealType, Place, Recipe } from '../api/types';
+import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection, StockStatus } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
+import { useOnResume } from '../utils/useOnResume';
+import { useAiAvailable } from '../utils/useAiAvailable';
 import PlaceActions from '../components/PlaceActions';
+import RecipeForm from '../components/RecipeForm';
+import { WriteForMe } from '../components/RecipeWriter';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, NumberInput, Sheet } from '../components/ui';
-import { CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
+import { BookIcon, CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+/** A recipe made from a slot is filed where you would go looking for it. */
+const SECTION_FOR_MEAL: Record<MealType, RecipeSection> = {
+  BREAKFAST: 'BREAKFAST',
+  LUNCH: 'LUNCH',
+  DINNER: 'DINNER',
+  SNACK: 'SNACKS',
+};
+
+const STOCK_WORDS: Record<StockStatus, string> = { HAVE: 'Have it', LOW: 'Running low', OUT: 'Out' };
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -65,10 +79,20 @@ export default function MealPlanPage() {
     refresh();
   }, [refresh]);
 
-  useEffect(() => {
+  const loadRecipes = useCallback(async () => {
     if (!activeHouseholdId) return;
-    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`).then(setRecipes);
+    setRecipes(await api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`));
   }, [activeHouseholdId]);
+
+  useEffect(() => {
+    loadRecipes();
+  }, [loadRecipes]);
+
+  // Someone may have planned from another phone while this tab sat in the background.
+  useOnResume(() => {
+    refresh().catch(() => {});
+    loadRecipes().catch(() => {});
+  });
 
   const byDate = useMemo(() => {
     const map = new Map<string, MealPlanEntry[]>();
@@ -107,15 +131,14 @@ export default function MealPlanPage() {
   const inWindow = weekDays.map((d) => d >= today && d <= horizonEnd);
   const windowStart = inWindow.indexOf(true);
   const windowLength = inWindow.filter(Boolean).length;
-  const weekDates = contributingDates(
-    entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd)),
-  );
+  const weekEntries = entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd));
 
   return (
     <div className="space-y-4">
       {confirmingWeek && (
         <ConfirmAddToGroceries
-          dates={weekDates}
+          dates={contributingDates(weekEntries)}
+          missing={missingIngredients(weekEntries)}
           busy={addingWeek}
           onCancel={() => setConfirmingWeek(false)}
           onConfirm={async () => {
@@ -301,6 +324,7 @@ export default function MealPlanPage() {
           entries={byDate.get(openDay) ?? []}
           defaultServings={activeHousehold?.defaultServings ?? 4}
           onChanged={refresh}
+          onRecipeCreated={(recipe) => setRecipes((all) => [...all, recipe])}
           onAddToList={() => addRangeToList(new Date(`${openDay}T00:00:00`), new Date(`${openDay}T00:00:00`))}
           onClose={() => setOpenDay(null)}
         />
@@ -383,6 +407,7 @@ function DaySheet({
   entries,
   defaultServings,
   onChanged,
+  onRecipeCreated,
   onAddToList,
   onClose,
 }: {
@@ -392,12 +417,16 @@ function DaySheet({
   entries: MealPlanEntry[];
   defaultServings: number;
   onChanged: () => Promise<void>;
+  onRecipeCreated: (recipe: Recipe) => void;
   onAddToList: () => Promise<void>;
   onClose: () => void;
 }) {
   // entryId set => swapping that dish; null => adding another one alongside.
   const [picking, setPicking] = useState<{ meal: MealType; entryId: string | null } | null>(null);
+  // The name typed into the picker, while a new recipe for it is being made.
+  const [creating, setCreating] = useState<string | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [cupboard, setCupboard] = useState<CupboardItem[]>([]);
   // Lives here, not in the picker, so it survives switching tabs while deciding.
   const [outTime, setOutTime] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -415,6 +444,7 @@ function DaySheet({
 
   useEffect(() => {
     api<Place[]>('GET', `/api/households/${householdId}/places`).then(setPlaces).catch(() => setPlaces([]));
+    api<CupboardItem[]>('GET', `/api/households/${householdId}/cupboard`).then(setCupboard).catch(() => setCupboard([]));
   }, [householdId]);
 
   // The three staples, plus any other slot that already has something in it.
@@ -423,25 +453,25 @@ function DaySheet({
   );
   const missing = ALL_MEALS.filter((m) => !slots.includes(m));
 
-  async function choose(recipe: Recipe) {
+  /** Puts a recipe or a single item in the slot being picked for — or swaps the dish being changed. */
+  async function fill(what: { recipeId: string } | { itemName: string }) {
     if (!picking) return;
     setBusy(true);
     setError(null);
     try {
       if (picking.entryId) {
-        await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${picking.entryId}`, {
-          recipeId: recipe.id,
-        });
+        await api('PATCH', `/api/households/${householdId}/meal-plan/entries/${picking.entryId}`, what);
       } else {
         await api('POST', `/api/households/${householdId}/meal-plan/entries`, {
           date,
           mealType: picking.meal,
-          recipeId: recipe.id,
-          servings: defaultServings,
+          ...what,
+          servings: 'recipeId' in what ? defaultServings : null,
         });
       }
       await onChanged();
       setPicking(null);
+      setCreating(null);
       setExpanded(null);
     } catch (err) {
       setError(
@@ -452,6 +482,12 @@ function DaySheet({
     } finally {
       setBusy(false);
     }
+  }
+
+  /** A recipe made from the picker goes straight into the slot it was made for. */
+  async function recipeMade(recipe: Recipe) {
+    onRecipeCreated(recipe);
+    await fill({ recipeId: recipe.id });
   }
 
   /** Typing a name that is not saved yet creates the place, the way a new category works. */
@@ -532,6 +568,7 @@ function DaySheet({
     return (
       <ConfirmAddToGroceries
         dates={contributingDates(entries)}
+        missing={missingIngredients(entries)}
         busy={busy}
         onCancel={() => setConfirming(false)}
         onConfirm={async () => {
@@ -549,6 +586,21 @@ function DaySheet({
     );
   }
 
+  if (picking && creating !== null) {
+    return (
+      <Sheet title={`New recipe · ${titleCase(picking.meal)}`} onClose={() => setCreating(null)}>
+        {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
+        <NewRecipeFromPlan
+          householdId={householdId}
+          initialName={creating}
+          section={SECTION_FOR_MEAL[picking.meal]}
+          servings={defaultServings}
+          onSaved={recipeMade}
+        />
+      </Sheet>
+    );
+  }
+
   if (picking) {
     return (
       <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)}>
@@ -556,10 +608,16 @@ function DaySheet({
         <PickerTabs
           recipes={recipes}
           places={places}
+          cupboard={cupboard}
           disabled={busy}
           time={outTime}
           onTimeChange={setOutTime}
-          onPickRecipe={choose}
+          onPickRecipe={(recipe) => fill({ recipeId: recipe.id })}
+          onPickItem={(name) => fill({ itemName: name })}
+          onNewRecipe={(name) => {
+            setError(null);
+            setCreating(name);
+          }}
           onPickPlace={choosePlace}
         />
       </Sheet>
@@ -603,9 +661,7 @@ function DaySheet({
                                 <span className="font-normal text-muted"> · {formatTime(entry.time)}</span>
                               )}
                             </span>
-                            {entry.recipeId && entry.servings ? (
-                              <span className="block text-sm text-muted">Serves {entry.servings}</span>
-                            ) : null}
+                            <EntryDetail entry={entry} />
                           </span>
                         </button>
 
@@ -615,9 +671,9 @@ function DaySheet({
                               Change
                             </Button>
                             {entry.recipeId && (
-                              <Link to={`/recipes/${entry.recipeId}`}>
+                              <Link to={entry.needsIngredients ? `/recipes/${entry.recipeId}/edit` : `/recipes/${entry.recipeId}`}>
                                 <Button size="sm" variant="secondary">
-                                  View recipe
+                                  {entry.needsIngredients ? 'Add ingredients' : 'View recipe'}
                                 </Button>
                               </Link>
                             )}
@@ -674,6 +730,24 @@ function DaySheet({
   );
 }
 
+/** The second line under a planned dish: what it means for the shopping. */
+function EntryDetail({ entry }: { entry: MealPlanEntry }) {
+  if (entry.recipeId && entry.needsIngredients) {
+    return <span className="block text-sm text-accent">No ingredients yet</span>;
+  }
+  if (entry.recipeId && entry.servings) {
+    return <span className="block text-sm text-muted">Serves {entry.servings}</span>;
+  }
+  if (entry.itemName) {
+    return (
+      <span className="block text-sm text-muted">
+        {entry.inCupboard ? 'In the cupboard' : 'Goes on the grocery list'}
+      </span>
+    );
+  }
+  return null;
+}
+
 function ServingsControl({
   value,
   disabled,
@@ -708,21 +782,20 @@ function ServingsControl({
 }
 
 /**
- * Cook something, or go out. Two tabs rather than one merged list: when you have decided you are
- * not cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
- */
-/**
  * People were flooding their list by catching the button in passing, and undoing that means
  * ticking or deleting each item by hand. One question, naming the days that will contribute,
  * so it is obvious at a glance whether you meant one day or seven.
  */
 function ConfirmAddToGroceries({
   dates,
+  missing,
   busy,
   onConfirm,
   onCancel,
 }: {
   dates: string[];
+  /** Recipes saved with just a name — planned, but with nothing to add. */
+  missing: string[];
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -739,6 +812,12 @@ function ConfirmAddToGroceries({
             ? 'Nothing planned to add.'
             : `Confirm adding ${listed} meals to grocery list?`}
         </p>
+        {missing.length > 0 && (
+          <p className="text-sm text-muted">
+            {missing.join(', ')} {missing.length === 1 ? "has no ingredients yet, so it won't" : "have no ingredients yet, so they won't"}{' '}
+            add anything.
+          </p>
+        )}
         <div className="flex gap-2">
           <Button className="flex-1" disabled={busy || dates.length === 0} onClick={onConfirm}>
             <CartIcon className="h-5 w-5" />
@@ -753,40 +832,61 @@ function ConfirmAddToGroceries({
   );
 }
 
-/** The days in a set of entries that would actually put something on the list. */
-function contributingDates(entries: MealPlanEntry[]): string[] {
-  // Places contribute nothing — there is no shopping to do for a restaurant.
-  return [...new Set(entries.filter((e) => e.recipeId).map((e) => e.date))].sort();
+/**
+ * Whether an entry puts anything on the list. Places never do; a name-only recipe has nothing to
+ * give yet; a single item only when the cupboard does not already have it.
+ */
+function contributes(entry: MealPlanEntry): boolean {
+  return (Boolean(entry.recipeId) && !entry.needsIngredients) || (Boolean(entry.itemName) && !entry.inCupboard);
 }
 
+/** The days in a set of entries that would actually put something on the list. */
+function contributingDates(entries: MealPlanEntry[]): string[] {
+  return [...new Set(entries.filter(contributes).map((e) => e.date))].sort();
+}
+
+function missingIngredients(entries: MealPlanEntry[]): string[] {
+  return [...new Set(entries.filter((e) => e.needsIngredients && e.recipeName).map((e) => e.recipeName!))];
+}
+
+/**
+ * Eat in, or go out. Two tabs rather than one merged list: when you have decided you are not
+ * cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
+ */
 function PickerTabs({
   recipes,
   places,
+  cupboard,
   disabled,
   time,
   onTimeChange,
   onPickRecipe,
+  onPickItem,
+  onNewRecipe,
   onPickPlace,
 }: {
   recipes: Recipe[];
   places: Place[];
+  cupboard: CupboardItem[];
   disabled: boolean;
   time: string;
   onTimeChange: (time: string) => void;
   onPickRecipe: (recipe: Recipe) => void;
+  onPickItem: (name: string) => void;
+  onNewRecipe: (name: string) => void;
   onPickPlace: (place: Place | { name: string }) => void;
 }) {
-  const [tab, setTab] = useState<'cook' | 'out'>('cook');
+  const [tab, setTab] = useState<'home' | 'out'>('home');
 
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
         <Button
-          variant={tab === 'cook' ? 'primary' : 'secondary'}
+          variant={tab === 'home' ? 'primary' : 'secondary'}
           className="flex-1"
-          onClick={() => setTab('cook')}
+          onClick={() => setTab('home')}
         >
-          Cook something
+          At home
         </Button>
         <Button
           variant={tab === 'out' ? 'primary' : 'secondary'}
@@ -797,8 +897,15 @@ function PickerTabs({
         </Button>
       </div>
 
-      {tab === 'cook' ? (
-        <RecipePicker recipes={recipes} onPick={onPickRecipe} disabled={disabled} />
+      {tab === 'home' ? (
+        <HomePicker
+          recipes={recipes}
+          cupboard={cupboard}
+          disabled={disabled}
+          onPickRecipe={onPickRecipe}
+          onPickItem={onPickItem}
+          onNewRecipe={onNewRecipe}
+        />
       ) : (
         <PlacePicker
           places={places}
@@ -899,13 +1006,24 @@ function PlacePicker({
   );
 }
 
-function RecipePicker({
+/**
+ * Everything eaten at home in one search: a recipe, something from the cupboard, or anything you
+ * type. A name nothing matches offers both ways forward — plan it on its own, or make it a
+ * recipe — so the meal you had in mind never means a trip to the Recipes tab and back.
+ */
+function HomePicker({
   recipes,
-  onPick,
+  cupboard,
+  onPickRecipe,
+  onPickItem,
+  onNewRecipe,
   disabled,
 }: {
   recipes: Recipe[];
-  onPick: (recipe: Recipe) => void;
+  cupboard: CupboardItem[];
+  onPickRecipe: (recipe: Recipe) => void;
+  onPickItem: (name: string) => void;
+  onNewRecipe: (name: string) => void;
   disabled: boolean;
 }) {
   const [query, setQuery] = useState('');
@@ -918,10 +1036,20 @@ function RecipePicker({
     return [...counts.keys()].sort((a, b) => a.localeCompare(b));
   }, [recipes]);
 
-  const q = query.trim().toLowerCase();
+  const typed = query.trim();
+  const q = typed.toLowerCase();
   const shown = recipes
     .filter((r) => (!category || r.categories.includes(category)) && (!q || r.name.toLowerCase().includes(q)))
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Only while searching: the cupboard is long, and "eggs" is something you type, not scroll to.
+  const stocked = q
+    ? cupboard
+        .filter((c) => c.name.toLowerCase().includes(q))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(0, 5)
+    : [];
+  const exactRecipe = recipes.some((r) => r.name.toLowerCase() === q);
+  const exactItem = cupboard.some((c) => c.name.toLowerCase() === q);
 
   return (
     <div className="space-y-3">
@@ -930,9 +1058,45 @@ function RecipePicker({
         autoFocus
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search recipes"
-        aria-label="Search recipes"
+        placeholder="Search, or type anything — eggs, toast…"
+        aria-label="Search recipes, or type something to add"
       />
+
+      {typed && !exactRecipe && (
+        <div className="grid gap-2">
+          {!exactItem && (
+            <Button full variant="secondary" disabled={disabled} onClick={() => onPickItem(typed)}>
+              <PlusIcon className="h-5 w-5" />
+              Just “{typed}”
+            </Button>
+          )}
+          <Button full variant="secondary" disabled={disabled} onClick={() => onNewRecipe(typed)}>
+            <BookIcon className="h-5 w-5" />
+            New recipe “{typed}”
+          </Button>
+        </div>
+      )}
+
+      {stocked.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-subtle">In the cupboard</p>
+          <ul className="divide-y divide-line">
+            {stocked.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onPickItem(c.name)}
+                  className="flex min-h-touch w-full items-center justify-between gap-3 py-2.5 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
+                  <span className="shrink-0 text-sm text-muted">{STOCK_WORDS[c.status]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {categories.length > 0 && (
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
@@ -948,28 +1112,140 @@ function RecipePicker({
       )}
 
       {shown.length === 0 ? (
-        <EmptyState>No recipes match.</EmptyState>
+        !typed && (
+          <EmptyState>
+            No recipes yet.{' '}
+            <button type="button" className="font-medium text-accent underline" onClick={() => onNewRecipe('')}>
+              Make one
+            </button>
+          </EmptyState>
+        )
       ) : (
-        <ul className="divide-y divide-line">
-          {shown.map((r) => (
-            <li key={r.id}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onPick(r)}
-                className="flex min-h-touch w-full items-center justify-between gap-3 py-3 text-left"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{r.name}</span>
-                  {r.categories.length > 0 && (
-                    <span className="block truncate text-sm text-muted">{r.categories.join(' · ')}</span>
-                  )}
-                </span>
-                <span className="shrink-0 text-sm text-muted">Serves {r.servings}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          {stocked.length > 0 && (
+            <p className="text-xs font-semibold uppercase tracking-wide text-subtle">Recipes</p>
+          )}
+          <ul className="divide-y divide-line">
+            {shown.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onPickRecipe(r)}
+                  className="flex min-h-touch w-full items-center justify-between gap-3 py-3 text-left"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{r.name}</span>
+                    {r.categories.length > 0 && (
+                      <span className="block truncate text-sm text-muted">{r.categories.join(' · ')}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-sm text-muted">Serves {r.servings}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Making the recipe you were about to plan without leaving the plan. Saving just the name is the
+ * quick way — mid-planning you rarely want to type a whole recipe — at the cost of it adding
+ * nothing to the grocery list until the ingredients go in, which the planner then points out.
+ */
+function NewRecipeFromPlan({
+  householdId,
+  initialName,
+  section,
+  servings,
+  onSaved,
+}: {
+  householdId: string;
+  initialName: string;
+  section: RecipeSection;
+  servings: number;
+  onSaved: (recipe: Recipe) => void;
+}) {
+  const [mode, setMode] = useState<'choose' | 'write' | 'assisted'>('choose');
+  const [name, setName] = useState(initialName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const writerAvailable = useAiAvailable();
+
+  async function saveNameOnly() {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(
+        await api<Recipe>('POST', `/api/households/${householdId}/recipes`, {
+          name: name.trim(),
+          servings,
+          section,
+          categories: [],
+          ingredients: [],
+        }),
+      );
+    } catch {
+      setError('Could not save that.');
+      setBusy(false);
+    }
+  }
+
+  if (mode === 'write') {
+    return (
+      <RecipeForm
+        householdId={householdId}
+        section={section}
+        draft={{
+          name: name.trim(),
+          description: null,
+          instructions: null,
+          prepTimeMinutes: null,
+          cookTimeMinutes: null,
+          servings,
+          ingredients: [],
+        }}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  if (mode === 'assisted') {
+    return (
+      <WriteForMe
+        householdId={householdId}
+        initialName={name.trim()}
+        initialServings={servings}
+        section={section}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Field label="Name">
+        <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Chicken tikka" />
+      </Field>
+      {error && <ErrorText>{error}</ErrorText>}
+      <div className="space-y-1.5">
+        <Button full disabled={busy || !name.trim()} onClick={saveNameOnly}>
+          {busy ? 'Saving…' : 'Save the name, fill it in later'}
+        </Button>
+        <p className="text-sm text-muted">
+          It goes on the plan now. Until it has ingredients, it won't add anything to the grocery list.
+        </p>
+      </div>
+      <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('write')}>
+        Write out the recipe
+      </Button>
+      {writerAvailable && (
+        <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('assisted')}>
+          ✨ Write it for me
+        </Button>
       )}
     </div>
   );

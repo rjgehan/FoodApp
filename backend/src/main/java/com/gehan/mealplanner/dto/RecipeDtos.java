@@ -34,7 +34,11 @@ public class RecipeDtos {
             List<String> categories,
             UUID coverImageId,
             List<UUID> photoIds,
-            @NotEmpty @Valid List<RecipeIngredientRequest> ingredients) {
+            /**
+             * May be empty: from the meal planner you can save just a name and fill the rest in
+             * later. Such a recipe adds nothing to the grocery list, and the planner says so.
+             */
+            @NotNull @Valid List<RecipeIngredientRequest> ingredients) {
     }
 
     /** A blank or null url clears the video. */

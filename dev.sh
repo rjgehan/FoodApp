@@ -45,6 +45,16 @@ wait_for_docker() {
 start() {
   wait_for_docker || exit 1
 
+  # Local secrets, if there are any. set -a exports everything the file defines so the backend
+  # inherits it; without this the key sits in a file the JVM never sees.
+  if [[ -f "$ROOT_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/.env"
+    set +a
+    [[ -n "${GEMINI_API_KEY:-}" ]] && echo "Recipe writer: on"
+  fi
+
   echo "Starting Postgres + Redis..."
   docker compose -f "$COMPOSE_FILE" up -d
 
@@ -58,6 +68,9 @@ start() {
 
   if lsof -ti:$BACKEND_PORT >/dev/null 2>&1; then
     echo "Backend already running on :$BACKEND_PORT"
+    # It started with whatever .env said at the time. Anything added since is not loaded, and
+    # the symptom is a feature that silently is not there.
+    echo "  (started earlier — run './dev.sh restart' to pick up .env changes)"
   else
     echo "Starting backend..."
     (cd "$ROOT_DIR/backend" && nohup ./mvnw spring-boot:run >"$LOG_DIR/backend.log" 2>&1 &)

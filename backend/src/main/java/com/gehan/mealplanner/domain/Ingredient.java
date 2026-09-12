@@ -30,4 +30,12 @@ public class Ingredient {
     private String normalizedName;
 
     private String defaultUnit;
+
+    /**
+     * The aisle it is usually in, shared by every household — set by the keyword list when the
+     * ingredient is first seen, or by Gemini when someone presses Sort. Null means nobody has
+     * placed it yet. A household can still move it for its own store; see {@link IngredientSection}.
+     */
+    @Enumerated(EnumType.STRING)
+    private StoreSection section;
 }

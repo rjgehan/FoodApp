@@ -1,24 +1,42 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-import { absoluteUrl, api, getToken } from '../api/client';
-import type { BlacklistEntry, GroceryListEvent, GroceryListItem as Item } from '../api/types';
+import { absoluteUrl, api, ApiError, getToken } from '../api/client';
+import type { GroceryListEvent, GroceryListItem as Item, StoreSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Badge, Button, Card, CheckCircle, cx, EmptyState, IconButton, Input, NumberInput } from '../components/ui';
+import { useOnResume } from '../utils/useOnResume';
+import { useAiAvailable } from '../utils/useAiAvailable';
+import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
+import {
+  Badge,
+  Button,
+  Card,
+  CheckCircle,
+  cx,
+  EmptyState,
+  ErrorText,
+  IconButton,
+  Input,
+  NumberInput,
+  Select,
+  Sheet,
+} from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/icons';
 import UnitInput from '../components/UnitInput';
 
 export default function GroceryListPage() {
-  const { activeHouseholdId } = useHousehold();
+  const { activeHouseholdId, activeHousehold } = useHousehold();
+  const aiAvailable = useAiAvailable();
   const [items, setItems] = useState<Item[]>([]);
-  const [blacklist, setBlacklist] = useState<BlacklistEntry[]>([]);
   const [connected, setConnected] = useState(false);
-  const [showBlacklist, setShowBlacklist] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [sheet, setSheet] = useState<'sort' | 'putAway' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState<number | null>(1);
   const [unit, setUnit] = useState('');
-  const [blacklistName, setBlacklistName] = useState('');
 
   const clientRef = useRef<Client | null>(null);
 
@@ -27,28 +45,32 @@ export default function GroceryListPage() {
     setItems(await api<Item[]>('GET', `/api/households/${activeHouseholdId}/grocery-list`));
   }, [activeHouseholdId]);
 
-  const refreshBlacklist = useCallback(async () => {
-    if (!activeHouseholdId) return;
-    setBlacklist(await api<BlacklistEntry[]>('GET', `/api/households/${activeHouseholdId}/blacklist`));
-  }, [activeHouseholdId]);
-
   useEffect(() => {
     refreshItems();
-    refreshBlacklist();
-  }, [refreshItems, refreshBlacklist]);
+  }, [refreshItems]);
+
+  useOnResume(() => {
+    refreshItems().catch(() => {});
+  });
 
   // Realtime: connect once per household and keep the socket open while this page mounts.
   useEffect(() => {
     if (!activeHouseholdId) return;
-    const token = getToken();
-    if (!token) return;
+    if (!getToken()) return;
 
     const client = new Client({
       webSocketFactory: () => new SockJS(absoluteUrl('/ws')),
-      connectHeaders: { Authorization: `Bearer ${token}` },
+      // Read at every connect rather than once: the token is swapped for a fresh one daily, and a
+      // reconnect hours later must not present the old one.
+      beforeConnect: () => {
+        client.connectHeaders = { Authorization: `Bearer ${getToken()}` };
+      },
       reconnectDelay: 3000,
       onConnect: () => {
         setConnected(true);
+        // Nothing is replayed after a drop, so whatever changed while the socket was down —
+        // a phone asleep in a pocket — has to be fetched.
+        refreshItems().catch(() => {});
         client.subscribe(`/topic/households/${activeHouseholdId}/grocery-list`, (message) => {
           const event = JSON.parse(message.body) as GroceryListEvent;
           if (event.type === 'REMOVED') {
@@ -72,7 +94,12 @@ export default function GroceryListPage() {
       clientRef.current = null;
       setConnected(false);
     };
-  }, [activeHouseholdId]);
+  }, [activeHouseholdId, refreshItems]);
+
+  function flash(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 4000);
+  }
 
   async function onAddItem(e: FormEvent) {
     e.preventDefault();
@@ -103,18 +130,13 @@ export default function GroceryListPage() {
     await api('DELETE', `/api/households/${activeHouseholdId}/grocery-list/items/${itemId}`);
   }
 
-  async function onAddBlacklist(e: FormEvent) {
-    e.preventDefault();
-    if (!activeHouseholdId || !blacklistName.trim()) return;
-    await api('POST', `/api/households/${activeHouseholdId}/blacklist`, { ingredientName: blacklistName.trim() });
-    setBlacklistName('');
-    await refreshBlacklist();
-  }
-
-  async function removeBlacklist(ingredientId: string) {
-    if (!activeHouseholdId) return;
-    await api('DELETE', `/api/households/${activeHouseholdId}/blacklist/${ingredientId}`);
-    await refreshBlacklist();
+  /** The aisle belongs to the ingredient, so every row of it moves — and stays moved next time. */
+  async function moveItem(item: Item, section: StoreSection) {
+    if (!activeHouseholdId || !item.ingredientId) return;
+    setItems((prev) =>
+      prev.map((i) => (i.ingredientId === item.ingredientId ? { ...i, section, sorted: true } : i)),
+    );
+    await api('PUT', `/api/households/${activeHouseholdId}/ingredients/${item.ingredientId}/section`, { section });
   }
 
   if (!activeHouseholdId) {
@@ -125,8 +147,10 @@ export default function GroceryListPage() {
     );
   }
 
-  const remaining = items.filter((i) => !i.checked).length;
-  const sorted = [...items].sort((a, b) => Number(a.checked) - Number(b.checked));
+  const toBuy = items.filter((i) => !i.checked);
+  const inCart = items.filter((i) => i.checked);
+  const groups = groupBySection(toBuy, activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
+  const unsorted = new Set(items.filter((i) => !i.sorted && i.ingredientId).map((i) => i.ingredientId)).size;
 
   return (
     <div className="space-y-4">
@@ -160,86 +184,327 @@ export default function GroceryListPage() {
         </form>
       </Card>
 
+      {notice && (
+        <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">{notice}</div>
+      )}
+
       <Card
-        title={remaining ? `${remaining} to buy` : 'List'}
+        title={toBuy.length ? `${toBuy.length} to buy` : 'List'}
         actions={<Badge tone={connected ? 'success' : 'neutral'}>{connected ? 'Live' : 'Offline'}</Badge>}
         bodyClassName="px-2 pb-2 sm:px-4 sm:pb-4"
       >
-        {sorted.length === 0 ? (
+        {items.length === 0 ? (
           <EmptyState>Nothing on the list yet.</EmptyState>
         ) : (
-          <ul className="divide-y divide-line">
-            {sorted.map((item) => (
-              <li key={item.id} className="flex items-center gap-1">
-                {/* The whole row toggles — a 16px checkbox is not a real target on a phone. */}
+          <>
+            {toBuy.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-2 pb-1 sm:px-0">
+                {aiAvailable && unsorted > 0 && !moving && (
+                  <Button size="sm" variant="secondary" onClick={() => setSheet('sort')}>
+                    ✨ Sort {unsorted} {unsorted === 1 ? 'item' : 'items'}
+                  </Button>
+                )}
+                <Button size="sm" variant={moving ? 'primary' : 'ghost'} onClick={() => setMoving((m) => !m)}>
+                  {moving ? 'Done moving' : 'Move items'}
+                </Button>
+              </div>
+            )}
+            {moving && (
+              <p className="px-2 pb-1 pt-1 text-sm text-muted sm:px-0">
+                Pick the aisle each item is in at your store — it sticks for next time. The order of the
+                aisles is on the{' '}
+                <Link to="/household" className="font-medium text-accent underline">
+                  House
+                </Link>{' '}
+                page.
+              </p>
+            )}
+
+            {groups.map(({ section, items: rows }) => (
+              <section key={section}>
+                <h3 className="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-subtle">
+                  {STORE_SECTION_LABELS[section]}
+                </h3>
+                <ul className="divide-y divide-line">
+                  {rows.map((item) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      moving={moving}
+                      onToggle={toggleItem}
+                      onRemove={removeItem}
+                      onMove={moveItem}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {inCart.length > 0 && (
+              <section className={cx(toBuy.length > 0 && 'mt-3 border-t border-line pt-1')}>
+                <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-subtle">
+                    In the cart · {inCart.length}
+                  </h3>
+                  <Button size="sm" onClick={() => setSheet('putAway')}>
+                    Done shopping
+                  </Button>
+                </div>
+                <ul className="divide-y divide-line">
+                  {inCart.map((item) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      moving={false}
+                      onToggle={toggleItem}
+                      onRemove={removeItem}
+                      onMove={moveItem}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )}
+      </Card>
+
+      <p className="px-1 text-sm text-muted">
+        Things you always have, like salt and oil, are marked “Always have” in the{' '}
+        <Link to="/cupboard" className="font-medium text-accent underline">
+          Cupboard
+        </Link>
+        . Meals leave them off this list.
+      </p>
+
+      {sheet === 'sort' && (
+        <SortSheet
+          householdId={activeHouseholdId}
+          count={unsorted}
+          onClose={() => setSheet(null)}
+          onDone={async ({ sorted, left }) => {
+            setSheet(null);
+            await refreshItems();
+            flash(
+              (sorted ? `Sorted ${sorted} ${sorted === 1 ? 'item' : 'items'}.` : 'Nothing new to sort.') +
+                (left ? ` ${left} couldn't be placed — use Move items for those.` : ''),
+            );
+          }}
+        />
+      )}
+
+      {sheet === 'putAway' && (
+        <PutAwaySheet
+          householdId={activeHouseholdId}
+          items={inCart}
+          onClose={() => setSheet(null)}
+          onDone={(cleared, stocked) => {
+            setSheet(null);
+            setItems((prev) => prev.filter((i) => !cleared.includes(i.id)));
+            flash(stocked ? `Put ${stocked} ${stocked === 1 ? 'thing' : 'things'} in the cupboard.` : 'Cleared.');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ItemRow({
+  item,
+  moving,
+  onToggle,
+  onRemove,
+  onMove,
+}: {
+  item: Item;
+  moving: boolean;
+  onToggle: (item: Item) => void;
+  onRemove: (itemId: string) => void;
+  onMove: (item: Item, section: StoreSection) => void;
+}) {
+  const amount = [item.quantity, item.unit].filter(Boolean).join(' ');
+  const detail = [amount, item.checked && item.checkedByName ? `got by ${item.checkedByName}` : null]
+    .filter(Boolean)
+    .join(' · ');
+  // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
+  const have = item.inCupboard && !item.checked;
+
+  return (
+    <li className="flex items-center gap-1">
+      {/* The whole row toggles — a 16px checkbox is not a real target on a phone. */}
+      <button
+        type="button"
+        onClick={() => onToggle(item)}
+        aria-pressed={item.checked}
+        className="flex min-h-touch min-w-0 flex-1 items-center gap-3 py-3 pl-2 text-left"
+      >
+        <CheckCircle checked={item.checked} />
+        <span className="min-w-0 flex-1">
+          <span className={cx('block truncate', item.checked && 'text-muted line-through')}>{item.name}</span>
+          {(detail || have) && (
+            <span className="block truncate text-sm text-muted">
+              {detail}
+              {have && <span className="text-success">{detail ? ' · ' : ''}Cupboard says you have this</span>}
+            </span>
+          )}
+        </span>
+      </button>
+      {moving && item.ingredientId ? (
+        <Select
+          className="h-9 w-36 shrink-0 text-sm"
+          value={item.section}
+          onChange={(e) => onMove(item, e.target.value as StoreSection)}
+          aria-label={`Aisle for ${item.name}`}
+        >
+          {DEFAULT_SECTION_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {STORE_SECTION_LABELS[s]}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <IconButton label={`Remove ${item.name}`} onClick={() => onRemove(item.id)}>
+          <TrashIcon className="h-5 w-5" />
+        </IconButton>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The one place the app spends an AI request on the list, so it asks first. The key allows twenty
+ * a day, shared with the recipe writer — and sorting a half-written list means paying again for
+ * whatever gets added after, so the question is about timing as much as cost.
+ */
+function SortSheet({
+  householdId,
+  count,
+  onDone,
+  onClose,
+}: {
+  householdId: string;
+  count: number;
+  onDone: (result: { sorted: number; left: number }) => void;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function sort() {
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api<{ sorted: number; left: number }>('POST', `/api/households/${householdId}/grocery-list/sort`));
+    } catch (err) {
+      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
+      setError(message ?? 'Could not sort the list.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title="Sort the list" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-lg">Is the list finished?</p>
+        <p className="text-sm text-muted">
+          This puts the {count} {count === 1 ? 'item' : 'items'} the app couldn't place into aisles, using one of
+          your 20 AI requests for today — the same ones “Write it for me” uses. Add everything first and sort once:
+          anything added afterwards would need another request.
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex gap-2">
+          <Button className="flex-1" disabled={busy} onClick={sort}>
+            {busy ? 'Sorting…' : 'Sort now'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Not yet
+          </Button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * "Done shopping". Everything ticked comes off the list, and what is for the house goes in the
+ * cupboard. All pre-selected because most of a shop is for the house — you untick the milk you
+ * picked up for someone else, rather than ticking everything else.
+ */
+function PutAwaySheet({
+  householdId,
+  items,
+  onDone,
+  onClose,
+}: {
+  householdId: string;
+  items: Item[];
+  onDone: (clearedIds: string[], stocked: number) => void;
+  onClose: () => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(items.map((i) => i.id)));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function putAway() {
+    setBusy(true);
+    setError(null);
+    const putAwayIds = items.filter((i) => selected.has(i.id)).map((i) => i.id);
+    const leaveOutIds = items.filter((i) => !selected.has(i.id)).map((i) => i.id);
+    try {
+      await api('POST', `/api/households/${householdId}/grocery-list/put-away`, {
+        putAway: putAwayIds,
+        leaveOut: leaveOutIds,
+      });
+      onDone([...putAwayIds, ...leaveOutIds], putAwayIds.length);
+    } catch {
+      setError('Could not put that away.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title="Done shopping" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          Untick anything that isn't for the house. The rest goes in the cupboard, and all of it comes off the list.
+        </p>
+        <ul className="divide-y divide-line rounded-xl border border-line">
+          {items.map((item) => {
+            const on = selected.has(item.id);
+            return (
+              <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => toggleItem(item)}
-                  aria-pressed={item.checked}
-                  className="flex min-h-touch flex-1 items-center gap-3 py-3 pl-2 text-left"
+                  aria-pressed={on}
+                  onClick={() => toggle(item.id)}
+                  className="flex min-h-touch w-full items-center gap-3 px-3 py-2.5 text-left"
                 >
-                  <CheckCircle checked={item.checked} />
-                  <span className="min-w-0 flex-1">
-                    <span className={cx('block truncate', item.checked && 'text-muted line-through')}>
-                      {item.name}
-                    </span>
-                    {(item.quantity || item.unit || (item.checked && item.checkedByName)) && (
-                      <span className="block truncate text-sm text-muted">
-                        {[item.quantity, item.unit].filter(Boolean).join(' ')}
-                        {item.checked && item.checkedByName && ` · got by ${item.checkedByName}`}
-                      </span>
-                    )}
-                  </span>
+                  <CheckCircle checked={on} />
+                  <span className={cx('min-w-0 flex-1 truncate', !on && 'text-muted')}>{item.name}</span>
+                  {!on && <span className="shrink-0 text-sm text-muted">Not for us</span>}
                 </button>
-                <IconButton label={`Remove ${item.name}`} onClick={() => removeItem(item.id)}>
-                  <TrashIcon className="h-5 w-5" />
-                </IconButton>
               </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card
-        title="Pantry staples"
-        actions={
-          <Button size="sm" variant="ghost" onClick={() => setShowBlacklist((v) => !v)}>
-            {showBlacklist ? 'Hide' : `Show${blacklist.length ? ` (${blacklist.length})` : ''}`}
+            );
+          })}
+        </ul>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex gap-2">
+          <Button className="flex-1" disabled={busy} onClick={putAway}>
+            {busy ? 'Putting away…' : selected.size ? `Put away ${selected.size}` : 'Just clear them'}
           </Button>
-        }
-      >
-        <p className="text-sm text-muted">Things you always have. Meals never add these to the list.</p>
-
-        {showBlacklist && (
-          <div className="mt-3 space-y-3">
-            <form onSubmit={onAddBlacklist} className="flex gap-2">
-              <Input
-                value={blacklistName}
-                onChange={(e) => setBlacklistName(e.target.value)}
-                placeholder="salt"
-                aria-label="Pantry staple"
-              />
-              <Button type="submit" variant="secondary" disabled={!blacklistName.trim()}>
-                Add
-              </Button>
-            </form>
-            {blacklist.length === 0 ? (
-              <EmptyState>Nothing here yet.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-line">
-                {blacklist.map((b) => (
-                  <li key={b.ingredientId} className="flex items-center justify-between gap-2 py-1">
-                    <span className="truncate">{b.name}</span>
-                    <IconButton label={`Remove ${b.name}`} onClick={() => removeBlacklist(b.ingredientId)}>
-                      <TrashIcon className="h-5 w-5" />
-                    </IconButton>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </Card>
-    </div>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }

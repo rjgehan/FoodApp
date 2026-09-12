@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { RecipeSection } from '../api/types';
+import type { RecipeSection, StoreSection } from '../api/types';
 import type { HouseholdMember, Place, Recipe } from '../api/types';
+import { DEFAULT_SECTION_ORDER, STORE_SECTION_LABELS } from '../utils/storeSections';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
@@ -14,11 +15,12 @@ import {
   EmptyState,
   ErrorText,
   Field,
+  IconButton,
   Input,
   NumberInput,
   Sheet,
 } from '../components/ui';
-import { PlusIcon, StoreIcon } from '../components/icons';
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon } from '../components/icons';
 import PlaceActions from '../components/PlaceActions';
 import ImagePicker from '../components/ImagePicker';
 
@@ -58,6 +60,7 @@ export default function HouseholdPage() {
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
       <ProfileCard />
       {activeHousehold && <SettingsCard />}
+      {activeHousehold && <StoreLayoutCard />}
       <AddPersonCard />
       {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
       {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
@@ -659,6 +662,62 @@ function SettingsCard() {
           {saved ? 'Saved' : 'Save settings'}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+/**
+ * The aisles in the order you walk your store. Arrows rather than dragging: dragging a list on a
+ * phone fights the page scroll, and ten rows is few enough that a tap per step is quick.
+ */
+function StoreLayoutCard() {
+  const { activeHousehold, updateStoreSectionOrder } = useHousehold();
+  const [order, setOrder] = useState<StoreSection[]>(activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (activeHousehold?.storeSectionOrder) setOrder(activeHousehold.storeSectionOrder);
+  }, [activeHousehold]);
+
+  async function move(index: number, delta: -1 | 1) {
+    const next = [...order];
+    [next[index], next[index + delta]] = [next[index + delta], next[index]];
+    setOrder(next);
+    setBusy(true);
+    try {
+      await updateStoreSectionOrder(next);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Store layout">
+      <p className="mb-2 text-sm text-muted">
+        The order you walk your store. The grocery list follows it, top to bottom.
+      </p>
+      <ol className="divide-y divide-line">
+        {order.map((section, i) => (
+          <li key={section} className="flex items-center gap-1 py-0.5">
+            <span className="w-6 shrink-0 text-sm tabular-nums text-subtle">{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{STORE_SECTION_LABELS[section]}</span>
+            <IconButton
+              label={`Move ${STORE_SECTION_LABELS[section]} earlier`}
+              disabled={busy || i === 0}
+              onClick={() => move(i, -1)}
+            >
+              <ChevronUpIcon className="h-5 w-5" />
+            </IconButton>
+            <IconButton
+              label={`Move ${STORE_SECTION_LABELS[section]} later`}
+              disabled={busy || i === order.length - 1}
+              onClick={() => move(i, 1)}
+            >
+              <ChevronDownIcon className="h-5 w-5" />
+            </IconButton>
+          </li>
+        ))}
+      </ol>
     </Card>
   );
 }

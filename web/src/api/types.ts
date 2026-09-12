@@ -47,6 +47,37 @@ export interface Household {
   planningHorizonDays: number;
   /** Your role in this household, not a property of the household itself. */
   role: HouseholdRole;
+  /** Every aisle once, in the order this household walks its store. */
+  storeSectionOrder: StoreSection[];
+}
+
+/** Where in the supermarket something is. A fixed set, so sorting has known answers to pick from. */
+export type StoreSection =
+  | 'PRODUCE'
+  | 'BAKERY'
+  | 'DRY_GOODS'
+  | 'DELI'
+  | 'MEAT'
+  | 'DAIRY'
+  | 'FROZEN'
+  | 'DRINKS'
+  | 'HOUSEHOLD'
+  | 'OTHER';
+
+/** Whether you have something, not how much. LOW and OUT put it on the grocery list. */
+export type StockStatus = 'HAVE' | 'LOW' | 'OUT';
+
+export interface CupboardItem {
+  id: string;
+  ingredientId: string;
+  name: string;
+  status: StockStatus;
+  /** Always have it — planned meals never add it to the grocery list. */
+  staple: boolean;
+  section: StoreSection;
+  sorted: boolean;
+  /** Waiting on the grocery list, unticked. */
+  onList: boolean;
 }
 
 export type HouseholdRole = 'OWNER' | 'MEMBER';
@@ -126,15 +157,21 @@ export interface PublicIngredient {
 
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
 
-/** A slot holds either a recipe you cook or a place you eat at — never both. */
+/** A slot holds exactly one of: a recipe you cook, a place you eat at, or a single item. */
 export interface MealPlanEntry {
   id: string;
   date: string;
   mealType: MealType;
   recipeId: string | null;
   recipeName: string | null;
+  /** A recipe saved with just its name — it adds nothing to the grocery list yet. */
+  needsIngredients: boolean;
   placeId: string | null;
   placeName: string | null;
+  /** A single food, no recipe — "eggs". */
+  itemName: string | null;
+  /** For a single item: the cupboard has it, so it stays off the grocery list. */
+  inCupboard: boolean;
   /** "HH:mm" when the occasion has a time — a booking, a pickup slot. Optional. */
   time: string | null;
   servings: number | null;
@@ -162,11 +199,12 @@ export interface GroceryListItem {
   checkedByUserId: string | null;
   checkedByName: string | null;
   checkedAt: string | null;
-}
-
-export interface BlacklistEntry {
-  ingredientId: string;
-  name: string;
+  /** The aisle, for this household. OTHER when nobody has placed it yet. */
+  section: StoreSection;
+  /** False means nothing has placed it — the Sort button would. */
+  sorted: boolean;
+  /** The cupboard says you have this. Only meals put such things on the list. */
+  inCupboard: boolean;
 }
 
 export type GroceryListEvent =

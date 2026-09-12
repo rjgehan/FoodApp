@@ -33,4 +33,19 @@ public class SchemaTouchUps {
             }
         };
     }
+
+    /**
+     * The unit box used to send "" for no unit, and planned items send nothing at all — so the
+     * same "eggs" could sit on the list twice, once per spelling of empty. Empty is null now.
+     */
+    @Bean
+    public ApplicationRunner blankGroceryUnitsToNull(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.update("UPDATE grocery_list_items SET unit = NULL WHERE unit = ''");
+            } catch (Exception e) {
+                log.warn("Could not tidy empty grocery units: {}", e.getMessage());
+            }
+        };
+    }
 }

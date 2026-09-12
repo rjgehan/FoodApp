@@ -8,8 +8,9 @@ import {
   type ReactNode,
 } from 'react';
 import { api } from '../api/client';
-import type { Household } from '../api/types';
+import type { Household, StoreSection } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
+import { useOnResume } from '../utils/useOnResume';
 
 interface HouseholdSettings {
   defaultServings: number;
@@ -26,6 +27,8 @@ interface HouseholdContextValue {
   createHousehold: (name: string) => Promise<void>;
   renameHousehold: (name: string) => Promise<void>;
   updateSettings: (settings: HouseholdSettings) => Promise<void>;
+  /** The aisles in the order you walk your store; the grocery list follows it. */
+  updateStoreSectionOrder: (order: StoreSection[]) => Promise<void>;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
@@ -68,6 +71,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  // Settings someone changed on another phone — the store order, the planning window.
+  useOnResume(() => {
+    if (session) refresh().catch(() => {});
+  });
+
   const createHousehold = useCallback(
     async (name: string) => {
       const household = await api<Household>('POST', '/api/households', { name });
@@ -95,6 +103,15 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     [activeHouseholdId, refresh],
   );
 
+  const updateStoreSectionOrder = useCallback(
+    async (order: StoreSection[]) => {
+      if (!activeHouseholdId) return;
+      await api('PUT', `/api/households/${activeHouseholdId}/store-sections`, { order });
+      await refresh();
+    },
+    [activeHouseholdId, refresh],
+  );
+
   const activeHousehold = households.find((h) => h.id === activeHouseholdId) ?? null;
 
   const value = useMemo(
@@ -108,8 +125,9 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       createHousehold,
       renameHousehold,
       updateSettings,
+      updateStoreSectionOrder,
     }),
-    [households, activeHouseholdId, activeHousehold, setActiveHouseholdId, loading, refresh, createHousehold, renameHousehold, updateSettings],
+    [households, activeHouseholdId, activeHousehold, setActiveHouseholdId, loading, refresh, createHousehold, renameHousehold, updateSettings, updateStoreSectionOrder],
   );
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;

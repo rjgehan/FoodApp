@@ -50,6 +50,14 @@ export const CartIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const CupboardIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="4" y="3" width="16" height="18" rx="2" />
+    <path d="M12 3v18" />
+    <path d="M9.5 10.5v3M14.5 10.5v3" />
+  </Icon>
+);
+
 export const HouseholdIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="9" cy="8" r="3" />
@@ -86,6 +94,12 @@ export const ChevronLeftIcon = (p: SVGProps<SVGSVGElement>) => (
 export const ChevronRightIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M9.5 5 16 12l-6.5 7" />
+  </Icon>
+);
+
+export const ChevronUpIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M5 14.5 12 8l7 6.5" />
   </Icon>
 );
 

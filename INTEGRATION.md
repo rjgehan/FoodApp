@@ -112,8 +112,9 @@ The common case, so it has its own URL. Returns one `Day`.
 }
 ```
 
-**`kind` is the discriminator.** `"RECIPE"` is something being cooked; `"PLACE"` is eating out.
-The fields for the other kind are null, so you can switch on one value.
+**`kind` is the discriminator.** `"RECIPE"` is something being cooked; `"PLACE"` is eating out;
+`"ITEM"` is a single food with no recipe — just eggs, just strawberries — and carries only `name`,
+`time` and `notes`. The fields for the other kinds are null, so you can switch on one value.
 
 `time` is `"HH:mm:ss"` when the occasion has one — a booking, a pickup slot — and null when it
 does not, which is most of the time. It is a wall-clock time with no date or zone attached.

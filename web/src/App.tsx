@@ -12,6 +12,7 @@ import NewRecipePage from './pages/NewRecipePage';
 import EditRecipePage from './pages/EditRecipePage';
 import MealPlanPage from './pages/MealPlanPage';
 import GroceryListPage from './pages/GroceryListPage';
+import CupboardPage from './pages/CupboardPage';
 import PublicRecipePage from './pages/PublicRecipePage';
 
 export default function App() {
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
+          <Route path="/cupboard" element={<CupboardPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

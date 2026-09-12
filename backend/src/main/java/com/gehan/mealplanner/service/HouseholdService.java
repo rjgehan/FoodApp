@@ -4,6 +4,7 @@ import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.HouseholdMember;
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.RecipeCategory;
+import com.gehan.mealplanner.domain.StoreSection;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
@@ -94,10 +95,20 @@ public class HouseholdService {
         return toResponse(householdRepository.save(household), HouseholdRole.OWNER);
     }
 
+    /** The aisles in the order you walk your store. Any member, like the other settings. */
+    @Transactional
+    public HouseholdResponse updateStoreSectionOrder(UUID householdId, UUID requesterId, List<StoreSection> order) {
+        assertMember(householdId, requesterId);
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        household.setStoreSectionOrder(StoreSection.toStored(order));
+        return toResponse(householdRepository.save(household), roleOf(householdId, requesterId));
+    }
+
     private HouseholdResponse toResponse(Household household, HouseholdRole role) {
         return new HouseholdResponse(
                 household.getId(), household.getName(), household.getDefaultServings(),
-                household.getPlanningHorizonDays(), role);
+                household.getPlanningHorizonDays(), role, household.storeSections());
     }
 
     @Transactional(readOnly = true)

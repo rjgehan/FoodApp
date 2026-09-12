@@ -1,12 +1,16 @@
 package com.gehan.mealplanner.service;
 
+import com.gehan.mealplanner.domain.CupboardItem;
 import com.gehan.mealplanner.domain.Household;
+import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.Place;
 import com.gehan.mealplanner.domain.Recipe;
+import com.gehan.mealplanner.domain.StockStatus;
 import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
 import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
+import com.gehan.mealplanner.repository.CupboardItemRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.MealPlanEntryRepository;
 import com.gehan.mealplanner.repository.PlaceRepository;
@@ -17,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -27,26 +33,33 @@ public class MealPlanService {
     private final HouseholdRepository householdRepository;
     private final RecipeRepository recipeRepository;
     private final PlaceRepository placeRepository;
+    private final CupboardItemRepository cupboardRepository;
     private final HouseholdService householdService;
+    private final IngredientService ingredientService;
 
     public MealPlanService(MealPlanEntryRepository mealPlanEntryRepository,
                             HouseholdRepository householdRepository,
                             RecipeRepository recipeRepository,
                             PlaceRepository placeRepository,
-                            HouseholdService householdService) {
+                            CupboardItemRepository cupboardRepository,
+                            HouseholdService householdService,
+                            IngredientService ingredientService) {
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdRepository = householdRepository;
         this.recipeRepository = recipeRepository;
         this.placeRepository = placeRepository;
+        this.cupboardRepository = cupboardRepository;
         this.householdService = householdService;
+        this.ingredientService = ingredientService;
     }
 
     @Transactional(readOnly = true)
     public List<MealPlanEntryResponse> listRange(UUID householdId, UUID requesterId, LocalDate start, LocalDate end) {
         householdService.assertMember(householdId, requesterId);
+        Map<UUID, CupboardItem> cupboard = cupboard(householdId);
         return mealPlanEntryRepository
                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
-                .stream().map(this::toResponse).toList();
+                .stream().map(e -> toResponse(e, cupboard)).toList();
     }
 
     /** Adds a dish to a slot. Call it again to put sides alongside a main. */
@@ -56,17 +69,22 @@ public class MealPlanService {
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
-        // Exactly one of the two: a slot holds a dish you cook or a place you go, not both.
-        if ((request.recipeId() == null) == (request.placeId() == null)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send either a recipe or a place.");
+        // Exactly one: a dish you cook, a place you go, or a single thing to eat.
+        String itemName = blankToNull(request.itemName());
+        int kinds = (request.recipeId() != null ? 1 : 0) + (request.placeId() != null ? 1 : 0) + (itemName != null ? 1 : 0);
+        if (kinds != 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send one of a recipe, a place or an item.");
         }
+        Ingredient item = itemName == null ? null : ingredientService.findOrCreate(itemName, null);
 
         boolean alreadyThere = mealPlanEntryRepository
                 .findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(householdId, request.date(), request.mealType())
                 .stream()
                 .anyMatch(e -> request.recipeId() != null
                         ? e.getRecipe() != null && e.getRecipe().getId().equals(request.recipeId())
-                        : e.getPlace() != null && e.getPlace().getId().equals(request.placeId()));
+                        : request.placeId() != null
+                                ? e.getPlace() != null && e.getPlace().getId().equals(request.placeId())
+                                : e.getItem() != null && e.getItem().getId().equals(item.getId()));
         if (alreadyThere) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That's already on this meal.");
         }
@@ -77,31 +95,41 @@ public class MealPlanService {
                 .mealType(request.mealType())
                 .recipe(request.recipeId() == null ? null : requireRecipe(request.recipeId()))
                 .place(request.placeId() == null ? null : requirePlace(request.placeId(), householdId))
-                // Servings describe cooking. A table booking does not have them.
+                .item(item)
                 .time(request.time())
-                .servings(request.placeId() != null ? null
+                // Servings describe cooking. A table booking or a bowl of strawberries does not have them.
+                .servings(request.recipeId() == null ? null
                         : request.servings() != null ? request.servings() : household.getDefaultServings())
                 .notes(request.notes())
                 .build();
 
-        return toResponse(mealPlanEntryRepository.save(entry));
+        return toResponse(mealPlanEntryRepository.save(entry), cupboard(householdId));
     }
 
-    /** Changes one dish in place — swap the recipe, or just adjust how many it serves. */
+    /** Changes one dish in place — swap what it is, or just adjust how many it serves. */
     @Transactional
     public MealPlanEntryResponse update(UUID entryId, UUID requesterId, UpdateMealPlanEntryRequest request) {
         MealPlanEntry entry = mealPlanEntryRepository.findById(entryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found"));
-        householdService.assertMember(entry.getHousehold().getId(), requesterId);
+        UUID householdId = entry.getHousehold().getId();
+        householdService.assertMember(householdId, requesterId);
 
-        // Swapping one kind for the other clears the other side, so an entry is never both.
+        // Swapping one kind for another clears the others, so an entry is only ever one thing.
         if (request.recipeId() != null) {
             entry.setRecipe(requireRecipe(request.recipeId()));
             entry.setPlace(null);
+            entry.setItem(null);
         }
         if (request.placeId() != null) {
-            entry.setPlace(requirePlace(request.placeId(), entry.getHousehold().getId()));
+            entry.setPlace(requirePlace(request.placeId(), householdId));
             entry.setRecipe(null);
+            entry.setItem(null);
+        }
+        String itemName = blankToNull(request.itemName());
+        if (itemName != null) {
+            entry.setItem(ingredientService.findOrCreate(itemName, null));
+            entry.setRecipe(null);
+            entry.setPlace(null);
         }
         if (Boolean.TRUE.equals(request.clearTime())) {
             entry.setTime(null);
@@ -114,7 +142,7 @@ public class MealPlanService {
         if (request.notes() != null) {
             entry.setNotes(request.notes());
         }
-        return toResponse(mealPlanEntryRepository.save(entry));
+        return toResponse(mealPlanEntryRepository.save(entry), cupboard(householdId));
     }
 
     private Recipe requireRecipe(UUID recipeId) {
@@ -140,15 +168,31 @@ public class MealPlanService {
         mealPlanEntryRepository.delete(entry);
     }
 
-    private MealPlanEntryResponse toResponse(MealPlanEntry entry) {
+    private Map<UUID, CupboardItem> cupboard(UUID householdId) {
+        Map<UUID, CupboardItem> cupboard = new HashMap<>();
+        cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
+        return cupboard;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private MealPlanEntryResponse toResponse(MealPlanEntry entry, Map<UUID, CupboardItem> cupboard) {
+        Recipe recipe = entry.getRecipe();
+        Ingredient item = entry.getItem();
+        CupboardItem stocked = item == null ? null : cupboard.get(item.getId());
         return new MealPlanEntryResponse(
                 entry.getId(),
                 entry.getDate(),
                 entry.getMealType(),
-                entry.getRecipe() != null ? entry.getRecipe().getId() : null,
-                entry.getRecipe() != null ? entry.getRecipe().getName() : null,
+                recipe != null ? recipe.getId() : null,
+                recipe != null ? recipe.getName() : null,
+                recipe != null && recipe.getIngredients().isEmpty(),
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
+                item != null ? item.getName() : null,
+                stocked != null && (stocked.isStaple() || stocked.getStatus() == StockStatus.HAVE),
                 entry.getTime(),
                 entry.getServings(),
                 entry.getNotes());

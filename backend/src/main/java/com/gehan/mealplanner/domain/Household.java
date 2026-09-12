@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -36,7 +37,20 @@ public class Household {
     @Builder.Default
     private int planningHorizonDays = 7;
 
+    /**
+     * The aisles in the order this household walks its store, comma-separated; null means the
+     * default. Text rather than a join table because it is one short ordered list that is only
+     * ever read and written whole. Read it through {@link #storeSections()}.
+     */
+    @Column(length = 500)
+    private String storeSectionOrder;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
+
+    /** Every section exactly once, in this household's order. */
+    public List<StoreSection> storeSections() {
+        return StoreSection.orderFrom(storeSectionOrder);
+    }
 }

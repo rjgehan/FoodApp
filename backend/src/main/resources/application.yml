@@ -39,7 +39,9 @@ management:
 app:
   jwt:
     secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
-    expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
+    # 30 days, and the app swaps it for a fresh one each day it is opened — so you are only ever
+    # signed out after a month of not using it, not a day after signing in.
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:43200}
   ai:
     # Writing a recipe from a name. Unset means the feature is hidden entirely.
     api-key: ${GEMINI_API_KEY:}

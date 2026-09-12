@@ -10,7 +10,9 @@ import com.gehan.mealplanner.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +54,18 @@ public class AuthController {
     @PostMapping("/pin")
     public AuthResponse setInitialPin(@Valid @RequestBody SetPinRequest request) {
         return authService.setInitialPin(request);
+    }
+
+    /**
+     * Swaps a still-valid token for a fresh one, so a session lasts as long as you keep using it.
+     * This path is open like the rest of /api/auth, so the signed-in check happens here instead.
+     */
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@AuthenticationPrincipal UUID userId) {
+        if (userId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Signed out");
+        }
+        return authService.refresh(userId);
     }
 
     @PostMapping("/setup")

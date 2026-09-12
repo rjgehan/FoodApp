@@ -134,6 +134,17 @@ public class AuthService {
         return toAuthResponse(userRepository.save(user));
     }
 
+    /**
+     * A fresh token for someone already signed in. Looked up rather than trusted, because the
+     * account may have gone since — and it picks up a rename made on another device.
+     */
+    @Transactional(readOnly = true)
+    public AuthResponse refresh(UUID userId) {
+        return userRepository.findById(userId)
+                .map(this::toAuthResponse)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Signed out"));
+    }
+
     /** Creates the very first household and the account that owns it. Refused once anyone exists. */
     @Transactional
     public AuthResponse setup(SetupRequest request) {

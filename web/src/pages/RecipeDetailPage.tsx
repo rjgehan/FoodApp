@@ -308,7 +308,7 @@ export default function RecipeDetailPage() {
 
           <Card title={`Ingredients · ${recipe.ingredients.length}`}>
             {recipe.ingredients.length === 0 ? (
-              <EmptyState>No ingredients listed.</EmptyState>
+              <EmptyState>No ingredients yet — until they're in, planning this adds nothing to the grocery list.</EmptyState>
             ) : (
               <ul className="divide-y divide-line">
                 {recipe.ingredients.map((i) => (
