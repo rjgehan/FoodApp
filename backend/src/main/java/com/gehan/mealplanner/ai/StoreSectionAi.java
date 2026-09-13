@@ -86,8 +86,10 @@ public class StoreSectionAi {
 
                 PRODUCE: fresh fruit, vegetables, fresh herbs, tofu
                 BAKERY: bread, rolls, buns, bagels, tortillas, pastries
-                DRY_GOODS: pasta, rice, grains, canned and jarred food, baking, spices, oils, sauces,
-                  condiments, cereal, snacks, nuts, coffee, tea
+                DRY_GOODS: pasta, rice, grains, canned and jarred food, oils, sauces, condiments,
+                  cereal, snacks, nuts, coffee, tea
+                BAKING: flour, sugar, baking soda and powder, yeast, chocolate chips, extracts, cake mixes
+                SPICES: salt, pepper, dried herbs, ground spices, seasoning blends
                 DELI: sliced meats and cheeses, hummus, prepared foods
                 MEAT: fresh meat, poultry and seafood
                 DAIRY: milk, cheese, yogurt, butter, cream, eggs

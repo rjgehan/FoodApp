@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static com.gehan.mealplanner.domain.StoreSection.*;
 
@@ -32,18 +33,26 @@ final class StoreSectionKeywords {
     private static final Map<String, StoreSection> FORMS = new HashMap<>();
     private static final Map<String, StoreSection> FOODS = new HashMap<>();
 
-    /** Longest first, so "sweet potato" is tried before anything shorter could claim it. */
+    /** Fresh in Produce, but dried or ground they are on the spice rack. */
+    private static final Set<String> HERBS = Set.of("basil", "oregano", "thyme", "rosemary", "sage", "dill", "parsley",
+            "cilantro", "mint", "chive", "tarragon", "marjoram", "ginger", "garlic", "onion");
+
+    /** Longest first, so "red pepper flake" is tried before "red pepper" could claim it. */
     private static final List<String> PHRASES_LONGEST_FIRST;
 
     static {
         phrases(FROZEN, "ice cream", "frozen yogurt", "ice pop", "tater tot", "french fry", "fish stick");
-        phrases(DRY_GOODS, "peanut butter", "almond butter", "black pepper", "bread crumb", "coconut milk",
-                "baking soda", "chocolate chip", "graham cracker", "rolled oat", "cream of mushroom",
-                "cream of chicken", "pie filling", "sweetened condensed milk", "evaporated milk");
+        phrases(DRY_GOODS, "peanut butter", "almond butter", "bread crumb", "coconut milk", "rolled oat",
+                "cream of mushroom", "cream of chicken");
+        phrases(BAKING, "baking soda", "baking powder", "chocolate chip", "sweetened condensed milk", "evaporated milk",
+                "pie filling", "brown sugar", "powdered sugar", "cocoa powder", "cake mix", "brownie mix", "pie crust",
+                "food coloring", "graham cracker", "baking chocolate");
+        phrases(SPICES, "black pepper", "white pepper", "red pepper flake", "chili powder", "garlic powder",
+                "onion powder", "bay leaf", "garlic salt", "sea salt", "kosher salt");
         phrases(DAIRY, "sour cream", "cream cheese", "heavy cream", "whipping cream", "half and half",
                 "cottage cheese", "egg white", "almond milk", "oat milk", "soy milk");
         phrases(PRODUCE, "green onion", "spring onion", "bell pepper", "red pepper", "green pepper",
-                "lemon juice", "lime juice", "sweet potato", "green bean", "bean sprout", "baby spinach");
+                "lemon juice", "lime juice", "sweet potato", "green bean", "bean sprout", "baby spinach", "snap pea");
         phrases(DELI, "deli meat", "lunch meat", "sliced turkey", "rotisserie chicken");
         phrases(MEAT, "ground beef", "ground turkey", "ground pork", "ground chicken", "ground lamb");
         phrases(DRINKS, "sparkling water", "orange juice", "apple juice", "cranberry juice");
@@ -54,9 +63,10 @@ final class StoreSectionKeywords {
                 "hand soap", "parchment paper", "dishwasher pod");
 
         words(FORMS, FROZEN, "frozen");
-        words(FORMS, DRY_GOODS, "canned", "dried", "broth", "stock", "bouillon", "sauce", "paste", "powder",
-                "flake", "seasoning", "extract", "oil", "vinegar", "syrup", "mix", "flour", "sugar", "spice",
-                "dressing", "marinade", "jarred");
+        words(FORMS, DRY_GOODS, "canned", "broth", "stock", "bouillon", "sauce", "paste", "oil", "vinegar", "syrup",
+                "mix", "dressing", "marinade", "jarred");
+        words(FORMS, SPICES, "powder", "flake", "seasoning", "spice", "rub");
+        words(FORMS, BAKING, "extract", "flour", "sugar", "sprinkle");
         words(FORMS, DRINKS, "juice", "soda");
 
         words(FOODS, PRODUCE, "apple", "banana", "orange", "lemon", "lime", "grape", "strawberry", "blueberry",
@@ -72,12 +82,14 @@ final class StoreSectionKeywords {
                 "pita", "naan", "brioche", "sourdough", "ciabatta", "loaf", "pastry", "donut", "doughnut");
         words(FOODS, DRY_GOODS, "pasta", "spaghetti", "penne", "macaroni", "noodle", "lasagna", "linguine",
                 "fettuccine", "rice", "quinoa", "couscous", "oat", "oatmeal", "cereal", "granola", "bean", "lentil",
-                "chickpea", "salt", "cumin", "paprika", "oregano", "cinnamon", "nutmeg", "turmeric", "cayenne",
-                "curry", "peppercorn", "honey", "ketchup", "mustard", "mayonnaise", "mayo", "salsa", "jam", "jelly",
+                "chickpea", "honey", "ketchup", "mustard", "mayonnaise", "mayo", "salsa", "jam", "jelly",
                 "cracker", "chip", "pretzel", "popcorn", "nut", "almond", "walnut", "pecan", "cashew", "peanut",
-                "raisin", "cornstarch", "yeast", "vanilla", "cocoa", "chocolate", "coffee", "tea", "soup", "tuna",
-                "cornmeal", "breadcrumb", "panko", "crouton", "olive", "pickle", "caper", "sesame", "seed",
-                "stuffing", "gravy");
+                "raisin", "coffee", "tea", "soup", "tuna", "cornmeal", "breadcrumb", "panko", "crouton", "olive",
+                "pickle", "caper", "sesame", "seed", "stuffing", "gravy");
+        words(FOODS, BAKING, "yeast", "vanilla", "cocoa", "cornstarch", "chocolate", "molasses", "gelatin",
+                "shortening");
+        words(FOODS, SPICES, "salt", "pepper", "peppercorn", "cumin", "paprika", "oregano", "cinnamon", "nutmeg",
+                "turmeric", "cayenne", "curry", "allspice", "cardamom", "coriander", "clove", "saffron");
         words(FOODS, DELI, "salami", "prosciutto", "pepperoni", "ham", "hummus", "deli", "pastrami");
         words(FOODS, MEAT, "chicken", "beef", "pork", "steak", "bacon", "sausage", "turkey", "lamb", "veal", "fish",
                 "salmon", "shrimp", "prawn", "tilapia", "cod", "crab", "lobster", "scallop", "meatball", "brisket",
@@ -122,6 +134,11 @@ final class StoreSectionKeywords {
             if (padded.contains(" " + phrase + " ")) {
                 return Optional.of(PHRASES.get(phrase));
             }
+        }
+        // "Dried oregano", "ground ginger": an herb that is not fresh is a spice.
+        boolean notFresh = Arrays.asList(singular).contains("dried") || Arrays.asList(singular).contains("ground");
+        if (notFresh && Arrays.stream(singular).anyMatch(HERBS::contains)) {
+            return Optional.of(SPICES);
         }
         for (String token : singular) {
             if (FORMS.containsKey(token)) {

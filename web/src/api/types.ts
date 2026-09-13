@@ -56,6 +56,8 @@ export type StoreSection =
   | 'PRODUCE'
   | 'BAKERY'
   | 'DRY_GOODS'
+  | 'BAKING'
+  | 'SPICES'
   | 'DELI'
   | 'MEAT'
   | 'DAIRY'

@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 
 /**
  * Data moves that bring an existing database up to date, run on every start. Each one only
@@ -29,6 +30,25 @@ public class StartupBackfills {
                 }
             } catch (Exception e) {
                 log.warn("Could not move pantry staples into the cupboard: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Baking and Spices used to be part of Dry goods. After the stale value checks are gone (see
+     * SchemaTouchUps), move across whatever the keyword list says belongs in them now.
+     */
+    @Bean
+    @Order(10)
+    public ApplicationRunner moveIntoBakingAndSpices(IngredientService ingredientService) {
+        return args -> {
+            try {
+                int moved = ingredientService.moveIntoBakingAndSpices();
+                if (moved > 0) {
+                    log.info("Moved {} ingredients into Baking and Spices", moved);
+                }
+            } catch (Exception e) {
+                log.warn("Could not move ingredients into Baking and Spices: {}", e.getMessage());
             }
         };
     }

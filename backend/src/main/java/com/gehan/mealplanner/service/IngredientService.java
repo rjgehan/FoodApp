@@ -49,6 +49,24 @@ public class IngredientService {
         return placed;
     }
 
+    /**
+     * Baking and Spices used to be part of Dry goods. Anything sitting in Dry goods that the
+     * keyword list would now put in one of them moves across; anything it would still call Dry
+     * goods stays put. A household's own corrections are separate rows and are not touched.
+     */
+    @Transactional
+    public int moveIntoBakingAndSpices() {
+        int moved = 0;
+        for (Ingredient ingredient : ingredientRepository.findBySection(StoreSection.DRY_GOODS)) {
+            Optional<StoreSection> guess = StoreSectionKeywords.guess(ingredient.getName());
+            if (guess.isPresent() && (guess.get() == StoreSection.BAKING || guess.get() == StoreSection.SPICES)) {
+                ingredient.setSection(guess.get());
+                moved++;
+            }
+        }
+        return moved;
+    }
+
     private String normalize(String name) {
         return name.trim().toLowerCase();
     }
