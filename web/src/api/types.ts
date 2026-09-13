@@ -34,10 +34,13 @@ export interface ShareTarget {
   shared: boolean;
 }
 
+/** A household's recipe group. Groups nest — Chicken inside Main dish — one tree for every drawer. */
 export interface RecipeCategory {
   id: string;
   name: string;
   recipeCount: number;
+  /** The group this one sits inside; null at the top of a drawer. */
+  parentId: string | null;
 }
 
 export interface Household {

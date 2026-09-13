@@ -6,6 +6,9 @@ import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
 import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeCategoryResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.CreateCategoryRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.MoveRecipesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
@@ -95,6 +98,34 @@ public class RecipeController {
         return recipeService.listCategories(householdId, userId);
     }
 
+    @PostMapping("/api/households/{householdId}/recipe-categories")
+    public ResponseEntity<RecipeCategoryResponse> createCategory(@AuthenticationPrincipal UUID userId,
+                                                                 @PathVariable UUID householdId,
+                                                                 @Valid @RequestBody CreateCategoryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(recipeService.createCategory(householdId, userId, request));
+    }
+
+    /** Rename or move a group — see RecipeService.updateCategory. */
+    @PatchMapping("/api/households/{householdId}/recipe-categories/{categoryId}")
+    public RecipeCategoryResponse updateCategory(@AuthenticationPrincipal UUID userId,
+                                                 @PathVariable UUID householdId,
+                                                 @PathVariable UUID categoryId,
+                                                 @RequestBody UpdateCategoryRequest request) {
+        return recipeService.updateCategory(householdId, categoryId, userId, request);
+    }
+
+    /** Files a batch of recipes into a group — sorting a drawer. */
+    @PostMapping("/api/households/{householdId}/recipe-categories/{categoryId}/recipes")
+    public ResponseEntity<Void> moveRecipes(@AuthenticationPrincipal UUID userId,
+                                            @PathVariable UUID householdId,
+                                            @PathVariable UUID categoryId,
+                                            @Valid @RequestBody MoveRecipesRequest request) {
+        recipeService.moveRecipes(householdId, categoryId, userId, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Its recipes and smaller groups move up a level — nothing filed in it is lost. */
     @DeleteMapping("/api/households/{householdId}/recipe-categories/{categoryId}")
     public ResponseEntity<Void> deleteCategory(@AuthenticationPrincipal UUID userId,
                                                 @PathVariable UUID householdId,

@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { RecipeCategory, RecipeSection } from '../api/types';
 import { Button, Chip, Field, Input } from './ui';
 import { PlusIcon } from './icons';
 import { SECTION_OPTIONS, type Filing } from '../utils/recipeMeta';
+import { buildTree } from '../utils/categoryTree';
 
 /**
- * Files a recipe: which drawer it goes in, and which of this household's sub-categories it
- * carries. Typing a name that does not exist yet is how new sub-categories get created — the
- * backend find-or-creates by name, so there is no "manage categories" screen to visit first.
+ * Files a recipe: which drawer it goes in, and which of this household's groups it carries.
+ * Groups are laid out as they nest — each top group on its own line, with the groups inside it
+ * after it — so picking Chicken reads as "Main dish, then Chicken". Typing a name that does not
+ * exist yet creates a top-level group; making one inside another happens in the drawer itself.
  */
 export default function RecipeClassifier({
   householdId,
@@ -31,11 +33,16 @@ export default function RecipeClassifier({
       .catch(() => setKnown([]));
   }, [householdId]);
 
+  const tree = useMemo(() => buildTree(known), [known]);
+
+  function isPicked(name: string) {
+    return value.categories.some((c) => c.toLowerCase() === name.toLowerCase());
+  }
+
   function toggleCategory(name: string) {
-    const has = value.categories.some((c) => c.toLowerCase() === name.toLowerCase());
     onChange({
       ...value,
-      categories: has
+      categories: isPicked(name)
         ? value.categories.filter((c) => c.toLowerCase() !== name.toLowerCase())
         : [...value.categories, name],
     });
@@ -46,16 +53,25 @@ export default function RecipeClassifier({
     e?.preventDefault();
     const name = draft.trim().replace(/\s+/g, ' ');
     if (!name) return;
-    if (!value.categories.some((c) => c.toLowerCase() === name.toLowerCase())) {
+    if (!isPicked(name)) {
       onChange({ ...value, categories: [...value.categories, name] });
     }
     setDraft('');
   }
 
+  /** A top group and everything inside it, depth-first, with how deep each one sits. */
+  function family(root: RecipeCategory): { category: RecipeCategory; depth: number }[] {
+    const out: { category: RecipeCategory; depth: number }[] = [];
+    const walk = (c: RecipeCategory, depth: number) => {
+      out.push({ category: c, depth });
+      tree.children(c.id).forEach((child) => walk(child, depth + 1));
+    };
+    walk(root, 0);
+    return out;
+  }
+
   // Anything picked that the household does not know about yet is brand new.
-  const unknownPicked = value.categories.filter(
-    (c) => !known.some((k) => k.name.toLowerCase() === c.toLowerCase()),
-  );
+  const unknownPicked = value.categories.filter((c) => !tree.byName.has(c.toLowerCase()));
 
   return (
     <div className="space-y-4">
@@ -75,23 +91,27 @@ export default function RecipeClassifier({
       </Field>
       )}
 
-      <Field label="Sub-categories" hint="Type a new name to create one.">
+      <Field label="Groups" hint="Pick the smallest one that fits — Chicken rather than Main dish.">
         {(known.length > 0 || unknownPicked.length > 0) && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {known.map((k) => (
-              <Chip
-                key={k.id}
-                active={value.categories.some((c) => c.toLowerCase() === k.name.toLowerCase())}
-                onClick={() => toggleCategory(k.name)}
-              >
-                {k.name}
-              </Chip>
+          <div className="mb-2 space-y-2">
+            {tree.children(null).map((root) => (
+              <div key={root.id} className="flex flex-wrap gap-2">
+                {family(root).map(({ category, depth }) => (
+                  <Chip key={category.id} active={isPicked(category.name)} onClick={() => toggleCategory(category.name)}>
+                    {depth > 0 ? `${'›'.repeat(depth)} ${category.name}` : category.name}
+                  </Chip>
+                ))}
+              </div>
             ))}
-            {unknownPicked.map((name) => (
-              <Chip key={name} active onClick={() => toggleCategory(name)}>
-                {name} · new
-              </Chip>
-            ))}
+            {unknownPicked.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {unknownPicked.map((name) => (
+                  <Chip key={name} active onClick={() => toggleCategory(name)}>
+                    {name} · new
+                  </Chip>
+                ))}
+              </div>
+            )}
           </div>
         )}
         <div className="flex gap-2">
@@ -101,8 +121,8 @@ export default function RecipeClassifier({
             onKeyDown={(e) => {
               if (e.key === 'Enter') addDraft(e);
             }}
-            placeholder="Veggie, Full meal, Grandma's…"
-            aria-label="New sub-category name"
+            placeholder="A new group…"
+            aria-label="New group name"
           />
           <Button type="button" variant="secondary" disabled={!draft.trim()} onClick={() => addDraft()}>
             <PlusIcon className="h-5 w-5" />

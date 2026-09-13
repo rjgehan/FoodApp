@@ -9,7 +9,10 @@ import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.domain.SectionIcon;
 import com.gehan.mealplanner.domain.RecipeShare;
 import com.gehan.mealplanner.domain.StoredImage;
+import com.gehan.mealplanner.dto.RecipeDtos.CreateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.MoveRecipesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeCategoryResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
@@ -370,22 +373,127 @@ public class RecipeService {
         householdService.assertMember(householdId, requesterId);
         List<RecipeFiling> filings = filingRepository.findByHouseholdId(householdId);
         return categoryRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
-                .map(c -> new RecipeCategoryResponse(c.getId(), c.getName(),
+                .map(c -> toCategoryResponse(c,
                         (int) filings.stream().filter(f -> f.getCategories().contains(c)).count()))
                 .toList();
     }
 
-    /** Unlinks the category from every filing first, so the row can actually go. */
+    /** A new group from inside a drawer. Filing a recipe under a new name makes one too. */
+    @Transactional
+    public RecipeCategoryResponse createCategory(UUID householdId, UUID requesterId, CreateCategoryRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        String name = requireFreeName(householdId, request.name(), null);
+        RecipeCategory parent = request.parentId() == null ? null : requireCategory(householdId, request.parentId());
+        return toCategoryResponse(categoryRepository.save(
+                RecipeCategory.builder().household(household).name(name).parent(parent).build()), 0);
+    }
+
+    /** Rename a group, or move it inside another — never inside itself. */
+    @Transactional
+    public RecipeCategoryResponse updateCategory(UUID householdId, UUID categoryId, UUID requesterId,
+                                                 UpdateCategoryRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        RecipeCategory category = requireCategory(householdId, categoryId);
+
+        if (request.name() != null) {
+            category.setName(requireFreeName(householdId, request.name(), categoryId));
+        }
+        if (Boolean.TRUE.equals(request.toTop())) {
+            category.setParent(null);
+        } else if (request.parentId() != null) {
+            RecipeCategory parent = requireCategory(householdId, request.parentId());
+            // Inside itself, or inside one of its own groups, would make a loop with no top.
+            for (RecipeCategory up = parent; up != null; up = up.getParent()) {
+                if (up.getId().equals(categoryId)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A group can't go inside itself.");
+                }
+            }
+            category.setParent(parent);
+        }
+
+        RecipeCategory saved = categoryRepository.save(category);
+        int count = (int) filingRepository.findByHouseholdId(householdId).stream()
+                .filter(f -> f.getCategories().contains(saved)).count();
+        return toCategoryResponse(saved, count);
+    }
+
+    /**
+     * Files recipes into one group, in one go — how a drawer gets sorted: "these five are
+     * Chicken". Taken out of `from` at the same time, so splitting Main dish up leaves them in
+     * Chicken rather than in both. Recipes this household has not filed are skipped.
+     */
+    @Transactional
+    public void moveRecipes(UUID householdId, UUID categoryId, UUID requesterId, MoveRecipesRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        RecipeCategory target = requireCategory(householdId, categoryId);
+        RecipeCategory from = request.fromCategoryId() == null ? null
+                : requireCategory(householdId, request.fromCategoryId());
+
+        for (UUID recipeId : request.recipeIds()) {
+            filingRepository.findByHouseholdIdAndRecipeId(householdId, recipeId).ifPresent(filing -> {
+                if (from != null) {
+                    filing.getCategories().remove(from);
+                }
+                filing.getCategories().add(target);
+                filingRepository.save(filing);
+            });
+        }
+    }
+
+    /**
+     * Deletes a group without losing anything filed in it. Its own groups move up a level, and
+     * its recipes move up to the group it was in — deleting Chicken leaves those recipes in Main
+     * dish, not loose in the drawer.
+     */
     @Transactional
     public void deleteCategory(UUID householdId, UUID categoryId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
-        RecipeCategory category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found"));
-        if (!category.getHousehold().getId().equals(householdId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found");
-        }
-        filingRepository.findByHouseholdId(householdId).forEach(f -> f.getCategories().remove(category));
+        RecipeCategory category = requireCategory(householdId, categoryId);
+        RecipeCategory parent = category.getParent();
+
+        categoryRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
+                .filter(c -> c.getParent() != null && c.getParent().getId().equals(categoryId))
+                .forEach(c -> c.setParent(parent));
+        filingRepository.findByHouseholdId(householdId).forEach(f -> {
+            if (f.getCategories().remove(category) && parent != null) {
+                f.getCategories().add(parent);
+            }
+        });
         categoryRepository.delete(category);
+    }
+
+    private RecipeCategory requireCategory(UUID householdId, UUID categoryId) {
+        RecipeCategory category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+        if (!category.getHousehold().getId().equals(householdId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found");
+        }
+        return category;
+    }
+
+    /**
+     * Names stay unique in a household, because a recipe is filed by name — two groups called
+     * Chicken would be one group as far as filing could tell. `self` is the group being renamed.
+     */
+    private String requireFreeName(UUID householdId, String raw, UUID self) {
+        String name = normalizeCategoryName(raw);
+        if (name.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A group needs a name.");
+        }
+        categoryRepository.findByHouseholdIdAndNameIgnoreCase(householdId, name)
+                .filter(existing -> !existing.getId().equals(self))
+                .ifPresent(existing -> {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "There's already a group called " + existing.getName() + ".");
+                });
+        return name;
+    }
+
+    private static RecipeCategoryResponse toCategoryResponse(RecipeCategory category, int recipeCount) {
+        return new RecipeCategoryResponse(category.getId(), category.getName(), recipeCount,
+                category.getParent() == null ? null : category.getParent().getId());
     }
 
     @Transactional(readOnly = true)

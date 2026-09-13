@@ -109,7 +109,23 @@ public class RecipeDtos {
             List<RecipeIngredientResponse> ingredients) {
     }
 
-    public record RecipeCategoryResponse(UUID id, String name, int recipeCount) {
+    /** `parentId` is the group this one sits inside; null at the top of a drawer. */
+    public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId) {
+    }
+
+    /** A new group, optionally inside another. Names are unique within a household. */
+    public record CreateCategoryRequest(@NotBlank String name, UUID parentId) {
+    }
+
+    /**
+     * Rename, move, or both. A null parentId leaves it where it is — JSON cannot tell "no
+     * change" from "no parent" — so moving a group out to the top level is `toTop: true`.
+     */
+    public record UpdateCategoryRequest(String name, UUID parentId, Boolean toTop) {
+    }
+
+    /** Files these recipes into a group, taking them out of `fromCategoryId` if they were in it. */
+    public record MoveRecipesRequest(@NotNull List<UUID> recipeIds, UUID fromCategoryId) {
     }
 
     /** Replaces the set of households this recipe is shared with. An empty list unshares it. */
