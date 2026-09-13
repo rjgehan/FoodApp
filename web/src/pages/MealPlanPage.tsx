@@ -9,6 +9,7 @@ import { useAiAvailable } from '../utils/useAiAvailable';
 import PlaceActions from '../components/PlaceActions';
 import RecipeForm from '../components/RecipeForm';
 import { WriteForMe } from '../components/RecipeWriter';
+import { PasteFromChatGpt } from '../components/RecipePaste';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, NumberInput, Sheet } from '../components/ui';
 import { BookIcon, CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 
@@ -1212,7 +1213,7 @@ function NewRecipeFromPlan({
   servings: number;
   onSaved: (recipe: Recipe) => void;
 }) {
-  const [mode, setMode] = useState<'choose' | 'write' | 'assisted'>('choose');
+  const [mode, setMode] = useState<'choose' | 'write' | 'paste' | 'assisted'>('choose');
   const [name, setName] = useState(initialName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1256,6 +1257,18 @@ function NewRecipeFromPlan({
     );
   }
 
+  if (mode === 'paste') {
+    return (
+      <PasteFromChatGpt
+        householdId={householdId}
+        initialName={name.trim()}
+        initialServings={servings}
+        section={section}
+        onSaved={onSaved}
+      />
+    );
+  }
+
   if (mode === 'assisted') {
     return (
       <WriteForMe
@@ -1284,6 +1297,9 @@ function NewRecipeFromPlan({
       </div>
       <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('write')}>
         Write out the recipe
+      </Button>
+      <Button full variant="secondary" disabled={busy} onClick={() => setMode('paste')}>
+        Paste from ChatGPT
       </Button>
       {writerAvailable && (
         <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('assisted')}>

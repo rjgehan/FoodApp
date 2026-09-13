@@ -58,7 +58,8 @@ export function splitAmount(text: string): Amount {
   return { quantity, unit, name };
 }
 
-function parseQuantity(raw: string): number | null {
+/** "1 1/2", "1/2", "1.5", "1,5", "1½", "½" as a number; null for anything else. */
+export function parseQuantity(raw: string): number | null {
   if (raw in FRACTION_CHARS) return FRACTION_CHARS[raw];
   const glyph = raw.slice(-1);
   if (glyph in FRACTION_CHARS) return Number(raw.slice(0, -1)) + FRACTION_CHARS[glyph];

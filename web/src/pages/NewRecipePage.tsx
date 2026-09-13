@@ -3,15 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { useHousehold } from '../household/HouseholdContext';
 import RecipeForm from '../components/RecipeForm';
 import { WriteForMe } from '../components/RecipeWriter';
+import { PasteFromChatGpt } from '../components/RecipePaste';
 import { useAiAvailable } from '../utils/useAiAvailable';
-import { Button, Card, EmptyState } from '../components/ui';
+import { Button, Card, cx, EmptyState } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
 
+type Mode = 'type' | 'paste' | 'write';
+
+/**
+ * Three ways in: type it out yourself (the normal one), paste a recipe from ChatGPT or anywhere
+ * else, or have it written. All three end in the same form, checked before it is saved.
+ */
 export default function NewRecipePage() {
   const { activeHouseholdId } = useHousehold();
   const navigate = useNavigate();
-  // Writing it out yourself is the normal way in; having it written is the shortcut.
-  const [assisted, setAssisted] = useState(false);
+  const [mode, setMode] = useState<Mode>('type');
   const writerAvailable = useAiAvailable();
 
   if (!activeHouseholdId) {
@@ -22,24 +28,45 @@ export default function NewRecipePage() {
     );
   }
 
+  const done = (id: string) => navigate(`/recipes/${id}`, { replace: true });
+  const modes: { value: Mode; label: string }[] = [
+    { value: 'type', label: 'Type it out' },
+    { value: 'paste', label: 'Paste' },
+    // Only when a key is set up — a button that can only fail is worse than none.
+    ...(writerAvailable ? [{ value: 'write' as Mode, label: '✨ Write it for me' }] : []),
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/recipes')}>
-          <ChevronLeftIcon className="h-5 w-5" />
-          Recipes
-        </Button>
-        {writerAvailable && (
-          <Button variant="secondary" size="sm" onClick={() => setAssisted((v) => !v)}>
-            {assisted ? 'Write it out' : '✨ Write it for me'}
-          </Button>
-        )}
+      <Button variant="ghost" size="sm" className="-ml-3" onClick={() => navigate('/recipes')}>
+        <ChevronLeftIcon className="h-5 w-5" />
+        Recipes
+      </Button>
+
+      <div className="flex rounded-xl bg-elevated p-0.5" role="tablist" aria-label="How to add it">
+        {modes.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            role="tab"
+            aria-selected={mode === m.value}
+            onClick={() => setMode(m.value)}
+            className={cx(
+              'h-9 flex-1 rounded-lg px-2 text-sm font-medium transition-colors',
+              mode === m.value ? 'bg-surface text-ink shadow-sm' : 'text-muted',
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
 
-      {assisted ? (
-        <WriteForMe householdId={activeHouseholdId} onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })} />
+      {mode === 'write' ? (
+        <WriteForMe householdId={activeHouseholdId} onSaved={(r) => done(r.id)} />
+      ) : mode === 'paste' ? (
+        <PasteFromChatGpt householdId={activeHouseholdId} onSaved={(r) => done(r.id)} />
       ) : (
-        <RecipeForm householdId={activeHouseholdId} onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })} />
+        <RecipeForm householdId={activeHouseholdId} onSaved={(r) => done(r.id)} />
       )}
     </div>
   );
