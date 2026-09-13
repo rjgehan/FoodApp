@@ -6,6 +6,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, Input, Sheet } from '../components/ui';
 import { ChevronLeftIcon, PlusIcon } from '../components/icons';
 import RecipeGrid from '../components/RecipeGrid';
+import { PageTitle } from '../components/PageTitle';
 import { coverClass } from '../utils/recipeFormat';
 import { SHARED_KEY, sectionFromSlug, sectionLabel } from '../utils/recipeMeta';
 import { buildTree, isIn, suggestGroup, suggestSplit, type CategoryTree } from '../utils/categoryTree';
@@ -263,7 +264,7 @@ function Header({
         </Button>
         {action}
       </div>
-      <h1 className="mt-1 text-2xl font-semibold leading-tight">{title}</h1>
+      <PageTitle title={title} />
     </div>
   );
 }

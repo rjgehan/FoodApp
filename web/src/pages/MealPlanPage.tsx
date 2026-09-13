@@ -7,6 +7,7 @@ import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import PlaceActions from '../components/PlaceActions';
+import { PageTitle } from '../components/PageTitle';
 import RecipeForm from '../components/RecipeForm';
 import { WriteForMe } from '../components/RecipeWriter';
 import { PasteFromChatGpt } from '../components/RecipePaste';
@@ -138,6 +139,7 @@ export default function MealPlanPage() {
 
   return (
     <div className="space-y-4">
+      <PageTitle title="Plan" />
       {confirmingWeek && (
         <ConfirmAddToGroceries
           dates={contributingDates(weekEntries)}
@@ -169,11 +171,11 @@ export default function MealPlanPage() {
           <ChevronLeftIcon className="h-5 w-5" />
         </IconButton>
 
-        <h1 className="flex-1 text-center font-semibold">
+        <h2 className="flex-1 text-center font-semibold">
           {mode === 'week'
             ? `${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${addDays(weekStart, 6).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
             : monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </h1>
+        </h2>
 
         <IconButton
           label={mode === 'week' ? 'Next week' : 'Next month'}

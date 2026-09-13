@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { GroceryListItem, MealPlanEntry, MealType, Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { Card, EmptyState } from '../components/ui';
+import { ChevronRightIcon } from '../components/icons';
+import { PageTitle } from '../components/PageTitle';
 import { imageUrl } from '../api/client';
 import { useOnResume } from '../utils/useOnResume';
 
@@ -32,6 +34,17 @@ function agoLabel(iso: string | null): string {
   if (days < 14) return `made ${days} days ago`;
   if (days < 60) return `made ${Math.round(days / 7)} weeks ago`;
   return `made ${Math.round(days / 30)} months ago`;
+}
+
+/** A row that goes somewhere, said with a chevron — the iOS way of marking "this opens". */
+function LinkRow({ to, children, trailing }: { to: string; children: ReactNode; trailing?: ReactNode }) {
+  return (
+    <Link to={to} className="flex min-h-touch items-center gap-3 py-3 transition-colors active:bg-elevated">
+      <span className="min-w-0 flex-1">{children}</span>
+      {trailing && <span className="shrink-0 text-muted">{trailing}</span>}
+      <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+    </Link>
+  );
 }
 
 /** Deliberately only today: what's for dinner, and how much is left to buy. */
@@ -113,67 +126,67 @@ export default function DashboardPage() {
     : null;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold leading-tight">Today</h1>
-        <p className="text-muted">
-          {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <PageTitle
+        title="Today"
+        subtitle={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+      />
 
       {today.length === 0 ? (
         <p className="text-muted">
           Nothing planned today —{' '}
-          <Link to="/meal-plan" className="font-medium text-accent underline">
+          <Link to="/meal-plan" className="font-medium text-accent">
             plan something
           </Link>
           .
         </p>
       ) : (
-        <ul className="divide-y divide-line">
+        <ul className="inset-rows">
           {today.map((e) => (
             <li key={e.id}>
-              <Link to={e.recipeId ? `/recipes/${e.recipeId}` : '/meal-plan'} className="block py-3">
-                <p className="text-sm font-medium text-accent">{titleCase(e.mealType)}</p>
-                <p className="mt-0.5 text-lg font-semibold leading-tight">
+              <LinkRow to={e.recipeId ? `/recipes/${e.recipeId}` : '/meal-plan'}>
+                <span className="block text-[0.8125rem] font-semibold text-accent">{titleCase(e.mealType)}</span>
+                <span className="block text-[1.25rem] font-semibold leading-tight tracking-[-0.015em]">
                   {entryLabel(e)}
                   {e.time && <span className="font-normal text-muted"> · {formatTime(e.time)}</span>}
-                </p>
-                {e.servings ? <p className="mt-0.5 text-sm text-muted">Serves {e.servings}</p> : null}
-              </Link>
+                </span>
+                {e.servings ? <span className="block text-[0.9375rem] text-muted">Serves {e.servings}</span> : null}
+              </LinkRow>
             </li>
           ))}
         </ul>
       )}
 
-      {/* The two things worth a glance, as plain rows between hairlines rather than two more boxes. */}
-      <div className="divide-y divide-line border-y border-line">
-      {emptyDays.length > 0 && (
-        <Link to="/meal-plan" className="flex items-center justify-between gap-3 py-3">
-          <span className="min-w-0">
-            <span className="block font-medium">
-              {emptyDays.length} {emptyDays.length === 1 ? 'day' : 'days'} with nothing planned
-            </span>
-            <span className="block truncate text-sm text-muted">
-              {emptyDays
-                .slice(0, 4)
-                .map((d) => d.toLocaleDateString(undefined, { weekday: 'short' }))
-                .join(', ')}
-              {emptyDays.length > 4 ? ` and ${emptyDays.length - 4} more` : ''}
-            </span>
-          </span>
-          <span className="shrink-0 text-sm text-accent">Plan</span>
-        </Link>
-      )}
-      <Link to="/grocery-list" className="flex items-center justify-between gap-3 py-3">
-        <span className="font-medium">Grocery list</span>
-        <span className="text-muted">{left ? `${left} to buy` : 'All done'}</span>
-      </Link>
-      </div>
+      <ul className="inset-rows">
+        {emptyDays.length > 0 && (
+          <li>
+            <LinkRow to="/meal-plan" trailing="Plan">
+              <span className="block font-medium">
+                {emptyDays.length} {emptyDays.length === 1 ? 'day' : 'days'} with nothing planned
+              </span>
+              <span className="block truncate text-[0.9375rem] text-muted">
+                {emptyDays
+                  .slice(0, 4)
+                  .map((d) => d.toLocaleDateString(undefined, { weekday: 'short' }))
+                  .join(', ')}
+                {emptyDays.length > 4 ? ` and ${emptyDays.length - 4} more` : ''}
+              </span>
+            </LinkRow>
+          </li>
+        )}
+        <li>
+          <LinkRow to="/grocery-list" trailing={left ? `${left} to buy` : 'All done'}>
+            <span className="font-medium">Grocery list</span>
+          </LinkRow>
+        </li>
+      </ul>
 
       {suggestion && (
         <Card title="Not made in a while">
-          <Link to={`/recipes/${suggestion.recipe.id}`} className="flex items-center gap-3">
+          <Link
+            to={`/recipes/${suggestion.recipe.id}`}
+            className="flex items-center gap-3 rounded-xl transition-colors active:bg-elevated"
+          >
             {suggestion.recipe.coverImageId ? (
               <img
                 src={imageUrl(suggestion.recipe.coverImageId)}
@@ -185,8 +198,9 @@ export default function DashboardPage() {
             )}
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{suggestion.recipe.name}</span>
-              <span className="block text-sm text-muted">{agoLabel(suggestion.last)}</span>
+              <span className="block text-[0.9375rem] text-muted">{agoLabel(suggestion.last)}</span>
             </span>
+            <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
           </Link>
         </Card>
       )}

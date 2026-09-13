@@ -4,43 +4,45 @@
 
 @layer base {
   /*
-   * One palette, defined once. Every component reads these instead of repeating
-   * `dark:` variants, so light and dark stay in step by construction.
-   * Warm neutrals (stone) + a food-friendly orange accent.
+   * One palette, defined once. Every component reads these instead of repeating `dark:`
+   * variants, so light and dark stay in step by construction.
+   *
+   * Apple's neutrals — a white page, a grey well for fills, hairline separators, and true black
+   * in dark mode — with the app's own orange kept as the one colour that means "you can act".
    */
   :root {
-    --bg: 250 250 249;
+    --bg: 255 255 255;
     --surface: 255 255 255;
-    --elevated: 245 245 244;
-    --line: 231 229 228;
-    --ink: 28 25 23;
-    --muted: 120 113 108;
-    --subtle: 168 162 158;
+    --elevated: 242 242 247;
+    --line: 216 216 220;
+    --ink: 29 29 31;
+    --muted: 110 110 115;
+    --subtle: 160 160 166;
     --accent: 234 88 12;
     --accent-soft: 255 237 213;
     --accent-ink: 255 255 255;
-    --danger: 220 38 38;
-    --danger-soft: 254 226 226;
-    --success: 21 128 61;
-    --success-soft: 220 252 231;
+    --danger: 215 40 47;
+    --danger-soft: 255 228 228;
+    --success: 36 138 61;
+    --success-soft: 222 247 229;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: 12 10 9;
-      --surface: 28 25 23;
-      --elevated: 41 37 36;
-      --line: 51 47 45;
-      --ink: 250 250 249;
-      --muted: 168 162 158;
-      --subtle: 120 113 108;
-      --accent: 251 146 60;
-      --accent-soft: 67 20 7;
+      --bg: 0 0 0;
+      --surface: 28 28 30;
+      --elevated: 44 44 46;
+      --line: 56 56 58;
+      --ink: 245 245 247;
+      --muted: 152 152 157;
+      --subtle: 99 99 102;
+      --accent: 255 159 64;
+      --accent-soft: 64 32 8;
       --accent-ink: 28 25 23;
-      --danger: 248 113 113;
-      --danger-soft: 69 10 10;
-      --success: 74 222 128;
-      --success-soft: 5 46 22;
+      --danger: 255 105 97;
+      --danger-soft: 66 16 16;
+      --success: 48 209 88;
+      --success-soft: 8 44 18;
     }
   }
 
@@ -51,7 +53,11 @@
   body {
     @apply bg-bg text-ink antialiased;
     font-family:
-      ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-optical-sizing: auto;
+    /* Body copy: comfortable leading, no tracking. Headings tighten themselves below. */
+    line-height: 1.47;
+    letter-spacing: -0.005em;
     /* Stops the whole page rubber-banding behind the fixed tab bar on iOS. */
     overscroll-behavior-y: none;
   }
@@ -69,6 +75,11 @@
   button {
     -webkit-tap-highlight-color: transparent;
   }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
 }
 
 @layer utilities {
@@ -85,6 +96,85 @@
 }
 
 @layer components {
+  /*
+   * Type that changes shape with size. Tracking tightens as text grows — a fixed
+   * letter-spacing is wrong somewhere — and leading tightens with it.
+   */
+  .large-title {
+    font-size: 2.125rem;
+    line-height: 1.12;
+    letter-spacing: -0.024em;
+    font-weight: 700;
+  }
+  .title-3 {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+  }
+
+  /*
+   * Frosted glass for the bars, with content scrolling underneath. Heavier saturation so colour
+   * shows through; the page's own background at 72% keeps text on it legible.
+   */
+  .material-bar {
+    background-color: rgb(var(--bg) / 0.72);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* Scroll edges: a hairline where floating chrome meets content, not a 1px border everywhere. */
+  .edge-bottom {
+    box-shadow: 0 0.5px 0 rgb(var(--line));
+  }
+  .edge-top {
+    box-shadow: 0 -0.5px 0 rgb(var(--line));
+  }
+
+  /* Feedback on the press, not the release. */
+  .press {
+    transition:
+      transform 120ms ease-out,
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  /*
+   * iOS separators start where the text starts, not at the screen edge. Set --row-inset on the
+   * list to the width of whatever leads each row (a checkbox, an icon).
+   */
+  .inset-rows > * {
+    position: relative;
+  }
+  .inset-rows > * + *::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: var(--row-inset, 0px);
+    z-index: 1;
+    border-top: 0.5px solid rgb(var(--line));
+    pointer-events: none;
+  }
+
+  /* A tick settling in. Ease-out with no overshoot: nothing was thrown, so nothing bounces. */
+  @keyframes pop {
+    from {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  .pop {
+    animation: pop 180ms ease-out;
+  }
+
   /*
    * Recipe cover tints for the catalog. Deterministic per recipe, so a given card always
    * looks the same and becomes recognisable when you flip past it.
@@ -127,5 +217,44 @@
     );
     background-position: 0 0.35rem;
     line-height: 1.75rem;
+  }
+}
+
+/*
+ * The three accessibility settings, honoured rather than ignored. Reduce Motion keeps the
+ * feedback but drops the movement; Reduce Transparency makes the glass solid; Increase Contrast
+ * gives edges a real line.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .press:active {
+    transform: none;
+  }
+  .pop {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .material-bar {
+    background-color: rgb(var(--bg));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .material-bar {
+    background-color: rgb(var(--bg));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .edge-bottom {
+    box-shadow: 0 1px 0 rgb(var(--ink) / 0.5);
+  }
+  .edge-top {
+    box-shadow: 0 -1px 0 rgb(var(--ink) / 0.5);
+  }
+  .inset-rows > * + *::before {
+    border-top: 1px solid rgb(var(--ink) / 0.35);
   }
 }

@@ -1,20 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
+  PointerEvent as ReactPointerEvent,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
+import {
+  animateSpring,
+  prefersReducedMotion,
+  project,
+  rubberband,
+  trimSamples,
+  velocityOf,
+  type Animation,
+} from '../utils/spring';
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
 }
 
 /**
- * A titled section of a page — deliberately not a box. Pages used to be a stack of bordered
- * cards with bordered rows inside them, and the borders said nothing the headings did not.
- * A heading and some space do the grouping now; dividers are kept for rows in a list.
+ * A titled section of a page — deliberately not a box. A heading and some space do the grouping;
+ * dividers are kept for rows in a list.
  */
 export function Card({
   title,
@@ -33,7 +42,7 @@ export function Card({
     <section className={cx('py-2', className)}>
       {(title || actions) && (
         <header className="mb-1.5 flex min-h-9 items-center justify-between gap-3">
-          {title && <h2 className="text-lg font-semibold leading-tight">{title}</h2>}
+          {title && <h2 className="title-3">{title}</h2>}
           {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
         </header>
       )}
@@ -44,25 +53,40 @@ export function Card({
 
 /** A quiet heading inside a section or sheet — the aisle names on the grocery list, say. */
 export function SubHeading({ children, className }: { children: ReactNode; className?: string }) {
-  return <h3 className={cx('pb-1 pt-4 text-sm font-semibold text-muted first:pt-0', className)}>{children}</h3>;
+  return <h3 className={cx('pb-1 pt-4 text-[0.8125rem] font-semibold text-muted first:pt-0', className)}>{children}</h3>;
 }
 
 /*
- * Filled rather than outlined. An outlined button is one more box, and a screen with a dozen of
- * them reads as a grid of boxes before it reads as anything else.
+ * Filled rather than outlined — an outlined button is one more box. Every one answers the finger
+ * the moment it lands (`press`), not when it lifts.
  */
 const BUTTON_VARIANTS = {
   primary: 'bg-accent text-accent-ink active:brightness-95',
   secondary: 'bg-elevated text-ink active:bg-line',
-  ghost: 'text-muted active:bg-elevated',
+  // Text buttons are tinted, the way iOS marks "this is tappable" without drawing a box.
+  ghost: 'text-accent active:bg-elevated',
+  // Icons in rows stay grey: a column of orange bins would be the loudest thing on the page.
+  quiet: 'text-muted active:bg-elevated',
   danger: 'bg-danger-soft text-danger active:brightness-95',
 };
 
+const TEXT_COLOR = /(^|\s)text-(ink|muted|subtle|accent|danger|success)(\s|$)/;
+
+/**
+ * A caller's own text colour replaces the variant's, rather than racing it: which of two
+ * `text-*` classes wins is decided by stylesheet order, not by the order they are written in.
+ */
+function variantClass(variant: keyof typeof BUTTON_VARIANTS, className?: string) {
+  const base = BUTTON_VARIANTS[variant];
+  if (!className || !TEXT_COLOR.test(className)) return base;
+  return base.replace(/(^|\s)text-[\w-]+/, '');
+}
+
 const BUTTON_SIZES = {
-  // Every size clears 44px of touch target except `sm`, which is for dense desktop rows.
-  sm: 'h-9 px-3 text-sm rounded-lg gap-1.5',
-  md: 'h-11 px-4 text-[0.95rem] rounded-xl gap-2',
-  lg: 'h-12 px-5 text-base rounded-xl gap-2',
+  // Every size clears 44px of touch target except `sm`, which is for dense rows.
+  sm: 'h-9 px-3 text-[0.9375rem] rounded-[10px] gap-1.5',
+  md: 'h-11 px-4 text-[1.0625rem] rounded-xl gap-2',
+  lg: 'h-[3.125rem] px-5 text-[1.0625rem] rounded-[14px] gap-2',
 };
 
 export function Button({
@@ -80,9 +104,9 @@ export function Button({
   return (
     <button
       className={cx(
-        'inline-flex items-center justify-center font-medium transition-colors select-none',
+        'press inline-flex items-center justify-center font-semibold select-none',
         'disabled:opacity-40 disabled:pointer-events-none',
-        BUTTON_VARIANTS[variant],
+        variantClass(variant, className),
         BUTTON_SIZES[size],
         full && 'w-full',
         className,
@@ -98,7 +122,7 @@ export function Button({
 export function IconButton({
   children,
   label,
-  variant = 'ghost',
+  variant = 'quiet',
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -111,9 +135,9 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cx(
-        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors',
+        'press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
         'disabled:opacity-40 disabled:pointer-events-none',
-        BUTTON_VARIANTS[variant],
+        variantClass(variant, className),
         className,
       )}
       {...props}
@@ -123,9 +147,10 @@ export function IconButton({
   );
 }
 
+/* Filled fields, like iOS's: a grey well that turns white with an accent edge while you type. */
 const CONTROL =
-  'h-11 rounded-xl border border-line bg-surface px-3 text-ink placeholder:text-subtle ' +
-  'outline-none transition-colors focus:border-accent disabled:opacity-50';
+  'h-11 rounded-xl border border-transparent bg-elevated px-3 text-ink placeholder:text-subtle ' +
+  'outline-none transition-colors focus:border-accent focus:bg-surface disabled:opacity-50';
 
 /**
  * Controls fill their container unless the caller sets a width. Tailwind emits `w-full` after
@@ -201,7 +226,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 
 export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-muted">
+    <label htmlFor={htmlFor} className="mb-1.5 block text-[0.8125rem] font-medium text-muted">
       {children}
     </label>
   );
@@ -213,7 +238,7 @@ export function Field({ label, hint, children }: { label?: ReactNode; hint?: Rea
     <div>
       {label && <Label>{label}</Label>}
       {children}
-      {hint && <p className="mt-1.5 text-sm text-muted">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[0.8125rem] text-muted">{hint}</p>}
     </div>
   );
 }
@@ -247,11 +272,18 @@ function useVisibleViewport() {
 }
 
 /**
- * A bottom sheet on phones, a centred dialog on wider screens. Used for the meal-plan day
- * editor so planning happens where you tapped instead of in a panel far below the calendar.
+ * A bottom sheet on phones, a centred dialog on wider screens.
  *
- * It sits on top of the keyboard, not under it. `tall` is for sheets you search in: they keep
- * one height as the results narrow, instead of shrinking and sliding down out of sight.
+ * On a phone it behaves like a physical card. It rises from the bottom on a spring and leaves
+ * the same way it came. Grab the top of it and it follows the finger exactly; pull it upward
+ * and it resists; let go and where it ends up depends on where the flick was heading — a quick
+ * flick down dismisses it even from near the top, a slow drag has to go half-way. It can be
+ * grabbed again mid-animation and carries on from where it is. The dimmed page behind lightens
+ * as it goes, so it is always clear what a release will do.
+ *
+ * With Reduce Motion on it simply fades. It sits above the on-screen keyboard, and `tall` keeps
+ * one height for sheets you search in, so they do not shrink and drop out of sight as results
+ * narrow.
  */
 export function Sheet({
   title,
@@ -265,10 +297,72 @@ export function Sheet({
   tall?: boolean;
 }) {
   const viewport = useVisibleViewport();
+  const panel = useRef<HTMLDivElement>(null);
+  const scrim = useRef<HTMLDivElement>(null);
+  const offset = useRef(0);
+  const animation = useRef<Animation | null>(null);
+  const drag = useRef<{ y: number; from: number; samples: { t: number; v: number }[] } | null>(null);
+  const closing = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Decided once: a sheet does not change kind while it is open.
+  const [docked] = useState(() => window.matchMedia('(max-width: 639px)').matches);
+  const [reduced] = useState(prefersReducedMotion);
+  const physical = docked && !reduced;
+
+  const paint = useCallback((value: number) => {
+    offset.current = value;
+    const el = panel.current;
+    if (!el) return;
+    el.style.transform = `translate3d(0, ${value}px, 0)`;
+    if (scrim.current) scrim.current.style.opacity = String(Math.min(1, Math.max(0, 1 - value / (el.offsetHeight || 1))));
+  }, []);
+
+  const springTo = useCallback(
+    (target: number, velocity = 0, damping = 1, then?: () => void) => {
+      animation.current?.stop();
+      animation.current = animateSpring(offset.current, target, paint, { damping, response: 0.32, velocity }, then);
+    },
+    [paint],
+  );
+
+  // Arrive: from below on a phone, a quick fade (and a hint of scale) otherwise.
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    if (physical) {
+      paint(el.offsetHeight);
+      springTo(0);
+    } else {
+      const keyframes = reduced ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'scale(0.97)' }, { opacity: 1, transform: 'none' }];
+      el.animate(keyframes, { duration: reduced ? 150 : 200, easing: 'ease-out' });
+      scrim.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+    }
+    return () => animation.current?.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Leave the way it came, then tell the page. */
+  const dismiss = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    const el = panel.current;
+    if (!el) {
+      onCloseRef.current();
+      return;
+    }
+    if (physical) {
+      springTo(el.offsetHeight, 0, 1, () => onCloseRef.current());
+    } else {
+      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: 'ease-in' }).onfinish = () => onCloseRef.current();
+      scrim.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: 'ease-in', fill: 'forwards' });
+    }
+  }, [physical, springTo]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') dismiss();
     }
     window.addEventListener('keydown', onKey);
     // Stop the page behind from scrolling while the sheet is up.
@@ -278,32 +372,91 @@ export function Sheet({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = previous;
     };
-  }, [onClose]);
+  }, [dismiss]);
+
+  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!physical || closing.current || (e.target as HTMLElement).closest('button')) return;
+    // Grabbed mid-flight: carry on from where it is on screen.
+    animation.current?.stop();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // The pointer is already gone; the drag simply ends with it.
+    }
+    drag.current = { y: e.clientY, from: offset.current, samples: [{ t: e.timeStamp, v: e.clientY }] };
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    const el = panel.current;
+    if (!d || !el) return;
+    let value = d.from + (e.clientY - d.y);
+    if (value < 0) value = -rubberband(-value, el.offsetHeight);
+    paint(value);
+    d.samples.push({ t: e.timeStamp, v: e.clientY });
+    trimSamples(d.samples, e.timeStamp);
+  }
+
+  function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    const el = panel.current;
+    drag.current = null;
+    if (!d || !el) return;
+    // The release is a sample too: a finger that stopped before lifting has no speed left.
+    d.samples.push({ t: e.timeStamp, v: e.clientY });
+    trimSamples(d.samples, e.timeStamp);
+    const velocity = velocityOf(d.samples);
+    const height = el.offsetHeight;
+    if (offset.current + project(velocity) > height / 2) {
+      closing.current = true;
+      springTo(height, velocity, 1, () => onCloseRef.current());
+    } else {
+      // Flung back up: the momentum earns a little overshoot.
+      springTo(0, velocity, Math.abs(velocity) > 300 ? 0.8 : 1);
+    }
+  }
 
   return (
     <div
       className="fixed inset-x-0 z-40 flex items-end justify-center sm:items-center"
       style={{ top: viewport.top, height: viewport.height }}
     >
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div ref={scrim} className="absolute inset-0 bg-black/40" onClick={dismiss} aria-hidden="true" />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         className={cx(
-          'relative flex w-full flex-col rounded-t-2xl bg-bg pb-safe shadow-xl sm:max-w-md sm:rounded-2xl',
+          // Surface, not page: in dark mode a sheet is lifted by being lighter, as on iOS.
+          'relative flex w-full flex-col rounded-t-[14px] bg-surface pb-safe shadow-2xl will-change-transform',
+          'sm:max-w-md sm:rounded-[14px]',
           tall ? 'h-[calc(100%-1.5rem)] sm:h-[min(40rem,85vh)]' : 'max-h-[calc(100%-1.5rem)] sm:max-h-[85vh]',
         )}
       >
-        <header className="flex items-center justify-between gap-3 py-2 pl-4 pr-2">
-          <h2 className="min-w-0 truncate text-lg font-semibold">{title}</h2>
-          <IconButton label="Close" onClick={onClose}>
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}
-                 strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </IconButton>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">{children}</div>
+        {/* The handle: the grabber and title bar are what you pull, so the list below still scrolls. */}
+        <div
+          className="touch-none select-none"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <div className="flex justify-center pt-1.5 sm:hidden" aria-hidden="true">
+            <span className="h-[5px] w-9 rounded-full bg-line" />
+          </div>
+          <header className="flex items-center justify-between gap-3 pb-1 pl-4 pr-2 pt-1 sm:pt-2">
+            <h2 className="min-w-0 truncate text-[1.0625rem] font-semibold">{title}</h2>
+            <IconButton label="Close" onClick={dismiss}>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-elevated text-muted">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3}
+                     strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </span>
+            </IconButton>
+          </header>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1">{children}</div>
       </div>
     </div>
   );
@@ -330,25 +483,28 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-sm text-muted">{children}</p>;
+  return <p className="py-6 text-center text-[0.9375rem] text-muted">{children}</p>;
 }
 
 export function ErrorText({ children }: { children: ReactNode }) {
   return <p className="text-sm text-danger">{children}</p>;
 }
 
-/** Large, obviously-tappable checkbox — the 16px native one is far too small on a phone. */
+/**
+ * Large, obviously-tappable checkbox — the 16px native one is far too small on a phone. The tick
+ * settles in as it appears, so ticking something off registers.
+ */
 export function CheckCircle({ checked, className }: { checked: boolean; className?: string }) {
   return (
     <span
       className={cx(
-        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-        checked ? 'border-accent bg-accent text-accent-ink' : 'border-line',
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150',
+        checked ? 'border-accent bg-accent text-accent-ink' : 'border-subtle/60',
         className,
       )}
     >
       {checked && (
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3.5}
+        <svg viewBox="0 0 24 24" className="pop h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3.5}
              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M5 12.5 10 17.5 19 7" />
         </svg>
@@ -367,8 +523,8 @@ export function Chip({
     <button
       type="button"
       className={cx(
-        'shrink-0 rounded-full px-3.5 py-2 text-sm font-medium transition-colors',
-        active ? 'bg-accent text-accent-ink' : 'bg-elevated text-muted',
+        'press shrink-0 rounded-full px-3.5 py-2 text-[0.9375rem] font-medium',
+        active ? 'bg-accent text-accent-ink' : 'bg-elevated text-ink',
       )}
       {...props}
     >

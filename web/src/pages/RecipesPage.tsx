@@ -9,6 +9,7 @@ import { coverClass } from '../utils/recipeFormat';
 import { SECTION_OPTIONS, SHARED_KEY, sectionSlug } from '../utils/recipeMeta';
 import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
 import RecipeGrid from '../components/RecipeGrid';
+import { PageTitle } from '../components/PageTitle';
 
 /**
  * The front of the catalog: pick a drawer first. Searching skips straight to results, because
@@ -56,6 +57,7 @@ export default function RecipesPage() {
 
   return (
     <div className="space-y-4">
+      <PageTitle title="Recipes" />
       <div className="flex gap-2">
         <Input
           type="search"

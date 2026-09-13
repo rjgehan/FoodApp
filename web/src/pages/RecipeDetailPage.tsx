@@ -6,6 +6,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
 import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
 import RecipeIndexCard from '../components/RecipeIndexCard';
+import { PageTitle } from '../components/PageTitle';
 import RecipeClassifier from '../components/RecipeClassifier';
 import ImagePicker from '../components/ImagePicker';
 import { formatMinutes, formatQuantity, instructionSteps, totalMinutes } from '../utils/recipeFormat';
@@ -243,7 +244,7 @@ export default function RecipeDetailPage() {
 
           {/* Two lines of plain facts where there used to be eight badges. */}
           <div>
-            <h1 className="text-2xl font-semibold leading-tight">{recipe.name}</h1>
+            <PageTitle title={recipe.name} />
             {recipe.description && <p className="mt-1.5 text-muted">{recipe.description}</p>}
             <p className="mt-2 text-sm text-muted">
               {[

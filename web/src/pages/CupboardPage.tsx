@@ -7,6 +7,8 @@ import { useOnResume } from '../utils/useOnResume';
 import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
 import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, Select, Sheet } from '../components/ui';
 import { PlusIcon } from '../components/icons';
+import { PageTitle } from '../components/PageTitle';
+import SwipeRow from '../components/SwipeRow';
 
 function byName(a: CupboardItem, b: CupboardItem) {
   return a.name.localeCompare(b.name);
@@ -16,10 +18,9 @@ function byName(a: CupboardItem, b: CupboardItem) {
  * What is in the house, so you can check without going to look. Filled mostly by "Done
  * shopping" on the grocery list; the search box doubles as the way to add something by hand.
  *
- * Every row says the same four things. Have and Low are how much is left, for whoever checks.
- * Remove and Buy again are for when it is used up — most of the time it just goes, and when you
- * want another, Buy again moves it to the grocery list. Nothing here adds to the list by itself,
- * and nothing asks a follow-up question. Tapping an item opens it for editing.
+ * Each row shows the one thing you check at a glance — Have or Low — and keeps the rest a swipe
+ * away: slide it left for Buy again and Remove, or fling it all the way to remove it outright,
+ * which is what you do most. Tapping an item opens it for editing.
  */
 export default function CupboardPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
@@ -103,16 +104,16 @@ export default function CupboardPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold leading-tight">Cupboard</h1>
-        <p className="text-muted">
-          {all.length === 0
+      <PageTitle
+        title="Cupboard"
+        subtitle={
+          all.length === 0
             ? 'What’s in the house.'
             : [`${all.length} ${all.length === 1 ? 'thing' : 'things'}`, low && `${low} running low`]
                 .filter(Boolean)
-                .join(' · ')}
-        </p>
-      </div>
+                .join(' · ')
+        }
+      />
 
       {/* One box: type to check whether you have something, and if you don't, add it. */}
       <form onSubmit={add} className="space-y-2">
@@ -132,55 +133,56 @@ export default function CupboardPage() {
       </form>
 
       {items === null ? (
-        <p className="py-6 text-center text-sm text-muted">Loading…</p>
+        <p className="py-6 text-center text-[0.9375rem] text-muted">Loading…</p>
       ) : all.length === 0 ? (
-        <Card>
-          <EmptyState>
-            Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> on the{' '}
-            <Link to="/grocery-list" className="font-medium text-accent underline">
-              grocery list
-            </Link>{' '}
-            and what you bought lands here — or add things above.
-          </EmptyState>
-        </Card>
+        <EmptyState>
+          Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> on the{' '}
+          <Link to="/grocery-list" className="font-medium text-accent">
+            grocery list
+          </Link>{' '}
+          and what you bought lands here — or add things above.
+        </EmptyState>
       ) : shown.length === 0 ? (
-        <Card>
-          <EmptyState>Not in the cupboard.</EmptyState>
-        </Card>
+        <EmptyState>Not in the cupboard.</EmptyState>
       ) : (
         groups.map(({ section, items: rows }) => (
           <Card key={section} title={STORE_SECTION_LABELS[section]}>
-            <ul className="divide-y divide-line">
+            <ul className="inset-rows">
               {rows.map((item) => {
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
                 return (
-                  <li key={item.id} className="py-2.5">
-                    {/* Name above the buttons on a phone, beside them once there is room. */}
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <button
-                        type="button"
-                        onClick={() => setEditing(item)}
-                        className="min-w-0 flex-1 text-left"
-                        aria-label={`Edit ${item.name}`}
-                      >
-                        <span className="block truncate font-medium">{item.name}</span>
-                        {detail && <span className="block truncate text-sm text-muted">{detail}</span>}
-                      </button>
-                      <div className="flex flex-wrap items-center gap-1">
-                        <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
-                        <Button size="sm" variant="ghost" onClick={() => remove(item)} aria-label={`Remove ${item.name}`}>
-                          Remove
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => buyAgain(item)}
-                          aria-label={`Buy ${item.name} again — moves it to the grocery list`}
+                  <li key={item.id}>
+                    <SwipeRow
+                      actions={[
+                        { label: 'Buy again', tone: 'accent', onAction: () => buyAgain(item) },
+                        { label: 'Remove', tone: 'danger', onAction: () => remove(item) },
+                      ]}
+                    >
+                      <div className="flex items-center gap-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditing(item)}
+                          className="flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-elevated/60"
+                          aria-label={`Edit ${item.name}`}
                         >
-                          Buy again
-                        </Button>
+                          <span className="block truncate">{item.name}</span>
+                          {detail && <span className="block truncate text-[0.8125rem] text-muted">{detail}</span>}
+                        </button>
+                        <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
+                        {/*
+                          * Swiping needs a finger, so a wide screen with a mouse gets the actions as buttons too.
+                          * (A narrow window can still drag a row with the mouse; there is no room for both.)
+                          */}
+                        <span className="hidden items-center sm:[@media(hover:hover)]:flex">
+                          <Button size="sm" variant="ghost" onClick={() => buyAgain(item)}>
+                            Buy again
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-danger" onClick={() => remove(item)}>
+                            Remove
+                          </Button>
+                        </span>
                       </div>
-                    </div>
+                    </SwipeRow>
                   </li>
                 );
               })}
@@ -190,9 +192,9 @@ export default function CupboardPage() {
       )}
 
       {all.length > 0 && (
-        <p className="px-1 text-sm text-muted">
-          Tap an item to rename it, move it to another aisle, or mark it “Always have”. Used something up? Remove
-          takes it out; Buy again takes it out and puts it on the grocery list.
+        <p className="px-1 text-[0.8125rem] text-subtle">
+          Swipe an item left to buy it again or remove it — all the way across removes it. Tap it to rename it, move
+          it to another aisle, or mark it “Always have”.
         </p>
       )}
 
@@ -218,7 +220,7 @@ export default function CupboardPage() {
 /** How much is left, in the two answers that stay true without anyone counting. */
 function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) => void }) {
   return (
-    <div className="flex shrink-0 rounded-xl bg-elevated p-0.5" role="group" aria-label="How much is left">
+    <div className="flex shrink-0 rounded-[9px] bg-elevated p-0.5" role="group" aria-label="How much is left">
       {[false, true].map((isLow) => (
         <button
           key={String(isLow)}
@@ -226,8 +228,8 @@ function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) =
           aria-pressed={low === isLow}
           onClick={() => onChange(isLow)}
           className={cx(
-            'h-8 rounded-lg px-3 text-sm font-medium transition-colors',
-            low === isLow ? (isLow ? 'bg-accent-soft text-accent' : 'bg-success-soft text-success') : 'text-muted',
+            'h-7 rounded-[7px] px-3 text-[0.8125rem] font-semibold transition-all duration-150',
+            low === isLow ? 'bg-surface shadow-sm ' + (isLow ? 'text-accent' : 'text-success') : 'text-muted',
           )}
         >
           {isLow ? 'Low' : 'Have'}
@@ -313,7 +315,7 @@ function EditItemSheet({
           <CheckCircle checked={staple} className="mt-0.5" />
           <span>
             <span className="block font-medium">Always have</span>
-            <span className="block text-sm text-muted">For things like salt and oil — meals leave them off the grocery list.</span>
+            <span className="block text-[0.8125rem] text-muted">For things like salt and oil — meals leave them off the grocery list.</span>
           </span>
         </button>
         {error && <ErrorText>{error}</ErrorText>}

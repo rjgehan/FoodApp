@@ -23,6 +23,7 @@ import {
 } from '../components/ui';
 import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon } from '../components/icons';
 import PlaceActions from '../components/PlaceActions';
+import { PageTitle } from '../components/PageTitle';
 import ImagePicker from '../components/ImagePicker';
 
 export default function HouseholdPage() {
@@ -50,6 +51,7 @@ export default function HouseholdPage() {
 
   return (
     <div className="space-y-4">
+      <PageTitle title="Household" />
       {justCreated && (
         <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
           “{justCreated}” created — you're in it.

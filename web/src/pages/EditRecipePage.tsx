@@ -6,6 +6,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { Button, Card, EmptyState } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
 import RecipeForm from '../components/RecipeForm';
+import { PageTitle } from '../components/PageTitle';
 
 /** The same form as writing a new one, seeded from the recipe and saving over it. */
 export default function EditRecipePage() {
@@ -61,6 +62,7 @@ export default function EditRecipePage() {
         <ChevronLeftIcon className="h-5 w-5" />
         Back
       </Button>
+      <PageTitle title="Edit recipe" />
       <RecipeForm
         householdId={activeHouseholdId}
         recipe={recipe}

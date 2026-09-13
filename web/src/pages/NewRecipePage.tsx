@@ -7,6 +7,7 @@ import { PasteFromChatGpt } from '../components/RecipePaste';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import { Button, Card, cx, EmptyState } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
+import { PageTitle } from '../components/PageTitle';
 
 type Mode = 'type' | 'paste' | 'write';
 
@@ -42,6 +43,8 @@ export default function NewRecipePage() {
         <ChevronLeftIcon className="h-5 w-5" />
         Recipes
       </Button>
+
+      <PageTitle title="New recipe" />
 
       <div className="flex rounded-xl bg-elevated p-0.5" role="tablist" aria-label="How to add it">
         {modes.map((m) => (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
@@ -22,6 +22,11 @@ import {
   SubHeading,
 } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/icons';
+import { PageTitle } from '../components/PageTitle';
+import SwipeRow from '../components/SwipeRow';
+
+/* Separators start after the checkbox: 24px circle + 12px gap. */
+const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
 
 export default function GroceryListPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
@@ -145,17 +150,18 @@ export default function GroceryListPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold leading-tight">Groceries</h1>
-          <p className="text-sm text-muted">
+      <PageTitle
+        title="Groceries"
+        subtitle={
+          <>
             {toBuy.length ? `${toBuy.length} to buy` : 'Nothing to buy'}
             {/* Only worth mentioning when it is not working. */}
             {!connected && ' · offline, changes from others may be missing'}
-          </p>
-        </div>
+          </>
+        }
+      >
         {toBuy.length > 0 && (
-          <div className="flex shrink-0 gap-1">
+          <>
             {aiAvailable && unsorted > 0 && !moving && (
               <Button size="sm" variant="ghost" onClick={() => setSheet('sort')}>
                 ✨ Sort
@@ -164,9 +170,9 @@ export default function GroceryListPage() {
             <Button size="sm" variant={moving ? 'primary' : 'ghost'} onClick={() => setMoving((m) => !m)}>
               {moving ? 'Done' : 'Move'}
             </Button>
-          </div>
+          </>
         )}
-      </div>
+      </PageTitle>
 
       <form onSubmit={onAddItem} className="flex gap-2">
         <Input
@@ -181,13 +187,13 @@ export default function GroceryListPage() {
         </IconButton>
       </form>
 
-      {notice && <p className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">{notice}</p>}
+      {notice && <p className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">{notice}</p>}
 
       {moving && (
-        <p className="text-sm text-muted">
+        <p className="text-[0.9375rem] text-muted">
           Pick the aisle each item is in at your store — it sticks for next time. The order of the aisles is on the{' '}
-          <Link to="/household" className="font-medium text-accent underline">
-            House
+          <Link to="/household" className="font-medium text-accent">
+            Household
           </Link>{' '}
           page.
         </p>
@@ -200,16 +206,11 @@ export default function GroceryListPage() {
           {groups.map(({ section, items: rows }) => (
             <section key={section}>
               <SubHeading>{STORE_SECTION_LABELS[section]}</SubHeading>
-              <ul className="divide-y divide-line">
+              <ul className="inset-rows" style={ROW_INSET}>
                 {rows.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    moving={moving}
-                    onToggle={toggleItem}
-                    onRemove={removeItem}
-                    onMove={moveItem}
-                  />
+                  <li key={item.id}>
+                    <ItemRow item={item} moving={moving} onToggle={toggleItem} onRemove={removeItem} onMove={moveItem} />
+                  </li>
                 ))}
               </ul>
             </section>
@@ -223,16 +224,11 @@ export default function GroceryListPage() {
                   Done shopping
                 </Button>
               </div>
-              <ul className="divide-y divide-line">
+              <ul className="inset-rows" style={ROW_INSET}>
                 {inCart.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    moving={false}
-                    onToggle={toggleItem}
-                    onRemove={removeItem}
-                    onMove={moveItem}
-                  />
+                  <li key={item.id}>
+                    <ItemRow item={item} moving={false} onToggle={toggleItem} onRemove={removeItem} onMove={moveItem} />
+                  </li>
                 ))}
               </ul>
             </section>
@@ -240,9 +236,9 @@ export default function GroceryListPage() {
         </div>
       )}
 
-      <p className="pt-2 text-sm text-subtle">
-        Salt, oil and other things you always have are marked “Always have” in the{' '}
-        <Link to="/cupboard" className="font-medium text-accent underline">
+      <p className="pt-2 text-[0.8125rem] text-subtle">
+        Swipe an item left to remove it. Salt, oil and other things you always have are marked “Always have” in the{' '}
+        <Link to="/cupboard" className="font-medium text-accent">
           Cupboard
         </Link>
         , so meals leave them off.
@@ -280,6 +276,10 @@ export default function GroceryListPage() {
   );
 }
 
+/**
+ * One item: tap to tick it off, swipe it left to remove it. A mouse cannot swipe, so a pointer
+ * that can hover gets the bin button as well — nothing is only reachable by gesture.
+ */
 function ItemRow({
   item,
   moving,
@@ -300,8 +300,8 @@ function ItemRow({
   // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
   const have = item.inCupboard && !item.checked;
 
-  return (
-    <li className="flex items-center gap-1">
+  const row = (
+    <div className="flex items-center gap-1">
       {/* The whole row toggles — a 16px checkbox is not a real target on a phone. */}
       <button
         type="button"
@@ -311,9 +311,9 @@ function ItemRow({
       >
         <CheckCircle checked={item.checked} />
         <span className="min-w-0 flex-1">
-          <span className={cx('block truncate', item.checked && 'text-muted line-through')}>{item.name}</span>
+          <span className={cx('block truncate transition-colors', item.checked && 'text-muted line-through')}>{item.name}</span>
           {(detail || have) && (
-            <span className="block truncate text-sm text-muted">
+            <span className="block truncate text-[0.9375rem] text-muted">
               {detail}
               {have && <span className="text-success">{detail ? ' · ' : ''}Cupboard says you have this</span>}
             </span>
@@ -334,12 +334,20 @@ function ItemRow({
           ))}
         </Select>
       ) : (
-        <IconButton label={`Remove ${item.name}`} className="text-subtle" onClick={() => onRemove(item.id)}>
+        <IconButton
+          label={`Remove ${item.name}`}
+          className="hidden text-subtle [@media(hover:hover)]:inline-flex"
+          onClick={() => onRemove(item.id)}
+        >
           <TrashIcon className="h-5 w-5" />
         </IconButton>
       )}
-    </li>
+    </div>
   );
+
+  // While picking aisles the row stays put, so a sideways nudge on the picker is not a swipe.
+  if (moving) return row;
+  return <SwipeRow actions={[{ label: 'Remove', tone: 'danger', onAction: () => onRemove(item.id) }]}>{row}</SwipeRow>;
 }
 
 /**
@@ -444,10 +452,10 @@ function PutAwaySheet({
   return (
     <Sheet title="Done shopping" onClose={onClose}>
       <div className="space-y-3">
-        <p className="text-sm text-muted">
+        <p className="text-[0.9375rem] text-muted">
           Untick anything that isn't for the house. The rest goes in the cupboard, and all of it comes off the list.
         </p>
-        <ul className="divide-y divide-line">
+        <ul className="inset-rows" style={ROW_INSET}>
           {items.map((item) => {
             const on = selected.has(item.id);
             return (
@@ -460,7 +468,7 @@ function PutAwaySheet({
                 >
                   <CheckCircle checked={on} />
                   <span className={cx('min-w-0 flex-1 truncate', !on && 'text-muted')}>{item.name}</span>
-                  {!on && <span className="shrink-0 text-sm text-muted">Not for us</span>}
+                  {!on && <span className="shrink-0 text-[0.9375rem] text-muted">Not for us</span>}
                 </button>
               </li>
             );
