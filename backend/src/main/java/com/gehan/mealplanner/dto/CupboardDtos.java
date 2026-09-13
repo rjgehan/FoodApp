@@ -11,8 +11,11 @@ public class CupboardDtos {
     public record AddCupboardItemRequest(@NotBlank String name, Boolean staple) {
     }
 
-    /** Both optional — send whichever is changing. */
-    public record UpdateCupboardItemRequest(Boolean runningLow, Boolean staple) {
+    /**
+     * All optional — send whichever is changing. A new name points the item at that ingredient,
+     * the one the grocery list and recipes share; it never renames the ingredient itself.
+     */
+    public record UpdateCupboardItemRequest(Boolean runningLow, Boolean staple, String name) {
     }
 
     public record CupboardItemResponse(

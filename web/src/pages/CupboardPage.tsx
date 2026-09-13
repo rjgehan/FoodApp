@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { CupboardItem, StoreSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
-import { Button, Card, cx, EmptyState, Input, Select } from '../components/ui';
+import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, Select, Sheet } from '../components/ui';
 import { PlusIcon } from '../components/icons';
+
+function byName(a: CupboardItem, b: CupboardItem) {
+  return a.name.localeCompare(b.name);
+}
 
 /**
  * What is in the house, so you can check without going to look. Filled mostly by "Done
@@ -15,13 +19,13 @@ import { PlusIcon } from '../components/icons';
  * Every row says the same four things. Have and Low are how much is left, for whoever checks.
  * Remove and Buy again are for when it is used up — most of the time it just goes, and when you
  * want another, Buy again moves it to the grocery list. Nothing here adds to the list by itself,
- * and nothing asks a follow-up question.
+ * and nothing asks a follow-up question. Tapping an item opens it for editing.
  */
 export default function CupboardPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
   const [items, setItems] = useState<CupboardItem[] | null>(null);
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState<string | null>(null);
+  const [editing, setEditing] = useState<CupboardItem | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -50,13 +54,13 @@ export default function CupboardPage() {
       const list = prev ?? [];
       return list.some((i) => i.id === updated.id)
         ? list.map((i) => (i.id === updated.id ? updated : i))
-        : [...list, updated].sort((a, b) => a.name.localeCompare(b.name));
+        : [...list, updated].sort(byName);
     });
   }
 
   function drop(item: CupboardItem) {
     setItems((prev) => (prev ?? []).filter((i) => i.id !== item.id));
-    setOpen(null);
+    setEditing(null);
   }
 
   async function add(e: FormEvent) {
@@ -88,18 +92,6 @@ export default function CupboardPage() {
   async function buyAgain(item: CupboardItem) {
     drop(item);
     await api('POST', `/api/households/${activeHouseholdId}/cupboard/${item.id}/buy-again`);
-  }
-
-  async function setStaple(item: CupboardItem, staple: boolean) {
-    replace({ ...item, staple });
-    replace(
-      await api<CupboardItem>('PATCH', `/api/households/${activeHouseholdId}/cupboard/${item.id}`, { staple }),
-    );
-  }
-
-  async function move(item: CupboardItem, section: StoreSection) {
-    replace({ ...item, section, sorted: true });
-    await api('PUT', `/api/households/${activeHouseholdId}/ingredients/${item.ingredientId}/section`, { section });
   }
 
   const all = items ?? [];
@@ -160,7 +152,6 @@ export default function CupboardPage() {
           <Card key={section} title={STORE_SECTION_LABELS[section]} bodyClassName="px-4 pb-2">
             <ul className="divide-y divide-line">
               {rows.map((item) => {
-                const expanded = open === item.id;
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
                 return (
                   <li key={item.id} className="py-2.5">
@@ -168,8 +159,9 @@ export default function CupboardPage() {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <button
                         type="button"
-                        onClick={() => setOpen(expanded ? null : item.id)}
+                        onClick={() => setEditing(item)}
                         className="min-w-0 flex-1 text-left"
+                        aria-label={`Edit ${item.name}`}
                       >
                         <span className="block truncate font-medium">{item.name}</span>
                         {detail && <span className="block truncate text-sm text-muted">{detail}</span>}
@@ -189,36 +181,6 @@ export default function CupboardPage() {
                         </Button>
                       </div>
                     </div>
-
-                    {expanded && (
-                      <div className="space-y-2 pt-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant={item.staple ? 'primary' : 'secondary'}
-                            onClick={() => setStaple(item, !item.staple)}
-                            aria-pressed={item.staple}
-                          >
-                            Always have
-                          </Button>
-                          <Select
-                            className="h-9 w-40 text-sm"
-                            value={item.section}
-                            onChange={(e) => move(item, e.target.value as StoreSection)}
-                            aria-label={`Aisle for ${item.name}`}
-                          >
-                            {DEFAULT_SECTION_ORDER.map((s) => (
-                              <option key={s} value={s}>
-                                {STORE_SECTION_LABELS[s]}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                        <p className="text-xs text-muted">
-                          “Always have” is for things like salt and oil — meals leave them off the grocery list.
-                        </p>
-                      </div>
-                    )}
                   </li>
                 );
               })}
@@ -229,8 +191,25 @@ export default function CupboardPage() {
 
       {all.length > 0 && (
         <p className="px-1 text-sm text-muted">
-          Used something up? Remove takes it out. Buy again takes it out and puts it on the grocery list.
+          Tap an item to rename it, move it to another aisle, or mark it “Always have”. Used something up? Remove
+          takes it out; Buy again takes it out and puts it on the grocery list.
         </p>
+      )}
+
+      {editing && (
+        <EditItemSheet
+          householdId={activeHouseholdId}
+          item={editing}
+          onClose={() => setEditing(null)}
+          onRemove={() => remove(editing)}
+          onSaved={(updated) => {
+            // A rename into something already here merges the two, so the old row may be gone.
+            setItems((prev) =>
+              [...(prev ?? []).filter((i) => i.id !== editing.id && i.id !== updated.id), updated].sort(byName),
+            );
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );
@@ -255,5 +234,98 @@ function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) =
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Everything about one item in one place: its name, its aisle, and whether you always have it.
+ * Renaming it to something already in the cupboard merges the two rather than keeping both.
+ */
+function EditItemSheet({
+  householdId,
+  item,
+  onSaved,
+  onRemove,
+  onClose,
+}: {
+  householdId: string;
+  item: CupboardItem;
+  onSaved: (updated: CupboardItem) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(item.name);
+  const [section, setSection] = useState<StoreSection>(item.section);
+  const [staple, setStaple] = useState(item.staple);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const renamed = name.trim() !== item.name;
+  const changed = renamed || section !== item.section || staple !== item.staple;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !changed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let updated = item;
+      if (renamed || staple !== item.staple) {
+        updated = await api<CupboardItem>('PATCH', `/api/households/${householdId}/cupboard/${item.id}`, {
+          name: renamed ? name.trim() : null,
+          staple: staple !== item.staple ? staple : null,
+        });
+      }
+      // The aisle belongs to the ingredient — the new one, after a rename — so it goes last.
+      if (section !== item.section) {
+        await api('PUT', `/api/households/${householdId}/ingredients/${updated.ingredientId}/section`, { section });
+        updated = { ...updated, section, sorted: true };
+      }
+      onSaved(updated);
+    } catch (err) {
+      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
+      setError(message ?? 'Could not save that.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title={`Edit ${item.name}`} onClose={onClose}>
+      <form onSubmit={save} className="space-y-4">
+        <Field label="Name">
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Aisle">
+          <Select value={section} onChange={(e) => setSection(e.target.value as StoreSection)}>
+            {DEFAULT_SECTION_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {STORE_SECTION_LABELS[s]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <button
+          type="button"
+          aria-pressed={staple}
+          onClick={() => setStaple((v) => !v)}
+          className="flex w-full items-start gap-3 text-left"
+        >
+          <CheckCircle checked={staple} className="mt-0.5" />
+          <span>
+            <span className="block font-medium">Always have</span>
+            <span className="block text-sm text-muted">For things like salt and oil — meals leave them off the grocery list.</span>
+          </span>
+        </button>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex gap-2">
+          <Button type="submit" className="flex-1" disabled={busy || !name.trim() || !changed}>
+            {busy ? 'Saving…' : 'Save'}
+          </Button>
+          <Button type="button" variant="danger" disabled={busy} onClick={onRemove}>
+            Remove
+          </Button>
+        </div>
+      </form>
+    </Sheet>
   );
 }

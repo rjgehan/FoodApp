@@ -91,6 +91,27 @@ public class CupboardService {
                                        UpdateCupboardItemRequest request) {
         householdService.assertMember(householdId, requesterId);
         CupboardItem item = findItem(householdId, itemId);
+
+        // A rename is a typo fixed or a thing made more specific — "eggs" to "large eggs". It
+        // points this item at the other ingredient rather than renaming the shared ingredient,
+        // which the grocery list and every recipe also use.
+        if (request.name() != null && !request.name().isBlank()) {
+            Ingredient renamed = ingredientService.findOrCreate(request.name(), null);
+            if (!renamed.getId().equals(item.getIngredient().getId())) {
+                var clash = cupboardRepository.findByHouseholdIdAndIngredientId(householdId, renamed.getId());
+                if (clash.isPresent()) {
+                    // Renamed into something already here: that is one thing now, not two.
+                    CupboardItem kept = clash.get();
+                    kept.setStaple(kept.isStaple() || item.isStaple() || Boolean.TRUE.equals(request.staple()));
+                    if (request.runningLow() != null) {
+                        kept.setRunningLow(request.runningLow());
+                    }
+                    cupboardRepository.delete(item);
+                    return toResponse(cupboardRepository.save(kept), householdId);
+                }
+                item.setIngredient(renamed);
+            }
+        }
         if (request.runningLow() != null) {
             item.setRunningLow(request.runningLow());
         }
