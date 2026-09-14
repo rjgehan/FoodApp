@@ -1,6 +1,5 @@
 package com.gehan.mealplanner.dto;
 
-import com.gehan.mealplanner.domain.StoreSection;
 import jakarta.validation.constraints.NotBlank;
 
 import java.util.UUID;
@@ -24,7 +23,7 @@ public class CupboardDtos {
             String name,
             boolean runningLow,
             boolean staple,
-            StoreSection section,
+            UUID categoryId,
             /** False means neither the keyword list nor Gemini has placed it yet. */
             boolean sorted,
             /** Waiting on the grocery list, unticked. */

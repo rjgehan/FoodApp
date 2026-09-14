@@ -1,6 +1,5 @@
 package com.gehan.mealplanner.dto;
 
-import com.gehan.mealplanner.domain.StoreSection;
 import jakarta.validation.constraints.NotNull;
 
 import java.io.Serializable;
@@ -24,7 +23,7 @@ public class GroceryListDtos {
     public record PutAwayRequest(List<UUID> putAway, List<UUID> leaveOut) {
     }
 
-    public record MoveSectionRequest(@NotNull StoreSection section) {
+    public record MoveCategoryRequest(@NotNull UUID categoryId) {
     }
 
     /** `left` is what Gemini could not place either — rare, and those can be moved by hand. */
@@ -42,8 +41,8 @@ public class GroceryListDtos {
             UUID checkedByUserId,
             String checkedByName,
             Instant checkedAt,
-            /** The aisle, for this household. Other when nobody has placed it yet. */
-            StoreSection section,
+            /** The category, for this household. Null means nobody has placed it yet. */
+            UUID categoryId,
             /** False means neither the keyword list nor Gemini has placed it — Sort would. */
             boolean sorted,
             /** The cupboard says you have this. Only meals put such things on the list. */

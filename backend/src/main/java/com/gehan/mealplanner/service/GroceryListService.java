@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class GroceryListService {
@@ -64,10 +65,12 @@ public class GroceryListService {
     }
 
     /**
-     * What an item's response needs beyond the item: this household's aisle corrections and its
+     * What an item's response needs beyond the item: this household's category corrections, its
+     * live category list (for resolving a keyword/Gemini guess into one of them), and its
      * cupboard. Loaded once per request instead of once per item.
      */
-    private record Context(Map<UUID, StoreSection> sections, Map<UUID, CupboardItem> cupboard) {
+    private record Context(Map<UUID, GroceryCategory> sections, List<GroceryCategory> categories,
+                            Map<UUID, CupboardItem> cupboard) {
 
         boolean isStaple(Ingredient ingredient) {
             CupboardItem item = cupboard.get(ingredient.getId());
@@ -84,7 +87,7 @@ public class GroceryListService {
     private Context context(UUID householdId) {
         Map<UUID, CupboardItem> cupboard = new HashMap<>();
         cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
-        return new Context(ingredientSections.overrides(householdId), cupboard);
+        return new Context(ingredientSections.overrides(householdId), ingredientSections.categories(householdId), cupboard);
     }
 
     @Transactional(readOnly = true)
@@ -316,57 +319,69 @@ public class GroceryListService {
         return response;
     }
 
-    // --- Aisles ---
+    // --- Categories ---
 
     /** "Tortillas are with the bread at our store." Sticks for this household only. */
     @Transactional
-    public void moveToSection(UUID householdId, UUID ingredientId, UUID requesterId, StoreSection section) {
+    public void moveToCategory(UUID householdId, UUID ingredientId, UUID requesterId, UUID categoryId) {
         Household household = requireMember(householdId, requesterId);
         Ingredient ingredient = ingredientRepository.findById(ingredientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
-        ingredientSections.move(household, ingredient, section);
+        GroceryCategory category = requireCategory(householdId, categoryId);
+        ingredientSections.move(household, ingredient, category);
         broadcast(householdId, List.of(ingredientId));
     }
 
     /**
-     * Places everything nobody has placed yet, in ONE Gemini request. One, because the key allows
-     * twenty a day across the whole app — so this is a button someone presses once the list is
-     * finished, and never something that runs by itself. The cupboard's unplaced items ride along
-     * in the same request. Answers are saved on the shared ingredient, so no item is asked twice;
-     * with nothing unplaced, no request is made at all.
+     * Places everything nobody has placed yet, in ONE Gemini request into this household's own
+     * categories. One, because the key allows twenty a day across the whole app — so this is a
+     * button someone presses once the list is finished, and never something that runs by itself.
+     * The cupboard's unplaced items ride along in the same request. With nothing unplaced, no
+     * request is made at all.
      */
     @Transactional
     public SortResponse sort(UUID householdId, UUID requesterId) {
-        requireMember(householdId, requesterId);
-        Map<UUID, StoreSection> overrides = ingredientSections.overrides(householdId);
+        Household household = requireMember(householdId, requesterId);
+        Map<UUID, GroceryCategory> overrides = ingredientSections.overrides(householdId);
+        List<GroceryCategory> categories = ingredientSections.categories(householdId);
 
         Map<UUID, Ingredient> unsorted = new LinkedHashMap<>();
         groceryListItemRepository.findByHouseholdId(householdId).stream()
                 .map(GroceryListItem::getIngredient)
-                .filter(i -> i != null && !IngredientSections.isSorted(i, overrides))
+                .filter(i -> i != null && !IngredientSections.isSorted(i, overrides, categories))
                 .forEach(i -> unsorted.putIfAbsent(i.getId(), i));
         cupboardRepository.findByHouseholdId(householdId).stream()
                 .map(CupboardItem::getIngredient)
-                .filter(i -> !IngredientSections.isSorted(i, overrides))
+                .filter(i -> !IngredientSections.isSorted(i, overrides, categories))
                 .forEach(i -> unsorted.putIfAbsent(i.getId(), i));
 
         if (unsorted.isEmpty()) {
             return new SortResponse(0, 0);
         }
 
-        Map<String, StoreSection> answers = sectionAi.classify(
-                unsorted.values().stream().map(Ingredient::getName).toList());
+        Map<String, UUID> answers = sectionAi.classify(
+                unsorted.values().stream().map(Ingredient::getName).toList(), categories);
+        Map<UUID, GroceryCategory> categoriesById = categories.stream()
+                .collect(Collectors.toMap(GroceryCategory::getId, c -> c));
 
         int sorted = 0;
         for (Ingredient ingredient : unsorted.values()) {
-            StoreSection section = answers.get(ingredient.getName().trim().toLowerCase());
-            if (section != null) {
-                ingredient.setSection(section);
+            UUID categoryId = answers.get(ingredient.getName().trim().toLowerCase());
+            GroceryCategory category = categoryId != null ? categoriesById.get(categoryId) : null;
+            if (category != null) {
+                ingredientSections.move(household, ingredient, category);
                 sorted++;
             }
         }
         broadcast(householdId, unsorted.keySet());
         return new SortResponse(sorted, unsorted.size() - sorted);
+    }
+
+    private GroceryCategory requireCategory(UUID householdId, UUID categoryId) {
+        return ingredientSections.categories(householdId).stream()
+                .filter(c -> c.getId().equals(categoryId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found"));
     }
 
     /** Re-sends the items for these ingredients, so every open phone moves them to the new aisle. */
@@ -400,6 +415,9 @@ public class GroceryListService {
     private GroceryListItemResponse toItemResponse(GroceryListItem item, Context ctx) {
         Ingredient ingredient = item.getIngredient();
         String name = ingredient != null ? ingredient.getName() : item.getCustomName();
+        GroceryCategory category = ingredient != null
+                ? IngredientSections.resolve(ingredient, ctx.sections(), ctx.categories())
+                : null;
         return new GroceryListItemResponse(
                 item.getId(),
                 item.getHousehold().getId(),
@@ -411,8 +429,8 @@ public class GroceryListService {
                 item.getCheckedBy() != null ? item.getCheckedBy().getId() : null,
                 item.getCheckedBy() != null ? item.getCheckedBy().getDisplayName() : null,
                 item.getCheckedAt(),
-                ingredient != null ? IngredientSections.resolve(ingredient, ctx.sections()) : StoreSection.OTHER,
-                ingredient == null || IngredientSections.isSorted(ingredient, ctx.sections()),
+                category != null ? category.getId() : null,
+                ingredient == null || category != null,
                 ingredient != null && ctx.has(ingredient));
     }
 }

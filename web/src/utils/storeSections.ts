@@ -1,47 +1,29 @@
-import type { StoreSection } from '../api/types';
+import type { GroceryCategory } from '../api/types';
 
-export const STORE_SECTION_LABELS: Record<StoreSection, string> = {
-  PRODUCE: 'Produce',
-  BAKERY: 'Bread & bakery',
-  DRY_GOODS: 'Dry goods',
-  BAKING: 'Baking',
-  SPICES: 'Spices',
-  DELI: 'Deli',
-  MEAT: 'Meat & seafood',
-  DAIRY: 'Dairy & eggs',
-  FROZEN: 'Frozen',
-  DRINKS: 'Drinks',
-  HOUSEHOLD: 'Household',
-  OTHER: 'Other',
-};
-
-/** The server's default walking order — used until the household's own has loaded. */
-export const DEFAULT_SECTION_ORDER: StoreSection[] = [
-  'PRODUCE',
-  'BAKERY',
-  'DRY_GOODS',
-  'BAKING',
-  'SPICES',
-  'DELI',
-  'MEAT',
-  'DAIRY',
-  'FROZEN',
-  'DRINKS',
-  'HOUSEHOLD',
-  'OTHER',
-];
-
-/** Items grouped by aisle, in the household's walking order, with empty aisles left out. */
-export function groupBySection<T extends { section: StoreSection }>(
+/** Items grouped by category, in the household's own order. Unsorted items (no category) come last. */
+export function groupByCategory<T extends { categoryId: string | null }>(
   items: T[],
-  order: StoreSection[],
-): { section: StoreSection; items: T[] }[] {
-  const bySection = new Map<StoreSection, T[]>();
+  categories: GroceryCategory[],
+): { category: GroceryCategory | null; items: T[] }[] {
+  const byCategory = new Map<string, T[]>();
+  const unsorted: T[] = [];
   for (const item of items) {
-    const list = bySection.get(item.section) ?? [];
+    if (item.categoryId == null) {
+      unsorted.push(item);
+      continue;
+    }
+    const list = byCategory.get(item.categoryId) ?? [];
     list.push(item);
-    bySection.set(item.section, list);
+    byCategory.set(item.categoryId, list);
   }
-  const sections = [...order, ...DEFAULT_SECTION_ORDER.filter((s) => !order.includes(s))];
-  return sections.filter((s) => bySection.has(s)).map((section) => ({ section, items: bySection.get(section)! }));
+
+  const groups: { category: GroceryCategory | null; items: T[] }[] = [...categories]
+    .sort((a, b) => a.position - b.position)
+    .filter((c) => byCategory.has(c.id))
+    .map((category) => ({ category, items: byCategory.get(category.id)! }));
+
+  if (unsorted.length > 0) {
+    groups.push({ category: null, items: unsorted });
+  }
+  return groups;
 }

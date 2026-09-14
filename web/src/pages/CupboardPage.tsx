@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { CupboardItem, StoreSection } from '../api/types';
+import type { CupboardItem, GroceryCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
-import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
+import { groupByCategory } from '../utils/storeSections';
 import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, Select, Sheet } from '../components/ui';
 import { PlusIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
@@ -23,7 +23,7 @@ function byName(a: CupboardItem, b: CupboardItem) {
  * which is what you do most. Tapping an item opens it for editing.
  */
 export default function CupboardPage() {
-  const { activeHouseholdId, activeHousehold } = useHousehold();
+  const { activeHouseholdId, groceryCategories } = useHousehold();
   const [items, setItems] = useState<CupboardItem[] | null>(null);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CupboardItem | null>(null);
@@ -99,7 +99,7 @@ export default function CupboardPage() {
   const q = query.trim().toLowerCase();
   const shown = all.filter((i) => !q || i.name.toLowerCase().includes(q));
   const exact = all.some((i) => i.name.toLowerCase() === q);
-  const groups = groupBySection(shown, activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
+  const groups = groupByCategory(shown, groceryCategories);
   const low = all.filter((i) => i.runningLow).length;
 
   return (
@@ -145,8 +145,8 @@ export default function CupboardPage() {
       ) : shown.length === 0 ? (
         <EmptyState>Not in the cupboard.</EmptyState>
       ) : (
-        groups.map(({ section, items: rows }) => (
-          <Card key={section} title={STORE_SECTION_LABELS[section]}>
+        groups.map(({ category, items: rows }) => (
+          <Card key={category?.id ?? 'unsorted'} title={category?.name ?? 'Unsorted'}>
             <ul className="inset-rows">
               {rows.map((item) => {
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
@@ -202,6 +202,7 @@ export default function CupboardPage() {
         <EditItemSheet
           householdId={activeHouseholdId}
           item={editing}
+          categories={groceryCategories}
           onClose={() => setEditing(null)}
           onRemove={() => remove(editing)}
           onSaved={(updated) => {
@@ -246,24 +247,26 @@ function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) =
 function EditItemSheet({
   householdId,
   item,
+  categories,
   onSaved,
   onRemove,
   onClose,
 }: {
   householdId: string;
   item: CupboardItem;
+  categories: GroceryCategory[];
   onSaved: (updated: CupboardItem) => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(item.name);
-  const [section, setSection] = useState<StoreSection>(item.section);
+  const [categoryId, setCategoryId] = useState(item.categoryId ?? categories[0]?.id ?? '');
   const [staple, setStaple] = useState(item.staple);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const renamed = name.trim() !== item.name;
-  const changed = renamed || section !== item.section || staple !== item.staple;
+  const changed = renamed || categoryId !== item.categoryId || staple !== item.staple;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -279,9 +282,9 @@ function EditItemSheet({
         });
       }
       // The aisle belongs to the ingredient — the new one, after a rename — so it goes last.
-      if (section !== item.section) {
-        await api('PUT', `/api/households/${householdId}/ingredients/${updated.ingredientId}/section`, { section });
-        updated = { ...updated, section, sorted: true };
+      if (categoryId !== item.categoryId) {
+        await api('PUT', `/api/households/${householdId}/ingredients/${updated.ingredientId}/category`, { categoryId });
+        updated = { ...updated, categoryId, sorted: true };
       }
       onSaved(updated);
     } catch (err) {
@@ -298,12 +301,19 @@ function EditItemSheet({
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="Aisle">
-          <Select value={section} onChange={(e) => setSection(e.target.value as StoreSection)}>
-            {DEFAULT_SECTION_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {STORE_SECTION_LABELS[s]}
+          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            {!categoryId && (
+              <option value="" disabled>
+                Unsorted
               </option>
-            ))}
+            )}
+            {[...categories]
+              .sort((a, b) => a.position - b.position)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
           </Select>
         </Field>
         <button

@@ -1,9 +1,7 @@
 package com.gehan.mealplanner.service;
 
-import com.gehan.mealplanner.domain.StoreSection;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Optional;
 
 import static com.gehan.mealplanner.domain.StoreSection.*;
@@ -71,21 +69,5 @@ class StoreSectionKeywordsTest {
         assertThat(StoreSectionKeywords.guess("gochujang")).isEmpty();
         assertThat(StoreSectionKeywords.guess("")).isEmpty();
         assertThat(StoreSectionKeywords.guess(null)).isEqualTo(Optional.empty());
-    }
-
-    @Test
-    void newAislesLandNextToDryGoodsInASavedOrder() {
-        // Saved before Baking and Spices existed, with Frozen moved to the front.
-        List<StoreSection> order = StoreSection.orderFrom("FROZEN,PRODUCE,BAKERY,DRY_GOODS,DELI,MEAT,DAIRY,DRINKS,HOUSEHOLD,OTHER");
-        assertThat(order).containsExactly(FROZEN, PRODUCE, BAKERY, DRY_GOODS, BAKING, SPICES, DELI, MEAT, DAIRY,
-                DRINKS, HOUSEHOLD, OTHER);
-        assertThat(StoreSection.orderFrom(null)).containsExactly(StoreSection.values());
-        assertThat(StoreSection.orderFrom("FROZEN,FROZEN,NOT_A_SECTION"))
-                .hasSize(StoreSection.values().length).doesNotHaveDuplicates();
-    }
-
-    @Test
-    void savingAPartOrderPutsTheRestOnTheEnd() {
-        assertThat(StoreSection.toStored(List.of(DELI))).startsWith("DELI,PRODUCE,BAKERY");
     }
 }

@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { absoluteUrl, api, ApiError, getToken } from '../api/client';
-import type { GroceryListEvent, GroceryListItem as Item, StoreSection } from '../api/types';
+import type { GroceryCategory, GroceryListEvent, GroceryListItem as Item } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import { splitAmount } from '../utils/amount';
-import { DEFAULT_SECTION_ORDER, groupBySection, STORE_SECTION_LABELS } from '../utils/storeSections';
+import { groupByCategory } from '../utils/storeSections';
 import {
   Button,
   CheckCircle,
@@ -29,7 +29,7 @@ import SwipeRow from '../components/SwipeRow';
 const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
 
 export default function GroceryListPage() {
-  const { activeHouseholdId, activeHousehold } = useHousehold();
+  const { activeHouseholdId, groceryCategories } = useHousehold();
   const aiAvailable = useAiAvailable();
   const [items, setItems] = useState<Item[]>([]);
   const [connected, setConnected] = useState(false);
@@ -130,13 +130,13 @@ export default function GroceryListPage() {
     await api('DELETE', `/api/households/${activeHouseholdId}/grocery-list/items/${itemId}`);
   }
 
-  /** The aisle belongs to the ingredient, so every row of it moves — and stays moved next time. */
-  async function moveItem(item: Item, section: StoreSection) {
+  /** The category belongs to the ingredient, so every row of it moves — and stays moved next time. */
+  async function moveItem(item: Item, categoryId: string) {
     if (!activeHouseholdId || !item.ingredientId) return;
     setItems((prev) =>
-      prev.map((i) => (i.ingredientId === item.ingredientId ? { ...i, section, sorted: true } : i)),
+      prev.map((i) => (i.ingredientId === item.ingredientId ? { ...i, categoryId, sorted: true } : i)),
     );
-    await api('PUT', `/api/households/${activeHouseholdId}/ingredients/${item.ingredientId}/section`, { section });
+    await api('PUT', `/api/households/${activeHouseholdId}/ingredients/${item.ingredientId}/category`, { categoryId });
   }
 
   if (!activeHouseholdId) {
@@ -145,7 +145,7 @@ export default function GroceryListPage() {
 
   const toBuy = items.filter((i) => !i.checked);
   const inCart = items.filter((i) => i.checked);
-  const groups = groupBySection(toBuy, activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
+  const groups = groupByCategory(toBuy, groceryCategories);
   const unsorted = new Set(items.filter((i) => !i.sorted && i.ingredientId).map((i) => i.ingredientId)).size;
 
   return (
@@ -203,13 +203,20 @@ export default function GroceryListPage() {
         <EmptyState>Nothing on the list yet.</EmptyState>
       ) : (
         <div>
-          {groups.map(({ section, items: rows }) => (
-            <section key={section}>
-              <SubHeading>{STORE_SECTION_LABELS[section]}</SubHeading>
+          {groups.map(({ category, items: rows }) => (
+            <section key={category?.id ?? 'unsorted'}>
+              <SubHeading>{category?.name ?? 'Unsorted'}</SubHeading>
               <ul className="inset-rows" style={ROW_INSET}>
                 {rows.map((item) => (
                   <li key={item.id}>
-                    <ItemRow item={item} moving={moving} onToggle={toggleItem} onRemove={removeItem} onMove={moveItem} />
+                    <ItemRow
+                      item={item}
+                      categories={groceryCategories}
+                      moving={moving}
+                      onToggle={toggleItem}
+                      onRemove={removeItem}
+                      onMove={moveItem}
+                    />
                   </li>
                 ))}
               </ul>
@@ -227,7 +234,14 @@ export default function GroceryListPage() {
               <ul className="inset-rows" style={ROW_INSET}>
                 {inCart.map((item) => (
                   <li key={item.id}>
-                    <ItemRow item={item} moving={false} onToggle={toggleItem} onRemove={removeItem} onMove={moveItem} />
+                    <ItemRow
+                      item={item}
+                      categories={groceryCategories}
+                      moving={false}
+                      onToggle={toggleItem}
+                      onRemove={removeItem}
+                      onMove={moveItem}
+                    />
                   </li>
                 ))}
               </ul>
@@ -282,16 +296,18 @@ export default function GroceryListPage() {
  */
 function ItemRow({
   item,
+  categories,
   moving,
   onToggle,
   onRemove,
   onMove,
 }: {
   item: Item;
+  categories: GroceryCategory[];
   moving: boolean;
   onToggle: (item: Item) => void;
   onRemove: (itemId: string) => void;
-  onMove: (item: Item, section: StoreSection) => void;
+  onMove: (item: Item, categoryId: string) => void;
 }) {
   const amount = [item.quantity, item.unit].filter(Boolean).join(' ');
   const detail = [amount, item.checked && item.checkedByName ? `got by ${item.checkedByName}` : null]
@@ -323,15 +339,22 @@ function ItemRow({
       {moving && item.ingredientId ? (
         <Select
           className="h-9 w-36 shrink-0 text-sm"
-          value={item.section}
-          onChange={(e) => onMove(item, e.target.value as StoreSection)}
+          value={item.categoryId ?? ''}
+          onChange={(e) => onMove(item, e.target.value)}
           aria-label={`Aisle for ${item.name}`}
         >
-          {DEFAULT_SECTION_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {STORE_SECTION_LABELS[s]}
+          {!item.categoryId && (
+            <option value="" disabled>
+              Unsorted
             </option>
-          ))}
+          )}
+          {[...categories]
+            .sort((a, b) => a.position - b.position)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
         </Select>
       ) : (
         <IconButton

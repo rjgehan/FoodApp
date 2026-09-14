@@ -50,24 +50,14 @@ export interface Household {
   planningHorizonDays: number;
   /** Your role in this household, not a property of the household itself. */
   role: HouseholdRole;
-  /** Every aisle once, in the order this household walks its store. */
-  storeSectionOrder: StoreSection[];
 }
 
-/** Where in the supermarket something is. A fixed set, so sorting has known answers to pick from. */
-export type StoreSection =
-  | 'PRODUCE'
-  | 'BAKERY'
-  | 'DRY_GOODS'
-  | 'BAKING'
-  | 'SPICES'
-  | 'DELI'
-  | 'MEAT'
-  | 'DAIRY'
-  | 'FROZEN'
-  | 'DRINKS'
-  | 'HOUSEHOLD'
-  | 'OTHER';
+/** A household's own grocery aisle — added, renamed, reordered and deleted from Household settings. */
+export interface GroceryCategory {
+  id: string;
+  name: string;
+  position: number;
+}
 
 /** Have it, or running low — no count. Nothing in the cupboard adds to the grocery list by itself. */
 export interface CupboardItem {
@@ -77,7 +67,8 @@ export interface CupboardItem {
   runningLow: boolean;
   /** Always have it — planned meals never add it to the grocery list. */
   staple: boolean;
-  section: StoreSection;
+  /** Null means nobody has placed it yet. */
+  categoryId: string | null;
   sorted: boolean;
   /** Waiting on the grocery list, unticked. */
   onList: boolean;
@@ -204,8 +195,8 @@ export interface GroceryListItem {
   checkedByUserId: string | null;
   checkedByName: string | null;
   checkedAt: string | null;
-  /** The aisle, for this household. OTHER when nobody has placed it yet. */
-  section: StoreSection;
+  /** The category, for this household. Null means nobody has placed it yet. */
+  categoryId: string | null;
   /** False means nothing has placed it — the Sort button would. */
   sorted: boolean;
   /** The cupboard says you have this. Only meals put such things on the list. */

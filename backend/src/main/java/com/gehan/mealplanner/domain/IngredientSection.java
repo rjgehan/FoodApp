@@ -10,9 +10,12 @@ import lombok.Setter;
 import java.util.UUID;
 
 /**
- * One household moving one ingredient to a different aisle — tortillas with the bread at their
- * store, say. Wins over {@link Ingredient#getSection()}, which is only a best guess shared by
- * everyone. Per household, because stores really do differ.
+ * Where one household keeps one ingredient — tortillas with the bread at their store, say, or
+ * wherever Sort put it. This is the only place a household's own placement lives now; there is no
+ * more shared default to fall back to once every household can have its own categories, only the
+ * keyword/Gemini guess on {@link Ingredient#getSection()}, used as an internal hint for placing an
+ * item into one of *this* household's categories for the first time. Per household, because
+ * stores — and now category lists — really do differ.
  */
 @Entity
 @Table(name = "ingredient_sections",
@@ -36,7 +39,12 @@ public class IngredientSection {
     @JoinColumn(name = "ingredient_id", nullable = false)
     private Ingredient ingredient;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private StoreSection section;
+    /**
+     * Nullable only so Hibernate's ddl-auto=update can add this column to a database that already
+     * has rows — every row the app writes always sets it. See StartupBackfills for migrating rows
+     * from before this column existed.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private GroceryCategory category;
 }

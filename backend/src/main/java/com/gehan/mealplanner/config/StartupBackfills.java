@@ -1,6 +1,9 @@
 package com.gehan.mealplanner.config;
 
+import com.gehan.mealplanner.domain.Household;
+import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.service.CupboardService;
+import com.gehan.mealplanner.service.GroceryCategoryService;
 import com.gehan.mealplanner.service.IngredientService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +11,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Data moves that bring an existing database up to date, run on every start. Each one only
@@ -64,6 +68,58 @@ public class StartupBackfills {
                 }
             } catch (Exception e) {
                 log.warn("Could not place ingredients in store sections: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Grocery categories used to be the fixed {@code StoreSection} list, shared by everyone.
+     * A household from before editable categories existed has none of its own yet — give it the
+     * original twelve, named and ordered exactly as the old fixed list was, before the next
+     * backfill moves its old placements onto them. Must run before
+     * {@link #migrateIngredientSectionsToCategories}.
+     */
+    @Bean
+    @Order(1)
+    public ApplicationRunner seedGroceryCategories(HouseholdRepository householdRepository,
+                                                    GroceryCategoryService groceryCategoryService) {
+        return args -> {
+            try {
+                for (Household household : householdRepository.findAll()) {
+                    groceryCategoryService.seedDefaults(household);
+                }
+            } catch (Exception e) {
+                log.warn("Could not seed default grocery categories: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Before editable categories, a household's per-item placement was
+     * {@code ingredient_sections.section} — one of the fixed {@code StoreSection} values. That
+     * column is no longer mapped by the entity (categories are a table now), but the old values
+     * are still sitting in the database, so match each row's household to the category it seeded
+     * that section into and point the new {@code category_id} at it. Only ever touches rows still
+     * missing a category, so it is harmless to repeat.
+     */
+    @Bean
+    @Order(2)
+    public ApplicationRunner migrateIngredientSectionsToCategories(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int moved = jdbc.update("""
+                        UPDATE ingredient_sections iss
+                        SET category_id = gc.id
+                        FROM grocery_categories gc
+                        WHERE iss.category_id IS NULL
+                          AND iss.household_id = gc.household_id
+                          AND gc.seeded_from = iss.section
+                        """);
+                if (moved > 0) {
+                    log.info("Migrated {} ingredient placements onto grocery categories", moved);
+                }
+            } catch (Exception e) {
+                log.warn("Could not migrate ingredient placements onto grocery categories: {}", e.getMessage());
             }
         };
     }

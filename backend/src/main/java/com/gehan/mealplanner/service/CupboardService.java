@@ -2,10 +2,10 @@ package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.domain.BlacklistedIngredient;
 import com.gehan.mealplanner.domain.CupboardItem;
+import com.gehan.mealplanner.domain.GroceryCategory;
 import com.gehan.mealplanner.domain.GroceryListItem;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.Ingredient;
-import com.gehan.mealplanner.domain.StoreSection;
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
@@ -63,11 +63,12 @@ public class CupboardService {
     @Transactional(readOnly = true)
     public List<CupboardItemResponse> list(UUID householdId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
-        Map<UUID, StoreSection> overrides = ingredientSections.overrides(householdId);
+        Map<UUID, GroceryCategory> overrides = ingredientSections.overrides(householdId);
+        List<GroceryCategory> categories = ingredientSections.categories(householdId);
         Set<UUID> onList = onList(householdId);
         return cupboardRepository.findByHouseholdId(householdId).stream()
                 .sorted(Comparator.comparing(c -> c.getIngredient().getName(), String.CASE_INSENSITIVE_ORDER))
-                .map(c -> toResponse(c, overrides, onList))
+                .map(c -> toResponse(c, overrides, categories, onList))
                 .toList();
     }
 
@@ -186,19 +187,22 @@ public class CupboardService {
     }
 
     private CupboardItemResponse toResponse(CupboardItem item, UUID householdId) {
-        return toResponse(item, ingredientSections.overrides(householdId), onList(householdId));
+        return toResponse(item, ingredientSections.overrides(householdId), ingredientSections.categories(householdId),
+                onList(householdId));
     }
 
-    private CupboardItemResponse toResponse(CupboardItem item, Map<UUID, StoreSection> overrides, Set<UUID> onList) {
+    private CupboardItemResponse toResponse(CupboardItem item, Map<UUID, GroceryCategory> overrides,
+                                             List<GroceryCategory> categories, Set<UUID> onList) {
         Ingredient ingredient = item.getIngredient();
+        GroceryCategory category = IngredientSections.resolve(ingredient, overrides, categories);
         return new CupboardItemResponse(
                 item.getId(),
                 ingredient.getId(),
                 ingredient.getName(),
                 item.isRunningLow(),
                 item.isStaple(),
-                IngredientSections.resolve(ingredient, overrides),
-                IngredientSections.isSorted(ingredient, overrides),
+                category != null ? category.getId() : null,
+                category != null,
                 onList.contains(ingredient.getId()));
     }
 }

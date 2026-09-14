@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { RecipeSection, StoreSection } from '../api/types';
+import type { RecipeSection } from '../api/types';
 import type { HouseholdMember, Place, Recipe } from '../api/types';
-import { DEFAULT_SECTION_ORDER, STORE_SECTION_LABELS } from '../utils/storeSections';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
@@ -21,7 +20,7 @@ import {
   NumberInput,
   Sheet,
 } from '../components/ui';
-import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon } from '../components/icons';
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 import PlaceActions from '../components/PlaceActions';
 import { PageTitle } from '../components/PageTitle';
 import ImagePicker from '../components/ImagePicker';
@@ -729,58 +728,172 @@ function SettingsCard() {
 }
 
 /**
- * The aisles in the order you walk your store. Arrows rather than dragging: dragging a list on a
- * phone fights the page scroll, and ten rows is few enough that a tap per step is quick.
+ * The aisles in the order you walk your store — your own, not a fixed list. Arrows rather than
+ * dragging: dragging a list on a phone fights the page scroll, and a dozen rows is few enough
+ * that a tap per step is quick. Renaming and deleting live behind a "..." sheet per row so the
+ * everyday case (just reordering) stays a single row of controls.
  */
 function StoreLayoutCard() {
-  const { activeHousehold, updateStoreSectionOrder } = useHousehold();
-  const [order, setOrder] = useState<StoreSection[]>(activeHousehold?.storeSectionOrder ?? DEFAULT_SECTION_ORDER);
+  const {
+    groceryCategories,
+    createGroceryCategory,
+    renameGroceryCategory,
+    reorderGroceryCategories,
+    deleteGroceryCategory,
+  } = useHousehold();
   const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState<{ id: string; name: string } | null>(null);
 
-  useEffect(() => {
-    if (activeHousehold?.storeSectionOrder) setOrder(activeHousehold.storeSectionOrder);
-  }, [activeHousehold]);
+  const ordered = [...groceryCategories].sort((a, b) => a.position - b.position);
 
   async function move(index: number, delta: -1 | 1) {
-    const next = [...order];
+    const next = [...ordered];
     [next[index], next[index + delta]] = [next[index + delta], next[index]];
-    setOrder(next);
     setBusy(true);
     try {
-      await updateStoreSectionOrder(next);
+      await reorderGroceryCategories(next.map((c) => c.id));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onAdd(e: FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setAdding(true);
+    try {
+      await createGroceryCategory(newName.trim());
+      setNewName('');
+    } finally {
+      setAdding(false);
     }
   }
 
   return (
     <Card title="Store layout">
       <p className="mb-2 text-sm text-muted">
-        The order you walk your store. The grocery list follows it, top to bottom.
+        The order you walk your store, and what you call each aisle. The grocery list follows it,
+        top to bottom — and Sort classifies into these same categories.
       </p>
       <ol className="divide-y divide-line">
-        {order.map((section, i) => (
-          <li key={section} className="flex items-center gap-1 py-0.5">
+        {ordered.map((category, i) => (
+          <li key={category.id} className="flex items-center gap-1 py-0.5">
             <span className="w-6 shrink-0 text-sm tabular-nums text-subtle">{i + 1}</span>
-            <span className="min-w-0 flex-1 truncate font-medium">{STORE_SECTION_LABELS[section]}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span>
             <IconButton
-              label={`Move ${STORE_SECTION_LABELS[section]} earlier`}
+              label={`Move ${category.name} earlier`}
               disabled={busy || i === 0}
               onClick={() => move(i, -1)}
             >
               <ChevronUpIcon className="h-5 w-5" />
             </IconButton>
             <IconButton
-              label={`Move ${STORE_SECTION_LABELS[section]} later`}
-              disabled={busy || i === order.length - 1}
+              label={`Move ${category.name} later`}
+              disabled={busy || i === ordered.length - 1}
               onClick={() => move(i, 1)}
             >
               <ChevronDownIcon className="h-5 w-5" />
             </IconButton>
+            <IconButton label={`Edit ${category.name}`} onClick={() => setManaging(category)}>
+              <span className="text-lg leading-none">⋯</span>
+            </IconButton>
           </li>
         ))}
       </ol>
+
+      <form onSubmit={onAdd} className="mt-3 flex gap-2">
+        <Input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Add a category — Pharmacy, say"
+          aria-label="New category name"
+        />
+        <Button type="submit" variant="secondary" disabled={adding || !newName.trim()}>
+          <PlusIcon className="h-5 w-5" />
+        </Button>
+      </form>
+
+      {managing && (
+        <ManageCategorySheet
+          category={managing}
+          onClose={() => setManaging(null)}
+          onRename={async (name) => {
+            await renameGroceryCategory(managing.id, name);
+            setManaging(null);
+          }}
+          onDelete={async () => {
+            await deleteGroceryCategory(managing.id);
+            setManaging(null);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function ManageCategorySheet({
+  category,
+  onClose,
+  onRename,
+  onDelete,
+}: {
+  category: { id: string; name: string };
+  onClose: () => void;
+  onRename: (name: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [name, setName] = useState(category.name);
+  const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  return (
+    <Sheet title={category.name} onClose={onClose}>
+      <div className="space-y-4">
+        <Field label="Name">
+          <div className="flex gap-2">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Button
+              variant="secondary"
+              disabled={saving || !name.trim() || name.trim() === category.name}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await onRename(name.trim());
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </Field>
+
+        {confirmingDelete ? (
+          <div className="space-y-2 rounded-xl bg-elevated p-3">
+            <p className="text-sm text-muted">
+              Anything filed under {category.name} becomes unsorted — one tap to place it again, or
+              Sort will pick it up.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="danger" full disabled={saving} onClick={onDelete}>
+                Delete {category.name}
+              </Button>
+              <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="danger" full onClick={() => setConfirmingDelete(true)}>
+            <TrashIcon className="h-5 w-5" />
+            Delete category
+          </Button>
+        )}
+      </div>
+    </Sheet>
   );
 }
 

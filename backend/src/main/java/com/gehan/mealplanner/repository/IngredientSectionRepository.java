@@ -11,4 +11,6 @@ public interface IngredientSectionRepository extends JpaRepository<IngredientSec
     List<IngredientSection> findByHouseholdId(UUID householdId);
 
     Optional<IngredientSection> findByHouseholdIdAndIngredientId(UUID householdId, UUID ingredientId);
+
+    List<IngredientSection> findByCategoryId(UUID categoryId);
 }

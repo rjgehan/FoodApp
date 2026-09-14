@@ -1,13 +1,11 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.HouseholdRole;
-import com.gehan.mealplanner.domain.StoreSection;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.util.List;
 import java.util.UUID;
 
 public class HouseholdDtos {
@@ -17,13 +15,7 @@ public class HouseholdDtos {
 
     /** `role` is the *requesting* user's role in this household, not a property of the household. */
     public record HouseholdResponse(
-            UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role,
-            /** Every aisle once, in the order this household walks its store. */
-            List<StoreSection> storeSectionOrder) {
-    }
-
-    /** Sections left out are added back at the end, so a partial list cannot lose one. */
-    public record UpdateStoreSectionOrderRequest(@NotNull List<StoreSection> order) {
+            UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role) {
     }
 
     public record RenameHouseholdRequest(@NotBlank @Size(max = 60) String name) {

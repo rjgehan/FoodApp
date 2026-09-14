@@ -39,6 +39,25 @@ public class SchemaTouchUps {
     }
 
     /**
+     * ingredient_sections.section was the old fixed-enum placement, NOT NULL; a household's
+     * placement is a GroceryCategory row now (see IngredientSection), so nothing writes that
+     * column any more, but Hibernate never relaxes a constraint on a column it no longer maps —
+     * every new placement would otherwise fail this check on a database from before categories
+     * existed. The column itself is kept, unmapped, since StartupBackfills still reads it once to
+     * migrate old placements onto their household's matching category.
+     */
+    @Bean
+    public ApplicationRunner relaxLegacyIngredientSectionConstraint(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.execute("ALTER TABLE ingredient_sections ALTER COLUMN section DROP NOT NULL");
+            } catch (Exception e) {
+                log.warn("Could not relax ingredient_sections.section nullability: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
      * The cupboard briefly tracked Have/Low/Out. A database started on that version has NOT NULL
      * status and updated_at columns that nothing writes any more, so every new cupboard item would
      * fail on them. IF EXISTS makes this a no-op everywhere else.

@@ -87,13 +87,13 @@ public class GroceryListController {
         return groceryListService.addAllPlannedToList(householdId, userId, start, end);
     }
 
-    /** Moves an ingredient to another aisle for this household — on the list and in the cupboard. */
-    @PutMapping("/ingredients/{ingredientId}/section")
-    public ResponseEntity<Void> moveToSection(@AuthenticationPrincipal UUID userId,
-                                               @PathVariable UUID householdId,
-                                               @PathVariable UUID ingredientId,
-                                               @Valid @RequestBody MoveSectionRequest request) {
-        groceryListService.moveToSection(householdId, ingredientId, userId, request.section());
+    /** Moves an ingredient to another category for this household — on the list and in the cupboard. */
+    @PutMapping("/ingredients/{ingredientId}/category")
+    public ResponseEntity<Void> moveToCategory(@AuthenticationPrincipal UUID userId,
+                                                @PathVariable UUID householdId,
+                                                @PathVariable UUID ingredientId,
+                                                @Valid @RequestBody MoveCategoryRequest request) {
+        groceryListService.moveToCategory(householdId, ingredientId, userId, request.categoryId());
         return ResponseEntity.noContent().build();
     }
 }

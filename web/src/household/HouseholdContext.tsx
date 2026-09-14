@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api } from '../api/client';
-import type { Household, StoreSection } from '../api/types';
+import type { GroceryCategory, Household } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useOnResume } from '../utils/useOnResume';
 
@@ -27,8 +27,14 @@ interface HouseholdContextValue {
   createHousehold: (name: string) => Promise<void>;
   renameHousehold: (name: string) => Promise<void>;
   updateSettings: (settings: HouseholdSettings) => Promise<void>;
-  /** The aisles in the order you walk your store; the grocery list follows it. */
-  updateStoreSectionOrder: (order: StoreSection[]) => Promise<void>;
+  /** This household's own grocery aisles, in the order it walks its store. */
+  groceryCategories: GroceryCategory[];
+  refreshGroceryCategories: () => Promise<void>;
+  createGroceryCategory: (name: string) => Promise<void>;
+  renameGroceryCategory: (id: string, name: string) => Promise<void>;
+  /** Every category's id, in the new order. */
+  reorderGroceryCategories: (order: string[]) => Promise<void>;
+  deleteGroceryCategory: (id: string) => Promise<void>;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
@@ -40,6 +46,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     localStorage.getItem('mp_activeHouseholdId'),
   );
   const [loading, setLoading] = useState(false);
+  const [groceryCategories, setGroceryCategories] = useState<GroceryCategory[]>([]);
 
   const setActiveHouseholdId = useCallback((id: string) => {
     localStorage.setItem('mp_activeHouseholdId', id);
@@ -71,9 +78,24 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  const refreshGroceryCategories = useCallback(async () => {
+    if (!activeHouseholdId) {
+      setGroceryCategories([]);
+      return;
+    }
+    setGroceryCategories(
+      await api<GroceryCategory[]>('GET', `/api/households/${activeHouseholdId}/categories`),
+    );
+  }, [activeHouseholdId]);
+
+  useEffect(() => {
+    refreshGroceryCategories();
+  }, [refreshGroceryCategories]);
+
   // Settings someone changed on another phone — the store order, the planning window.
   useOnResume(() => {
     if (session) refresh().catch(() => {});
+    refreshGroceryCategories().catch(() => {});
   });
 
   const createHousehold = useCallback(
@@ -103,13 +125,40 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     [activeHouseholdId, refresh],
   );
 
-  const updateStoreSectionOrder = useCallback(
-    async (order: StoreSection[]) => {
+  const createGroceryCategory = useCallback(
+    async (name: string) => {
       if (!activeHouseholdId) return;
-      await api('PUT', `/api/households/${activeHouseholdId}/store-sections`, { order });
-      await refresh();
+      await api('POST', `/api/households/${activeHouseholdId}/categories`, { name });
+      await refreshGroceryCategories();
     },
-    [activeHouseholdId, refresh],
+    [activeHouseholdId, refreshGroceryCategories],
+  );
+
+  const renameGroceryCategory = useCallback(
+    async (id: string, name: string) => {
+      if (!activeHouseholdId) return;
+      await api('PATCH', `/api/households/${activeHouseholdId}/categories/${id}`, { name });
+      await refreshGroceryCategories();
+    },
+    [activeHouseholdId, refreshGroceryCategories],
+  );
+
+  const reorderGroceryCategories = useCallback(
+    async (order: string[]) => {
+      if (!activeHouseholdId) return;
+      await api('PUT', `/api/households/${activeHouseholdId}/categories/order`, { order });
+      await refreshGroceryCategories();
+    },
+    [activeHouseholdId, refreshGroceryCategories],
+  );
+
+  const deleteGroceryCategory = useCallback(
+    async (id: string) => {
+      if (!activeHouseholdId) return;
+      await api('DELETE', `/api/households/${activeHouseholdId}/categories/${id}`);
+      await refreshGroceryCategories();
+    },
+    [activeHouseholdId, refreshGroceryCategories],
   );
 
   const activeHousehold = households.find((h) => h.id === activeHouseholdId) ?? null;
@@ -125,9 +174,30 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       createHousehold,
       renameHousehold,
       updateSettings,
-      updateStoreSectionOrder,
+      groceryCategories,
+      refreshGroceryCategories,
+      createGroceryCategory,
+      renameGroceryCategory,
+      reorderGroceryCategories,
+      deleteGroceryCategory,
     }),
-    [households, activeHouseholdId, activeHousehold, setActiveHouseholdId, loading, refresh, createHousehold, renameHousehold, updateSettings, updateStoreSectionOrder],
+    [
+      households,
+      activeHouseholdId,
+      activeHousehold,
+      setActiveHouseholdId,
+      loading,
+      refresh,
+      createHousehold,
+      renameHousehold,
+      updateSettings,
+      groceryCategories,
+      refreshGroceryCategories,
+      createGroceryCategory,
+      renameGroceryCategory,
+      reorderGroceryCategories,
+      deleteGroceryCategory,
+    ],
   );
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;
