@@ -51,6 +51,12 @@ struct RootView: View {
                 HouseholdView(session: session)
                     .tabItem { Label("Household", systemImage: "person.2") }
                     .tag("household")
+                #if DEBUG
+                // Temporary: Apple Intelligence experiments. Delete this and LabsView.swift.
+                LabsView(session: session)
+                    .tabItem { Label("Labs", systemImage: "flask") }
+                    .tag("labs")
+                #endif
             }
         } else {
             SignInView(session: session)

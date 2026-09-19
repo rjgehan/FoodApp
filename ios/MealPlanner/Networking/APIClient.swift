@@ -198,6 +198,29 @@ actor APIClient {
         )
     }
 
+    /// Uploads a PNG and returns its id. Multipart by hand: one field, no dependencies.
+    func uploadImage(household: UUID, png: Data) async throws -> UUID {
+        let boundary = "mp-\(UUID().uuidString)"
+        var req = request(method: "POST", path: "/api/households/\(household.uuidString)/images", authorized: true)
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"generated.png\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
+        body.append(png)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
+        }
+        struct Uploaded: Decodable { let id: UUID }
+        return try decoder.decode(Uploaded.self, from: data).id
+    }
+
     /// Images are served unauthenticated by design — an `<img>` cannot send a bearer token —
     /// so AsyncImage can load this URL directly.
     nonisolated func imageURL(_ id: UUID) -> URL? {
