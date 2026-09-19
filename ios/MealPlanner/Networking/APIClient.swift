@@ -245,6 +245,38 @@ actor APIClient {
         return try await perform(req)
     }
 
+    /// iOS reports a blocked local-network connection as "the Internet connection appears to be
+    /// offline", which sends you looking at your wifi instead of at the permission that is
+    /// actually missing. Say what it really is.
+    nonisolated static func explain(_ failure: URLError) -> String {
+        let host = URL(string: Config.baseURL)?.host ?? ""
+        let isLoopback = host == "localhost" || host == "127.0.0.1"
+        let isLocalNetwork = host.hasPrefix("192.168.") || host.hasPrefix("10.")
+            || host.hasPrefix("172.") || host.hasSuffix(".local")
+
+        if isLoopback {
+            return """
+            Cannot reach \(Config.baseURL). On a phone, localhost is the phone itself — \
+            set Server to this Mac's address on the network, like http://192.168.1.10:8080.
+            """
+        }
+        switch failure.code {
+        case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost:
+            if isLocalNetwork {
+                return """
+                Cannot reach \(Config.baseURL). If the phone is on the same wifi, iOS is \
+                probably blocking local network access: Settings → Privacy & Security → \
+                Local Network → Meal Planner.
+                """
+            }
+            return "Cannot reach \(Config.baseURL)."
+        case .timedOut:
+            return "\(Config.baseURL) did not answer in time."
+        default:
+            return failure.localizedDescription
+        }
+    }
+
     /// For the endpoints that answer 204, or a body nothing here reads.
     private func sendNoContent(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Bool {
         var req = request(method: method, path: path, authorized: true)
@@ -279,6 +311,8 @@ actor APIClient {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: req)
+        } catch let failure as URLError {
+            throw APIError(status: 0, body: Self.explain(failure))
         } catch {
             throw APIError(status: 0, body: error.localizedDescription)
         }
