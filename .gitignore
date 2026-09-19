@@ -19,3 +19,11 @@ target/
 
 # Rendered brag videos and their captured frames.
 brag-output*/
+
+# Xcode
+ios/.build/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+.DS_Store
