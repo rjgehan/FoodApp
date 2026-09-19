@@ -42,11 +42,32 @@ struct GalleryView: View {
                     entry("Groceries — all bought", "cart.badge.checkmark") {
                         GroceriesView(session: session, sample: [], sampleCategories: SampleData.categories)
                     }
-                    entry("Recipes", "book") {
-                        RecipesView(session: session, sample: SampleData.recipes)
+                    entry("Recipes — drawers", "book") {
+                        RecipesView(
+                            session: session,
+                            sample: SampleData.recipes,
+                            sampleCategories: SampleData.recipeCategories
+                        )
+                    }
+                    entry("Dinner drawer", "fork.knife") {
+                        NavigationStack {
+                            DrawerView(
+                                section: .dinner,
+                                parent: nil,
+                                recipes: SampleData.recipes,
+                                categories: SampleData.recipeCategories
+                            )
+                        }
+                    }
+                    entry("Cupboard", "cabinet") {
+                        CupboardView(
+                            session: session,
+                            sample: SampleData.cupboard,
+                            sampleCategories: SampleData.categories
+                        )
                     }
                     entry("Recipe", "text.book.closed") {
-                        NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0]) }
+                        NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: session) }
                     }
                 }
 

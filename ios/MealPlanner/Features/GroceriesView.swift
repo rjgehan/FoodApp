@@ -12,6 +12,8 @@ struct GroceriesView: View {
     @State private var categories: [GroceryCategory] = []
     @State private var error: String?
     @State private var copied = false
+    @State private var draft = ""
+    @State private var puttingAway = false
 
     private var toBuy: [GroceryItem] { items.filter { !$0.checked } }
     private var inCart: [GroceryItem] { items.filter(\.checked) }
@@ -39,6 +41,16 @@ struct GroceriesView: View {
                         .foregroundStyle(.secondary)
                         .listRowBackground(Color.clear)
                 }
+                Section {
+                    HStack {
+                        TextField("Add something — 2 lb chicken, milk…", text: $draft)
+                            .submitLabel(.done)
+                            .onSubmit { Task { await addTyped() } }
+                        Button("Add", systemImage: "plus.circle.fill") { Task { await addTyped() } }
+                            .labelStyle(.iconOnly)
+                            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }
@@ -57,6 +69,11 @@ struct GroceriesView: View {
                     Section(group.category?.name ?? "Unsorted") {
                         ForEach(group.items) { item in
                             row(item)
+                                .swipeActions {
+                                    Button("Remove", systemImage: "trash", role: .destructive) {
+                                        Task { await remove(item) }
+                                    }
+                                }
                         }
                     }
                 }
@@ -65,7 +82,17 @@ struct GroceriesView: View {
                     Section("Got it") {
                         ForEach(inCart) { item in
                             row(item)
+                                .swipeActions {
+                                    Button("Remove", systemImage: "trash", role: .destructive) {
+                                        Task { await remove(item) }
+                                    }
+                                }
                         }
+                    }
+                    Section {
+                        Button("Done shopping", systemImage: "bag.badge.checkmark") { puttingAway = true }
+                    } footer: {
+                        Text("Everything ticked comes off the list and goes into the cupboard.")
                     }
                 }
             }
@@ -80,6 +107,14 @@ struct GroceriesView: View {
             .refreshable { await load() }
         }
         .task { await load() }
+        .confirmationDialog(
+            "Put \(inCart.count) \(inCart.count == 1 ? "thing" : "things") away?",
+            isPresented: $puttingAway,
+            titleVisibility: .visible
+        ) {
+            Button("Put them in the cupboard") { Task { await putAway() } }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private func row(_ item: GroceryItem) -> some View {
@@ -145,6 +180,49 @@ struct GroceriesView: View {
         } catch {
             self.error = error.localizedDescription
             await load()
+        }
+    }
+
+    /// "2 lb chicken" in one box: a leading amount and a unit are split off the name, which is
+    /// what the web's add field does too.
+    private func addTyped() async {
+        guard let household = session.household?.id else { return }
+        let typed = draft.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return }
+        let parsed = Amount(typed)
+        draft = ""
+        do {
+            _ = try await APIClient.shared.addGroceryItem(
+                household: household,
+                name: parsed.name,
+                quantity: parsed.quantity,
+                unit: parsed.unit
+            )
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+            draft = typed
+        }
+    }
+
+    private func remove(_ item: GroceryItem) async {
+        guard let household = session.household?.id else { return }
+        items.removeAll { $0.id == item.id }
+        do {
+            try await APIClient.shared.removeGroceryItem(household: household, item: item.id)
+        } catch {
+            self.error = error.localizedDescription
+            await load()
+        }
+    }
+
+    private func putAway() async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.putAway(household: household, putAway: inCart.map(\.id), leaveOut: [])
+            await load()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

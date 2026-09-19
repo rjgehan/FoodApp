@@ -11,6 +11,9 @@ struct PlanView: View {
     @State private var monthCursor = Date().startOfMonth
     @State private var error: String?
     @State private var loading = false
+    @State private var openDay: String?
+    @State private var addingToGroceries = false
+    @State private var added = false
 
     private var byDate: [String: [MealPlanEntry]] {
         Dictionary(grouping: entries, by: \.date)
@@ -47,7 +50,12 @@ struct PlanView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 ForEach(planDays, id: \.day) { entry in
-                                    DayCard(day: entry.day, meals: entry.meals)
+                                    Button {
+                                        openDay = Day.iso(entry.day)
+                                    } label: {
+                                        DayCard(day: entry.day, meals: entry.meals)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -55,8 +63,23 @@ struct PlanView: View {
                         .scrollClipDisabled()
                     }
 
-                    MonthGrid(monthCursor: $monthCursor, byDate: byDate)
-                        .padding(.horizontal, 16)
+                    // Plan → Groceries, over the planning window rather than the month on
+                    // screen: these are the days actually being shopped for.
+                    Button {
+                        addingToGroceries = true
+                    } label: {
+                        Label(added ? "Added to Groceries" : "Add \(windowLabel) to Groceries", systemImage: added ? "checkmark" : "cart")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(added)
+                    .padding(.horizontal, 16)
+
+                    MonthGrid(monthCursor: $monthCursor, byDate: byDate) { key in
+                        openDay = key
+                    }
+                    .padding(.horizontal, 16)
                 }
                 .padding(.vertical, 8)
             }
@@ -64,6 +87,43 @@ struct PlanView: View {
             .refreshable { await load() }
         }
         .task(id: monthCursor) { await load() }
+        .sheet(item: Binding(get: { openDay.map(DayKey.init) }, set: { openDay = $0?.value })) { key in
+            DaySheet(date: key.value, session: session, meals: byDate[key.value] ?? []) {
+                await load()
+            }
+        }
+        .confirmationDialog(
+            "Add \(windowLabel) to Groceries?",
+            isPresented: $addingToGroceries,
+            titleVisibility: .visible
+        ) {
+            Button("Add them") { Task { await addWindowToGroceries() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Everything planned in the window goes on the list, minus what the cupboard says you have.")
+        }
+    }
+
+    /// The planning window from Settings, which runs from today — not the month on screen.
+    private var horizonEnd: Date { Day.adding(6, to: Date().startOfDay) }
+    private var windowLabel: String {
+        let from = Date().formatted(.dateTime.month(.abbreviated).day())
+        let to = horizonEnd.formatted(.dateTime.month(.abbreviated).day())
+        return "\(from) – \(to)"
+    }
+
+    private func addWindowToGroceries() async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.addRangeToGroceries(
+                household: household,
+                from: Day.iso(Date()),
+                to: Day.iso(horizonEnd)
+            )
+            withAnimation { added = true }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func load() async {
@@ -132,6 +192,9 @@ private struct DayCard: View {
 private struct MonthGrid: View {
     @Binding var monthCursor: Date
     let byDate: [String: [MealPlanEntry]]
+    /// Every square is tappable, empty ones included — that is how a day that is not in the
+    /// rail above gets something on it.
+    let onPick: (String) -> Void
 
     private var days: [Date] {
         let first = monthCursor.startOfMonth
@@ -169,6 +232,7 @@ private struct MonthGrid: View {
                 ForEach(days, id: \.self) { day in
                     let meals = byDate[Day.iso(day)] ?? []
                     let inMonth = Calendar.current.isDate(day, equalTo: monthCursor, toGranularity: .month)
+                    Button { onPick(Day.iso(day)) } label: {
                     VStack(spacing: 4) {
                         Text(day.formatted(.dateTime.day()))
                             .font(.subheadline)
@@ -188,6 +252,8 @@ private struct MonthGrid: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .opacity(inMonth ? 1 : 0.35)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -223,4 +289,155 @@ extension Date {
 
 #Preview("Plan") {
     PlanView(session: .preview, sample: SampleData.plan)
+}
+
+
+/// `sheet(item:)` needs something Identifiable; a date string is not.
+struct DayKey: Identifiable, Hashable {
+    let value: String
+    var id: String { value }
+    init(_ value: String) { self.value = value }
+}
+
+/// One day: what is on it, and the ways to change that. The web opens the same thing.
+struct DaySheet: View {
+    let date: String
+    var session: Session
+    let meals: [MealPlanEntry]
+    var onChanged: () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var picking: MealType?
+    @State private var recipes: [Recipe] = []
+    @State private var busy = false
+    @State private var error: String?
+
+    private var day: Date { Day.date(date) ?? Date() }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
+                }
+                ForEach(MealType.allCases, id: \.self) { meal in
+                    Section(meal.title) {
+                        ForEach(meals.filter { $0.mealType == meal }) { entry in
+                            HStack {
+                                Text(entry.label)
+                                Spacer()
+                                if let servings = entry.servings {
+                                    Text("serves \(servings)").font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions {
+                                Button("Remove", systemImage: "trash", role: .destructive) {
+                                    Task { await remove(entry) }
+                                }
+                            }
+                        }
+                        Button("Add", systemImage: "plus") { picking = meal }
+                            .font(.subheadline)
+                    }
+                }
+
+                Section {
+                    Button("Add this day to Groceries", systemImage: "cart") {
+                        Task { await addDayToGroceries() }
+                    }
+                    .disabled(busy || meals.isEmpty)
+                }
+            }
+            .navigationTitle(day.formatted(.dateTime.weekday(.wide).month().day()))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .task { await loadRecipes() }
+        .sheet(item: $picking) { meal in
+            RecipePicker(recipes: recipes) { recipe in
+                Task { await add(recipe, to: meal) }
+            }
+        }
+    }
+
+    private func loadRecipes() async {
+        guard let household = session.household?.id, recipes.isEmpty else { return }
+        recipes = (try? await APIClient.shared.recipes(household: household)) ?? []
+    }
+
+    private func add(_ recipe: Recipe, to meal: MealType) async {
+        guard let household = session.household?.id else { return }
+        do {
+            _ = try await APIClient.shared.addToPlan(household: household, date: date, meal: meal, recipeId: recipe.id)
+            await onChanged()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func remove(_ entry: MealPlanEntry) async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.removeFromPlan(household: household, entry: entry.id)
+            await onChanged()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func addDayToGroceries() async {
+        guard let household = session.household?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await APIClient.shared.addRangeToGroceries(household: household, from: date, to: date)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+extension MealType: Identifiable {
+    public var id: String { rawValue }
+}
+
+/// Pick something to cook. Search, then tap.
+struct RecipePicker: View {
+    let recipes: [Recipe]
+    var onPick: (Recipe) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var shown: [Recipe] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? recipes : recipes.filter { $0.name.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(shown) { recipe in
+                Button {
+                    onPick(recipe)
+                    dismiss()
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recipe.name)
+                        Text(recipe.facts).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .searchable(text: $query, prompt: "Search recipes")
+            .navigationTitle("Add a meal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Cancel") { dismiss() } }
+            }
+        }
+    }
 }

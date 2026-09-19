@@ -58,6 +58,7 @@ enum SampleData {
             id: UUID(),
             name: "Chicken Parmentier",
             description: "France · Chicken",
+            instructions: "Peel the potatoes and boil until tender.\nMash with the butter and cream.\nBrown the chicken with the shallots.\nLayer, top with cheese, and bake 25 minutes.",
             prepTimeMinutes: 29,
             cookTimeMinutes: 26,
             servings: 4,
@@ -78,6 +79,7 @@ enum SampleData {
             id: UUID(),
             name: "Lasagne",
             description: "Italian · Pasta",
+            instructions: "Brown the mince.\nLayer with sauce and sheets.\nBake 45 minutes.",
             prepTimeMinutes: 20,
             cookTimeMinutes: 45,
             servings: 6,
@@ -95,6 +97,7 @@ enum SampleData {
             id: UUID(),
             name: "Katsu Chicken curry",
             description: "Japanese · Chicken",
+            instructions: nil,
             prepTimeMinutes: 15,
             cookTimeMinutes: 30,
             servings: 4,
@@ -106,6 +109,28 @@ enum SampleData {
             ingredients: []
         ),
     ]
+
+    static let cupboard: [CupboardItem] = [
+        CupboardItem(id: UUID(), name: "olive oil", runningLow: false, staple: true, categoryId: dryGoods, onList: true, quantity: nil, unit: nil),
+        CupboardItem(id: UUID(), name: "rice", runningLow: false, staple: false, categoryId: dryGoods, onList: false, quantity: 3, unit: "kg"),
+        CupboardItem(id: UUID(), name: "plain flour", runningLow: false, staple: false, categoryId: dryGoods, onList: false, quantity: nil, unit: nil),
+        CupboardItem(id: UUID(), name: "butter", runningLow: true, staple: false, categoryId: dairy, onList: false, quantity: nil, unit: nil),
+        CupboardItem(id: UUID(), name: "parmesan", runningLow: false, staple: false, categoryId: dairy, onList: false, quantity: nil, unit: nil),
+    ]
+
+    static let recipeCategories: [RecipeCategory] = {
+        let main = RecipeCategory(id: UUID(), name: "Main", recipeCount: 4, parentId: nil, section: .dinner)
+        return [
+            main,
+            RecipeCategory(id: UUID(), name: "Full meal", recipeCount: 1, parentId: nil, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Side", recipeCount: 0, parentId: nil, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Veggie", recipeCount: 1, parentId: nil, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Beef", recipeCount: 1, parentId: main.id, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Chicken", recipeCount: 1, parentId: main.id, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Pork", recipeCount: 1, parentId: main.id, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: main.id, section: .dinner),
+        ]
+    }()
 }
 
 extension Session {

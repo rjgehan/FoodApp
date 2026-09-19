@@ -84,6 +84,86 @@ actor APIClient {
         try await get("/api/households/\(household.uuidString)/recipes")
     }
 
+    func recipeCategories(household: UUID) async throws -> [RecipeCategory] {
+        try await get("/api/households/\(household.uuidString)/recipe-categories")
+    }
+
+    /// Everything every household on this server has published.
+    func explore(household: UUID) async throws -> [Recipe] {
+        try await get("/api/households/\(household.uuidString)/explore")
+    }
+
+    func cupboard(household: UUID) async throws -> [CupboardItem] {
+        try await get("/api/households/\(household.uuidString)/cupboard")
+    }
+
+    @discardableResult
+    func updateCupboard(
+        household: UUID,
+        item: UUID,
+        runningLow: Bool? = nil,
+        quantity: Double? = nil
+    ) async throws -> CupboardItem {
+        var body: [String: Any] = [:]
+        if let runningLow { body["runningLow"] = runningLow }
+        if let quantity { body["quantity"] = quantity }
+        return try await send("PATCH", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)", body: body)
+    }
+
+    /// Puts a cupboard item back on the grocery list.
+    func buyAgain(household: UUID, item: UUID) async throws {
+        _ = try await sendNoContent("POST", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)/buy-again")
+    }
+
+    // MARK: - Writing to the plan and the list
+
+    @discardableResult
+    func addToPlan(
+        household: UUID,
+        date: String,
+        meal: MealType,
+        recipeId: UUID? = nil,
+        itemName: String? = nil
+    ) async throws -> MealPlanEntry {
+        var body: [String: Any] = ["date": date, "mealType": meal.rawValue]
+        if let recipeId { body["recipeId"] = recipeId.uuidString }
+        if let itemName { body["itemName"] = itemName }
+        return try await send("POST", "/api/households/\(household.uuidString)/meal-plan/entries", body: body)
+    }
+
+    func removeFromPlan(household: UUID, entry: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/meal-plan/\(entry.uuidString)")
+    }
+
+    /// Everything planned between two dates, onto the grocery list.
+    func addRangeToGroceries(household: UUID, from: String, to: String) async throws {
+        _ = try await sendNoContent(
+            "POST",
+            "/api/households/\(household.uuidString)/grocery-list/add-all?start=\(from)&end=\(to)"
+        )
+    }
+
+    @discardableResult
+    func addGroceryItem(household: UUID, name: String, quantity: Double?, unit: String?) async throws -> GroceryItem {
+        var body: [String: Any] = ["ingredientName": name]
+        if let quantity { body["quantity"] = quantity }
+        if let unit, !unit.isEmpty { body["unit"] = unit }
+        return try await send("POST", "/api/households/\(household.uuidString)/grocery-list/items", body: body)
+    }
+
+    func removeGroceryItem(household: UUID, item: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/grocery-list/items/\(item.uuidString)")
+    }
+
+    /// "Done shopping": everything ticked comes off the list, and `putAway` goes to the cupboard.
+    func putAway(household: UUID, putAway: [UUID], leaveOut: [UUID]) async throws {
+        _ = try await sendNoContent(
+            "POST",
+            "/api/households/\(household.uuidString)/grocery-list/put-away",
+            body: ["putAway": putAway.map(\.uuidString), "leaveOut": leaveOut.map(\.uuidString)]
+        )
+    }
+
     /// Images are served unauthenticated by design — an `<img>` cannot send a bearer token —
     /// so AsyncImage can load this URL directly.
     nonisolated func imageURL(_ id: UUID) -> URL? {
@@ -106,6 +186,27 @@ actor APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         return try await perform(req)
+    }
+
+    /// For the endpoints that answer 204, or a body nothing here reads.
+    private func sendNoContent(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Bool {
+        var req = request(method: method, path: path, authorized: true)
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch {
+            throw APIError(status: 0, body: error.localizedDescription)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return true
     }
 
     private func request(method: String, path: String, authorized: Bool) -> URLRequest {

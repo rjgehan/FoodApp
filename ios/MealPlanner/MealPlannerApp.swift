@@ -44,15 +44,12 @@ struct RootView: View {
                 GroceriesView(session: session)
                     .tabItem { Label("Groceries", systemImage: "cart") }
                     .tag("groceries")
+                CupboardView(session: session)
+                    .tabItem { Label("Cupboard", systemImage: "cabinet") }
+                    .tag("cupboard")
                 HouseholdView(session: session)
                     .tabItem { Label("Household", systemImage: "person.2") }
                     .tag("household")
-                #if DEBUG
-                // Ships in debug only: the whole interface, on sample data.
-                GalleryView()
-                    .tabItem { Label("Gallery", systemImage: "square.grid.2x2") }
-                    .tag("gallery")
-                #endif
             }
         } else {
             SignInView(session: session)
@@ -75,6 +72,14 @@ struct HouseholdView: View {
                 Section("Server") {
                     LabeledContent("Address", value: Config.baseURL)
                 }
+                #if DEBUG
+                // The whole interface on sample data. A debug tool, so it lives here rather
+                // than spending one of the five tabs the web has.
+                Section {
+                    NavigationLink("Gallery — every screen") { GalleryView() }
+                }
+                #endif
+
                 Section {
                     Button("Sign out", role: .destructive) {
                         Task { await session.signOut() }

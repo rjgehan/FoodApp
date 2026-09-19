@@ -103,6 +103,8 @@ struct Recipe: Codable, Identifiable, Hashable {
     let id: UUID
     let name: String
     let description: String?
+    /// One step per line, the way the web writes and reads them.
+    let instructions: String?
     let prepTimeMinutes: Int?
     let cookTimeMinutes: Int?
     let servings: Int
@@ -135,4 +137,43 @@ struct RecipeIngredient: Codable, Identifiable, Hashable {
         let parts = [number, unit].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
+}
+
+struct CupboardItem: Codable, Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let runningLow: Bool
+    let staple: Bool
+    let categoryId: UUID?
+    /// Waiting on the grocery list, unticked.
+    let onList: Bool
+    /// Null means this item uses the simple Have / Low toggle instead of an exact amount.
+    let quantity: Double?
+    let unit: String?
+
+    var tracksQuantity: Bool { quantity != nil }
+
+    /// "Always have · On the list", the same line the web shows under the name.
+    var detail: String? {
+        var parts: [String] = []
+        if staple { parts.append("Always have") }
+        if onList { parts.append("On the list") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    var amount: String? {
+        guard let quantity else { return nil }
+        let number = quantity == quantity.rounded() ? String(Int(quantity)) : String(quantity)
+        return [number, unit].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
+/// A group inside a drawer — "Main", and "Chicken" inside it. `parentId` is the group it sits
+/// in; `section` is the drawer it belongs to, null meaning it shows in every drawer.
+struct RecipeCategory: Codable, Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let recipeCount: Int
+    let parentId: UUID?
+    let section: RecipeSection?
 }
