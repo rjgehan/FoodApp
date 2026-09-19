@@ -15,19 +15,6 @@ import FoundationModels
 #if canImport(FoundationModels)
 @available(iOS 26.0, *)
 @Generable
-struct ParsedIngredient {
-    @Guide(description: "How much, as a number. 1 when the text does not say.")
-    var quantity: Double
-
-    @Guide(description: "The unit only, like g, kg, ml, tbsp, tsp, cup, clove. Empty when there is none.")
-    var unit: String
-
-    @Guide(description: "The ingredient on its own, lowercase, with no amount and no preparation.")
-    var name: String
-}
-
-@available(iOS 26.0, *)
-@Generable
 struct ParsedRecipe {
     @Guide(description: "What the dish is called, without the word recipe.")
     var name: String
@@ -41,8 +28,16 @@ struct ParsedRecipe {
     @Guide(description: "Minutes of cooking. 0 when the text does not say.")
     var cookMinutes: Int
 
-    @Guide(description: "Every ingredient listed, in the order written.")
-    var ingredients: [ParsedIngredient]
+    /*
+     One line per ingredient, copied out rather than interpreted.
+
+     Asking the model for a number and a unit produced "1/3 cup parmesan cheese" as a
+     quantity of 1 in units of parmesan cheese, and "1 tbsp sugar or to taste" as 1 of 1 —
+     a 3B model cannot do the arithmetic and will fill a free-text unit with whatever is
+     nearby. Copying a line is something it does reliably, and Amount does the rest exactly.
+    */
+    @Guide(description: "Each ingredient exactly as written in the text, one per entry, amount and all.")
+    var ingredientLines: [String]
 
     @Guide(description: "The method, one entry per step, in order.")
     var steps: [String]
@@ -110,11 +105,16 @@ struct LabsPasteView: View {
                     if parsed.prepMinutes > 0 { LabeledContent("Prep", value: "\(parsed.prepMinutes) min") }
                     if parsed.cookMinutes > 0 { LabeledContent("Cook", value: "\(parsed.cookMinutes) min") }
                 }
-                Section("Ingredients · \(parsed.ingredients.count)") {
-                    ForEach(Array(parsed.ingredients.enumerated()), id: \.offset) { _, row in
-                        LabeledContent(row.name) {
-                            Text([amount(row.quantity), row.unit].filter { !$0.isEmpty }.joined(separator: " "))
-                                .foregroundStyle(.secondary)
+                Section("Ingredients · \(parsed.ingredientLines.count)") {
+                    ForEach(Array(parsed.ingredientLines.enumerated()), id: \.offset) { _, line in
+                        let row = Amount(line)
+                        LabeledContent(row.name.isEmpty ? line : row.name) {
+                            HStack(spacing: 6) {
+                                if row.optional {
+                                    Text("optional").font(.caption).foregroundStyle(.tertiary)
+                                }
+                                Text(written(row)).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -199,8 +199,20 @@ struct LabsPasteView: View {
         return text
     }
 
-    private func amount(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(value)
+    /// "1/3 cup" reads better than "0.333 cup"; the number itself stays exact underneath.
+    private func written(_ row: Amount) -> String {
+        guard let quantity = row.quantity else { return row.unit ?? "" }
+        let number: String
+        switch quantity {
+        case let value where value == value.rounded(): number = String(Int(value))
+        case 0.25: number = "¼"
+        case 0.5: number = "½"
+        case 0.75: number = "¾"
+        case let value where abs(value - 1.0 / 3) < 0.01: number = "⅓"
+        case let value where abs(value - 2.0 / 3) < 0.01: number = "⅔"
+        default: number = String(format: "%g", quantity)
+        }
+        return [number, row.unit].compactMap { $0 }.joined(separator: " ")
     }
 
     // MARK: - Reading
@@ -242,10 +254,11 @@ struct LabsPasteView: View {
                 instructions: """
                 You turn a pasted recipe into structured data.
 
-                Use only what the text says. Never invent an ingredient, a step, an amount or \
-                a time — if the text does not give one, use the stated default. Keep the \
-                wording of the steps as written. If the text is not a recipe, return an empty \
-                name and no ingredients rather than making something up.
+                Copy, do not interpret. Each ingredient line comes across exactly as written, \
+                including its amount — do not convert fractions, do not split off the unit, do \
+                not tidy the wording. Keep the steps as written. Never invent an ingredient, a \
+                step or a time. If the text is not a recipe, return an empty name and no \
+                ingredients rather than making something up.
                 """
             )
             let reply = try await model.respond(to: input, generating: ParsedRecipe.self)
@@ -254,12 +267,12 @@ struct LabsPasteView: View {
             note = String(
                 format: "Read %d characters → %d ingredients, %d steps in %.1f s%@",
                 input.count,
-                reply.content.ingredients.count,
+                reply.content.ingredientLines.count,
                 reply.content.steps.count,
                 seconds,
                 trimmed ? " · cut to \(Self.limit) characters" : ""
             )
-            if reply.content.ingredients.isEmpty {
+            if reply.content.ingredientLines.isEmpty {
                 error = "No recipe found in that text — nothing was invented to fill the gap."
             }
         } catch let failure as LanguageModelSession.GenerationError {
@@ -285,13 +298,16 @@ struct LabsPasteView: View {
             "instructions": recipe.steps.joined(separator: "\n"),
             "prepTimeMinutes": recipe.prepMinutes,
             "cookTimeMinutes": recipe.cookMinutes,
-            "ingredients": recipe.ingredients.map { row in
+            "ingredients": recipe.ingredientLines.compactMap { line -> [String: Any]? in
+                let row = Amount(line)
+                guard !row.name.isEmpty else { return nil }
                 var out: [String: Any] = [
                     "ingredientName": row.name,
-                    "quantity": row.quantity,
-                    "optional": false,
+                    "quantity": row.quantity ?? 1,
+                    "optional": row.optional,
                 ]
-                if !row.unit.isEmpty { out["unit"] = row.unit }
+                if let unit = row.unit { out["unit"] = unit }
+                if let notes = row.notes { out["notes"] = notes }
                 return out
             },
         ]
