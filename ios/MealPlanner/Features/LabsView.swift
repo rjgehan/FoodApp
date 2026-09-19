@@ -21,11 +21,13 @@ struct LabsView: View {
     @State private var image: CGImage?
     @State private var elapsed: TimeInterval?
     @State private var status: String = "Not checked"
+    @State private var headless: String = "Not checked"
     @State private var modelStatus: String = "Not checked"
     @State private var busy = false
     @State private var error: String?
     @State private var uploaded: String?
     @State private var items: [GroceryItem] = []
+    @State private var sheetUp = false
 
     /// Mirrors `ImagePlaygroundStyle`, which cannot be used in a Picker below iOS 18.4.
     enum Style: String, CaseIterable, Identifiable {
@@ -40,6 +42,7 @@ struct LabsView: View {
                 // A title and a footer together need the closure form of Section.
                 Section {
                     LabeledContent("Image generation", value: status)
+                    LabeledContent("Headless (deprecated in 27)", value: headless)
                     LabeledContent("On-device model", value: modelStatus)
                     Button("Check again") { Task { await check() } }
                         .buttonStyle(.borderless)
@@ -49,17 +52,25 @@ struct LabsView: View {
                     Text("Both need Apple Intelligence hardware with the feature switched on, and the models downloaded. The Simulator usually reports unavailable.")
                 }
 
-                Section("Make one") {
+                Section {
                     TextField("What to draw", text: $prompt)
                     Picker("Style", selection: $style) {
                         ForEach(Style.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Button(busy ? "Generating…" : "Generate", systemImage: "wand.and.stars") {
+                    Button("Open Image Playground", systemImage: "wand.and.stars") {
+                        sheetUp = true
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Button(busy ? "Trying…" : "Try headless (deprecated)", systemImage: "terminal") {
                         Task { await generate() }
                     }
                     .buttonStyle(.borderless)
                     .disabled(busy || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                } footer: {
+                    Text("iOS 27 deprecated generating without UI. The sheet is the supported path, and it needs a person to confirm each image.")
                 }
 
                 if let error {
@@ -93,7 +104,7 @@ struct LabsView: View {
                         ForEach(items.prefix(12)) { item in
                             Button(item.name) {
                                 prompt = item.name
-                                Task { await generate() }
+                                sheetUp = true
                             }
                             .buttonStyle(.borderless)
                         }
@@ -101,6 +112,9 @@ struct LabsView: View {
                 }
             }
             .navigationTitle("Labs")
+            .playgroundSheet(isPresented: $sheetUp, concept: prompt) { url in
+                Task { await loadGenerated(from: url) }
+            }
         }
         .task {
             await check()
@@ -115,17 +129,26 @@ struct LabsView: View {
     private func check() async {
         // The precise reason matters: "unavailable" on a supported phone usually means the
         // feature is off in Settings, not that the code is wrong.
+        // Two different answers matter here. `isAvailable` is whether the system can generate
+        // at all; ImageCreator is the headless path, which iOS 27 deprecated in favour of
+        // Apple's own sheet — so it can report "not supported" on a phone that generates fine.
+        if #available(iOS 18.1, *) {
+            status = ImagePlaygroundViewController.isAvailable ? "Available (via Apple's sheet)" : "Not available"
+        } else {
+            status = "Needs iOS 18.1"
+        }
+
         if #available(iOS 18.4, *) {
             do {
                 let creator = try await ImageCreator()
-                status = "Ready · \(creator.availableStyles.count) styles"
+                headless = "Works · \(creator.availableStyles.count) styles"
             } catch let failure as ImageCreator.Error {
-                status = describe(failure)
+                headless = describe(failure)
             } catch {
-                status = error.localizedDescription
+                headless = error.localizedDescription
             }
         } else {
-            status = "Needs iOS 18.4"
+            headless = "Needs iOS 18.4"
         }
 
         #if canImport(FoundationModels)
@@ -198,6 +221,16 @@ struct LabsView: View {
         }
     }
 
+    /// What the sheet hands back: a file on disk, not pixels in memory.
+    private func loadGenerated(from url: URL) async {
+        guard let data = try? Data(contentsOf: url), let loaded = UIImage(data: data)?.cgImage else {
+            error = "Could not read the generated image."
+            return
+        }
+        image = loaded
+        elapsed = nil
+    }
+
     /// Proves the other half: a generated image can live on the server like any recipe photo,
     /// so the household — and the web app — would see the same one.
     private func upload(_ cgImage: CGImage) async {
@@ -211,6 +244,22 @@ struct LabsView: View {
             uploaded = "Saved as \(id.uuidString)"
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+/// The sheet only exists from iOS 18.1, and this app still runs on 17.
+extension View {
+    @ViewBuilder
+    func playgroundSheet(
+        isPresented: Binding<Bool>,
+        concept: String,
+        onDone: @escaping (URL) -> Void
+    ) -> some View {
+        if #available(iOS 18.1, *) {
+            self.imagePlaygroundSheet(isPresented: isPresented, concepts: [.text(concept)], onCompletion: onDone)
+        } else {
+            self
         }
     }
 }
