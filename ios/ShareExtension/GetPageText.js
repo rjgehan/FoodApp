@@ -1,16 +1,124 @@
 /*
- Safari runs this in the page before the extension opens, so what gets shared is the recipe
- as rendered, not just its address. Without it a shared page arrives as a bare URL, and a
- language model handed a URL will happily invent a recipe out of the words in the slug.
+ Safari runs this inside the page before the extension opens.
+
+ Two things come back. First, and much better, the page's own machine-readable recipe: nearly
+ every recipe site embeds a schema.org Recipe in a <script type="application/ld+json">, with
+ the exact ingredient list and the exact steps. Using it means nothing has to be guessed —
+ no model, no scraping a blog's prose.
+
+ That matters because the prose is a trap. Food blogs run an "ingredient notes" section that
+ looks exactly like an ingredient list to a reader and to a language model — "Butter – use
+ unsalted butter to sautee onions" — and it is not the recipe.
+
+ Second, the visible text, as a fallback for pages with no structured data.
 */
 var ExtensionPreprocessingJS = new (function () {
+  // "PT1H30M" -> 90
+  function minutes(iso) {
+    if (typeof iso !== "string") return 0;
+    var match = iso.match(/^P(?:\d+D)?T(?:(\d+)H)?(?:(\d+)M)?/);
+    if (!match) return 0;
+    return (parseInt(match[1] || 0, 10) * 60) + parseInt(match[2] || 0, 10);
+  }
+
+  function serves(value) {
+    if (Array.isArray(value)) value = value[0];
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      var digits = value.match(/\d+/);
+      if (digits) return parseInt(digits[0], 10);
+    }
+    return 0;
+  }
+
+  // Instructions come as strings, as HowToStep objects, or as HowToSections holding steps.
+  function steps(value, out) {
+    out = out || [];
+    if (!value) return out;
+    if (typeof value === "string") {
+      value.split(/\n+/).forEach(function (line) {
+        var text = line.replace(/<[^>]+>/g, "").trim();
+        if (text) out.push(text);
+      });
+      return out;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(function (entry) { steps(entry, out); });
+      return out;
+    }
+    if (value.itemListElement) return steps(value.itemListElement, out);
+    if (value.text) {
+      var text = String(value.text).replace(/<[^>]+>/g, "").trim();
+      if (text) out.push(text);
+    }
+    return out;
+  }
+
+  function isRecipe(node) {
+    if (!node || typeof node !== "object") return false;
+    var type = node["@type"];
+    if (Array.isArray(type)) return type.indexOf("Recipe") !== -1;
+    return type === "Recipe";
+  }
+
+  // The Recipe can sit at the top, in an array, or inside an @graph.
+  function findRecipe(node) {
+    if (!node || typeof node !== "object") return null;
+    if (isRecipe(node)) return node;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) {
+        var found = findRecipe(node[i]);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (node["@graph"]) return findRecipe(node["@graph"]);
+    return null;
+  }
+
+  function structured() {
+    var blocks = document.querySelectorAll('script[type="application/ld+json"]');
+    for (var i = 0; i < blocks.length; i++) {
+      var parsed;
+      try {
+        parsed = JSON.parse(blocks[i].textContent);
+      } catch (e) {
+        continue;
+      }
+      var recipe = findRecipe(parsed);
+      if (!recipe) continue;
+
+      var ingredients = (recipe.recipeIngredient || recipe.ingredients || [])
+        .map(function (line) { return String(line).replace(/\s+/g, " ").trim(); })
+        .filter(function (line) { return line.length > 0; });
+      if (!ingredients.length) continue;
+
+      return {
+        name: String(recipe.name || document.title || "").trim(),
+        servings: serves(recipe.recipeYield),
+        prep: minutes(recipe.prepTime),
+        cook: minutes(recipe.cookTime) || minutes(recipe.totalTime),
+        ingredients: ingredients,
+        steps: steps(recipe.recipeInstructions),
+      };
+    }
+    return null;
+  }
+
   this.run = function (args) {
+    var found = null;
+    try {
+      found = structured();
+    } catch (e) {
+      found = null;
+    }
     var article = document.querySelector("article, main, [itemtype*='Recipe']");
-    var body = (article || document.body);
+    var body = article || document.body;
     args.completionFunction({
       title: document.title || "",
       text: (body.innerText || "").trim(),
       url: document.URL || "",
+      recipe: found ? JSON.stringify(found) : "",
     });
   };
 })();

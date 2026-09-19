@@ -6,6 +6,8 @@ struct MealPlannerApp: App {
     @State private var restored = false
     /// Text handed over by the share extension, waiting to be read.
     @State private var shared: String?
+    /// Or the page's own recipe data, which needs no reading at all.
+    @State private var sharedRecipe: StructuredRecipe?
 
     var body: some Scene {
         WindowGroup {
@@ -20,11 +22,22 @@ struct MealPlannerApp: App {
                 .onOpenURL { url in
                     guard url.scheme == "mealplanner", url.host == "paste" else { return }
                     let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                    if let json = items?.first(where: { $0.name == "recipe" })?.value,
+                       let data = json.data(using: .utf8),
+                       let decoded = try? JSONDecoder().decode(StructuredRecipe.self, from: data) {
+                        sharedRecipe = decoded
+                        shared = decoded.name
+                        return
+                    }
                     shared = items?.first(where: { $0.name == "text" })?.value
                 }
                 .sheet(item: Binding(get: { shared.map(SharedText.init) }, set: { shared = $0?.text })) { incoming in
                     NavigationStack {
-                        LabsPasteView(session: session, incoming: incoming.text)
+                        LabsPasteView(
+                            session: session,
+                            incoming: sharedRecipe == nil ? incoming.text : nil,
+                            structured: sharedRecipe
+                        )
                     }
                 }
         }

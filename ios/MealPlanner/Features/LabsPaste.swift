@@ -44,16 +44,30 @@ struct ParsedRecipe {
 }
 #endif
 
+/// A recipe the page published about itself, in schema.org form. No model involved: these
+/// are the site's own ingredient and step lists.
+struct StructuredRecipe: Codable {
+    var name: String
+    var servings: Int
+    var prep: Int
+    var cook: Int
+    var ingredients: [String]
+    var steps: [String]
+}
+
 struct LabsPasteView: View {
     var session: Session
     /// Handed in by the share extension; typed by hand otherwise.
     var incoming: String?
+    /// The page's own recipe data, when it had some. Skips the model entirely.
+    var structured: StructuredRecipe?
 
     @State private var text = ""
     @State private var busy = false
     @State private var note: String?
     @State private var error: String?
     @State private var saved: String?
+    @State private var fromPage: StructuredRecipe?
 
     #if canImport(FoundationModels)
     @State private var parsedStore: Any?
@@ -97,8 +111,41 @@ struct LabsPasteView: View {
                 Section { Text(error).foregroundStyle(.red) }
             }
 
+            if let fromPage {
+                Section("What the page published") {
+                    LabeledContent("Name", value: fromPage.name)
+                    if fromPage.servings > 0 { LabeledContent("Serves", value: "\(fromPage.servings)") }
+                    if fromPage.prep > 0 { LabeledContent("Prep", value: "\(fromPage.prep) min") }
+                    if fromPage.cook > 0 { LabeledContent("Cook", value: "\(fromPage.cook) min") }
+                }
+                Section("Ingredients · \(fromPage.ingredients.count)") {
+                    ForEach(Array(fromPage.ingredients.enumerated()), id: \.offset) { _, line in
+                        let row = Amount(line)
+                        LabeledContent(row.name.isEmpty ? line : row.name) {
+                            Text(written(row)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !fromPage.steps.isEmpty {
+                    Section("Steps · \(fromPage.steps.count)") {
+                        ForEach(Array(fromPage.steps.enumerated()), id: \.offset) { index, step in
+                            Text("\(index + 1). \(step)").font(.callout)
+                        }
+                    }
+                }
+                Section {
+                    Button("Save to this household", systemImage: "square.and.arrow.down") {
+                        Task { await savePage(fromPage) }
+                    }
+                    .buttonStyle(.borderless)
+                    if let saved {
+                        Text(saved).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             #if canImport(FoundationModels)
-            if #available(iOS 26.0, *), let parsed {
+            if #available(iOS 26.0, *), fromPage == nil, let parsed {
                 Section("What it read") {
                     LabeledContent("Name", value: parsed.name)
                     LabeledContent("Serves", value: "\(parsed.servings)")
@@ -138,6 +185,11 @@ struct LabsPasteView: View {
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            if let structured, fromPage == nil {
+                fromPage = structured
+                note = "Read straight from the page's own recipe data — nothing was guessed."
+                return
+            }
             if let incoming, text.isEmpty {
                 text = incoming
                 await parse()
@@ -284,6 +336,37 @@ struct LabsPasteView: View {
         #else
         error = "FoundationModels is not in this SDK."
         #endif
+    }
+
+    private func savePage(_ recipe: StructuredRecipe) async {
+        guard let household = session.household?.id else { return }
+        let body: [String: Any] = [
+            "name": recipe.name,
+            "servings": max(1, recipe.servings),
+            "section": "DINNER",
+            "categories": [],
+            "instructions": recipe.steps.joined(separator: "\n"),
+            "prepTimeMinutes": recipe.prep,
+            "cookTimeMinutes": recipe.cook,
+            "ingredients": recipe.ingredients.compactMap { line -> [String: Any]? in
+                let row = Amount(line)
+                guard !row.name.isEmpty else { return nil }
+                var out: [String: Any] = [
+                    "ingredientName": row.name,
+                    "quantity": row.quantity ?? 1,
+                    "optional": row.optional,
+                ]
+                if let unit = row.unit { out["unit"] = unit }
+                if let notes = row.notes { out["notes"] = notes }
+                return out
+            },
+        ]
+        do {
+            let created = try await APIClient.shared.createRecipe(household: household, body: body)
+            saved = "Saved as \(created.name)"
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     #if canImport(FoundationModels)

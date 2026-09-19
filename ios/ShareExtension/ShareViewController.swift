@@ -43,25 +43,33 @@ final class ShareViewController: UIViewController {
     }
 
     private func handle() async {
-        guard let shared = await sharedText() else {
-            finish(with: "Nothing to read in that.")
+        let found = await shared()
+
+        // The page's own recipe data beats anything read off the screen, so it goes first
+        // and the app can use it without a model at all.
+        if let recipe = found.recipe, !recipe.isEmpty,
+           let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))"),
+           url.absoluteString.count < 60_000 {
+            label.text = "Found the recipe."
+            open(url)
             return
         }
-        guard let url = URL(string: "mealplanner://paste?text=\(encode(shared))") else {
-            finish(with: "Could not pass that along.")
+        guard let text = found.text, let url = URL(string: "mealplanner://paste?text=\(encode(text))") else {
+            finish(with: "Nothing to read in that.")
             return
         }
         open(url)
     }
 
-    /// What was shared, as the recipe's words.
+    /// What was shared: the page's own recipe data if it publishes any, and its words either way.
     ///
-    /// Order matters. The page's own text is what a reader sees; a selection is what they
-    /// chose; a URL is neither, and passing one to a language model produces an invented
-    /// recipe built out of the slug. So a URL is only ever sent as a last resort, and marked
-    /// as such so the app knows to go and fetch it rather than read it.
-    private func sharedText() async -> String? {
+    /// Order matters for the text. The page's text is what a reader sees; a selection is what
+    /// they chose; a URL is neither, and passing one to a language model produces an invented
+    /// recipe built out of the slug. A URL is only ever sent as a last resort, marked so the
+    /// app knows to fetch it rather than read it.
+    private func shared() async -> (recipe: String?, text: String?) {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
+        var recipe: String?
         var pageText: String?
         var selection: String?
         var link: String?
@@ -73,6 +81,7 @@ final class ShareViewController: UIViewController {
                    let loaded = try? await provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier),
                    let wrapper = loaded as? [String: Any],
                    let results = wrapper[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any] {
+                    if let found = results["recipe"] as? String, !found.isEmpty { recipe = found }
                     let title = results["title"] as? String ?? ""
                     let text = results["text"] as? String ?? ""
                     if !text.isEmpty { pageText = [title, text].filter { !$0.isEmpty }.joined(separator: "\n\n") }
@@ -97,14 +106,17 @@ final class ShareViewController: UIViewController {
          short capture loses to the link, which the app can go and fetch.
          */
         let enough = 200
-
-        // A selection beats the whole page: someone who highlighted the ingredients meant it.
-        if let selection, selection.count >= enough { return selection }
-        if let pageText, pageText.count >= enough { return pageText }
-        if let link { return "\u{1F517}\(link)" }
-        if let selection { return selection }
-        if let pageText { return pageText }
-        return nil
+        let text: String?
+        if let selection, selection.count >= enough {
+            text = selection
+        } else if let pageText, pageText.count >= enough {
+            text = pageText
+        } else if let link {
+            text = "\u{1F517}\(link)"
+        } else {
+            text = selection ?? pageText
+        }
+        return (recipe, text)
     }
 
     private func encode(_ text: String) -> String {
