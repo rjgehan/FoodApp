@@ -9,7 +9,14 @@ import Foundation
 struct HouseholdSummary: Codable, Identifiable, Hashable {
     let id: UUID
     let name: String
-    let memberCount: Int
+    /// The landing screen sends this; /api/households does not, so it is optional.
+    let memberCount: Int?
+
+    init(id: UUID, name: String, memberCount: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.memberCount = memberCount
+    }
 }
 
 struct UserSummary: Codable, Identifiable, Hashable {

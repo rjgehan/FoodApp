@@ -14,6 +14,7 @@ struct PlanView: View {
     @State private var openDay: String?
     @State private var addingToGroceries = false
     @State private var added = false
+    @State private var switchingHousehold = false
 
     private var byDate: [String: [MealPlanEntry]] {
         Dictionary(grouping: entries, by: \.date)
@@ -85,6 +86,7 @@ struct PlanView: View {
             }
             .navigationTitle("Plan")
             .refreshable { await load() }
+            .householdHeader(session, switching: $switchingHousehold)
         }
         .task(id: monthCursor) { await load() }
         .sheet(item: Binding(get: { openDay.map(DayKey.init) }, set: { openDay = $0?.value })) { key in
@@ -356,7 +358,9 @@ struct DaySheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // Full height: at .medium the meals below Breakfast were cut off and needed a scroll
+        // before you could see what was on the day.
+        .presentationDetents([.large])
         .task { await loadRecipes() }
         .sheet(item: $picking) { meal in
             RecipePicker(recipes: recipes) { recipe in

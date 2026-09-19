@@ -12,6 +12,7 @@ struct MealPlannerApp: App {
                     guard !restored else { return }
                     await session.restore()
                     restored = true
+                    await session.loadHouseholds()
                 }
         }
     }

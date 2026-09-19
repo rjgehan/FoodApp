@@ -50,10 +50,24 @@ final class Session {
     var token: String?
     var displayName: String?
     var household: HouseholdSummary?
+    /// Every household this person is in — the switcher in the header needs them all.
+    var households: [HouseholdSummary] = []
 
     var isSignedIn: Bool { token != nil && household != nil }
 
-    private static let householdKey = "mp_household"
+    /// Loaded after signing in, and again on resume: someone may have been added to a house.
+    func loadHouseholds() async {
+        households = (try? await APIClient.shared.myHouseholds()) ?? []
+    }
+
+    func switchTo(_ household: HouseholdSummary) {
+        self.household = household
+        if let data = try? JSONEncoder().encode(household) {
+            UserDefaults.standard.set(data, forKey: Self.householdKey)
+        }
+    }
+
+    static let householdKey = "mp_household"
     private static let nameKey = "mp_display_name"
 
     /// Restores the last session so the app opens on the plan, not on a PIN pad.

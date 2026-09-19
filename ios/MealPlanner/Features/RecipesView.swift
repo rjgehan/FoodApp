@@ -13,6 +13,12 @@ struct RecipesView: View {
     @State private var explore: [Recipe] = []
     @State private var query = ""
     @State private var error: String?
+    @State private var switchingHousehold = false
+    #if DEBUG
+    /// `-mp_debug_drawer dinner` opens that drawer on launch, for screenshot runs.
+    @State private var debugDrawer: RecipeSection? = UserDefaults.standard.string(forKey: "mp_debug_drawer")
+        .flatMap { RecipeSection(rawValue: $0.uppercased()) }
+    #endif
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -85,6 +91,12 @@ struct RecipesView: View {
             .navigationTitle("Recipes")
             .searchable(text: $query, prompt: "Search recipes and ingredients")
             .refreshable { await load() }
+            .householdHeader(session, switching: $switchingHousehold)
+            #if DEBUG
+            .navigationDestination(item: $debugDrawer) { section in
+                DrawerView(section: section, parent: nil, recipes: recipes, categories: categories, session: session)
+            }
+            #endif
         }
         .task { await load() }
     }
@@ -160,6 +172,7 @@ struct DrawerView: View {
                         } label: {
                             GroupTile(
                                 name: group.name,
+                                tint: Palette.cover(for: group.id.uuidString),
                                 recipes: count(group),
                                 groups: categories.filter { $0.parentId == group.id }.count
                             )
@@ -235,19 +248,41 @@ struct DrawerTile: View {
 
 struct GroupTile: View {
     let name: String
+    let tint: Color
     let recipes: Int
     let groups: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Spacer(minLength: 8)
-            Text(name).font(.headline)
+            Text(name).font(.title3.weight(.semibold))
             Text("\(recipes) \(recipes == 1 ? "recipe" : "recipes")" + (groups > 0 ? " · \(groups) \(groups == 1 ? "group" : "groups")" : ""))
                 .font(.subheadline).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .background(tint.opacity(0.22), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// A colour per group, picked by hashing its id — the same trick as the web's `coverClass`,
+/// so a group keeps its colour and the grid never looks like a spreadsheet.
+enum Palette {
+    private static let covers: [Color] = [
+        .brown,
+        Color(red: 0.55, green: 0.52, blue: 0.16),
+        .green,
+        Color(red: 0.55, green: 0.24, blue: 0.42),
+        Color(red: 0.16, green: 0.38, blue: 0.55),
+        .orange,
+        .teal,
+        .indigo,
+    ]
+
+    static func cover(for id: String) -> Color {
+        var hash: UInt32 = 0
+        for scalar in id.unicodeScalars { hash = hash &* 31 &+ scalar.value }
+        return covers[Int(hash % UInt32(covers.count))]
     }
 }
 

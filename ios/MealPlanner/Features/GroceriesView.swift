@@ -14,6 +14,7 @@ struct GroceriesView: View {
     @State private var copied = false
     @State private var draft = ""
     @State private var puttingAway = false
+    @State private var switchingHousehold = false
 
     private var toBuy: [GroceryItem] { items.filter { !$0.checked } }
     private var inCart: [GroceryItem] { items.filter(\.checked) }
@@ -36,20 +37,23 @@ struct GroceriesView: View {
         NavigationStack {
             List {
                 Section {
-                    Text(toBuy.isEmpty ? "Nothing to buy" : "\(toBuy.count) to buy")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .listRowBackground(Color.clear)
-                }
-                Section {
-                    HStack {
+                    HStack(spacing: 10) {
                         TextField("Add something — 2 lb chicken, milk…", text: $draft)
                             .submitLabel(.done)
                             .onSubmit { Task { await addTyped() } }
                         Button("Add", systemImage: "plus.circle.fill") { Task { await addTyped() } }
                             .labelStyle(.iconOnly)
+                            .font(.title3)
+                            // Without an explicit style the row becomes one tap target and
+                            // this button never fires.
+                            .buttonStyle(.borderless)
                             .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    if let reading = draftReading {
+                        Text(reading).font(.footnote).foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text(toBuy.isEmpty ? "Nothing to buy" : "\(toBuy.count) to buy")
                 }
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
@@ -97,6 +101,7 @@ struct GroceriesView: View {
                 }
             }
             .navigationTitle("Groceries")
+            .householdHeader(session, switching: $switchingHousehold)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu("List options", systemImage: "ellipsis.circle") {
@@ -117,32 +122,58 @@ struct GroceriesView: View {
         }
     }
 
+    /// One line per item: name on the left, amount on the right. Only the circle ticks it off —
+    /// a whole-row target is too easy to catch with a thumb while scrolling a shop list.
     private func row(_ item: GroceryItem) -> some View {
-        Button {
-            Task { await toggle(item) }
-        } label: {
-            HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            Button {
+                Task { await toggle(item) }
+            } label: {
                 Image(systemName: item.checked ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(item.checked ? Color.accentColor : Color.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.name)
-                        .strikethrough(item.checked)
-                        .foregroundStyle(item.checked ? .secondary : .primary)
-                    if let detail = detail(item) {
-                        Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
+                    // A 44pt target around a 22pt circle, without making the row tall.
+                    .frame(width: 44, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+
+            Text(item.name)
+                .strikethrough(item.checked)
+                .foregroundStyle(item.checked ? .secondary : .primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            if let note = note(item) {
+                Text(note).font(.footnote).foregroundStyle(.tertiary)
+            }
+            if let amount = item.amount {
+                Text(amount)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
         }
-        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 16))
     }
 
-    private func detail(_ item: GroceryItem) -> String? {
-        var parts = [item.amount].compactMap { $0 }
-        if item.checked, let who = item.checkedByName { parts.append("got by \(who)") }
-        if !item.checked, item.inCupboard { parts.append("In the cupboard") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    /// The one thing worth saying beyond the amount, kept short so the row stays one line.
+    private func note(_ item: GroceryItem) -> String? {
+        if item.checked, let who = item.checkedByName { return who }
+        if !item.checked, item.inCupboard { return "have some" }
+        return nil
+    }
+
+    /// How the typed text will be read, shown live so the amount is visibly understood.
+    private var draftReading: String? {
+        let typed = draft.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return nil }
+        let parsed = Amount(typed)
+        guard parsed.quantity != nil || parsed.unit != nil else { return nil }
+        let amount = [parsed.quantity.map { $0 == $0.rounded() ? String(Int($0)) : String($0) }, parsed.unit]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        return "Adds \(parsed.name) · \(amount)"
     }
 
     // MARK: - Behaviour

@@ -2,11 +2,12 @@ import SwiftUI
 
 /// The recipe, and the one thing you usually want to do with it: put it on a day.
 struct RecipeDetailView: View {
-    let recipe: Recipe
+    @State var recipe: Recipe
     var session: Session?
 
     @State private var planning = false
     @State private var planned: String?
+    @State private var editing = false
 
     /// One step per line, the way it was written.
     private var steps: [String] {
@@ -99,6 +100,19 @@ struct RecipeDetailView: View {
         }
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Only the household that owns a recipe can change it; a shared one is read-only.
+            if !recipe.shared {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") { editing = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            EditRecipeView(recipe: recipe, session: session) { saved in
+                recipe = saved
+            }
+        }
         .sheet(isPresented: $planning) {
             AddToPlanSheet(recipe: recipe, session: session) { label in
                 planned = label

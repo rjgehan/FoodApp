@@ -59,6 +59,11 @@ actor APIClient {
 
     // MARK: - The app
 
+    /// The households this person belongs to, for the switcher in the header.
+    func myHouseholds() async throws -> [HouseholdSummary] {
+        try await get("/api/households")
+    }
+
     func plan(household: UUID, from: String, to: String) async throws -> [MealPlanEntry] {
         try await get("/api/households/\(household.uuidString)/meal-plan?start=\(from)&end=\(to)")
     }
@@ -108,6 +113,35 @@ actor APIClient {
         if let runningLow { body["runningLow"] = runningLow }
         if let quantity { body["quantity"] = quantity }
         return try await send("PATCH", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)", body: body)
+    }
+
+    @discardableResult
+    func editCupboard(
+        household: UUID,
+        item: UUID,
+        name: String? = nil,
+        staple: Bool? = nil,
+        trackQuantity: Bool? = nil,
+        quantity: Double? = nil,
+        unit: String? = nil
+    ) async throws -> CupboardItem {
+        var body: [String: Any] = [:]
+        if let name { body["name"] = name }
+        if let staple { body["staple"] = staple }
+        if let trackQuantity { body["trackQuantity"] = trackQuantity }
+        if let quantity { body["quantity"] = quantity }
+        if let unit { body["unit"] = unit }
+        return try await send("PATCH", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)", body: body)
+    }
+
+    func removeFromCupboard(household: UUID, item: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)")
+    }
+
+    /// The whole recipe, as the edit screen sends it back.
+    @discardableResult
+    func updateRecipe(_ recipe: Recipe, body: [String: Any]) async throws -> Recipe {
+        try await send("PUT", "/api/recipes/\(recipe.id.uuidString)", body: body)
     }
 
     /// Puts a cupboard item back on the grocery list.

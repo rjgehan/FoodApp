@@ -12,6 +12,8 @@ struct CupboardView: View {
     @State private var categories: [GroceryCategory] = []
     @State private var query = ""
     @State private var error: String?
+    @State private var editing: CupboardItem?
+    @State private var switchingHousehold = false
 
     private var shown: [CupboardItem] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -54,6 +56,8 @@ struct CupboardView: View {
                     Section(group.category?.name ?? "Everything else") {
                         ForEach(group.items) { item in
                             row(item)
+                                .contentShape(Rectangle())
+                                .onTapGesture { editing = item }
                                 .swipeActions(edge: .trailing) {
                                     Button("Buy again", systemImage: "cart.badge.plus") {
                                         Task { await buyAgain(item) }
@@ -67,8 +71,12 @@ struct CupboardView: View {
             .navigationTitle("Cupboard")
             .searchable(text: $query, prompt: "Do we have… ?")
             .refreshable { await load() }
+            .householdHeader(session, switching: $switchingHousehold)
         }
         .task { await load() }
+        .sheet(item: $editing) { item in
+            CupboardItemSheet(item: item, session: session) { await load() }
+        }
     }
 
     @ViewBuilder
@@ -166,6 +174,130 @@ struct CupboardView: View {
 
     private func replace(_ item: CupboardItem) {
         if let i = items.firstIndex(where: { $0.id == item.id }) { items[i] = item }
+    }
+}
+
+/// What one thing in the cupboard is: whether it is a staple, whether it is counted, and the
+/// ways out — back on the list, or gone. Tapping a row on the web opens the same thing.
+struct CupboardItemSheet: View {
+    let item: CupboardItem
+    var session: Session
+    var onChanged: () async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var staple: Bool
+    @State private var tracks: Bool
+    @State private var amount: Double
+    @State private var unit: String
+    @State private var busy = false
+    @State private var error: String?
+
+    init(item: CupboardItem, session: Session, onChanged: @escaping () async -> Void) {
+        self.item = item
+        self.session = session
+        self.onChanged = onChanged
+        _staple = State(initialValue: item.staple)
+        _tracks = State(initialValue: item.tracksQuantity)
+        _amount = State(initialValue: item.quantity ?? 1)
+        _unit = State(initialValue: item.unit ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Status", value: item.runningLow ? "Running low" : "Have some")
+                    LabeledContent("On the grocery list", value: item.onList ? "Yes" : "No")
+                    if let amount = item.amount {
+                        LabeledContent("In the cupboard", value: amount)
+                    }
+                }
+
+                Section {
+                    Toggle("Always have", isOn: $staple)
+                    Toggle("Count how much is left", isOn: $tracks)
+                    if tracks {
+                        HStack {
+                            Text("Amount")
+                            Spacer()
+                            TextField("0", value: $amount, format: .number)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                            TextField("unit", text: $unit)
+                                .frame(width: 64)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                } footer: {
+                    Text("A staple goes back on the list as soon as it runs low.")
+                }
+
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
+                }
+
+                Section {
+                    Button("Put it back on the list", systemImage: "cart.badge.plus") {
+                        Task { await buyAgain() }
+                    }
+                    Button("Remove from the cupboard", systemImage: "trash", role: .destructive) {
+                        Task { await remove() }
+                    }
+                }
+            }
+            .navigationTitle(item.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") { Task { await save() } }.disabled(busy)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func save() async {
+        guard let household = session.household?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await APIClient.shared.editCupboard(
+                household: household,
+                item: item.id,
+                staple: staple,
+                trackQuantity: tracks,
+                quantity: tracks ? amount : nil,
+                unit: tracks ? unit : nil
+            )
+            await onChanged()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func buyAgain() async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.buyAgain(household: household, item: item.id)
+            await onChanged()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func remove() async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.removeFromCupboard(household: household, item: item.id)
+            await onChanged()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
