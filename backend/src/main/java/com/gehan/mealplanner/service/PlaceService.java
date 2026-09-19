@@ -14,8 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.List;
 import java.util.UUID;
 
@@ -117,21 +115,9 @@ public class PlaceService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    /** Same rule as recipe video links: this becomes an href, so only http(s) gets through. */
+    /** See {@link WebLinks}. */
     private static String normalizeLink(String raw) {
-        String trimmed = blankToNull(raw);
-        if (trimmed == null) {
-            return null;
-        }
-        try {
-            String scheme = new URI(trimmed).getScheme();
-            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
-            }
-        } catch (URISyntaxException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
-        }
-        return trimmed;
+        return WebLinks.normalize(raw);
     }
 
     private PlaceResponse toResponse(Place place) {

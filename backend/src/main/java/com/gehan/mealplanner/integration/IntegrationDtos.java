@@ -3,6 +3,9 @@ package com.gehan.mealplanner.integration;
 import com.gehan.mealplanner.domain.MealType;
 import com.gehan.mealplanner.domain.RecipeSection;
 
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -81,14 +84,15 @@ public class IntegrationDtos {
      * `text` is the whole line pre-rendered — "1½ cup flour, sifted" — because a dashboard
      * almost always wants to print it rather than lay out three columns.
      */
-    public record IngredientLine(String name, String quantity, String unit, String notes, String text) {
+    public record IngredientLine(String name, String quantity, String unit, String notes, boolean optional, String text) {
     }
 
     public record GroceryItem(UUID id, String name, String quantity, String unit, boolean checked) {
     }
 
     /** `name` is free text — it does not have to match an ingredient the app already knows. */
-    public record AddGroceryItemRequest(String name, BigDecimal quantity, String unit) {
+    public record AddGroceryItemRequest(
+            @Size(max = 200) String name, @PositiveOrZero BigDecimal quantity, @Size(max = 40) String unit) {
     }
 
     public record SetCheckedRequest(Boolean checked) {

@@ -32,7 +32,7 @@ public class GroceryListController {
     @PostMapping("/grocery-list/items")
     public ResponseEntity<GroceryListItemResponse> addItem(@AuthenticationPrincipal UUID userId,
                                                              @PathVariable UUID householdId,
-                                                             @RequestBody AddItemRequest request) {
+                                                             @Valid @RequestBody AddItemRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(groceryListService.addManualItem(householdId, userId, request));
     }

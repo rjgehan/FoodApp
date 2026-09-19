@@ -188,7 +188,7 @@ files it; without it both come back empty.
   "videoUrl": "https://www.tiktok.com/…",
   "ingredients": [
     { "name": "sweetened condensed milk", "quantity": "⅓", "unit": "cup",
-      "notes": null, "text": "⅓ cup sweetened condensed milk" }
+      "notes": null, "optional": false, "text": "⅓ cup sweetened condensed milk" }
   ],
   "steps": [
     "Preheat the oven to 350°F and line a small baking dish with parchment paper.",
@@ -201,7 +201,8 @@ Two things done for you, so you don't reimplement them and drift out of step wit
 
 - **`ingredients[].text`** is the whole line pre-rendered — `"⅓ cup sweetened condensed milk"`.
   `quantity` is already a fraction glyph, not `0.333`. The separate fields are there if you want
-  to lay out columns instead.
+  to lay out columns instead. An ingredient a cook can skip has `"optional": true`, and its `text`
+  ends in `(optional)`.
 - **`steps`** is the instructions split one per line with any numbering the writer typed
   (`1.`, `-`, `•`) already stripped. Render them in an `<ol>`.
 

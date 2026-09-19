@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.AdjustQuantityRequest;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
 import com.gehan.mealplanner.service.CupboardService;
@@ -39,8 +40,17 @@ public class CupboardController {
     public CupboardItemResponse update(@AuthenticationPrincipal UUID userId,
                                        @PathVariable UUID householdId,
                                        @PathVariable UUID itemId,
-                                       @RequestBody UpdateCupboardItemRequest request) {
+                                       @Valid @RequestBody UpdateCupboardItemRequest request) {
         return cupboardService.update(householdId, itemId, userId, request);
+    }
+
+    /** Nudges an item already tracking an exact amount up or down, without opening the full editor. */
+    @PostMapping("/{itemId}/adjust")
+    public CupboardItemResponse adjust(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID householdId,
+                                        @PathVariable UUID itemId,
+                                        @Valid @RequestBody AdjustQuantityRequest request) {
+        return cupboardService.adjustQuantity(householdId, itemId, userId, request.delta());
     }
 
     /** Used up and wanted again — off the cupboard, onto the grocery list. */

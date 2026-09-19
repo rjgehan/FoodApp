@@ -13,9 +13,11 @@ export interface DraftIngredient {
   ingredientName: string;
   quantity: number | null;
   unit: string;
+  /** Something a cook might skip — chosen per occasion when the recipe is planned. */
+  optional?: boolean;
 }
 
-export const emptyIngredient: DraftIngredient = { ingredientName: '', quantity: null, unit: '' };
+export const emptyIngredient: DraftIngredient = { ingredientName: '', quantity: null, unit: '', optional: false };
 
 /** What the recipe writer hands back: fields to start from, with no saved recipe behind them. */
 export interface RecipeDraft {
@@ -63,6 +65,7 @@ export default function RecipeForm({
           ingredientName: i.ingredientName,
           quantity: i.quantity,
           unit: i.unit ?? '',
+          optional: 'optional' in i ? Boolean(i.optional) : false,
         }))
       : [{ ...emptyIngredient }],
   );
@@ -161,7 +164,7 @@ export default function RecipeForm({
 
       <section>
         <h2 className="text-lg font-semibold">Ingredients</h2>
-        <p className="mb-1 text-sm text-muted">Type a line like “2 cups flour” — the amount fills itself in.</p>
+        <p className="mb-1 text-sm text-muted">Type a line like “2 cups flour” — the amount fills itself in. Opt marks an optional extra.</p>
         <ul className="divide-y divide-line">
           {ingredients.map((row, i) => (
             <li key={i} className="flex items-center gap-1.5 py-1.5">
@@ -195,6 +198,18 @@ export default function RecipeForm({
                 }}
                 aria-label={`Ingredient ${i + 1}`}
               />
+              <button
+                type="button"
+                aria-pressed={Boolean(row.optional)}
+                title={row.optional ? 'Optional — tap to require it' : 'Tap to mark optional'}
+                onClick={() => updateIngredient(i, { optional: !row.optional })}
+                className={
+                  'shrink-0 rounded-full px-2 py-1 text-xs font-medium ' +
+                  (row.optional ? 'bg-accent-soft text-accent' : 'bg-elevated text-subtle')
+                }
+              >
+                Opt
+              </button>
               <IconButton
                 label={`Remove ingredient ${i + 1}`}
                 className="text-subtle"
@@ -238,7 +253,7 @@ export default function RecipeForm({
         {!showExtras ? (
           <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setShowExtras(true)}>
             <PlusIcon className="h-4 w-4" />
-            Photo, times, video, sub-categories
+            Photo, times, video, groups
           </Button>
         ) : (
           <div className="space-y-4">

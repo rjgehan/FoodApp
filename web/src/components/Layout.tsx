@@ -2,24 +2,18 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
-import { cx, IconButton } from './ui';
+import { cx } from './ui';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
   CalendarIcon,
   CartIcon,
   CupboardIcon,
-  HomeIcon,
   HouseholdIcon,
-  LogOutIcon,
 } from './icons';
 
-/*
- * Named for what is behind each tab. "Home" said nothing about the screen — it is today's
- * meals and what is left to buy, so it is Today.
- */
+/* Named for what is behind each tab. Five, the most a phone tab bar should hold. */
 const navItems = [
-  { to: '/', label: 'Today', Icon: HomeIcon },
   { to: '/meal-plan', label: 'Plan', Icon: CalendarIcon },
   { to: '/recipes', label: 'Recipes', Icon: BookIcon },
   { to: '/grocery-list', label: 'Groceries', Icon: CartIcon },
@@ -33,7 +27,7 @@ const navItems = [
  * frosted glass with a hairline edge, and the page's title shrinks into the middle of it.
  */
 export default function Layout({ children }: { children: ReactNode }) {
-  const { session, logout } = useAuth();
+  const { session } = useAuth();
   const { households, activeHouseholdId, setActiveHouseholdId } = useHousehold();
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
@@ -93,7 +87,8 @@ export default function Layout({ children }: { children: ReactNode }) {
               {compactTitle}
             </span>
 
-            <div className="ml-auto flex items-center gap-1">
+            {/* Who is signed in. Signing out is rare and lives under Household → You, not a tap away here. */}
+            <div className="ml-auto flex h-11 items-center gap-1">
               <span className="hidden text-sm text-muted sm:inline">{session?.displayName}</span>
               <span
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-sm
@@ -102,9 +97,6 @@ export default function Layout({ children }: { children: ReactNode }) {
               >
                 {session?.displayName?.charAt(0).toUpperCase()}
               </span>
-              <IconButton label="Log out" className="text-muted" onClick={logout}>
-                <LogOutIcon className="h-5 w-5" />
-              </IconButton>
             </div>
           </div>
 
@@ -114,7 +106,6 @@ export default function Layout({ children }: { children: ReactNode }) {
               <NavLink
                 key={to}
                 to={to}
-                end={to === '/'}
                 className={({ isActive }) =>
                   cx(
                     'press flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium',
@@ -138,7 +129,6 @@ export default function Layout({ children }: { children: ReactNode }) {
               <NavLink
                 key={to}
                 to={to}
-                end={to === '/'}
                 className={({ isActive }) =>
                   cx(
                     'press flex flex-1 flex-col items-center gap-0.5 pb-1 pt-1.5 text-[0.625rem] font-medium tracking-[0.01em]',

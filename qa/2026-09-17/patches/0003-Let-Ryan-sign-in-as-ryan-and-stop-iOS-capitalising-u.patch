@@ -1,0 +1,239 @@
+From f67ed179aeda6be02bf49fec744390e233d7c94d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:34:32 -0400
+Subject: [PATCH 03/12] Let "Ryan" sign in as ryan, and stop iOS capitalising
+ usernames
+
+Sign-in now finds an exact username first, then an unambiguous
+case-insensitive match. The PIN lockout counts per lowercased name so
+changing the case doesn't give extra tries. New usernames can't clash
+by case. Username fields turn off autocapitalise and autocorrect.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../mealplanner/repository/UserRepository.java | 18 ++++++++++++++++++
+ .../gehan/mealplanner/service/AuthService.java | 15 +++++++++------
+ .../mealplanner/service/HouseholdService.java  |  8 ++++----
+ web/src/components/ui.tsx                      | 10 ++++++++++
+ web/src/pages/HouseholdPage.tsx                |  5 ++++-
+ web/src/pages/LoginPage.tsx                    |  5 ++++-
+ 6 files changed, 49 insertions(+), 12 deletions(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java b/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
+index e205dc6..ee101d9 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
++++ b/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
+@@ -3,10 +3,28 @@ package com.gehan.mealplanner.repository;
+ import com.gehan.mealplanner.domain.User;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ 
++import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+ 
+ public interface UserRepository extends JpaRepository<User, UUID> {
+     Optional<User> findByUsername(String username);
+     boolean existsByUsername(String username);
++
++    List<User> findByUsernameIgnoreCase(String username);
++    boolean existsByUsernameIgnoreCase(String username);
++
++    /**
++     * What someone typed to sign in. Phones capitalise the first letter of a text field, so
++     * "Ryan" has to find "ryan". An exact match wins; otherwise a case-insensitive one, but only
++     * when it is unambiguous — accounts made before names were compared this way could differ
++     * only by case.
++     */
++    default Optional<User> findForSignIn(String typed) {
++        String username = typed.trim();
++        return findByUsername(username).or(() -> {
++            List<User> matches = findByUsernameIgnoreCase(username);
++            return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
++        });
++    }
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java b/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
+index 50f2c32..0281cdd 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
+@@ -91,31 +91,34 @@ public class AuthService {
+     /** Backs the "sign in with a username instead" escape hatch, for people in no household yet. */
+     @Transactional(readOnly = true)
+     public UserSummary findUser(String username) {
+-        return userRepository.findByUsername(username.trim())
++        return userRepository.findForSignIn(username)
+                 .map(this::toSummary)
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
+     }
+ 
+     public AuthResponse login(LoginRequest request) {
+         String username = request.username().trim();
++        // One counter per account, however it is capitalised — otherwise "Ryan", "RYAN" and
++        // "ryan" would each get their own five tries.
++        String limiterKey = username.toLowerCase(java.util.Locale.ROOT);
+ 
+-        long lockedFor = attemptLimiter.secondsUntilUnlocked(username);
++        long lockedFor = attemptLimiter.secondsUntilUnlocked(limiterKey);
+         if (lockedFor > 0) {
+             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                     "Too many incorrect PINs. Try again in " + Math.max(lockedFor / 60, 1) + " min.");
+         }
+ 
+-        User user = userRepository.findByUsername(username).orElse(null);
++        User user = userRepository.findForSignIn(username).orElse(null);
+         if (user != null && user.getPinHash() == null) {
+             // The UI normally routes these to the set-a-PIN flow; this covers a stale page.
+             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account still needs a PIN");
+         }
+         if (user == null || !passwordEncoder.matches(request.pin(), user.getPinHash())) {
+-            attemptLimiter.recordFailure(username);
++            attemptLimiter.recordFailure(limiterKey);
+             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect username or PIN");
+         }
+ 
+-        attemptLimiter.recordSuccess(username);
++        attemptLimiter.recordSuccess(limiterKey);
+         return toAuthResponse(user);
+     }
+ 
+@@ -125,7 +128,7 @@ public class AuthService {
+      */
+     @Transactional
+     public AuthResponse setInitialPin(SetPinRequest request) {
+-        User user = userRepository.findByUsername(request.username().trim())
++        User user = userRepository.findForSignIn(request.username())
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
+         if (user.getPinHash() != null) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account already has a PIN");
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java b/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
+index f8b0b71..1fc5dbe 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
+@@ -117,7 +117,7 @@ public class HouseholdService {
+ 
+         Household household = householdRepository.findById(householdId)
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+-        User newMember = userRepository.findByUsername(request.username())
++        User newMember = userRepository.findForSignIn(request.username())
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No user with that username"));
+ 
+         if (memberRepository.existsByHouseholdIdAndUserId(householdId, newMember.getId())) {
+@@ -147,7 +147,7 @@ public class HouseholdService {
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+ 
+         String username = request.username().trim();
+-        if (userRepository.existsByUsername(username)) {
++        if (userRepository.existsByUsernameIgnoreCase(username)) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT,
+                     "Someone already uses that name — invite them instead.");
+         }
+@@ -212,7 +212,7 @@ public class HouseholdService {
+     @Transactional
+     public MemberResponse createUnassignedUser(CreateUserRequest request) {
+         String username = request.username().trim();
+-        if (userRepository.existsByUsername(username)) {
++        if (userRepository.existsByUsernameIgnoreCase(username)) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT,
+                     "Someone already uses that name — invite them instead.");
+         }
+@@ -240,7 +240,7 @@ public class HouseholdService {
+ 
+         if (request.username() != null && !request.username().isBlank()) {
+             String username = request.username().trim();
+-            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsername(username)) {
++            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsernameIgnoreCase(username)) {
+                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already uses that name.");
+             }
+             user.setUsername(username);
+diff --git a/web/src/components/ui.tsx b/web/src/components/ui.tsx
+index 9692613..841689e 100644
+--- a/web/src/components/ui.tsx
++++ b/web/src/components/ui.tsx
+@@ -161,6 +161,16 @@ function controlClass(extra?: string, className?: string) {
+   return cx(CONTROL, !/(^|\s)w-/.test(merged) && 'w-full', merged);
+ }
+ 
++/**
++ * For any field that takes a username. iOS capitalises the first letter and "corrects" names
++ * unless told not to, and a username is neither a sentence nor a word.
++ */
++export const usernameInputProps = {
++  autoCapitalize: 'none',
++  autoCorrect: 'off',
++  spellCheck: false,
++} as const;
++
+ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+   return <input className={controlClass(undefined, className)} {...props} />;
+ }
+diff --git a/web/src/pages/HouseholdPage.tsx b/web/src/pages/HouseholdPage.tsx
+index f901dd6..afbed04 100644
+--- a/web/src/pages/HouseholdPage.tsx
++++ b/web/src/pages/HouseholdPage.tsx
+@@ -19,6 +19,7 @@ import {
+   Input,
+   NumberInput,
+   Sheet,
++  usernameInputProps,
+ } from '../components/ui';
+ import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
+ import PlaceActions from '../components/PlaceActions';
+@@ -269,6 +270,7 @@ function ProfileCard() {
+             value={username}
+             onChange={(e) => setUsername(e.target.value)}
+             placeholder={loaded ? '' : 'Loading…'}
++            {...usernameInputProps}
+           />
+         </Field>
+         {error && <ErrorText>{error}</ErrorText>}
+@@ -328,7 +330,7 @@ function LooseAccountForm() {
+           them to yours later.
+         </p>
+         <Field label="Username">
+-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" />
++          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" {...usernameInputProps} />
+         </Field>
+         <Field label="Name" hint="Optional — what they're called on screen.">
+           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Grandad" />
+@@ -991,6 +993,7 @@ function AddPersonForm({
+             onChange={(e) => setUsername(e.target.value)}
+             placeholder="username"
+             aria-label={label}
++            {...usernameInputProps}
+           />
+           <Button type="submit" variant="secondary" disabled={busy || !username.trim()}>
+             {action}
+diff --git a/web/src/pages/LoginPage.tsx b/web/src/pages/LoginPage.tsx
+index d155ed1..66d5e5b 100644
+--- a/web/src/pages/LoginPage.tsx
++++ b/web/src/pages/LoginPage.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
+ import { useAuth } from '../auth/AuthContext';
+ import { api, ApiError } from '../api/client';
+ import type { HouseholdSummary, LandingResponse, UserSummary } from '../api/types';
+-import { Button, ErrorText, Field, Input } from '../components/ui';
++import { Button, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
+ import Keypad, { PinDots } from '../components/Keypad';
+ import { PIN_LENGTH } from '../auth/pin';
+ 
+@@ -208,6 +208,8 @@ export default function LoginPage() {
+               autoFocus
+               required
+               placeholder="username"
++              autoComplete="username"
++              {...usernameInputProps}
+               value={username}
+               onChange={(e) => setUsername(e.target.value)}
+               className="text-center"
+@@ -238,6 +240,7 @@ export default function LoginPage() {
+               <Input
+                 required
+                 placeholder="ryan"
++                {...usernameInputProps}
+                 value={username}
+                 onChange={(e) => setUsername(e.target.value)}
+               />
+-- 
+2.42.0
+

@@ -41,6 +41,8 @@ export interface RecipeCategory {
   recipeCount: number;
   /** The group this one sits inside; null at the top of a drawer. */
   parentId: string | null;
+  /** The drawer it belongs to; null means it shows in every drawer. */
+  section: RecipeSection | null;
 }
 
 export interface Household {
@@ -72,6 +74,9 @@ export interface CupboardItem {
   sorted: boolean;
   /** Waiting on the grocery list, unticked. */
   onList: boolean;
+  /** Null means this item uses the simple Have/Low toggle instead. */
+  quantity: number | null;
+  unit: string | null;
 }
 
 export type HouseholdRole = 'OWNER' | 'MEMBER';
@@ -89,6 +94,8 @@ export interface RecipeIngredientInput {
   quantity: number;
   unit: string;
   notes?: string;
+  /** Something a cook might skip — chosen per occasion when the recipe is planned. */
+  optional?: boolean;
 }
 
 export interface RecipeIngredient {
@@ -97,6 +104,7 @@ export interface RecipeIngredient {
   quantity: number;
   unit: string;
   notes: string | null;
+  optional: boolean;
 }
 
 /** Ingredient quantities are written for `servings` people, as the recipe actually makes them. */
@@ -147,6 +155,7 @@ export interface PublicIngredient {
   quantity: number;
   unit: string;
   notes: string | null;
+  optional: boolean;
 }
 
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
@@ -172,6 +181,8 @@ export interface MealPlanEntry {
   time: string | null;
   servings: number | null;
   notes: string | null;
+  /** Which of the recipe's optional ingredients were chosen for this occurrence. */
+  includedOptionalIngredientIds: string[];
 }
 
 /** Somewhere you eat instead of cooking. Only the name is required. */

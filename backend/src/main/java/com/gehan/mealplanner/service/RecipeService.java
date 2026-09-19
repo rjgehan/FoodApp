@@ -36,8 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.EnumMap;
@@ -51,8 +49,29 @@ import java.util.stream.Collectors;
 @Service
 public class RecipeService {
 
-    /** What a brand new household starts with, so the sub-category level is never empty. */
-    public static final List<String> DEFAULT_CATEGORIES = List.of("Main dish", "Side", "Veggie", "Full meal");
+    /** A starting group, and the groups inside it. */
+    public record DefaultGroup(String name, List<String> children) {
+        DefaultGroup(String name) {
+            this(name, List.of());
+        }
+    }
+
+    /**
+     * What a brand new household starts with, so no drawer opens onto nothing. Each drawer has its
+     * own groups: Breakfast's "Main" is porridge, Dinner's is a roast, and they are separate rows.
+     * A household renames, deletes and adds to these — they are a starting point, not a fixed list.
+     */
+    public static final Map<RecipeSection, List<DefaultGroup>> DEFAULT_GROUPS = Map.of(
+            RecipeSection.BREAKFAST, List.of(new DefaultGroup("Main"), new DefaultGroup("Morning drinks"), new DefaultGroup("Fruit")),
+            RecipeSection.LUNCH, List.of(new DefaultGroup("Main"), new DefaultGroup("Sandwiches"), new DefaultGroup("Side")),
+            RecipeSection.DINNER, List.of(
+                    new DefaultGroup("Main", List.of("Beef", "Chicken", "Pork", "Seafood")),
+                    new DefaultGroup("Full meal"),
+                    new DefaultGroup("Side"),
+                    new DefaultGroup("Veggie")),
+            RecipeSection.SNACKS, List.of(new DefaultGroup("Sweet"), new DefaultGroup("Savoury")),
+            RecipeSection.DRINKS, List.of(new DefaultGroup("Cold"), new DefaultGroup("Hot")),
+            RecipeSection.OTHER, List.of(new DefaultGroup("Sauces & dips"), new DefaultGroup("Baking")));
 
     private final RecipeRepository recipeRepository;
     private final RecipeCategoryRepository categoryRepository;
@@ -117,6 +136,7 @@ public class RecipeService {
                         .quantity(i.quantity())
                         .unit(i.unit())
                         .notes(i.notes())
+                        .optional(Boolean.TRUE.equals(i.optional()))
                         .build()));
 
         Recipe saved = recipeRepository.save(recipe);
@@ -171,6 +191,7 @@ public class RecipeService {
                         .quantity(i.quantity())
                         .unit(i.unit())
                         .notes(i.notes())
+                        .optional(Boolean.TRUE.equals(i.optional()))
                         .build()));
 
         Recipe saved = recipeRepository.save(recipe);
@@ -241,27 +262,9 @@ public class RecipeService {
         return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
     }
 
-    /**
-     * Only http(s) survives. This link is rendered as an anchor, so letting through something like
-     * a javascript: url would hand whoever saved it a script injection on everyone who opens the
-     * recipe — including the households it was shared with.
-     */
+    /** See {@link WebLinks}. */
     private static String normalizeLink(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        String trimmed = raw.trim();
-        URI uri;
-        try {
-            uri = new URI(trimmed);
-        } catch (URISyntaxException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
-        }
-        String scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
-        }
-        return trimmed;
+        return WebLinks.normalize(raw);
     }
 
     /** Attaches a cover and photo strip. Only the owning household can change a recipe's pictures. */
@@ -384,10 +387,12 @@ public class RecipeService {
         householdService.assertMember(householdId, requesterId);
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-        String name = requireFreeName(householdId, request.name(), null);
         RecipeCategory parent = request.parentId() == null ? null : requireCategory(householdId, request.parentId());
+        // A group inside another belongs to the same drawer as the one it sits in.
+        RecipeSection section = parent != null ? parent.getSection() : request.section();
+        String name = requireFreeName(householdId, request.name(), null, section);
         return toCategoryResponse(categoryRepository.save(
-                RecipeCategory.builder().household(household).name(name).parent(parent).build()), 0);
+                RecipeCategory.builder().household(household).name(name).section(section).parent(parent).build()), 0);
     }
 
     /** Rename a group, or move it inside another — never inside itself. */
@@ -398,7 +403,7 @@ public class RecipeService {
         RecipeCategory category = requireCategory(householdId, categoryId);
 
         if (request.name() != null) {
-            category.setName(requireFreeName(householdId, request.name(), categoryId));
+            category.setName(requireFreeName(householdId, request.name(), categoryId, category.getSection()));
         }
         if (Boolean.TRUE.equals(request.toTop())) {
             category.setParent(null);
@@ -411,6 +416,10 @@ public class RecipeService {
                 }
             }
             category.setParent(parent);
+            // Moved into another drawer's group: it and everything inside it move with it.
+            if (parent.getSection() != category.getSection()) {
+                moveToSection(householdId, category, parent.getSection());
+            }
         }
 
         RecipeCategory saved = categoryRepository.save(category);
@@ -477,12 +486,25 @@ public class RecipeService {
      * Names stay unique in a household, because a recipe is filed by name — two groups called
      * Chicken would be one group as far as filing could tell. `self` is the group being renamed.
      */
-    private String requireFreeName(UUID householdId, String raw, UUID self) {
+    /** A drawer's own group and everything nested in it belong to that drawer. */
+    private void moveToSection(UUID householdId, RecipeCategory category, RecipeSection section) {
+        category.setSection(section);
+        for (RecipeCategory child : categoryRepository.findByHouseholdIdOrderByNameAsc(householdId)) {
+            if (child.getParent() != null && child.getParent().getId().equals(category.getId())) {
+                moveToSection(householdId, child, section);
+                categoryRepository.save(child);
+            }
+        }
+    }
+
+    private String requireFreeName(UUID householdId, String raw, UUID self, RecipeSection section) {
         String name = normalizeCategoryName(raw);
         if (name.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A group needs a name.");
         }
-        categoryRepository.findByHouseholdIdAndNameIgnoreCase(householdId, name)
+        // Only within the same drawer: Breakfast can have a Main even though Dinner has one.
+        categoryRepository.findByHouseholdIdAndSectionAndNameIgnoreCase(householdId, section, name)
+                .or(() -> categoryRepository.findByHouseholdIdAndSectionIsNullAndNameIgnoreCase(householdId, name))
                 .filter(existing -> !existing.getId().equals(self))
                 .ifPresent(existing -> {
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -493,7 +515,7 @@ public class RecipeService {
 
     private static RecipeCategoryResponse toCategoryResponse(RecipeCategory category, int recipeCount) {
         return new RecipeCategoryResponse(category.getId(), category.getName(), recipeCount,
-                category.getParent() == null ? null : category.getParent().getId());
+                category.getParent() == null ? null : category.getParent().getId(), category.getSection());
     }
 
     @Transactional(readOnly = true)
@@ -532,10 +554,24 @@ public class RecipeService {
         return sectionIcons(householdId, requesterId);
     }
 
-    /** Gives a new household the starting sub-categories so the second level is never blank. */
+    /** Gives a new household the starting groups so no drawer opens onto nothing. */
     @Transactional
     public void seedDefaultCategories(Household household) {
-        DEFAULT_CATEGORIES.forEach(name -> findOrCreateCategory(household, name));
+        seedDefaultGroups(household, categoryRepository);
+    }
+
+    /** Also called from HouseholdService, which makes households without going through here. */
+    public static void seedDefaultGroups(Household household, RecipeCategoryRepository categories) {
+        DEFAULT_GROUPS.forEach((section, groups) -> {
+            for (DefaultGroup group : groups) {
+                RecipeCategory parent = categories.save(
+                        RecipeCategory.builder().household(household).name(group.name()).section(section).build());
+                for (String child : group.children()) {
+                    categories.save(RecipeCategory.builder()
+                            .household(household).name(child).section(section).parent(parent).build());
+                }
+            }
+        });
     }
 
     private RecipeFiling upsertFiling(Household household, Recipe recipe,
@@ -544,14 +580,15 @@ public class RecipeService {
                 .findByHouseholdIdAndRecipeId(household.getId(), recipe.getId())
                 .orElseGet(() -> RecipeFiling.builder().household(household).recipe(recipe).build());
 
-        filing.setSection(section == null ? RecipeSection.OTHER : section);
+        RecipeSection filed = section == null ? RecipeSection.OTHER : section;
+        filing.setSection(filed);
 
         Set<RecipeCategory> resolved = new LinkedHashSet<>();
         if (categoryNames != null) {
             for (String raw : categoryNames) {
                 String name = normalizeCategoryName(raw);
                 if (!name.isEmpty()) {
-                    resolved.add(findOrCreateCategory(household, name));
+                    resolved.add(findOrCreateCategory(household, name, filed));
                 }
             }
         }
@@ -559,11 +596,15 @@ public class RecipeService {
         return filingRepository.save(filing);
     }
 
-    /** Case-insensitive match, so "Freezer" and "freezer" never become two categories. */
-    private RecipeCategory findOrCreateCategory(Household household, String name) {
-        return categoryRepository.findByHouseholdIdAndNameIgnoreCase(household.getId(), name)
+    /**
+     * The group of that name in this recipe's drawer, or the drawer-less one of that name, or a
+     * new one in this drawer. Case-insensitive, so "Freezer" and "freezer" stay one group.
+     */
+    private RecipeCategory findOrCreateCategory(Household household, String name, RecipeSection section) {
+        return categoryRepository.findByHouseholdIdAndSectionAndNameIgnoreCase(household.getId(), section, name)
+                .or(() -> categoryRepository.findByHouseholdIdAndSectionIsNullAndNameIgnoreCase(household.getId(), name))
                 .orElseGet(() -> categoryRepository.save(
-                        RecipeCategory.builder().household(household).name(name).build()));
+                        RecipeCategory.builder().household(household).name(name).section(section).build()));
     }
 
     private static String normalizeCategoryName(String raw) {
@@ -573,7 +614,7 @@ public class RecipeService {
     private RecipeResponse toResponse(Recipe recipe, RecipeFiling filing, UUID viewingHouseholdId) {
         List<RecipeIngredientResponse> ingredients = recipe.getIngredients().stream()
                 .map(i -> new RecipeIngredientResponse(
-                        i.getId(), i.getIngredient().getName(), i.getQuantity(), i.getUnit(), i.getNotes()))
+                        i.getId(), i.getIngredient().getName(), i.getQuantity(), i.getUnit(), i.getNotes(), i.isOptional()))
                 .toList();
 
         // Materialized here, not handed over live: Jackson serializes after the transaction closes.

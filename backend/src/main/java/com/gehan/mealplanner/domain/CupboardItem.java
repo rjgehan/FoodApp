@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -60,7 +61,26 @@ public class CupboardItem {
     @Builder.Default
     private boolean runningLow = false;
 
+    /**
+     * An exact count instead of Have/Low — "3 cans of beans" rather than just Have. Null means
+     * this item still uses the simple Have/Low toggle above; each household's items can mix both.
+     */
+    @Column(precision = 10, scale = 2)
+    private BigDecimal quantity;
+
+    private String unit;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
+
+    /** Counted, and the count is down to nothing — as good as not having it. */
+    public boolean isUsedUp() {
+        return quantity != null && quantity.signum() <= 0;
+    }
+
+    /** Low or used up: planning should not count on it. */
+    public boolean isShort() {
+        return runningLow || isUsedUp();
+    }
 }

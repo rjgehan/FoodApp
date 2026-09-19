@@ -1,0 +1,1411 @@
+diff --git a/INTEGRATION.md b/INTEGRATION.md
+index dc586ba..8eda237 100644
+--- a/INTEGRATION.md
++++ b/INTEGRATION.md
+@@ -188,7 +188,7 @@ files it; without it both come back empty.
+   "videoUrl": "https://www.tiktok.com/…",
+   "ingredients": [
+     { "name": "sweetened condensed milk", "quantity": "⅓", "unit": "cup",
+-      "notes": null, "text": "⅓ cup sweetened condensed milk" }
++      "notes": null, "optional": false, "text": "⅓ cup sweetened condensed milk" }
+   ],
+   "steps": [
+     "Preheat the oven to 350°F and line a small baking dish with parchment paper.",
+@@ -201,7 +201,8 @@ Two things done for you, so you don't reimplement them and drift out of step wit
+ 
+ - **`ingredients[].text`** is the whole line pre-rendered — `"⅓ cup sweetened condensed milk"`.
+   `quantity` is already a fraction glyph, not `0.333`. The separate fields are there if you want
+-  to lay out columns instead.
++  to lay out columns instead. An ingredient a cook can skip has `"optional": true`, and its `text`
++  ends in `(optional)`.
+ - **`steps`** is the instructions split one per line with any numbering the writer typed
+   (`1.`, `-`, `•`) already stripped. Render them in an `<ol>`.
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java b/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
+index 9af5587..4e8c377 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
++++ b/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
+@@ -73,4 +73,14 @@ public class CupboardItem {
+     @Column(nullable = false, updatable = false)
+     @Builder.Default
+     private Instant createdAt = Instant.now();
++
++    /** Counted, and the count is down to nothing — as good as not having it. */
++    public boolean isUsedUp() {
++        return quantity != null && quantity.signum() <= 0;
++    }
++
++    /** Low or used up: planning should not count on it. */
++    public boolean isShort() {
++        return runningLow || isUsedUp();
++    }
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java b/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
+index bf54844..5ba4876 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
++++ b/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
+@@ -10,6 +10,7 @@ import lombok.Setter;
+ import java.time.Instant;
+ import java.time.LocalDate;
+ import java.time.LocalTime;
++import java.util.Comparator;
+ import java.util.HashSet;
+ import java.util.Set;
+ import java.util.UUID;
+@@ -87,4 +88,14 @@ public class MealPlanEntry {
+     @Column(nullable = false, updatable = false)
+     @Builder.Default
+     private Instant createdAt = Instant.now();
++
++    /**
++     * Day, then breakfast → lunch → dinner → snack, then the order things were added — so a main
++     * comes before the sides added to it. The database can't do this: meal types are stored as
++     * text, which sorts DINNER before LUNCH, and it has no fixed order within a meal.
++     */
++    public static final Comparator<MealPlanEntry> EATING_ORDER = Comparator
++            .comparing(MealPlanEntry::getDate)
++            .thenComparing(MealPlanEntry::getMealType)
++            .thenComparing(MealPlanEntry::getCreatedAt);
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
+index 6ab0f0c..aa88513 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
+@@ -2,6 +2,8 @@ package com.gehan.mealplanner.dto;
+ 
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ 
+ import java.math.BigDecimal;
+ import java.util.UUID;
+@@ -9,7 +11,7 @@ import java.util.UUID;
+ public class CupboardDtos {
+ 
+     /** Adding something already in the cupboard says you have it again — no longer running low. */
+-    public record AddCupboardItemRequest(@NotBlank String name, Boolean staple) {
++    public record AddCupboardItemRequest(@NotBlank @Size(max = 200) String name, Boolean staple) {
+     }
+ 
+     /**
+@@ -20,8 +22,8 @@ public class CupboardDtos {
+      * Omitted, it leaves whichever mode the item is already in alone.
+      */
+     public record UpdateCupboardItemRequest(
+-            Boolean runningLow, Boolean staple, String name,
+-            Boolean trackQuantity, BigDecimal quantity, String unit) {
++            Boolean runningLow, Boolean staple, @Size(max = 200) String name,
++            Boolean trackQuantity, @PositiveOrZero BigDecimal quantity, @Size(max = 40) String unit) {
+     }
+ 
+     /** How much to add (or, negative, remove) from an item already tracking an exact amount. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
+index 3cd704a..0252990 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
+@@ -1,6 +1,8 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ 
+ import java.io.Serializable;
+ import java.math.BigDecimal;
+@@ -11,9 +13,9 @@ import java.util.UUID;
+ public class GroceryListDtos {
+ 
+     public record AddItemRequest(
+-            String ingredientName,
+-            BigDecimal quantity,
+-            String unit) {
++            @Size(max = 200) String ingredientName,
++            @PositiveOrZero BigDecimal quantity,
++            @Size(max = 40) String unit) {
+     }
+ 
+     /**
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
+index c7db30b..23686ec 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
+@@ -1,6 +1,7 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import com.gehan.mealplanner.domain.HouseholdRole;
++import jakarta.validation.constraints.Max;
+ import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotNull;
+@@ -10,7 +11,7 @@ import java.util.UUID;
+ 
+ public class HouseholdDtos {
+ 
+-    public record CreateHouseholdRequest(@NotBlank String name) {
++    public record CreateHouseholdRequest(@NotBlank @Size(max = 60) String name) {
+     }
+ 
+     /** `role` is the *requesting* user's role in this household, not a property of the household. */
+@@ -22,8 +23,11 @@ public class HouseholdDtos {
+     }
+ 
+     public record UpdateHouseholdSettingsRequest(
+-            @NotNull @Min(1) Integer defaultServings,
+-            @NotNull @Min(1) Integer planningHorizonDays) {
++            @NotNull @Min(1) @Max(MAX_SERVINGS) Integer defaultServings,
++            // Today and the Plan tab load this many days ahead, so it has to stay sensible.
++            @NotNull @Min(1) @Max(MAX_PLANNING_DAYS) Integer planningHorizonDays) {
++        public static final int MAX_SERVINGS = 50;
++        public static final int MAX_PLANNING_DAYS = 60;
+     }
+ 
+     /** Adds an account that already exists — including one belonging to another household. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
+index 8b38f91..90a6feb 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
+@@ -1,6 +1,7 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import com.gehan.mealplanner.domain.MealType;
++import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotNull;
+ 
+ import java.time.LocalDate;
+@@ -25,7 +26,7 @@ public class MealPlanDtos {
+             String itemName,
+             /** Optional "HH:mm". Null simply means no particular time. */
+             LocalTime time,
+-            Integer servings,
++            @Min(1) Integer servings,
+             String notes,
+             /**
+              * Which of the recipe's optional ingredients to buy this time — asked for once, when
+@@ -46,7 +47,7 @@ public class MealPlanDtos {
+              * means, and there is no way for JSON to tell that apart from "set it to nothing".
+              */
+             Boolean clearTime,
+-            Integer servings,
++            @Min(1) Integer servings,
+             String notes,
+             /** Same meaning as on {@link AddMealPlanEntryRequest}; null leaves it unchanged. */
+             List<UUID> includedOptionalIngredientIds) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+index 72b820b..b785c69 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotEmpty;
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ import jakarta.validation.Valid;
+ 
+ import java.math.BigDecimal;
+@@ -14,17 +16,21 @@ import java.util.UUID;
+ public class RecipeDtos {
+ 
+     public record RecipeIngredientRequest(
+-            @NotBlank String ingredientName,
+-            @NotNull BigDecimal quantity,
+-            String unit,
++            @NotBlank @Size(max = 200) String ingredientName,
++            @NotNull @PositiveOrZero BigDecimal quantity,
++            @Size(max = 40) String unit,
+             String notes,
+-            /** Something a cook might skip — chosen per occasion when the recipe is planned. */
+-            boolean optional) {
++            /**
++             * Something a cook might skip — chosen per occasion when the recipe is planned. A
++             * Boolean so that leaving it out means "no": a phone still running the app from before
++             * this field existed must still be able to save a recipe.
++             */
++            Boolean optional) {
+     }
+ 
+     /** Ingredient quantities are for the given servings count, as written — not normalized to 1 person. */
+     public record RecipeRequest(
+-            @NotBlank String name,
++            @NotBlank @Size(max = 200) String name,
+             String description,
+             String instructions,
+             Integer prepTimeMinutes,
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
+index fa1dd3a..e193dea 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
+@@ -2,9 +2,12 @@ package com.gehan.mealplanner.integration;
+ 
+ import com.gehan.mealplanner.domain.RecipeSection;
+ import com.gehan.mealplanner.integration.IntegrationDtos.*;
++import jakarta.validation.Valid;
+ import org.springframework.format.annotation.DateTimeFormat;
++import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.*;
++import org.springframework.web.server.ResponseStatusException;
+ 
+ import java.time.LocalDate;
+ import java.util.List;
+@@ -19,6 +22,8 @@ import java.util.UUID;
+ @RequestMapping("/api/integration")
+ public class IntegrationController {
+ 
++    private static final int MAX_PLAN_DAYS = 366;
++
+     private final IntegrationService service;
+ 
+     public IntegrationController(IntegrationService service) {
+@@ -51,6 +56,11 @@ public class IntegrationController {
+ 
+         LocalDate from = start != null ? start : LocalDate.now();
+         LocalDate to = end != null ? end : from.plusDays(days != null ? Math.max(days, 1) - 1 : 6);
++        // Every day comes back, empty or not, so an open-ended range is megabytes of nothing.
++        if (to.isBefore(from) || to.isAfter(from.plusDays(MAX_PLAN_DAYS - 1))) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
++                    "Ask for between 1 and " + MAX_PLAN_DAYS + " days.");
++        }
+         return service.plan(householdId, from, to);
+     }
+ 
+@@ -84,7 +94,7 @@ public class IntegrationController {
+      */
+     @PostMapping("/households/{householdId}/grocery-list")
+     public GroceryItem addGroceryItem(@PathVariable UUID householdId,
+-                                      @RequestBody AddGroceryItemRequest request) {
++                                      @Valid @RequestBody AddGroceryItemRequest request) {
+         return service.addGroceryItem(householdId, request);
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+index 09b9f2f..bb889a5 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+@@ -3,6 +3,9 @@ package com.gehan.mealplanner.integration;
+ import com.gehan.mealplanner.domain.MealType;
+ import com.gehan.mealplanner.domain.RecipeSection;
+ 
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
++
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.LocalTime;
+@@ -81,14 +84,15 @@ public class IntegrationDtos {
+      * `text` is the whole line pre-rendered — "1½ cup flour, sifted" — because a dashboard
+      * almost always wants to print it rather than lay out three columns.
+      */
+-    public record IngredientLine(String name, String quantity, String unit, String notes, String text) {
++    public record IngredientLine(String name, String quantity, String unit, String notes, boolean optional, String text) {
+     }
+ 
+     public record GroceryItem(UUID id, String name, String quantity, String unit, boolean checked) {
+     }
+ 
+     /** `name` is free text — it does not have to match an ingredient the app already knows. */
+-    public record AddGroceryItemRequest(String name, BigDecimal quantity, String unit) {
++    public record AddGroceryItemRequest(
++            @Size(max = 200) String name, @PositiveOrZero BigDecimal quantity, @Size(max = 40) String unit) {
+     }
+ 
+     public record SetCheckedRequest(Boolean checked) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+index 7890034..1d0a99a 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+@@ -65,6 +65,7 @@ public class IntegrationService {
+         }
+         mealPlanEntryRepository
+                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
++                .stream().sorted(MealPlanEntry.EATING_ORDER)
+                 .forEach(e -> byDate.computeIfAbsent(e.getDate(), k -> new ArrayList<>()).add(e));
+ 
+         return byDate.entrySet().stream().map(e -> new DayResponse(e.getKey(), meals(e.getValue()))).toList();
+@@ -136,8 +137,9 @@ public class IntegrationService {
+             String unit = i.getUnit() == null ? "" : i.getUnit();
+             String name = i.getIngredient().getName();
+             String text = (quantity + " " + unit).trim();
+-            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes());
+-            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), text);
++            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes())
++                    + (i.isOptional() ? " (optional)" : "");
++            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), i.isOptional(), text);
+         }).toList();
+ 
+         return new RecipeDetail(
+diff --git a/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java b/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
+index e205dc6..ee101d9 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
++++ b/backend/src/main/java/com/gehan/mealplanner/repository/UserRepository.java
+@@ -3,10 +3,28 @@ package com.gehan.mealplanner.repository;
+ import com.gehan.mealplanner.domain.User;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ 
++import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+ 
+ public interface UserRepository extends JpaRepository<User, UUID> {
+     Optional<User> findByUsername(String username);
+     boolean existsByUsername(String username);
++
++    List<User> findByUsernameIgnoreCase(String username);
++    boolean existsByUsernameIgnoreCase(String username);
++
++    /**
++     * What someone typed to sign in. Phones capitalise the first letter of a text field, so
++     * "Ryan" has to find "ryan". An exact match wins; otherwise a case-insensitive one, but only
++     * when it is unambiguous — accounts made before names were compared this way could differ
++     * only by case.
++     */
++    default Optional<User> findForSignIn(String typed) {
++        String username = typed.trim();
++        return findByUsername(username).or(() -> {
++            List<User> matches = findByUsernameIgnoreCase(username);
++            return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
++        });
++    }
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/security/StompAuthChannelInterceptor.java b/backend/src/main/java/com/gehan/mealplanner/security/StompAuthChannelInterceptor.java
+index df0172e..3168f0c 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/security/StompAuthChannelInterceptor.java
++++ b/backend/src/main/java/com/gehan/mealplanner/security/StompAuthChannelInterceptor.java
+@@ -1,5 +1,6 @@
+ package com.gehan.mealplanner.security;
+ 
++import com.gehan.mealplanner.repository.HouseholdMemberRepository;
+ import org.springframework.lang.NonNull;
+ import org.springframework.messaging.Message;
+ import org.springframework.messaging.MessageChannel;
+@@ -10,23 +11,39 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
+ import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+ import org.springframework.stereotype.Component;
+ 
++import java.security.Principal;
+ import java.util.List;
++import java.util.UUID;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
+ 
+-/** Requires a valid JWT on the STOMP CONNECT frame so only authenticated users can open the socket. */
++/**
++ * Requires a valid JWT on the STOMP CONNECT frame so only authenticated users can open the socket,
++ * and only lets them SUBSCRIBE to the households they belong to. Without the second check, any
++ * signed-in account could listen to any household's grocery list — and household ids are on the
++ * public sign-in screen.
++ */
+ @Component
+ public class StompAuthChannelInterceptor implements ChannelInterceptor {
+ 
++    private static final Pattern HOUSEHOLD_TOPIC = Pattern.compile("^/topic/households/([0-9a-fA-F-]{36})(/.*)?$");
++
+     private final JwtService jwtService;
++    private final HouseholdMemberRepository memberRepository;
+ 
+-    public StompAuthChannelInterceptor(JwtService jwtService) {
++    public StompAuthChannelInterceptor(JwtService jwtService, HouseholdMemberRepository memberRepository) {
+         this.jwtService = jwtService;
++        this.memberRepository = memberRepository;
+     }
+ 
+     @Override
+     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
++        if (accessor == null) {
++            return message;
++        }
+ 
+-        if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
++        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+             String header = accessor.getFirstNativeHeader("Authorization");
+             if (header == null || !header.startsWith("Bearer ") || !jwtService.isValid(header.substring(7))) {
+                 throw new IllegalArgumentException("Missing or invalid Authorization token for STOMP CONNECT");
+@@ -35,6 +52,24 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
+             accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+         }
+ 
++        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
++            assertMayListen(accessor.getUser(), accessor.getDestination());
++        }
++
+         return message;
+     }
++
++    private void assertMayListen(Principal user, String destination) {
++        if (!(user instanceof UsernamePasswordAuthenticationToken token) || !(token.getPrincipal() instanceof UUID userId)) {
++            throw new IllegalArgumentException("Not signed in");
++        }
++        Matcher m = destination == null ? null : HOUSEHOLD_TOPIC.matcher(destination);
++        if (m == null || !m.matches()) {
++            // Every topic the app publishes is per household; anything else is not for clients.
++            throw new IllegalArgumentException("Unknown destination");
++        }
++        if (!memberRepository.existsByHouseholdIdAndUserId(UUID.fromString(m.group(1)), userId)) {
++            throw new IllegalArgumentException("Not a member of this household");
++        }
++    }
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java b/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
+index 50f2c32..0281cdd 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/AuthService.java
+@@ -91,31 +91,34 @@ public class AuthService {
+     /** Backs the "sign in with a username instead" escape hatch, for people in no household yet. */
+     @Transactional(readOnly = true)
+     public UserSummary findUser(String username) {
+-        return userRepository.findByUsername(username.trim())
++        return userRepository.findForSignIn(username)
+                 .map(this::toSummary)
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
+     }
+ 
+     public AuthResponse login(LoginRequest request) {
+         String username = request.username().trim();
++        // One counter per account, however it is capitalised — otherwise "Ryan", "RYAN" and
++        // "ryan" would each get their own five tries.
++        String limiterKey = username.toLowerCase(java.util.Locale.ROOT);
+ 
+-        long lockedFor = attemptLimiter.secondsUntilUnlocked(username);
++        long lockedFor = attemptLimiter.secondsUntilUnlocked(limiterKey);
+         if (lockedFor > 0) {
+             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                     "Too many incorrect PINs. Try again in " + Math.max(lockedFor / 60, 1) + " min.");
+         }
+ 
+-        User user = userRepository.findByUsername(username).orElse(null);
++        User user = userRepository.findForSignIn(username).orElse(null);
+         if (user != null && user.getPinHash() == null) {
+             // The UI normally routes these to the set-a-PIN flow; this covers a stale page.
+             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account still needs a PIN");
+         }
+         if (user == null || !passwordEncoder.matches(request.pin(), user.getPinHash())) {
+-            attemptLimiter.recordFailure(username);
++            attemptLimiter.recordFailure(limiterKey);
+             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect username or PIN");
+         }
+ 
+-        attemptLimiter.recordSuccess(username);
++        attemptLimiter.recordSuccess(limiterKey);
+         return toAuthResponse(user);
+     }
+ 
+@@ -125,7 +128,7 @@ public class AuthService {
+      */
+     @Transactional
+     public AuthResponse setInitialPin(SetPinRequest request) {
+-        User user = userRepository.findByUsername(request.username().trim())
++        User user = userRepository.findForSignIn(request.username())
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
+         if (user.getPinHash() != null) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account already has a PIN");
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java b/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
+index 2461da3..e46def3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
+@@ -78,10 +78,10 @@ public class GroceryListService {
+             return item != null && item.isStaple();
+         }
+ 
+-        /** Enough to count on: in the cupboard, and not running low. */
++        /** Enough to count on: in the cupboard, not running low, and not counted down to zero. */
+         boolean has(Ingredient ingredient) {
+             CupboardItem item = cupboard.get(ingredient.getId());
+-            return item != null && !item.isRunningLow();
++            return item != null && !item.isShort();
+         }
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java b/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
+index f8b0b71..1fc5dbe 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/HouseholdService.java
+@@ -117,7 +117,7 @@ public class HouseholdService {
+ 
+         Household household = householdRepository.findById(householdId)
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+-        User newMember = userRepository.findByUsername(request.username())
++        User newMember = userRepository.findForSignIn(request.username())
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No user with that username"));
+ 
+         if (memberRepository.existsByHouseholdIdAndUserId(householdId, newMember.getId())) {
+@@ -147,7 +147,7 @@ public class HouseholdService {
+                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+ 
+         String username = request.username().trim();
+-        if (userRepository.existsByUsername(username)) {
++        if (userRepository.existsByUsernameIgnoreCase(username)) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT,
+                     "Someone already uses that name — invite them instead.");
+         }
+@@ -212,7 +212,7 @@ public class HouseholdService {
+     @Transactional
+     public MemberResponse createUnassignedUser(CreateUserRequest request) {
+         String username = request.username().trim();
+-        if (userRepository.existsByUsername(username)) {
++        if (userRepository.existsByUsernameIgnoreCase(username)) {
+             throw new ResponseStatusException(HttpStatus.CONFLICT,
+                     "Someone already uses that name — invite them instead.");
+         }
+@@ -240,7 +240,7 @@ public class HouseholdService {
+ 
+         if (request.username() != null && !request.username().isBlank()) {
+             String username = request.username().trim();
+-            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsername(username)) {
++            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsernameIgnoreCase(username)) {
+                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already uses that name.");
+             }
+             user.setUsername(username);
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+index ebf9d6c..1bbb6fa 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+@@ -59,7 +59,7 @@ public class MealPlanService {
+         Map<UUID, CupboardItem> cupboard = cupboard(householdId);
+         return mealPlanEntryRepository
+                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
+-                .stream().map(e -> toResponse(e, cupboard)).toList();
++                .stream().sorted(MealPlanEntry.EATING_ORDER).map(e -> toResponse(e, cupboard)).toList();
+     }
+ 
+     /** Adds a dish to a slot. Call it again to put sides alongside a main. */
+@@ -199,8 +199,8 @@ public class MealPlanService {
+                 entry.getPlace() != null ? entry.getPlace().getId() : null,
+                 entry.getPlace() != null ? entry.getPlace().getName() : null,
+                 item != null ? item.getName() : null,
+-                stocked != null,
+-                stocked != null && stocked.isRunningLow(),
++                stocked != null && !stocked.isUsedUp(),
++                stocked != null && stocked.isShort(),
+                 entry.getTime(),
+                 entry.getServings(),
+                 entry.getNotes(),
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java b/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
+index 9d03317..0dcb8bd 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
+@@ -14,8 +14,6 @@ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+ import org.springframework.web.server.ResponseStatusException;
+ 
+-import java.net.URI;
+-import java.net.URISyntaxException;
+ import java.util.List;
+ import java.util.UUID;
+ 
+@@ -117,21 +115,9 @@ public class PlaceService {
+         return value == null || value.isBlank() ? null : value.trim();
+     }
+ 
+-    /** Same rule as recipe video links: this becomes an href, so only http(s) gets through. */
++    /** See {@link WebLinks}. */
+     private static String normalizeLink(String raw) {
+-        String trimmed = blankToNull(raw);
+-        if (trimmed == null) {
+-            return null;
+-        }
+-        try {
+-            String scheme = new URI(trimmed).getScheme();
+-            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
+-            }
+-        } catch (URISyntaxException e) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
+-        }
+-        return trimmed;
++        return WebLinks.normalize(raw);
+     }
+ 
+     private PlaceResponse toResponse(Place place) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+index 3e15a96..bd118e3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+@@ -36,8 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
+ import org.springframework.web.server.ResponseStatusException;
+ 
+ import java.util.ArrayList;
+-import java.net.URI;
+-import java.net.URISyntaxException;
+ import java.util.LinkedHashSet;
+ import java.util.List;
+ import java.util.EnumMap;
+@@ -117,7 +115,7 @@ public class RecipeService {
+                         .quantity(i.quantity())
+                         .unit(i.unit())
+                         .notes(i.notes())
+-                        .optional(i.optional())
++                        .optional(Boolean.TRUE.equals(i.optional()))
+                         .build()));
+ 
+         Recipe saved = recipeRepository.save(recipe);
+@@ -172,7 +170,7 @@ public class RecipeService {
+                         .quantity(i.quantity())
+                         .unit(i.unit())
+                         .notes(i.notes())
+-                        .optional(i.optional())
++                        .optional(Boolean.TRUE.equals(i.optional()))
+                         .build()));
+ 
+         Recipe saved = recipeRepository.save(recipe);
+@@ -243,27 +241,9 @@ public class RecipeService {
+         return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
+     }
+ 
+-    /**
+-     * Only http(s) survives. This link is rendered as an anchor, so letting through something like
+-     * a javascript: url would hand whoever saved it a script injection on everyone who opens the
+-     * recipe — including the households it was shared with.
+-     */
++    /** See {@link WebLinks}. */
+     private static String normalizeLink(String raw) {
+-        if (raw == null || raw.isBlank()) {
+-            return null;
+-        }
+-        String trimmed = raw.trim();
+-        URI uri;
+-        try {
+-            uri = new URI(trimmed);
+-        } catch (URISyntaxException e) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
+-        }
+-        String scheme = uri.getScheme();
+-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
+-        }
+-        return trimmed;
++        return WebLinks.normalize(raw);
+     }
+ 
+     /** Attaches a cover and photo strip. Only the owning household can change a recipe's pictures. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java b/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java
+new file mode 100644
+index 0000000..dee3ff8
+--- /dev/null
++++ b/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java
+@@ -0,0 +1,49 @@
++package com.gehan.mealplanner.service;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.web.server.ResponseStatusException;
++
++import java.net.URI;
++import java.net.URISyntaxException;
++import java.util.regex.Pattern;
++
++/**
++ * Links people paste or type — a recipe's video, a restaurant's menu. They end up as an href, so
++ * only http(s) gets through: a javascript: url would be a script injection on everyone who opens
++ * the page, including households a recipe was shared with.
++ *
++ * People type "tiktok.com/@cook/…" rather than the full thing, so a bare address gets https://
++ * put in front instead of being refused.
++ */
++final class WebLinks {
++
++    /** Something with a scheme already — "https:", "javascript:", "mailto:". */
++    private static final Pattern HAS_SCHEME = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\\d)");
++
++    private WebLinks() {
++    }
++
++    static String normalize(String raw) {
++        if (raw == null || raw.isBlank()) {
++            return null;
++        }
++        String link = raw.trim();
++        if (!HAS_SCHEME.matcher(link).find()) {
++            link = "https://" + link.replaceFirst("^/+", "");
++        }
++        URI uri;
++        try {
++            uri = new URI(link);
++        } catch (URISyntaxException e) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
++        }
++        String scheme = uri.getScheme();
++        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
++        }
++        if (uri.getHost() == null || !uri.getHost().contains(".")) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
++        }
++        return link;
++    }
++}
+diff --git a/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java b/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
+index 3f474e5..2f52655 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
+@@ -40,7 +40,7 @@ public class CupboardController {
+     public CupboardItemResponse update(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID householdId,
+                                        @PathVariable UUID itemId,
+-                                       @RequestBody UpdateCupboardItemRequest request) {
++                                       @Valid @RequestBody UpdateCupboardItemRequest request) {
+         return cupboardService.update(householdId, itemId, userId, request);
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java b/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
+index 66cbdf7..bbf4813 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
+@@ -32,7 +32,7 @@ public class GroceryListController {
+     @PostMapping("/grocery-list/items")
+     public ResponseEntity<GroceryListItemResponse> addItem(@AuthenticationPrincipal UUID userId,
+                                                              @PathVariable UUID householdId,
+-                                                             @RequestBody AddItemRequest request) {
++                                                             @Valid @RequestBody AddItemRequest request) {
+         return ResponseEntity.status(HttpStatus.CREATED)
+                 .body(groceryListService.addManualItem(householdId, userId, request));
+     }
+diff --git a/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java b/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java
+new file mode 100644
+index 0000000..b88c88e
+--- /dev/null
++++ b/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java
+@@ -0,0 +1,38 @@
++package com.gehan.mealplanner.service;
++
++import org.junit.jupiter.api.Test;
++import org.springframework.web.server.ResponseStatusException;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++class WebLinksTest {
++
++    @Test
++    void keepsFullLinks() {
++        assertThat(WebLinks.normalize(" https://www.tiktok.com/@cook/video/1 ")).isEqualTo("https://www.tiktok.com/@cook/video/1");
++        assertThat(WebLinks.normalize("http://example.com/menu")).isEqualTo("http://example.com/menu");
++    }
++
++    @Test
++    void addsHttpsToWhatPeopleType() {
++        assertThat(WebLinks.normalize("tiktok.com/@cook/video/1")).isEqualTo("https://tiktok.com/@cook/video/1");
++        assertThat(WebLinks.normalize("www.tonys.com")).isEqualTo("https://www.tonys.com");
++        assertThat(WebLinks.normalize("//tonys.com/menu")).isEqualTo("https://tonys.com/menu");
++        assertThat(WebLinks.normalize("tonys.com:8080/menu")).isEqualTo("https://tonys.com:8080/menu");
++    }
++
++    @Test
++    void blankIsNoLink() {
++        assertThat(WebLinks.normalize(null)).isNull();
++        assertThat(WebLinks.normalize("   ")).isNull();
++    }
++
++    @Test
++    void refusesAnythingThatIsNotAWebLink() {
++        for (String bad : new String[] {"javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,hi", "mailto:a@b.co",
++                "not a link", "localhost", "https://"}) {
++            assertThatThrownBy(() -> WebLinks.normalize(bad)).as(bad).isInstanceOf(ResponseStatusException.class);
++        }
++    }
++}
+diff --git a/web/src/components/GroupTree.tsx b/web/src/components/GroupTree.tsx
+index aab5e36..d6d24a3 100644
+--- a/web/src/components/GroupTree.tsx
++++ b/web/src/components/GroupTree.tsx
+@@ -4,7 +4,12 @@ import type { CategoryTree } from '../utils/categoryTree';
+ import { AddGroup, EditGroup } from '../pages/RecipeSectionPage';
+ import { cx } from './ui';
+ import { coverClass } from '../utils/recipeFormat';
+-import { ChevronDownIcon, ChevronRightIcon, PencilIcon, PlusIcon } from './icons';
++import { ChevronDownIcon, ChevronRightIcon, MoreIcon } from './icons';
++
++/** A full 44pt tap target in a card corner, drawn as a small dot. */
++const cornerButton = (side: string) => cx('absolute top-0 flex h-11 w-11 items-center justify-center', side);
++const cornerDot =
++  'flex h-7 w-7 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80';
+ 
+ /**
+  * Every group nested inside the current one, all at once — Sides indented under Dinner, Chicken
+@@ -12,7 +17,7 @@ import { ChevronDownIcon, ChevronRightIcon, PencilIcon, PlusIcon } from './icons
+  * here whether or not it holds a recipe from this drawer, so an empty one you just made (or an
+  * empty leaf three levels down) never looks like it disappeared. Tiles read the same as the
+  * catalog's own Dinner/Breakfast cards, just smaller — three to a row instead of two. Add and
+- * remove groups right on the tile they're in; deleting one moves its recipes and groups up to its
++ * remove groups from the tile's ••• menu; deleting one moves its recipes and groups up to its
+  * own parent, so nothing filed in it is lost.
+  */
+ export default function GroupTree({
+@@ -78,30 +83,26 @@ export default function GroupTree({
+                     type="button"
+                     aria-label={isCollapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
+                     onClick={() => toggle(node.id)}
+-                    className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
++                    className={cornerButton('left-0')}
+                   >
+-                    {isCollapsed ? <ChevronRightIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />}
++                    <span className={cornerDot}>
++                      {isCollapsed ? <ChevronRightIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />}
++                    </span>
+                   </button>
+                 )}
+ 
+-                <div className="absolute right-1.5 top-1.5 flex gap-1">
+-                  <button
+-                    type="button"
+-                    aria-label={`Add a group inside ${node.name}`}
+-                    onClick={() => setAddingChildOf((id) => (id === node.id ? null : node.id))}
+-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
+-                  >
+-                    <PlusIcon className="h-3.5 w-3.5" />
+-                  </button>
+-                  <button
+-                    type="button"
+-                    aria-label={`Rename or delete ${node.name}`}
+-                    onClick={() => setEditingGroup(node)}
+-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
+-                  >
+-                    <PencilIcon className="h-3.5 w-3.5" />
+-                  </button>
+-                </div>
++                {/* One ••• for the rare things — a 44pt target a thumb can hit, where two
++                    24pt buttons side by side were easy to miss. */}
++                <button
++                  type="button"
++                  aria-label={`More for ${node.name}`}
++                  onClick={() => setEditingGroup(node)}
++                  className={cornerButton('right-0')}
++                >
++                  <span className={cornerDot}>
++                    <MoreIcon className="h-3.5 w-3.5" />
++                  </span>
++                </button>
+               </div>
+ 
+               {isAdding && (
+@@ -138,6 +139,10 @@ export default function GroupTree({
+           group={editingGroup}
+           upTo={(editingGroup.parentId && tree.byId.get(editingGroup.parentId)?.name) || drawerName}
+           onClose={() => setEditingGroup(null)}
++          onAddInside={() => {
++            setAddingChildOf(editingGroup.id);
++            setEditingGroup(null);
++          }}
+           onRenamed={async () => {
+             setEditingGroup(null);
+             await onChanged();
+diff --git a/web/src/components/RecipeIndexCard.tsx b/web/src/components/RecipeIndexCard.tsx
+index e269df1..52c2953 100644
+--- a/web/src/components/RecipeIndexCard.tsx
++++ b/web/src/components/RecipeIndexCard.tsx
+@@ -37,6 +37,7 @@ export default function RecipeIndexCard({ recipe }: { recipe: Recipe }) {
+               <span>
+                 {i.ingredientName}
+                 {i.notes ? <span className="text-[#6b5744]">, {i.notes}</span> : null}
++                {i.optional ? <span className="text-[#6b5744]"> (optional)</span> : null}
+               </span>
+             </li>
+           ))}
+diff --git a/web/src/components/UnitInput.tsx b/web/src/components/UnitInput.tsx
+index eb6b044..31ed3f3 100644
+--- a/web/src/components/UnitInput.tsx
++++ b/web/src/components/UnitInput.tsx
+@@ -36,12 +36,27 @@ export default function UnitInput({
+ }) {
+   const [open, setOpen] = useState(false);
+   const [highlight, setHighlight] = useState(0);
++  // Near the bottom of a sheet the list has no room below the field, so it opens upward instead.
++  const [dropUp, setDropUp] = useState(false);
+   const wrapRef = useRef<HTMLDivElement>(null);
+ 
+-  // Typing narrows the list; an exact match stops it hovering over the field for no reason.
++  // Typing narrows the list, with an exact match first so Return keeps what was typed ("l" stays
++  // "l", not "lb"). A unit typed in full needs no list at all.
+   const query = value.trim().toLowerCase();
+-  const matches = COMMON_UNITS.filter((u) => u.startsWith(query));
+-  const options = query && !(matches.length === 1 && matches[0] === query) ? matches : COMMON_UNITS;
++  const matches = COMMON_UNITS.filter((u) => u.startsWith(query)).sort(
++    (a, b) => Number(b === query) - Number(a === query),
++  );
++  const options = !query ? COMMON_UNITS : matches.length === 1 && matches[0] === query ? [] : matches;
++
++  function openList() {
++    const rect = wrapRef.current?.getBoundingClientRect();
++    const viewportBottom = window.visualViewport
++      ? window.visualViewport.offsetTop + window.visualViewport.height
++      : window.innerHeight;
++    // 14rem is the list's max height, plus its margin.
++    setDropUp(!!rect && rect.bottom + 232 > viewportBottom && rect.top > 232);
++    setOpen(true);
++  }
+ 
+   useEffect(() => {
+     if (!open) return;
+@@ -61,7 +76,7 @@ export default function UnitInput({
+     if (e.key === 'Escape') return setOpen(false);
+     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+       e.preventDefault();
+-      if (!open) return setOpen(true);
++      if (!open) return openList();
+       setHighlight((h) => {
+         const next = e.key === 'ArrowDown' ? h + 1 : h - 1;
+         return (next + options.length) % options.length;
+@@ -88,16 +103,16 @@ export default function UnitInput({
+         onChange={(e) => {
+           onChange(e.target.value);
+           setHighlight(0);
+-          setOpen(true);
++          openList();
+         }}
+-        onFocus={() => setOpen(true)}
++        onFocus={openList}
+         onKeyDown={onKeyDown}
+       />
+       <button
+         type="button"
+         tabIndex={-1}
+         aria-label="Show units"
+-        onClick={() => setOpen((v) => !v)}
++        onClick={() => (open ? setOpen(false) : openList())}
+         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted"
+       >
+         <ChevronDownIcon className="h-4 w-4" />
+@@ -106,8 +121,10 @@ export default function UnitInput({
+       {open && options.length > 0 && (
+         <ul
+           role="listbox"
+-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-line
+-                     bg-elevated py-1 shadow-lg"
++          className={cx(
++            'absolute z-20 max-h-56 w-full overflow-auto rounded-xl border border-line bg-elevated py-1 shadow-lg',
++            dropUp ? 'bottom-full mb-1' : 'mt-1',
++          )}
+         >
+           {options.map((unit, i) => (
+             <li key={unit}>
+diff --git a/web/src/components/icons.tsx b/web/src/components/icons.tsx
+index 0b18b04..51b7684 100644
+--- a/web/src/components/icons.tsx
++++ b/web/src/components/icons.tsx
+@@ -143,3 +143,12 @@ export const PencilIcon = (p: SVGProps<SVGSVGElement>) => (
+     <path d="M13.5 7.2l3.3 3.3" />
+   </Icon>
+ );
++
++/** The ••• that holds a thing's less-common actions. Filled dots read better than strokes this small. */
++export const MoreIcon = (p: SVGProps<SVGSVGElement>) => (
++  <Icon {...p} fill="currentColor" stroke="none">
++    <circle cx="5" cy="12" r="1.75" />
++    <circle cx="12" cy="12" r="1.75" />
++    <circle cx="19" cy="12" r="1.75" />
++  </Icon>
++);
+diff --git a/web/src/components/ui.tsx b/web/src/components/ui.tsx
+index 9692613..841689e 100644
+--- a/web/src/components/ui.tsx
++++ b/web/src/components/ui.tsx
+@@ -161,6 +161,16 @@ function controlClass(extra?: string, className?: string) {
+   return cx(CONTROL, !/(^|\s)w-/.test(merged) && 'w-full', merged);
+ }
+ 
++/**
++ * For any field that takes a username. iOS capitalises the first letter and "corrects" names
++ * unless told not to, and a username is neither a sentence nor a word.
++ */
++export const usernameInputProps = {
++  autoCapitalize: 'none',
++  autoCorrect: 'off',
++  spellCheck: false,
++} as const;
++
+ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+   return <input className={controlClass(undefined, className)} {...props} />;
+ }
+diff --git a/web/src/pages/DashboardPage.tsx b/web/src/pages/DashboardPage.tsx
+index 6947b83..f41a6cf 100644
+--- a/web/src/pages/DashboardPage.tsx
++++ b/web/src/pages/DashboardPage.tsx
+@@ -28,8 +28,12 @@ function addDays(d: Date, n: number): Date {
+ /** How long ago, in the roughest terms that are still true. */
+ function agoLabel(iso: string | null): string {
+   if (!iso) return 'never made';
+-  const days = Math.round((Date.now() - new Date(`${iso}T00:00:00`).getTime()) / 86400000);
+-  if (days <= 1) return 'made yesterday';
++  // Calendar days between midnights, so last night's dinner is "yesterday" even at 11pm.
++  const midnight = new Date();
++  midnight.setHours(0, 0, 0, 0);
++  const days = Math.round((midnight.getTime() - new Date(`${iso}T00:00:00`).getTime()) / 86400000);
++  if (days <= 0) return 'made today';
++  if (days === 1) return 'made yesterday';
+   if (days < 14) return `made ${days} days ago`;
+   if (days < 60) return `made ${Math.round(days / 7)} weeks ago`;
+   return `made ${Math.round(days / 30)} months ago`;
+@@ -173,7 +177,8 @@ export default function DashboardPage() {
+   const heroRecipe = hero?.recipeId ? recipes.find((r) => r.id === hero.recipeId) : undefined;
+ 
+   const left = items.filter((i) => !i.checked).length;
+-  const runningLow = cupboard.filter((i) => i.runningLow).length;
++  // A counted item at zero is as short as one marked Low.
++  const runningLow = cupboard.filter((i) => i.runningLow || (i.quantity !== null && i.quantity <= 0)).length;
+ 
+   const now = new Date();
+   const horizon = activeHousehold?.planningHorizonDays ?? 7;
+@@ -188,14 +193,22 @@ export default function DashboardPage() {
+    * and the failure mode is cooking the same six things while forty sit unread — so this is
+    * drawn from what the household has actually planned, not invented.
+    */
++  // Made means before today: tonight's dinner hasn't been cooked yet. Anything already on the
++  // plan from today on is not a suggestion either — it's handled.
++  const todayIso = isoDate(now);
+   const lastMade = new Map<string, string>();
++  const alreadyPlanned = new Set<string>();
+   for (const e of history) {
+-    if (!e.recipeId || e.date > isoDate(now)) continue;
++    if (!e.recipeId) continue;
++    if (e.date >= todayIso) {
++      alreadyPlanned.add(e.recipeId);
++      continue;
++    }
+     const seen = lastMade.get(e.recipeId);
+     if (!seen || e.date > seen) lastMade.set(e.recipeId, e.date);
+   }
+   const neglected = recipes
+-    .filter((r) => !r.shared && r.section)
++    .filter((r) => !r.shared && r.section && !alreadyPlanned.has(r.id))
+     .map((r) => ({ recipe: r, last: lastMade.get(r.id) ?? null }))
+     .sort((a, b) => (a.last ?? '').localeCompare(b.last ?? ''));
+   // Rotate through the five most neglected by day, so it changes daily without being random on
+diff --git a/web/src/pages/HouseholdPage.tsx b/web/src/pages/HouseholdPage.tsx
+index f901dd6..61d83ca 100644
+--- a/web/src/pages/HouseholdPage.tsx
++++ b/web/src/pages/HouseholdPage.tsx
+@@ -19,6 +19,7 @@ import {
+   Input,
+   NumberInput,
+   Sheet,
++  usernameInputProps,
+ } from '../components/ui';
+ import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
+ import PlaceActions from '../components/PlaceActions';
+@@ -81,6 +82,7 @@ export default function HouseholdPage() {
+                 value={newName}
+                 onChange={(e) => setNewName(e.target.value)}
+                 placeholder="Gehan House"
++                maxLength={60}
+               />
+             </Field>
+             <div className="flex gap-2">
+@@ -269,6 +271,7 @@ function ProfileCard() {
+             value={username}
+             onChange={(e) => setUsername(e.target.value)}
+             placeholder={loaded ? '' : 'Loading…'}
++            {...usernameInputProps}
+           />
+         </Field>
+         {error && <ErrorText>{error}</ErrorText>}
+@@ -328,7 +331,7 @@ function LooseAccountForm() {
+           them to yours later.
+         </p>
+         <Field label="Username">
+-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" />
++          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" {...usernameInputProps} />
+         </Field>
+         <Field label="Name" hint="Optional — what they're called on screen.">
+           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Grandad" />
+@@ -453,6 +456,7 @@ function LeaveCard({ householdId, name }: { householdId: string; name: string })
+ function PlacesCard({ householdId }: { householdId: string }) {
+   const [places, setPlaces] = useState<Place[] | null>(null);
+   const [editing, setEditing] = useState<Place | null>(null);
++  const [sheetError, setSheetError] = useState<string | null>(null);
+   const [newName, setNewName] = useState('');
+   const [busy, setBusy] = useState(false);
+ 
+@@ -482,6 +486,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
+ 
+   async function save(place: Place) {
+     setBusy(true);
++    setSheetError(null);
+     try {
+       await api('PUT', `/api/places/${place.id}`, {
+         name: place.name,
+@@ -492,6 +497,9 @@ function PlacesCard({ householdId }: { householdId: string }) {
+       });
+       setEditing(null);
+       await load();
++    } catch (err) {
++      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
++      setSheetError(message ?? 'Could not save that.');
+     } finally {
+       setBusy(false);
+     }
+@@ -560,9 +568,13 @@ function PlacesCard({ householdId }: { householdId: string }) {
+           householdId={householdId}
+           place={editing}
+           busy={busy}
++          error={sheetError}
+           onSave={save}
+           onDelete={remove}
+-          onClose={() => setEditing(null)}
++          onClose={() => {
++            setEditing(null);
++            setSheetError(null);
++          }}
+         />
+       )}
+     </Card>
+@@ -573,6 +585,7 @@ function PlaceSheet({
+   householdId,
+   place,
+   busy,
++  error,
+   onSave,
+   onDelete,
+   onClose,
+@@ -580,6 +593,7 @@ function PlaceSheet({
+   householdId: string;
+   place: Place;
+   busy: boolean;
++  error: string | null;
+   onSave: (place: Place) => void;
+   onDelete: (place: Place) => void;
+   onClose: () => void;
+@@ -630,6 +644,7 @@ function PlaceSheet({
+           <Input value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })} />
+         </Field>
+ 
++        {error && <ErrorText>{error}</ErrorText>}
+         <div className="flex gap-2">
+           <Button className="flex-1" disabled={busy || !draft.name.trim()} onClick={() => onSave(draft)}>
+             Save
+@@ -653,6 +668,7 @@ function SettingsCard() {
+   const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
+   const [saving, setSaving] = useState(false);
+   const [saved, setSaved] = useState(false);
++  const [settingsError, setSettingsError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     if (activeHousehold) {
+@@ -679,6 +695,7 @@ function SettingsCard() {
+   async function onSubmit(e: FormEvent) {
+     e.preventDefault();
+     setSaving(true);
++    setSettingsError(null);
+     try {
+       await updateSettings({
+         defaultServings: servings ?? 1,
+@@ -686,6 +703,8 @@ function SettingsCard() {
+       });
+       setSaved(true);
+       setTimeout(() => setSaved(false), 1500);
++    } catch {
++      setSettingsError('Servings can be 1–50, and days ahead 1–60.');
+     } finally {
+       setSaving(false);
+     }
+@@ -699,7 +718,7 @@ function SettingsCard() {
+         <form onSubmit={onRename} className="mb-4 border-b border-line pb-4">
+           <Field label="Household name">
+             <div className="flex gap-2">
+-              <Input value={name} onChange={(e) => setName(e.target.value)} />
++              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+               <Button
+                 type="submit"
+                 variant="secondary"
+@@ -714,11 +733,12 @@ function SettingsCard() {
+ 
+       <form onSubmit={onSubmit} className="space-y-3">
+         <Field label="Default servings">
+-          <NumberInput min={1} value={servings} onChange={setServings} />
++          <NumberInput min={1} max={50} value={servings} onChange={setServings} />
+         </Field>
+         <Field label="Days ahead to plan">
+-          <NumberInput min={1} value={horizonDays} onChange={setHorizonDays} />
++          <NumberInput min={1} max={60} value={horizonDays} onChange={setHorizonDays} />
+         </Field>
++        {settingsError && <ErrorText>{settingsError}</ErrorText>}
+         <Button type="submit" full size="lg" disabled={saving}>
+           {saved ? 'Saved' : 'Save settings'}
+         </Button>
+@@ -991,6 +1011,7 @@ function AddPersonForm({
+             onChange={(e) => setUsername(e.target.value)}
+             placeholder="username"
+             aria-label={label}
++            {...usernameInputProps}
+           />
+           <Button type="submit" variant="secondary" disabled={busy || !username.trim()}>
+             {action}
+diff --git a/web/src/pages/LoginPage.tsx b/web/src/pages/LoginPage.tsx
+index d155ed1..66d5e5b 100644
+--- a/web/src/pages/LoginPage.tsx
++++ b/web/src/pages/LoginPage.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
+ import { useAuth } from '../auth/AuthContext';
+ import { api, ApiError } from '../api/client';
+ import type { HouseholdSummary, LandingResponse, UserSummary } from '../api/types';
+-import { Button, ErrorText, Field, Input } from '../components/ui';
++import { Button, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
+ import Keypad, { PinDots } from '../components/Keypad';
+ import { PIN_LENGTH } from '../auth/pin';
+ 
+@@ -208,6 +208,8 @@ export default function LoginPage() {
+               autoFocus
+               required
+               placeholder="username"
++              autoComplete="username"
++              {...usernameInputProps}
+               value={username}
+               onChange={(e) => setUsername(e.target.value)}
+               className="text-center"
+@@ -238,6 +240,7 @@ export default function LoginPage() {
+               <Input
+                 required
+                 placeholder="ryan"
++                {...usernameInputProps}
+                 value={username}
+                 onChange={(e) => setUsername(e.target.value)}
+               />
+diff --git a/web/src/pages/PublicRecipePage.tsx b/web/src/pages/PublicRecipePage.tsx
+index 65dd222..1eb2732 100644
+--- a/web/src/pages/PublicRecipePage.tsx
++++ b/web/src/pages/PublicRecipePage.tsx
+@@ -90,6 +90,7 @@ export default function PublicRecipePage() {
+               <span className="flex-1">
+                 {i.ingredientName}
+                 {i.notes && <span className="text-muted"> — {i.notes}</span>}
++                {i.optional && <span className="text-muted"> · optional</span>}
+               </span>
+             </li>
+           ))}
+diff --git a/web/src/pages/RecipeDetailPage.tsx b/web/src/pages/RecipeDetailPage.tsx
+index f81e8fa..c1a1dc0 100644
+--- a/web/src/pages/RecipeDetailPage.tsx
++++ b/web/src/pages/RecipeDetailPage.tsx
+@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
+ import { api, ApiError, imageUrl } from '../api/client';
+ import type { Recipe, ShareTarget } from '../api/types';
+ import { useHousehold } from '../household/HouseholdContext';
+-import { Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
++import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
+ import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
+ import RecipeIndexCard from '../components/RecipeIndexCard';
+ import { PageTitle } from '../components/PageTitle';
+@@ -31,6 +31,7 @@ export default function RecipeDetailPage() {
+   const [draft, setDraft] = useState<Filing | null>(null);
+   const [photosBusy, setPhotosBusy] = useState(false);
+   const [videoDraft, setVideoDraft] = useState('');
++  const [videoError, setVideoError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     if (!recipeId) return;
+@@ -142,10 +143,14 @@ export default function RecipeDetailPage() {
+   async function saveVideo(url: string) {
+     if (!recipe) return;
+     setPhotosBusy(true);
++    setVideoError(null);
+     try {
+       setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/video`, { videoUrl: url }));
++      setVideoDraft('');
+     } catch (err) {
+-      setError(err instanceof ApiError ? 'That link needs to start with http:// or https://' : 'Could not save that link.');
++      // Said next to the field. Setting the page error here replaced the whole recipe with it.
++      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
++      setVideoError(message ?? 'Could not save that link.');
+     } finally {
+       setPhotosBusy(false);
+     }
+@@ -319,6 +324,7 @@ export default function RecipeDetailPage() {
+                     <span className="min-w-0">
+                       {i.ingredientName}
+                       {i.notes && <span className="text-muted">, {i.notes}</span>}
++                      {i.optional && <span className="text-muted"> · optional</span>}
+                     </span>
+                   </li>
+                 ))}
+@@ -390,6 +396,7 @@ export default function RecipeDetailPage() {
+                       </Button>
+                     </div>
+                   </Field>
++                  {videoError && <ErrorText>{videoError}</ErrorText>}
+                   {recipe.videoUrl && (
+                     <Button
+                       variant="ghost"
+diff --git a/web/src/pages/RecipeSectionPage.tsx b/web/src/pages/RecipeSectionPage.tsx
+index 5aa3abf..b23f5cb 100644
+--- a/web/src/pages/RecipeSectionPage.tsx
++++ b/web/src/pages/RecipeSectionPage.tsx
+@@ -31,7 +31,8 @@ export default function RecipeSectionPage() {
+   const [sorting, setSorting] = useState(false);
+   const [adding, setAdding] = useState(false);
+   const [editing, setEditing] = useState(false);
+-  const [splitDismissed, setSplitDismissed] = useState<string[]>([]);
++  // Remembered on this phone: "Not now" that comes back on the next visit is just nagging.
++  const [splitDismissed, setSplitDismissed] = useState<string[]>(readDismissedSplits);
+ 
+   const isShared = slug === SHARED_KEY;
+   const section = sectionFromSlug(slug);
+@@ -165,7 +166,13 @@ export default function RecipeSectionPage() {
+               suggestions={splits}
+               tree={tree}
+               onDone={load}
+-              onDismiss={() => setSplitDismissed((ids) => [...ids, group!.id])}
++              onDismiss={() =>
++                setSplitDismissed((ids) => {
++                  const next = [...ids, group!.id];
++                  saveDismissedSplits(next);
++                  return next;
++                })
++              }
+             />
+           )}
+ 
+@@ -284,6 +291,25 @@ function Empty({ text }: { text: string }) {
+  * Main dish looks like Chicken, Beef and Seafood — make those?" Read from the recipes' names and
+  * ingredients, so it costs nothing, and every group can be unticked before anything happens.
+  */
++const DISMISSED_SPLITS_KEY = 'mp_dismissedSplits';
++
++function readDismissedSplits(): string[] {
++  try {
++    const stored = JSON.parse(localStorage.getItem(DISMISSED_SPLITS_KEY) ?? '[]');
++    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
++  } catch {
++    return [];
++  }
++}
++
++function saveDismissedSplits(ids: string[]) {
++  try {
++    localStorage.setItem(DISMISSED_SPLITS_KEY, JSON.stringify(ids.slice(-200)));
++  } catch {
++    // Private browsing and the like: it just won't be remembered.
++  }
++}
++
+ function SplitSuggestion({
+   householdId,
+   group,
+@@ -513,6 +539,7 @@ export function EditGroup({
+   group,
+   upTo,
+   onClose,
++  onAddInside,
+   onRenamed,
+   onDeleted,
+ }: {
+@@ -520,6 +547,8 @@ export function EditGroup({
+   group: RecipeCategory;
+   upTo: string;
+   onClose: () => void;
++  /** Offered when the sheet was opened from a group card. */
++  onAddInside?: () => void;
+   onRenamed: () => Promise<void>;
+   onDeleted: () => Promise<void>;
+ }) {
+@@ -568,6 +597,12 @@ export function EditGroup({
+           </Field>
+         </form>
+ 
++        {onAddInside && (
++          <Button variant="secondary" full onClick={onAddInside}>
++            Add a group inside {group.name}
++          </Button>
++        )}
++
+         {confirming ? (
+           <div className="space-y-2">
+             <p className="text-sm text-muted">

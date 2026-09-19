@@ -1,0 +1,120 @@
+From 9ada14802c3c10f5dfe0d259eb519cff4c318227 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:59:45 -0400
+Subject: [PATCH 12/12] Cap household names and settings, and say when settings
+ don't save
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A 5000-character household name was a 500, and a planning window of
+100000 days was accepted — Today and Plan load that many days. Settings
+are now 1–50 servings and 1–60 days, the form shows an error instead of
+failing silently, and name fields stop at 60 characters.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../com/gehan/mealplanner/dto/HouseholdDtos.java     | 10 +++++++---
+ web/src/pages/HouseholdPage.tsx                      | 12 +++++++++---
+ 2 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
+index c7db30b..23686ec 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/HouseholdDtos.java
+@@ -1,6 +1,7 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import com.gehan.mealplanner.domain.HouseholdRole;
++import jakarta.validation.constraints.Max;
+ import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotNull;
+@@ -10,7 +11,7 @@ import java.util.UUID;
+ 
+ public class HouseholdDtos {
+ 
+-    public record CreateHouseholdRequest(@NotBlank String name) {
++    public record CreateHouseholdRequest(@NotBlank @Size(max = 60) String name) {
+     }
+ 
+     /** `role` is the *requesting* user's role in this household, not a property of the household. */
+@@ -22,8 +23,11 @@ public class HouseholdDtos {
+     }
+ 
+     public record UpdateHouseholdSettingsRequest(
+-            @NotNull @Min(1) Integer defaultServings,
+-            @NotNull @Min(1) Integer planningHorizonDays) {
++            @NotNull @Min(1) @Max(MAX_SERVINGS) Integer defaultServings,
++            // Today and the Plan tab load this many days ahead, so it has to stay sensible.
++            @NotNull @Min(1) @Max(MAX_PLANNING_DAYS) Integer planningHorizonDays) {
++        public static final int MAX_SERVINGS = 50;
++        public static final int MAX_PLANNING_DAYS = 60;
+     }
+ 
+     /** Adds an account that already exists — including one belonging to another household. */
+diff --git a/web/src/pages/HouseholdPage.tsx b/web/src/pages/HouseholdPage.tsx
+index 61773fa..61d83ca 100644
+--- a/web/src/pages/HouseholdPage.tsx
++++ b/web/src/pages/HouseholdPage.tsx
+@@ -82,6 +82,7 @@ export default function HouseholdPage() {
+                 value={newName}
+                 onChange={(e) => setNewName(e.target.value)}
+                 placeholder="Gehan House"
++                maxLength={60}
+               />
+             </Field>
+             <div className="flex gap-2">
+@@ -667,6 +668,7 @@ function SettingsCard() {
+   const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
+   const [saving, setSaving] = useState(false);
+   const [saved, setSaved] = useState(false);
++  const [settingsError, setSettingsError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     if (activeHousehold) {
+@@ -693,6 +695,7 @@ function SettingsCard() {
+   async function onSubmit(e: FormEvent) {
+     e.preventDefault();
+     setSaving(true);
++    setSettingsError(null);
+     try {
+       await updateSettings({
+         defaultServings: servings ?? 1,
+@@ -700,6 +703,8 @@ function SettingsCard() {
+       });
+       setSaved(true);
+       setTimeout(() => setSaved(false), 1500);
++    } catch {
++      setSettingsError('Servings can be 1–50, and days ahead 1–60.');
+     } finally {
+       setSaving(false);
+     }
+@@ -713,7 +718,7 @@ function SettingsCard() {
+         <form onSubmit={onRename} className="mb-4 border-b border-line pb-4">
+           <Field label="Household name">
+             <div className="flex gap-2">
+-              <Input value={name} onChange={(e) => setName(e.target.value)} />
++              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+               <Button
+                 type="submit"
+                 variant="secondary"
+@@ -728,11 +733,12 @@ function SettingsCard() {
+ 
+       <form onSubmit={onSubmit} className="space-y-3">
+         <Field label="Default servings">
+-          <NumberInput min={1} value={servings} onChange={setServings} />
++          <NumberInput min={1} max={50} value={servings} onChange={setServings} />
+         </Field>
+         <Field label="Days ahead to plan">
+-          <NumberInput min={1} value={horizonDays} onChange={setHorizonDays} />
++          <NumberInput min={1} max={60} value={horizonDays} onChange={setHorizonDays} />
+         </Field>
++        {settingsError && <ErrorText>{settingsError}</ErrorText>}
+         <Button type="submit" full size="lg" disabled={saving}>
+           {saved ? 'Saved' : 'Save settings'}
+         </Button>
+-- 
+2.42.0
+

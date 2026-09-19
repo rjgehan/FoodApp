@@ -1,0 +1,64 @@
+From 226ad3df9f084b2da20e69f8002f15c5fc2439a8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:46:55 -0400
+Subject: [PATCH 10/12] Accept recipes from clients that don't send the new
+ "optional" flag
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The flag was a primitive boolean, so a request without it was a 400.
+Any phone still running the previous build after the deploy — an open
+tab, a home-screen app — would fail to save a recipe until reloaded.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../main/java/com/gehan/mealplanner/dto/RecipeDtos.java   | 8 ++++++--
+ .../java/com/gehan/mealplanner/service/RecipeService.java | 4 ++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+index ba45b4b..b785c69 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+@@ -20,8 +20,12 @@ public class RecipeDtos {
+             @NotNull @PositiveOrZero BigDecimal quantity,
+             @Size(max = 40) String unit,
+             String notes,
+-            /** Something a cook might skip — chosen per occasion when the recipe is planned. */
+-            boolean optional) {
++            /**
++             * Something a cook might skip — chosen per occasion when the recipe is planned. A
++             * Boolean so that leaving it out means "no": a phone still running the app from before
++             * this field existed must still be able to save a recipe.
++             */
++            Boolean optional) {
+     }
+ 
+     /** Ingredient quantities are for the given servings count, as written — not normalized to 1 person. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+index 93d6dfb..bd118e3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+@@ -115,7 +115,7 @@ public class RecipeService {
+                         .quantity(i.quantity())
+                         .unit(i.unit())
+                         .notes(i.notes())
+-                        .optional(i.optional())
++                        .optional(Boolean.TRUE.equals(i.optional()))
+                         .build()));
+ 
+         Recipe saved = recipeRepository.save(recipe);
+@@ -170,7 +170,7 @@ public class RecipeService {
+                         .quantity(i.quantity())
+                         .unit(i.unit())
+                         .notes(i.notes())
+-                        .optional(i.optional())
++                        .optional(Boolean.TRUE.equals(i.optional()))
+                         .build()));
+ 
+         Recipe saved = recipeRepository.save(recipe);
+-- 
+2.42.0
+

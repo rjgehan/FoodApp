@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -77,10 +78,10 @@ public class GroceryListService {
             return item != null && item.isStaple();
         }
 
-        /** Enough to count on: in the cupboard, and not running low. */
+        /** Enough to count on: in the cupboard, not running low, and not counted down to zero. */
         boolean has(Ingredient ingredient) {
             CupboardItem item = cupboard.get(ingredient.getId());
-            return item != null && !item.isRunningLow();
+            return item != null && !item.isShort();
         }
     }
 
@@ -274,7 +275,7 @@ public class GroceryListService {
             return List.of();
         }
         int wantedServings = entry.getServings() != null ? entry.getServings() : household.getDefaultServings();
-        return upsertFromRecipe(household, entry.getRecipe(), wantedServings, ctx);
+        return upsertFromRecipe(household, entry.getRecipe(), wantedServings, entry.getIncludedOptionalIngredientIds(), ctx);
     }
 
     /**
@@ -282,15 +283,19 @@ public class GroceryListService {
      * by (wantedServings / recipe.servings) to get the amount actually needed for this meal.
      *
      * Things the cupboard says you have still go on — flagged, not skipped, because having some
-     * paprika does not mean having enough. Staples you always have are left off entirely.
+     * paprika does not mean having enough. Staples you always have are left off entirely. An
+     * optional ingredient only goes on if this occurrence's plan asked for it — see
+     * {@link MealPlanEntry#getIncludedOptionalIngredientIds()}, decided once when the meal was
+     * planned rather than asked again here.
      */
-    private List<GroceryListItemResponse> upsertFromRecipe(Household household, Recipe recipe,
-                                                             int wantedServings, Context ctx) {
+    private List<GroceryListItemResponse> upsertFromRecipe(Household household, Recipe recipe, int wantedServings,
+                                                             Set<UUID> includedOptionalIngredientIds, Context ctx) {
         BigDecimal factor = BigDecimal.valueOf(wantedServings)
                 .divide(BigDecimal.valueOf(recipe.getServings()), 4, RoundingMode.HALF_UP);
 
         return recipe.getIngredients().stream()
                 .filter(ri -> !ctx.isStaple(ri.getIngredient()))
+                .filter(ri -> !ri.isOptional() || includedOptionalIngredientIds.contains(ri.getId()))
                 .map(ri -> upsertIngredient(household, ri.getIngredient(), ri.getQuantity().multiply(factor),
                         ri.getUnit(), ctx))
                 .toList();

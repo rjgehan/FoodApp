@@ -21,13 +21,6 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Icon {...p}>
-    <path d="M3 10.5 12 3l9 7.5" />
-    <path d="M5 9.5V20h14V9.5" />
-  </Icon>
-);
-
 export const CalendarIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <rect x="3" y="5" width="18" height="16" rx="2.5" />
@@ -63,13 +56,6 @@ export const HouseholdIcon = (p: SVGProps<SVGSVGElement>) => (
     <circle cx="9" cy="8" r="3" />
     <path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" />
     <path d="M16 5.2a3 3 0 0 1 0 5.6M18 15.4c2 .7 3 2.2 3 4.6" />
-  </Icon>
-);
-
-export const LogOutIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Icon {...p}>
-    <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
-    <path d="M10 16l-4-4 4-4M6 12h9" />
   </Icon>
 );
 
@@ -134,5 +120,21 @@ export const PlayIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="9" />
     <path d="M10 8.5 16 12l-6 3.5z" />
+  </Icon>
+);
+
+export const PencilIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 20l.9-4.2L15.4 5.3a1.5 1.5 0 0 1 2.1 0l1.2 1.2a1.5 1.5 0 0 1 0 2.1L8.2 19.1z" />
+    <path d="M13.5 7.2l3.3 3.3" />
+  </Icon>
+);
+
+/** The ••• that holds a thing's less-common actions. Filled dots read better than strokes this small. */
+export const MoreIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p} fill="currentColor" stroke="none">
+    <circle cx="5" cy="12" r="1.75" />
+    <circle cx="12" cy="12" r="1.75" />
+    <circle cx="19" cy="12" r="1.75" />
   </Icon>
 );

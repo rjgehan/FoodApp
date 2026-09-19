@@ -33,7 +33,12 @@ export default function RecipeClassifier({
       .catch(() => setKnown([]));
   }, [householdId]);
 
-  const tree = useMemo(() => buildTree(known), [known]);
+  // Only this drawer's groups, plus any that belong to every drawer.
+  const inSection = useMemo(
+    () => known.filter((c) => c.section === null || c.section === value.section),
+    [known, value.section],
+  );
+  const tree = useMemo(() => buildTree(inSection), [inSection]);
 
   function isPicked(name: string) {
     return value.categories.some((c) => c.toLowerCase() === name.toLowerCase());
@@ -76,7 +81,7 @@ export default function RecipeClassifier({
   return (
     <div className="space-y-4">
       {!sectionsHidden && (
-      <Field label="Which drawer?">
+      <Field label="Filed under">
         <div className="flex flex-wrap gap-2">
           {SECTION_OPTIONS.map((s) => (
             <Chip
@@ -91,8 +96,8 @@ export default function RecipeClassifier({
       </Field>
       )}
 
-      <Field label="Groups" hint="Pick the smallest one that fits — Chicken rather than Main dish.">
-        {(known.length > 0 || unknownPicked.length > 0) && (
+      <Field label="Groups" hint="Pick the most specific one — Chicken rather than Main dish.">
+        {(inSection.length > 0 || unknownPicked.length > 0) && (
           <div className="mb-2 space-y-2">
             {tree.children(null).map((root) => (
               <div key={root.id} className="flex flex-wrap gap-2">

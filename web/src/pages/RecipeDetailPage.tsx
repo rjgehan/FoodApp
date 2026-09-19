@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
-import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
+import { ActionMenu, Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
+import PlanRecipeSheet from '../components/PlanRecipeSheet';
 import RecipeIndexCard from '../components/RecipeIndexCard';
 import { PageTitle } from '../components/PageTitle';
 import RecipeClassifier from '../components/RecipeClassifier';
@@ -16,7 +17,7 @@ import { isSafeLink, videoHostLabel } from '../utils/videoLink';
 export default function RecipeDetailPage() {
   const { recipeId } = useParams<{ recipeId: string }>();
   const navigate = useNavigate();
-  const { activeHouseholdId } = useHousehold();
+  const { activeHouseholdId, activeHousehold } = useHousehold();
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [siblings, setSiblings] = useState<Recipe[]>([]);
@@ -31,11 +32,19 @@ export default function RecipeDetailPage() {
   const [draft, setDraft] = useState<Filing | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
   const [videoDraft, setVideoDraft] = useState('');
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [editingMedia, setEditingMedia] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  // "Tue · Dinner" once this recipe has just been planned, so the page can say so.
+  const [planned, setPlanned] = useState<string | null>(null);
 
   useEffect(() => {
     if (!recipeId) return;
     setRecipe(null);
     setError(null);
+    setPlanned(null);
+    setEditingMedia(false);
+    setOrganizing(false);
     const scope = activeHouseholdId ? `?householdId=${activeHouseholdId}` : '';
     api<Recipe>('GET', `/api/recipes/${recipeId}${scope}`)
       .then(setRecipe)
@@ -142,10 +151,14 @@ export default function RecipeDetailPage() {
   async function saveVideo(url: string) {
     if (!recipe) return;
     setPhotosBusy(true);
+    setVideoError(null);
     try {
       setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/video`, { videoUrl: url }));
+      setVideoDraft('');
     } catch (err) {
-      setError(err instanceof ApiError ? 'That link needs to start with http:// or https://' : 'Could not save that link.');
+      // Said next to the field. Setting the page error here replaced the whole recipe with it.
+      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
+      setVideoError(message ?? 'Could not save that link.');
     } finally {
       setPhotosBusy(false);
     }
@@ -183,6 +196,90 @@ export default function RecipeDetailPage() {
   const total = totalMinutes(recipe);
   const steps = instructionSteps(recipe.instructions);
 
+  const photoManager = mine && (
+    <Card title="Photos & video">
+      {recipe.photoIds.length === 0 ? (
+        <p className="mb-3 text-sm text-muted">No photos yet.</p>
+      ) : (
+        <ul className="mb-3 grid grid-cols-3 gap-2">
+          {recipe.photoIds.map((id) => (
+            <li key={id} className="relative">
+              <img src={imageUrl(id)} alt="" className="aspect-square w-full rounded-xl object-cover" />
+              <div className="mt-1 flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="flex-1"
+                  disabled={photosBusy || recipe.coverImageId === id}
+                  onClick={() => saveImages(id, recipe.photoIds)}
+                >
+                  {recipe.coverImageId === id ? 'Cover' : 'Make cover'}
+                </Button>
+                <IconButton
+                  label="Remove photo"
+                  disabled={photosBusy}
+                  onClick={() =>
+                    saveImages(
+                      recipe.coverImageId === id ? null : recipe.coverImageId,
+                      recipe.photoIds.filter((p) => p !== id),
+                    )
+                  }
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </IconButton>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ImagePicker
+        householdId={activeHouseholdId!}
+        multiple
+        onUploaded={(ids) => saveImages(recipe.coverImageId ?? ids[0] ?? null, [...recipe.photoIds, ...ids])}
+      >
+        Add photos
+      </ImagePicker>
+
+      <div className="mt-4 border-t border-line pt-3">
+        <Field label="Video link" hint="Paste a TikTok (or any) video link.">
+          <div className="flex gap-2">
+            <Input
+              type="url"
+              inputMode="url"
+              placeholder="https://www.tiktok.com/..."
+              value={videoDraft || recipe.videoUrl || ''}
+              onChange={(e) => setVideoDraft(e.target.value)}
+              aria-label="Video link"
+            />
+            <Button variant="secondary" disabled={photosBusy} onClick={() => saveVideo(videoDraft.trim())}>
+              Save
+            </Button>
+          </div>
+        </Field>
+        {videoError && <ErrorText>{videoError}</ErrorText>}
+        {recipe.videoUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-1 text-danger"
+            disabled={photosBusy}
+            onClick={() => {
+              setVideoDraft('');
+              saveVideo('');
+            }}
+          >
+            Remove video
+          </Button>
+        )}
+      </div>
+
+      <Button full variant="secondary" className="mt-4" onClick={() => setEditingMedia(false)}>
+        Done
+      </Button>
+    </Card>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1">
@@ -190,44 +287,41 @@ export default function RecipeDetailPage() {
           <ChevronLeftIcon className="h-5 w-5" />
           Recipes
         </Button>
-        <div className="ml-auto flex items-center gap-1">
-          <IconButton
-            label="Previous recipe"
-            disabled={!prev}
-            onClick={() => prev && navigate(`/recipes/${prev.id}`)}
-          >
-            <ChevronLeftIcon className="h-5 w-5" />
-          </IconButton>
-          <IconButton label="Next recipe" disabled={!next} onClick={() => next && navigate(`/recipes/${next.id}`)}>
-            <ChevronRightIcon className="h-5 w-5" />
-          </IconButton>
+        <div className="ml-auto flex items-center">
+          {asCard ? (
+            <Button size="sm" variant="ghost" onClick={() => setAsCard(false)}>
+              Done
+            </Button>
+          ) : (
+            <>
+              <IconButton
+                label="Previous recipe"
+                disabled={!prev}
+                onClick={() => prev && navigate(`/recipes/${prev.id}`)}
+              >
+                <ChevronLeftIcon className="h-5 w-5" />
+              </IconButton>
+              <IconButton label="Next recipe" disabled={!next} onClick={() => next && navigate(`/recipes/${next.id}`)}>
+                <ChevronRightIcon className="h-5 w-5" />
+              </IconButton>
+              {/* Everything except cooking and planning it waits here. */}
+              <ActionMenu
+                label="Recipe options"
+                title={recipe.name}
+                items={[
+                  mine && { label: 'Edit', onSelect: () => navigate(`/recipes/${recipe.id}/edit`) },
+                  mine && {
+                    label: recipe.sharedWith.length ? `Share · with ${recipe.sharedWith.length}` : 'Share',
+                    onSelect: openSharing,
+                  },
+                  { label: recipe.section ? 'Organize' : 'Move to my recipes', onSelect: startOrganizing },
+                  mine && { label: 'Photos & video', onSelect: () => setEditingMedia(true) },
+                  { label: 'Index card', onSelect: () => setAsCard(true) },
+                ]}
+              />
+            </>
+          )}
         </div>
-      </div>
-
-      {/* Quiet text actions: the recipe is the thing on this page, not a toolbar above it. */}
-      <div className="-mx-3 flex flex-wrap items-center gap-1">
-        {mine && !asCard && (
-          <Button size="sm" variant="ghost" onClick={() => navigate(`/recipes/${recipe.id}/edit`)}>
-            Edit
-          </Button>
-        )}
-        {mine && !asCard && (
-          <Button size="sm" variant="ghost" onClick={openSharing}>
-            {recipe.sharedWith.length ? `Shared with ${recipe.sharedWith.length}` : 'Share'}
-          </Button>
-        )}
-        {!asCard && (
-          <Button
-            size="sm"
-            variant={organizing ? 'secondary' : 'ghost'}
-            onClick={() => (organizing ? setOrganizing(false) : startOrganizing())}
-          >
-            {recipe.section ? 'Organize' : 'Move to my catalog'}
-          </Button>
-        )}
-        <Button size="sm" variant={asCard ? 'secondary' : 'ghost'} onClick={() => setAsCard((v) => !v)}>
-          {asCard ? 'Normal view' : 'Index card'}
-        </Button>
       </div>
 
       {asCard ? (
@@ -273,8 +367,39 @@ export default function RecipeDetailPage() {
             )}
           </div>
 
+          {planned && (
+            <p className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">
+              On the plan for {planned} ·{' '}
+              <Link to="/meal-plan" className="underline">
+                See Plan
+              </Link>
+            </p>
+          )}
+
+          {/* The next step from a recipe is the plan, so that is the one filled button here. */}
+          {activeHouseholdId && (
+            <div className="space-y-2">
+              <Button full size="lg" onClick={() => setPlanning(true)}>
+                <CalendarIcon className="h-5 w-5" />
+                Add to plan
+              </Button>
+              {isSafeLink(recipe.videoUrl) && (
+                <a
+                  href={recipe.videoUrl!}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="press flex min-h-touch items-center justify-center gap-2 rounded-xl bg-elevated px-4
+                             font-semibold text-ink"
+                >
+                  <PlayIcon className="h-5 w-5" />
+                  Watch on {videoHostLabel(recipe.videoUrl!)}
+                </a>
+              )}
+            </div>
+          )}
+
           {organizing && draft && activeHouseholdId && (
-            <Card title={recipe.section ? 'Organize' : 'Move to my catalog'}>
+            <Card title={recipe.section ? 'Organize' : 'Move to my recipes'}>
               <RecipeClassifier householdId={activeHouseholdId} value={draft} onChange={setDraft} />
               <div className="mt-4 flex gap-2">
                 <Button className="flex-1" disabled={busy} onClick={saveClassification}>
@@ -293,22 +418,11 @@ export default function RecipeDetailPage() {
             </Card>
           )}
 
-          {isSafeLink(recipe.videoUrl) && (
-            <a
-              href={recipe.videoUrl!}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="flex min-h-touch items-center justify-center gap-2 rounded-2xl bg-accent px-4
-                         font-medium text-accent-ink"
-            >
-              <PlayIcon className="h-5 w-5" />
-              Watch on {videoHostLabel(recipe.videoUrl!)}
-            </a>
-          )}
+          {editingMedia && photoManager}
 
           <Card title={`Ingredients · ${recipe.ingredients.length}`}>
             {recipe.ingredients.length === 0 ? (
-              <EmptyState>No ingredients yet — until they're in, planning this adds nothing to the grocery list.</EmptyState>
+              <EmptyState>No ingredients yet — until they're in, planning this adds nothing to Groceries.</EmptyState>
             ) : (
               <ul className="divide-y divide-line">
                 {recipe.ingredients.map((i) => (
@@ -319,107 +433,13 @@ export default function RecipeDetailPage() {
                     <span className="min-w-0">
                       {i.ingredientName}
                       {i.notes && <span className="text-muted">, {i.notes}</span>}
+                      {i.optional && <span className="text-muted"> · optional</span>}
                     </span>
                   </li>
                 ))}
               </ul>
             )}
           </Card>
-
-          {(mine || recipe.photoIds.length > 0 || recipe.videoUrl) && (
-            <Card title={`Photos${recipe.photoIds.length ? ` · ${recipe.photoIds.length}` : ''}`}>
-              {recipe.photoIds.length === 0 ? (
-                <p className="mb-3 text-sm text-muted">No photos yet.</p>
-              ) : (
-                <ul className="mb-3 grid grid-cols-3 gap-2">
-                  {recipe.photoIds.map((id) => (
-                    <li key={id} className="relative">
-                      <img
-                        src={imageUrl(id)}
-                        alt=""
-                        className="aspect-square w-full rounded-xl object-cover"
-                      />
-                      {mine && (
-                        <div className="mt-1 flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="flex-1"
-                            disabled={photosBusy || recipe.coverImageId === id}
-                            onClick={() => saveImages(id, recipe.photoIds)}
-                          >
-                            {recipe.coverImageId === id ? 'Cover' : 'Make cover'}
-                          </Button>
-                          <IconButton
-                            label="Remove photo"
-                            disabled={photosBusy}
-                            onClick={() =>
-                              saveImages(
-                                recipe.coverImageId === id ? null : recipe.coverImageId,
-                                recipe.photoIds.filter((p) => p !== id),
-                              )
-                            }
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </IconButton>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {mine && (
-                <div className="mb-3 border-b border-line pb-3">
-                  <Field label="Video link" hint="Paste a TikTok (or any) video link.">
-                    <div className="flex gap-2">
-                      <Input
-                        type="url"
-                        inputMode="url"
-                        placeholder="https://www.tiktok.com/..."
-                        value={videoDraft || recipe.videoUrl || ''}
-                        onChange={(e) => setVideoDraft(e.target.value)}
-                        aria-label="Video link"
-                      />
-                      <Button
-                        variant="secondary"
-                        disabled={photosBusy}
-                        onClick={() => saveVideo(videoDraft.trim())}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  </Field>
-                  {recipe.videoUrl && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1"
-                      disabled={photosBusy}
-                      onClick={() => {
-                        setVideoDraft('');
-                        saveVideo('');
-                      }}
-                    >
-                      Remove video
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              {mine && (
-                <ImagePicker
-                  householdId={activeHouseholdId!}
-                  multiple
-                  onUploaded={(ids) =>
-                    saveImages(recipe.coverImageId ?? ids[0] ?? null, [...recipe.photoIds, ...ids])
-                  }
-                >
-                  Add photos
-                </ImagePicker>
-              )}
-            </Card>
-          )}
 
           {steps.length > 0 && (
             <Card title="Method">
@@ -440,7 +460,34 @@ export default function RecipeDetailPage() {
               </ol>
             </Card>
           )}
+
+          {/* Just the pictures while reading; managing them is behind ••• → Photos & video. */}
+          {!editingMedia && recipe.photoIds.length > 1 && (
+            <Card title="Photos">
+              <ul className="grid grid-cols-3 gap-2">
+                {recipe.photoIds.map((id) => (
+                  <li key={id}>
+                    <img src={imageUrl(id)} alt="" className="aspect-square w-full rounded-xl object-cover" />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </>
+      )}
+
+      {planning && activeHouseholdId && (
+        <PlanRecipeSheet
+          householdId={activeHouseholdId}
+          recipe={recipe}
+          days={activeHousehold?.planningHorizonDays ?? 7}
+          servings={activeHousehold?.defaultServings ?? recipe.servings}
+          onClose={() => setPlanning(false)}
+          onPlanned={(when) => {
+            setPlanning(false);
+            setPlanned(when);
+          }}
+        />
       )}
 
       {sharing && (

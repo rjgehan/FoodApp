@@ -15,12 +15,18 @@ import java.util.UUID;
  * a new name while filing a recipe, or from inside a drawer, and shared by everyone in the
  * household the same way recipes and meal plans are.
  *
- * Groups nest: Chicken sits inside Main dish, so a drawer opens onto a handful of groups rather
- * than every recipe at once. One tree serves every drawer — Main dish means the same thing at
- * lunch and at dinner — and a drawer only shows the groups that have recipes in it.
+ * Groups nest: Chicken sits inside Main, so a drawer opens onto a handful of groups rather than
+ * every recipe at once.
+ *
+ * A group belongs to one drawer, so Breakfast and Dinner can each have their own "Main" without
+ * meaning the same thing. A group with no drawer (`section == null`) shows in all of them — that
+ * is what every group made before drawers were part of a group is, and what a household's own
+ * cross-cutting groups ("Grandma's") can stay.
  */
 @Entity
-@Table(name = "recipe_categories", uniqueConstraints = @UniqueConstraint(columnNames = {"household_id", "name"}))
+// The name is unique within its drawer, which Hibernate cannot express (nulls would slip
+// through), so SchemaTouchUps owns that index instead.
+@Table(name = "recipe_categories")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -38,6 +44,10 @@ public class RecipeCategory {
 
     @Column(nullable = false)
     private String name;
+
+    /** The drawer this group belongs to. Null means it shows in every drawer. */
+    @Enumerated(EnumType.STRING)
+    private RecipeSection section;
 
     /** The group this one sits inside. Null for a group at the top of a drawer. */
     @ManyToOne(fetch = FetchType.LAZY)

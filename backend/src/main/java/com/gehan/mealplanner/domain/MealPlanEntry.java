@@ -10,6 +10,9 @@ import lombok.Setter;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -70,7 +73,29 @@ public class MealPlanEntry {
 
     private String notes;
 
+    /**
+     * Which of the recipe's optional ingredients to actually buy for this occurrence — decided
+     * once, when the recipe is planned onto this slot, rather than asked again every time
+     * something adds this entry to the grocery list. An id no longer on the recipe (edited since)
+     * is simply ignored wherever this is read.
+     */
+    @ElementCollection
+    @CollectionTable(name = "meal_plan_entry_included_optionals", joinColumns = @JoinColumn(name = "entry_id"))
+    @Column(name = "recipe_ingredient_id")
+    @Builder.Default
+    private Set<UUID> includedOptionalIngredientIds = new HashSet<>();
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
+
+    /**
+     * Day, then breakfast → lunch → dinner → snack, then the order things were added — so a main
+     * comes before the sides added to it. The database can't do this: meal types are stored as
+     * text, which sorts DINNER before LUNCH, and it has no fixed order within a meal.
+     */
+    public static final Comparator<MealPlanEntry> EATING_ORDER = Comparator
+            .comparing(MealPlanEntry::getDate)
+            .thenComparing(MealPlanEntry::getMealType)
+            .thenComparing(MealPlanEntry::getCreatedAt);
 }

@@ -1,0 +1,247 @@
+From 37c3e34f66041d2f816ef8c4aeaee17e7238de4e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:36:18 -0400
+Subject: [PATCH 05/12] Refuse negative amounts, zero servings, over-long names
+ and unbounded plan ranges
+
+A 5000-character item name was a 500; -3 cups and 0-serving meals were
+accepted; the dashboard plan endpoint would build megabytes of empty
+days for ?days=100000.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../java/com/gehan/mealplanner/dto/CupboardDtos.java |  8 +++++---
+ .../com/gehan/mealplanner/dto/GroceryListDtos.java   |  8 +++++---
+ .../java/com/gehan/mealplanner/dto/MealPlanDtos.java |  5 +++--
+ .../java/com/gehan/mealplanner/dto/RecipeDtos.java   | 10 ++++++----
+ .../integration/IntegrationController.java           | 12 +++++++++++-
+ .../mealplanner/integration/IntegrationDtos.java     |  6 +++++-
+ .../gehan/mealplanner/web/CupboardController.java    |  2 +-
+ .../gehan/mealplanner/web/GroceryListController.java |  2 +-
+ 8 files changed, 37 insertions(+), 16 deletions(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
+index 6ab0f0c..aa88513 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/CupboardDtos.java
+@@ -2,6 +2,8 @@ package com.gehan.mealplanner.dto;
+ 
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ 
+ import java.math.BigDecimal;
+ import java.util.UUID;
+@@ -9,7 +11,7 @@ import java.util.UUID;
+ public class CupboardDtos {
+ 
+     /** Adding something already in the cupboard says you have it again — no longer running low. */
+-    public record AddCupboardItemRequest(@NotBlank String name, Boolean staple) {
++    public record AddCupboardItemRequest(@NotBlank @Size(max = 200) String name, Boolean staple) {
+     }
+ 
+     /**
+@@ -20,8 +22,8 @@ public class CupboardDtos {
+      * Omitted, it leaves whichever mode the item is already in alone.
+      */
+     public record UpdateCupboardItemRequest(
+-            Boolean runningLow, Boolean staple, String name,
+-            Boolean trackQuantity, BigDecimal quantity, String unit) {
++            Boolean runningLow, Boolean staple, @Size(max = 200) String name,
++            Boolean trackQuantity, @PositiveOrZero BigDecimal quantity, @Size(max = 40) String unit) {
+     }
+ 
+     /** How much to add (or, negative, remove) from an item already tracking an exact amount. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
+index 3cd704a..0252990 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/GroceryListDtos.java
+@@ -1,6 +1,8 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ 
+ import java.io.Serializable;
+ import java.math.BigDecimal;
+@@ -11,9 +13,9 @@ import java.util.UUID;
+ public class GroceryListDtos {
+ 
+     public record AddItemRequest(
+-            String ingredientName,
+-            BigDecimal quantity,
+-            String unit) {
++            @Size(max = 200) String ingredientName,
++            @PositiveOrZero BigDecimal quantity,
++            @Size(max = 40) String unit) {
+     }
+ 
+     /**
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
+index 8b38f91..90a6feb 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/MealPlanDtos.java
+@@ -1,6 +1,7 @@
+ package com.gehan.mealplanner.dto;
+ 
+ import com.gehan.mealplanner.domain.MealType;
++import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotNull;
+ 
+ import java.time.LocalDate;
+@@ -25,7 +26,7 @@ public class MealPlanDtos {
+             String itemName,
+             /** Optional "HH:mm". Null simply means no particular time. */
+             LocalTime time,
+-            Integer servings,
++            @Min(1) Integer servings,
+             String notes,
+             /**
+              * Which of the recipe's optional ingredients to buy this time — asked for once, when
+@@ -46,7 +47,7 @@ public class MealPlanDtos {
+              * means, and there is no way for JSON to tell that apart from "set it to nothing".
+              */
+             Boolean clearTime,
+-            Integer servings,
++            @Min(1) Integer servings,
+             String notes,
+             /** Same meaning as on {@link AddMealPlanEntryRequest}; null leaves it unchanged. */
+             List<UUID> includedOptionalIngredientIds) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+index 72b820b..ba45b4b 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/dto/RecipeDtos.java
+@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Min;
+ import jakarta.validation.constraints.NotBlank;
+ import jakarta.validation.constraints.NotEmpty;
+ import jakarta.validation.constraints.NotNull;
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
+ import jakarta.validation.Valid;
+ 
+ import java.math.BigDecimal;
+@@ -14,9 +16,9 @@ import java.util.UUID;
+ public class RecipeDtos {
+ 
+     public record RecipeIngredientRequest(
+-            @NotBlank String ingredientName,
+-            @NotNull BigDecimal quantity,
+-            String unit,
++            @NotBlank @Size(max = 200) String ingredientName,
++            @NotNull @PositiveOrZero BigDecimal quantity,
++            @Size(max = 40) String unit,
+             String notes,
+             /** Something a cook might skip — chosen per occasion when the recipe is planned. */
+             boolean optional) {
+@@ -24,7 +26,7 @@ public class RecipeDtos {
+ 
+     /** Ingredient quantities are for the given servings count, as written — not normalized to 1 person. */
+     public record RecipeRequest(
+-            @NotBlank String name,
++            @NotBlank @Size(max = 200) String name,
+             String description,
+             String instructions,
+             Integer prepTimeMinutes,
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
+index fa1dd3a..e193dea 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationController.java
+@@ -2,9 +2,12 @@ package com.gehan.mealplanner.integration;
+ 
+ import com.gehan.mealplanner.domain.RecipeSection;
+ import com.gehan.mealplanner.integration.IntegrationDtos.*;
++import jakarta.validation.Valid;
+ import org.springframework.format.annotation.DateTimeFormat;
++import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.*;
++import org.springframework.web.server.ResponseStatusException;
+ 
+ import java.time.LocalDate;
+ import java.util.List;
+@@ -19,6 +22,8 @@ import java.util.UUID;
+ @RequestMapping("/api/integration")
+ public class IntegrationController {
+ 
++    private static final int MAX_PLAN_DAYS = 366;
++
+     private final IntegrationService service;
+ 
+     public IntegrationController(IntegrationService service) {
+@@ -51,6 +56,11 @@ public class IntegrationController {
+ 
+         LocalDate from = start != null ? start : LocalDate.now();
+         LocalDate to = end != null ? end : from.plusDays(days != null ? Math.max(days, 1) - 1 : 6);
++        // Every day comes back, empty or not, so an open-ended range is megabytes of nothing.
++        if (to.isBefore(from) || to.isAfter(from.plusDays(MAX_PLAN_DAYS - 1))) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
++                    "Ask for between 1 and " + MAX_PLAN_DAYS + " days.");
++        }
+         return service.plan(householdId, from, to);
+     }
+ 
+@@ -84,7 +94,7 @@ public class IntegrationController {
+      */
+     @PostMapping("/households/{householdId}/grocery-list")
+     public GroceryItem addGroceryItem(@PathVariable UUID householdId,
+-                                      @RequestBody AddGroceryItemRequest request) {
++                                      @Valid @RequestBody AddGroceryItemRequest request) {
+         return service.addGroceryItem(householdId, request);
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+index 09b9f2f..549d9a3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+@@ -3,6 +3,9 @@ package com.gehan.mealplanner.integration;
+ import com.gehan.mealplanner.domain.MealType;
+ import com.gehan.mealplanner.domain.RecipeSection;
+ 
++import jakarta.validation.constraints.PositiveOrZero;
++import jakarta.validation.constraints.Size;
++
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.LocalTime;
+@@ -88,7 +91,8 @@ public class IntegrationDtos {
+     }
+ 
+     /** `name` is free text — it does not have to match an ingredient the app already knows. */
+-    public record AddGroceryItemRequest(String name, BigDecimal quantity, String unit) {
++    public record AddGroceryItemRequest(
++            @Size(max = 200) String name, @PositiveOrZero BigDecimal quantity, @Size(max = 40) String unit) {
+     }
+ 
+     public record SetCheckedRequest(Boolean checked) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java b/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
+index 3f474e5..2f52655 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/web/CupboardController.java
+@@ -40,7 +40,7 @@ public class CupboardController {
+     public CupboardItemResponse update(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID householdId,
+                                        @PathVariable UUID itemId,
+-                                       @RequestBody UpdateCupboardItemRequest request) {
++                                       @Valid @RequestBody UpdateCupboardItemRequest request) {
+         return cupboardService.update(householdId, itemId, userId, request);
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java b/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
+index 66cbdf7..bbf4813 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
++++ b/backend/src/main/java/com/gehan/mealplanner/web/GroceryListController.java
+@@ -32,7 +32,7 @@ public class GroceryListController {
+     @PostMapping("/grocery-list/items")
+     public ResponseEntity<GroceryListItemResponse> addItem(@AuthenticationPrincipal UUID userId,
+                                                              @PathVariable UUID householdId,
+-                                                             @RequestBody AddItemRequest request) {
++                                                             @Valid @RequestBody AddItemRequest request) {
+         return ResponseEntity.status(HttpStatus.CREATED)
+                 .body(groceryListService.addManualItem(householdId, userId, request));
+     }
+-- 
+2.42.0
+

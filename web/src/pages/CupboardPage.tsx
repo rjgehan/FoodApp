@@ -5,10 +5,11 @@ import type { CupboardItem, GroceryCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { groupByCategory } from '../utils/storeSections';
-import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, Select, Sheet } from '../components/ui';
+import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, NumberInput, Select, Sheet } from '../components/ui';
 import { PlusIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
+import UnitInput from '../components/UnitInput';
 
 function byName(a: CupboardItem, b: CupboardItem) {
   return a.name.localeCompare(b.name);
@@ -85,6 +86,14 @@ export default function CupboardPage() {
     );
   }
 
+  async function adjustQuantity(item: CupboardItem, delta: number) {
+    const optimistic = Math.max(0, (item.quantity ?? 0) + delta);
+    replace({ ...item, quantity: optimistic });
+    replace(
+      await api<CupboardItem>('POST', `/api/households/${activeHouseholdId}/cupboard/${item.id}/adjust`, { delta }),
+    );
+  }
+
   async function remove(item: CupboardItem) {
     drop(item);
     await api('DELETE', `/api/households/${activeHouseholdId}/cupboard/${item.id}`);
@@ -124,8 +133,9 @@ export default function CupboardPage() {
           placeholder="Do we have… ?"
           aria-label="Search the cupboard, or add something"
         />
+        {/* Loud only when nothing matched — a partial match ("gar" → garlic) is usually the answer. */}
         {q && !exact && (
-          <Button type="submit" full variant="secondary" disabled={busy}>
+          <Button type="submit" full variant={shown.length ? 'ghost' : 'secondary'} disabled={busy}>
             <PlusIcon className="h-5 w-5" />
             Add “{query.trim()}” — we have it
           </Button>
@@ -136,9 +146,9 @@ export default function CupboardPage() {
         <p className="py-6 text-center text-[0.9375rem] text-muted">Loading…</p>
       ) : all.length === 0 ? (
         <EmptyState>
-          Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> on the{' '}
+          Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
           <Link to="/grocery-list" className="font-medium text-accent">
-            grocery list
+            Groceries
           </Link>{' '}
           and what you bought lands here — or add things above.
         </EmptyState>
@@ -168,7 +178,16 @@ export default function CupboardPage() {
                           <span className="block truncate">{item.name}</span>
                           {detail && <span className="block truncate text-[0.8125rem] text-muted">{detail}</span>}
                         </button>
-                        <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
+                        {item.quantity != null ? (
+                          <QuantityStepper
+                            quantity={item.quantity}
+                            unit={item.unit}
+                            onAdjust={(delta) => adjustQuantity(item, delta)}
+                          />
+                        ) : (
+                          // "Always have" means it is never low, so there is nothing to toggle.
+                          !item.staple && <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
+                        )}
                         {/*
                           * Swiping needs a finger, so a wide screen with a mouse gets the actions as buttons too.
                           * (A narrow window can still drag a row with the mouse; there is no room for both.)
@@ -193,8 +212,7 @@ export default function CupboardPage() {
 
       {all.length > 0 && (
         <p className="px-1 text-[0.8125rem] text-subtle">
-          Swipe an item left to buy it again or remove it — all the way across removes it. Tap it to rename it, move
-          it to another aisle, or mark it “Always have”.
+          Swipe an item left to buy it again or remove it. Tap it to edit.
         </p>
       )}
 
@@ -214,6 +232,44 @@ export default function CupboardPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** An exact count instead of Have/Low — tap +/- to adjust without opening the editor. */
+function QuantityStepper({
+  quantity,
+  unit,
+  onAdjust,
+}: {
+  quantity: number;
+  unit: string | null;
+  onAdjust: (delta: number) => void;
+}) {
+  // Trims "3.00" down to "3", but keeps "2.5" as written.
+  const shown = Number.isInteger(quantity) ? String(quantity) : String(Math.round(quantity * 100) / 100);
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-elevated px-1 py-0.5" role="group" aria-label="Amount on hand">
+      <button
+        type="button"
+        aria-label="One less"
+        onClick={() => onAdjust(-1)}
+        className="flex h-7 w-7 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface"
+      >
+        −
+      </button>
+      <span className="min-w-[2.5rem] text-center text-[0.8125rem] font-semibold tabular-nums">
+        {shown}
+        {unit ? ` ${unit}` : ''}
+      </span>
+      <button
+        type="button"
+        aria-label="One more"
+        onClick={() => onAdjust(1)}
+        className="flex h-7 w-7 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -262,11 +318,17 @@ function EditItemSheet({
   const [name, setName] = useState(item.name);
   const [categoryId, setCategoryId] = useState(item.categoryId ?? categories[0]?.id ?? '');
   const [staple, setStaple] = useState(item.staple);
+  const [trackQuantity, setTrackQuantity] = useState(item.quantity != null);
+  const [quantity, setQuantity] = useState(item.quantity ?? 1);
+  const [unit, setUnit] = useState(item.unit ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const renamed = name.trim() !== item.name;
-  const changed = renamed || categoryId !== item.categoryId || staple !== item.staple;
+  const quantityModeChanged = trackQuantity !== (item.quantity != null);
+  const quantityValueChanged = trackQuantity && (quantity !== (item.quantity ?? quantity) || unit !== (item.unit ?? ''));
+  const changed = renamed || categoryId !== item.categoryId || staple !== item.staple
+    || quantityModeChanged || quantityValueChanged;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -275,10 +337,13 @@ function EditItemSheet({
     setError(null);
     try {
       let updated = item;
-      if (renamed || staple !== item.staple) {
+      if (renamed || staple !== item.staple || quantityModeChanged || quantityValueChanged) {
         updated = await api<CupboardItem>('PATCH', `/api/households/${householdId}/cupboard/${item.id}`, {
           name: renamed ? name.trim() : null,
           staple: staple !== item.staple ? staple : null,
+          trackQuantity: quantityModeChanged ? trackQuantity : null,
+          quantity: trackQuantity && (quantityModeChanged || quantityValueChanged) ? quantity : null,
+          unit: trackQuantity ? unit.trim() || null : null,
         });
       }
       // The aisle belongs to the ingredient — the new one, after a rename — so it goes last.
@@ -325,9 +390,37 @@ function EditItemSheet({
           <CheckCircle checked={staple} className="mt-0.5" />
           <span>
             <span className="block font-medium">Always have</span>
-            <span className="block text-[0.8125rem] text-muted">For things like salt and oil — meals leave them off the grocery list.</span>
+            <span className="block text-[0.8125rem] text-muted">For things like salt and oil — planned meals leave them off Groceries.</span>
           </span>
         </button>
+        <button
+          type="button"
+          aria-pressed={trackQuantity}
+          onClick={() => setTrackQuantity((v) => !v)}
+          className="flex w-full items-start gap-3 text-left"
+        >
+          <CheckCircle checked={trackQuantity} className="mt-0.5" />
+          <span>
+            <span className="block font-medium">Track an exact amount</span>
+            <span className="block text-[0.8125rem] text-muted">
+              A count instead of Have/Low — "3 cans", say.
+            </span>
+          </span>
+        </button>
+        {trackQuantity && (
+          <Field label="Amount">
+            <div className="flex gap-2">
+              <NumberInput
+                className="w-20"
+                min={0}
+                value={quantity}
+                onChange={(v) => setQuantity(v ?? 0)}
+                aria-label="Amount"
+              />
+              <UnitInput className="flex-1" value={unit} onChange={setUnit} aria-label="Unit" />
+            </div>
+          </Field>
+        )}
         {error && <ErrorText>{error}</ErrorText>}
         <div className="flex gap-2">
           <Button type="submit" className="flex-1" disabled={busy || !name.trim() || !changed}>

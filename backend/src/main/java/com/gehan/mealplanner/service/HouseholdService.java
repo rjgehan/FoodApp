@@ -46,8 +46,6 @@ public class HouseholdService {
         this.groceryCategoryService = groceryCategoryService;
     }
 
-    /** Starting sub-categories, so a new household's catalog is never blank at the second level. */
-    private static final List<String> DEFAULT_CATEGORIES = List.of("Main dish", "Side", "Veggie", "Full meal");
 
     public HouseholdResponse create(UUID ownerId, CreateHouseholdRequest request) {
         User owner = userRepository.findById(ownerId)
@@ -60,8 +58,7 @@ public class HouseholdService {
                 .role(HouseholdRole.OWNER)
                 .build());
 
-        DEFAULT_CATEGORIES.forEach(name -> categoryRepository.save(
-                RecipeCategory.builder().household(household).name(name).build()));
+        RecipeService.seedDefaultGroups(household, categoryRepository);
         groceryCategoryService.seedDefaults(household);
 
         return toResponse(household, HouseholdRole.OWNER);
@@ -117,7 +114,7 @@ public class HouseholdService {
 
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-        User newMember = userRepository.findByUsername(request.username())
+        User newMember = userRepository.findForSignIn(request.username())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No user with that username"));
 
         if (memberRepository.existsByHouseholdIdAndUserId(householdId, newMember.getId())) {
@@ -147,7 +144,7 @@ public class HouseholdService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
         String username = request.username().trim();
-        if (userRepository.existsByUsername(username)) {
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Someone already uses that name — invite them instead.");
         }
@@ -212,7 +209,7 @@ public class HouseholdService {
     @Transactional
     public MemberResponse createUnassignedUser(CreateUserRequest request) {
         String username = request.username().trim();
-        if (userRepository.existsByUsername(username)) {
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Someone already uses that name — invite them instead.");
         }
@@ -240,7 +237,7 @@ public class HouseholdService {
 
         if (request.username() != null && !request.username().isBlank()) {
             String username = request.username().trim();
-            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsername(username)) {
+            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsernameIgnoreCase(username)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already uses that name.");
             }
             user.setUsername(username);

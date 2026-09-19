@@ -2,9 +2,12 @@ package com.gehan.mealplanner.integration;
 
 import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.integration.IntegrationDtos.*;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -18,6 +21,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/integration")
 public class IntegrationController {
+
+    private static final int MAX_PLAN_DAYS = 366;
 
     private final IntegrationService service;
 
@@ -51,6 +56,11 @@ public class IntegrationController {
 
         LocalDate from = start != null ? start : LocalDate.now();
         LocalDate to = end != null ? end : from.plusDays(days != null ? Math.max(days, 1) - 1 : 6);
+        // Every day comes back, empty or not, so an open-ended range is megabytes of nothing.
+        if (to.isBefore(from) || to.isAfter(from.plusDays(MAX_PLAN_DAYS - 1))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ask for between 1 and " + MAX_PLAN_DAYS + " days.");
+        }
         return service.plan(householdId, from, to);
     }
 
@@ -84,7 +94,7 @@ public class IntegrationController {
      */
     @PostMapping("/households/{householdId}/grocery-list")
     public GroceryItem addGroceryItem(@PathVariable UUID householdId,
-                                      @RequestBody AddGroceryItemRequest request) {
+                                      @Valid @RequestBody AddGroceryItemRequest request) {
         return service.addGroceryItem(householdId, request);
     }
 

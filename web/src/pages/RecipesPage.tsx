@@ -107,7 +107,7 @@ export default function RecipesPage() {
               to={`/recipes/section/${SHARED_KEY}`}
               label="Shared with you"
               count={sharedCount}
-              hint="From other households — move them into your own catalog"
+              hint="From other households"
               wide
             />
           )}

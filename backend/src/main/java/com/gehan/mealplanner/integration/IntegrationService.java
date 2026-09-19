@@ -65,6 +65,7 @@ public class IntegrationService {
         }
         mealPlanEntryRepository
                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
+                .stream().sorted(MealPlanEntry.EATING_ORDER)
                 .forEach(e -> byDate.computeIfAbsent(e.getDate(), k -> new ArrayList<>()).add(e));
 
         return byDate.entrySet().stream().map(e -> new DayResponse(e.getKey(), meals(e.getValue()))).toList();
@@ -136,8 +137,9 @@ public class IntegrationService {
             String unit = i.getUnit() == null ? "" : i.getUnit();
             String name = i.getIngredient().getName();
             String text = (quantity + " " + unit).trim();
-            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes());
-            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), text);
+            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes())
+                    + (i.isOptional() ? " (optional)" : "");
+            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), i.isOptional(), text);
         }).toList();
 
         return new RecipeDetail(

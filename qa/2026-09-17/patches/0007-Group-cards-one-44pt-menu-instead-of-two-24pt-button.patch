@@ -1,0 +1,214 @@
+From e926cdc5a789f25691928b04e8f3887db5e3466c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:40:22 -0400
+Subject: [PATCH 07/12] =?UTF-8?q?Group=20cards:=20one=2044pt=20=E2=80=A2?=
+ =?UTF-8?q?=E2=80=A2=E2=80=A2=20menu=20instead=20of=20two=2024pt=20buttons?=
+ =?UTF-8?q?,=20and=20remember=20"Not=20now"?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The + and pencil on each group card were 24pt, side by side — easy to
+miss on a phone. They are now one ••• target that opens the group sheet,
+which gains "Add a group inside". The collapse chevron gets a 44pt
+target too. Dismissing a "Split … up?" suggestion is now remembered on
+the device instead of coming back on the next visit.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ web/src/components/GroupTree.tsx    | 49 ++++++++++++++++-------------
+ web/src/components/icons.tsx        |  9 ++++++
+ web/src/pages/RecipeSectionPage.tsx | 39 +++++++++++++++++++++--
+ 3 files changed, 73 insertions(+), 24 deletions(-)
+
+diff --git a/web/src/components/GroupTree.tsx b/web/src/components/GroupTree.tsx
+index aab5e36..d6d24a3 100644
+--- a/web/src/components/GroupTree.tsx
++++ b/web/src/components/GroupTree.tsx
+@@ -4,7 +4,12 @@ import type { CategoryTree } from '../utils/categoryTree';
+ import { AddGroup, EditGroup } from '../pages/RecipeSectionPage';
+ import { cx } from './ui';
+ import { coverClass } from '../utils/recipeFormat';
+-import { ChevronDownIcon, ChevronRightIcon, PencilIcon, PlusIcon } from './icons';
++import { ChevronDownIcon, ChevronRightIcon, MoreIcon } from './icons';
++
++/** A full 44pt tap target in a card corner, drawn as a small dot. */
++const cornerButton = (side: string) => cx('absolute top-0 flex h-11 w-11 items-center justify-center', side);
++const cornerDot =
++  'flex h-7 w-7 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80';
+ 
+ /**
+  * Every group nested inside the current one, all at once — Sides indented under Dinner, Chicken
+@@ -12,7 +17,7 @@ import { ChevronDownIcon, ChevronRightIcon, PencilIcon, PlusIcon } from './icons
+  * here whether or not it holds a recipe from this drawer, so an empty one you just made (or an
+  * empty leaf three levels down) never looks like it disappeared. Tiles read the same as the
+  * catalog's own Dinner/Breakfast cards, just smaller — three to a row instead of two. Add and
+- * remove groups right on the tile they're in; deleting one moves its recipes and groups up to its
++ * remove groups from the tile's ••• menu; deleting one moves its recipes and groups up to its
+  * own parent, so nothing filed in it is lost.
+  */
+ export default function GroupTree({
+@@ -78,30 +83,26 @@ export default function GroupTree({
+                     type="button"
+                     aria-label={isCollapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
+                     onClick={() => toggle(node.id)}
+-                    className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
++                    className={cornerButton('left-0')}
+                   >
+-                    {isCollapsed ? <ChevronRightIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />}
++                    <span className={cornerDot}>
++                      {isCollapsed ? <ChevronRightIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />}
++                    </span>
+                   </button>
+                 )}
+ 
+-                <div className="absolute right-1.5 top-1.5 flex gap-1">
+-                  <button
+-                    type="button"
+-                    aria-label={`Add a group inside ${node.name}`}
+-                    onClick={() => setAddingChildOf((id) => (id === node.id ? null : node.id))}
+-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
+-                  >
+-                    <PlusIcon className="h-3.5 w-3.5" />
+-                  </button>
+-                  <button
+-                    type="button"
+-                    aria-label={`Rename or delete ${node.name}`}
+-                    onClick={() => setEditingGroup(node)}
+-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80"
+-                  >
+-                    <PencilIcon className="h-3.5 w-3.5" />
+-                  </button>
+-                </div>
++                {/* One ••• for the rare things — a 44pt target a thumb can hit, where two
++                    24pt buttons side by side were easy to miss. */}
++                <button
++                  type="button"
++                  aria-label={`More for ${node.name}`}
++                  onClick={() => setEditingGroup(node)}
++                  className={cornerButton('right-0')}
++                >
++                  <span className={cornerDot}>
++                    <MoreIcon className="h-3.5 w-3.5" />
++                  </span>
++                </button>
+               </div>
+ 
+               {isAdding && (
+@@ -138,6 +139,10 @@ export default function GroupTree({
+           group={editingGroup}
+           upTo={(editingGroup.parentId && tree.byId.get(editingGroup.parentId)?.name) || drawerName}
+           onClose={() => setEditingGroup(null)}
++          onAddInside={() => {
++            setAddingChildOf(editingGroup.id);
++            setEditingGroup(null);
++          }}
+           onRenamed={async () => {
+             setEditingGroup(null);
+             await onChanged();
+diff --git a/web/src/components/icons.tsx b/web/src/components/icons.tsx
+index 0b18b04..51b7684 100644
+--- a/web/src/components/icons.tsx
++++ b/web/src/components/icons.tsx
+@@ -143,3 +143,12 @@ export const PencilIcon = (p: SVGProps<SVGSVGElement>) => (
+     <path d="M13.5 7.2l3.3 3.3" />
+   </Icon>
+ );
++
++/** The ••• that holds a thing's less-common actions. Filled dots read better than strokes this small. */
++export const MoreIcon = (p: SVGProps<SVGSVGElement>) => (
++  <Icon {...p} fill="currentColor" stroke="none">
++    <circle cx="5" cy="12" r="1.75" />
++    <circle cx="12" cy="12" r="1.75" />
++    <circle cx="19" cy="12" r="1.75" />
++  </Icon>
++);
+diff --git a/web/src/pages/RecipeSectionPage.tsx b/web/src/pages/RecipeSectionPage.tsx
+index 5aa3abf..b23f5cb 100644
+--- a/web/src/pages/RecipeSectionPage.tsx
++++ b/web/src/pages/RecipeSectionPage.tsx
+@@ -31,7 +31,8 @@ export default function RecipeSectionPage() {
+   const [sorting, setSorting] = useState(false);
+   const [adding, setAdding] = useState(false);
+   const [editing, setEditing] = useState(false);
+-  const [splitDismissed, setSplitDismissed] = useState<string[]>([]);
++  // Remembered on this phone: "Not now" that comes back on the next visit is just nagging.
++  const [splitDismissed, setSplitDismissed] = useState<string[]>(readDismissedSplits);
+ 
+   const isShared = slug === SHARED_KEY;
+   const section = sectionFromSlug(slug);
+@@ -165,7 +166,13 @@ export default function RecipeSectionPage() {
+               suggestions={splits}
+               tree={tree}
+               onDone={load}
+-              onDismiss={() => setSplitDismissed((ids) => [...ids, group!.id])}
++              onDismiss={() =>
++                setSplitDismissed((ids) => {
++                  const next = [...ids, group!.id];
++                  saveDismissedSplits(next);
++                  return next;
++                })
++              }
+             />
+           )}
+ 
+@@ -284,6 +291,25 @@ function Empty({ text }: { text: string }) {
+  * Main dish looks like Chicken, Beef and Seafood — make those?" Read from the recipes' names and
+  * ingredients, so it costs nothing, and every group can be unticked before anything happens.
+  */
++const DISMISSED_SPLITS_KEY = 'mp_dismissedSplits';
++
++function readDismissedSplits(): string[] {
++  try {
++    const stored = JSON.parse(localStorage.getItem(DISMISSED_SPLITS_KEY) ?? '[]');
++    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
++  } catch {
++    return [];
++  }
++}
++
++function saveDismissedSplits(ids: string[]) {
++  try {
++    localStorage.setItem(DISMISSED_SPLITS_KEY, JSON.stringify(ids.slice(-200)));
++  } catch {
++    // Private browsing and the like: it just won't be remembered.
++  }
++}
++
+ function SplitSuggestion({
+   householdId,
+   group,
+@@ -513,6 +539,7 @@ export function EditGroup({
+   group,
+   upTo,
+   onClose,
++  onAddInside,
+   onRenamed,
+   onDeleted,
+ }: {
+@@ -520,6 +547,8 @@ export function EditGroup({
+   group: RecipeCategory;
+   upTo: string;
+   onClose: () => void;
++  /** Offered when the sheet was opened from a group card. */
++  onAddInside?: () => void;
+   onRenamed: () => Promise<void>;
+   onDeleted: () => Promise<void>;
+ }) {
+@@ -568,6 +597,12 @@ export function EditGroup({
+           </Field>
+         </form>
+ 
++        {onAddInside && (
++          <Button variant="secondary" full onClick={onAddInside}>
++            Add a group inside {group.name}
++          </Button>
++        )}
++
+         {confirming ? (
+           <div className="space-y-2">
+             <p className="text-sm text-muted">
+-- 
+2.42.0
+

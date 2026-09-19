@@ -3,7 +3,6 @@ import { useAuth } from './auth/AuthContext';
 import { HouseholdProvider } from './household/HouseholdContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
 import HouseholdPage from './pages/HouseholdPage';
 import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
@@ -44,7 +43,8 @@ export default function App() {
     <HouseholdProvider>
       <Layout>
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
+          {/* No home screen: the week's plan is where the day starts. */}
+          <Route path="/" element={<Navigate to="/meal-plan" replace />} />
           <Route path="/household" element={<HouseholdPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
@@ -54,7 +54,7 @@ export default function App() {
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="/cupboard" element={<CupboardPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>
     </HouseholdProvider>

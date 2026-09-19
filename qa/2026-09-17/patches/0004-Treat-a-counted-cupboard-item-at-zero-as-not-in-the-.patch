@@ -1,0 +1,87 @@
+From 63725ae6ec426c85190b915bec554e9bab336cce Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:35:25 -0400
+Subject: [PATCH 04/12] Treat a counted cupboard item at zero as not in the
+ house
+
+"0 lb" of steak still flagged "Cupboard says you have this" on the
+grocery list, counted as in the cupboard on planned items, and left
+Today saying Stocked.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../com/gehan/mealplanner/domain/CupboardItem.java     | 10 ++++++++++
+ .../gehan/mealplanner/service/GroceryListService.java  |  4 ++--
+ .../com/gehan/mealplanner/service/MealPlanService.java |  4 ++--
+ web/src/pages/DashboardPage.tsx                        |  3 ++-
+ 4 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java b/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
+index 9af5587..4e8c377 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
++++ b/backend/src/main/java/com/gehan/mealplanner/domain/CupboardItem.java
+@@ -73,4 +73,14 @@ public class CupboardItem {
+     @Column(nullable = false, updatable = false)
+     @Builder.Default
+     private Instant createdAt = Instant.now();
++
++    /** Counted, and the count is down to nothing — as good as not having it. */
++    public boolean isUsedUp() {
++        return quantity != null && quantity.signum() <= 0;
++    }
++
++    /** Low or used up: planning should not count on it. */
++    public boolean isShort() {
++        return runningLow || isUsedUp();
++    }
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java b/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
+index 2461da3..e46def3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/GroceryListService.java
+@@ -78,10 +78,10 @@ public class GroceryListService {
+             return item != null && item.isStaple();
+         }
+ 
+-        /** Enough to count on: in the cupboard, and not running low. */
++        /** Enough to count on: in the cupboard, not running low, and not counted down to zero. */
+         boolean has(Ingredient ingredient) {
+             CupboardItem item = cupboard.get(ingredient.getId());
+-            return item != null && !item.isRunningLow();
++            return item != null && !item.isShort();
+         }
+     }
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+index ebf9d6c..8195a9d 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+@@ -199,8 +199,8 @@ public class MealPlanService {
+                 entry.getPlace() != null ? entry.getPlace().getId() : null,
+                 entry.getPlace() != null ? entry.getPlace().getName() : null,
+                 item != null ? item.getName() : null,
+-                stocked != null,
+-                stocked != null && stocked.isRunningLow(),
++                stocked != null && !stocked.isUsedUp(),
++                stocked != null && stocked.isShort(),
+                 entry.getTime(),
+                 entry.getServings(),
+                 entry.getNotes(),
+diff --git a/web/src/pages/DashboardPage.tsx b/web/src/pages/DashboardPage.tsx
+index 6947b83..0a2f9bc 100644
+--- a/web/src/pages/DashboardPage.tsx
++++ b/web/src/pages/DashboardPage.tsx
+@@ -173,7 +173,8 @@ export default function DashboardPage() {
+   const heroRecipe = hero?.recipeId ? recipes.find((r) => r.id === hero.recipeId) : undefined;
+ 
+   const left = items.filter((i) => !i.checked).length;
+-  const runningLow = cupboard.filter((i) => i.runningLow).length;
++  // A counted item at zero is as short as one marked Low.
++  const runningLow = cupboard.filter((i) => i.runningLow || (i.quantity !== null && i.quantity <= 0)).length;
+ 
+   const now = new Date();
+   const horizon = activeHousehold?.planningHorizonDays ?? 7;
+-- 
+2.42.0
+

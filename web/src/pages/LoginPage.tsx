@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { useAuth } from '../auth/AuthContext';
 import { api, ApiError } from '../api/client';
 import type { HouseholdSummary, LandingResponse, UserSummary } from '../api/types';
-import { Button, ErrorText, Field, Input } from '../components/ui';
+import { Button, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
 import Keypad, { PinDots } from '../components/Keypad';
 import { PIN_LENGTH } from '../auth/pin';
 
@@ -208,6 +208,8 @@ export default function LoginPage() {
               autoFocus
               required
               placeholder="username"
+              autoComplete="username"
+              {...usernameInputProps}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="text-center"
@@ -238,6 +240,7 @@ export default function LoginPage() {
               <Input
                 required
                 placeholder="ryan"
+                {...usernameInputProps}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />

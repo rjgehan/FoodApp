@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { RecipeSection } from '../api/types';
-import type { HouseholdMember, Place, Recipe } from '../api/types';
+import type { HouseholdMember, Place } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
@@ -19,6 +19,8 @@ import {
   Input,
   NumberInput,
   Sheet,
+  SheetRow,
+  usernameInputProps,
 } from '../components/ui';
 import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
 import PlaceActions from '../components/PlaceActions';
@@ -26,26 +28,13 @@ import { PageTitle } from '../components/PageTitle';
 import ImagePicker from '../components/ImagePicker';
 
 export default function HouseholdPage() {
-  const { households, activeHousehold, createHousehold } = useHousehold();
-  const [newName, setNewName] = useState('');
-  const [creating, setCreating] = useState(false);
+  const { households, activeHousehold } = useHousehold();
+  const { session } = useAuth();
   const [justCreated, setJustCreated] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
 
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setCreating(true);
-    try {
-      const name = newName.trim();
-      await createHousehold(name);
-      setNewName('');
-      setOpen(false);
-      setJustCreated(name);
-      setTimeout(() => setJustCreated(null), 4000);
-    } finally {
-      setCreating(false);
-    }
+  function announce(name: string) {
+    setJustCreated(name);
+    setTimeout(() => setJustCreated(null), 4000);
   }
 
   return (
@@ -57,50 +46,96 @@ export default function HouseholdPage() {
         </div>
       )}
 
-      {/* Most-used first: who is here and where you eat, then settings, then the rare things. */}
+      {/* Nobody in a household yet: making one is the only thing to do here. */}
+      {households.length === 0 && (
+        <Card title="Create a household">
+          <NewHouseholdForm onCreated={announce} />
+        </Card>
+      )}
+
+      {/* The two things people come here for stay on the page… */}
       {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
-      {activeHousehold && <StoreLayoutCard />}
-      {activeHousehold && <SettingsCard />}
-      <ProfileCard />
-      {activeHousehold && <CatalogIconsCard householdId={activeHousehold.id} />}
-      {activeHousehold && <RecipesCard householdId={activeHousehold.id} />}
-      {activeHousehold && <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
 
-      {/*
-       * Always available, not just to people with no household. You can belong to several —
-       * one for your own place, one for your parents' — and either lets you start another.
-       * Opens expanded only when there is nothing else on the page to look at.
-       */}
-      <Card title={households.length === 0 ? 'Create a household' : 'New household'}>
-        {open || households.length === 0 ? (
-          <form onSubmit={onCreate} className="space-y-3">
-            <Field label="Name">
-              <Input
-                autoFocus={households.length > 0}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Gehan House"
-              />
-            </Field>
-            <div className="flex gap-2">
-              <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
-                Create
-              </Button>
-              {households.length > 0 && (
-                <Button type="button" variant="ghost" size="lg" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
+      {/* …and everything set once and rarely touched is a row that opens on its own. */}
+      <Card title="Settings">
+        <div className="divide-y divide-line">
+          {activeHousehold && (
+            <SheetRow
+              label="Household"
+              detail={`Serves ${activeHousehold.defaultServings} · ${activeHousehold.planningHorizonDays} days ahead`}
+            >
+              {() => <SettingsCard />}
+            </SheetRow>
+          )}
+          {activeHousehold && <SheetRow label="Store aisles">{() => <StoreLayoutCard />}</SheetRow>}
+          {activeHousehold && (
+            <SheetRow label="Recipe icons">{() => <CatalogIconsCard householdId={activeHousehold.id} />}</SheetRow>
+          )}
+          <SheetRow label="You" detail={session?.displayName}>
+            {() => <ProfileCard />}
+          </SheetRow>
+          {households.length > 0 && (
+            <SheetRow label="Start another household">
+              {(close) => (
+                <NewHouseholdForm
+                  onCreated={(name) => {
+                    close();
+                    announce(name);
+                  }}
+                />
               )}
-            </div>
-          </form>
-        ) : (
-          <Button type="button" variant="secondary" full size="lg" onClick={() => setOpen(true)}>
-            Start another household
-          </Button>
-        )}
+            </SheetRow>
+          )}
+          {activeHousehold && (
+            <SheetRow label={`Leave “${activeHousehold.name}”`} tone="danger">
+              {() => <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
+            </SheetRow>
+          )}
+        </div>
       </Card>
     </div>
+  );
+}
+
+/**
+ * You can belong to several households — one for your own place, one for your parents' — and
+ * either lets you start another.
+ */
+function NewHouseholdForm({ onCreated }: { onCreated: (name: string) => void }) {
+  const { createHousehold } = useHousehold();
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      await createHousehold(name);
+      setNewName('');
+      onCreated(name);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onCreate} className="space-y-3">
+      <Field label="Name">
+        <Input
+          autoFocus
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Gehan House"
+          maxLength={60}
+        />
+      </Field>
+      <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
+        Create
+      </Button>
+    </form>
   );
 }
 
@@ -133,7 +168,7 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
   }
 
   return (
-    <Card title="Catalog icons">
+    <Card title="Recipe icons">
       <ul className="divide-y divide-line">
         {SECTION_OPTIONS.map((s) => {
           const current = icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value];
@@ -180,32 +215,6 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
   );
 }
 
-function RecipesCard({ householdId }: { householdId: string }) {
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-
-  useEffect(() => {
-    api<Recipe[]>('GET', `/api/households/${householdId}/recipes`).then(setRecipes);
-  }, [householdId]);
-
-  const mine = recipes.filter((r) => r.householdId === householdId);
-
-  return (
-    <Card title={`Our recipes${mine.length ? ` · ${mine.length}` : ''}`}>
-      {mine.length === 0 ? (
-        <EmptyState>No recipes yet — add some from the Recipes tab.</EmptyState>
-      ) : (
-        <ul className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
-          {mine.map((r) => (
-            <li key={r.id} className="truncate">
-              {r.name}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
 /**
  * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
  * card exists to fill in the details afterwards — the menu link and the phone number.
@@ -215,7 +224,7 @@ function RecipesCard({ householdId }: { householdId: string }) {
  * with — which also changes which name you tap on the login screen, so it says so.
  */
 function ProfileCard() {
-  const { session, setDisplayName } = useAuth();
+  const { session, setDisplayName, logout } = useAuth();
   const [displayName, setName] = useState(session?.displayName ?? '');
   const [username, setUsername] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -269,6 +278,7 @@ function ProfileCard() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder={loaded ? '' : 'Loading…'}
+            {...usernameInputProps}
           />
         </Field>
         {error && <ErrorText>{error}</ErrorText>}
@@ -276,6 +286,9 @@ function ProfileCard() {
           {saved ? 'Saved' : 'Save'}
         </Button>
       </form>
+      <Button variant="ghost" full className="mt-4 text-danger" onClick={logout}>
+        Sign out
+      </Button>
     </Card>
   );
 }
@@ -328,7 +341,7 @@ function LooseAccountForm() {
           them to yours later.
         </p>
         <Field label="Username">
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" />
+          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" {...usernameInputProps} />
         </Field>
         <Field label="Name" hint="Optional — what they're called on screen.">
           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Grandad" />
@@ -453,6 +466,7 @@ function LeaveCard({ householdId, name }: { householdId: string; name: string })
 function PlacesCard({ householdId }: { householdId: string }) {
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [editing, setEditing] = useState<Place | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -482,6 +496,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
 
   async function save(place: Place) {
     setBusy(true);
+    setSheetError(null);
     try {
       await api('PUT', `/api/places/${place.id}`, {
         name: place.name,
@@ -492,6 +507,9 @@ function PlacesCard({ householdId }: { householdId: string }) {
       });
       setEditing(null);
       await load();
+    } catch (err) {
+      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
+      setSheetError(message ?? 'Could not save that.');
     } finally {
       setBusy(false);
     }
@@ -560,9 +578,13 @@ function PlacesCard({ householdId }: { householdId: string }) {
           householdId={householdId}
           place={editing}
           busy={busy}
+          error={sheetError}
           onSave={save}
           onDelete={remove}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            setSheetError(null);
+          }}
         />
       )}
     </Card>
@@ -573,6 +595,7 @@ function PlaceSheet({
   householdId,
   place,
   busy,
+  error,
   onSave,
   onDelete,
   onClose,
@@ -580,6 +603,7 @@ function PlaceSheet({
   householdId: string;
   place: Place;
   busy: boolean;
+  error: string | null;
   onSave: (place: Place) => void;
   onDelete: (place: Place) => void;
   onClose: () => void;
@@ -630,6 +654,7 @@ function PlaceSheet({
           <Input value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })} />
         </Field>
 
+        {error && <ErrorText>{error}</ErrorText>}
         <div className="flex gap-2">
           <Button className="flex-1" disabled={busy || !draft.name.trim()} onClick={() => onSave(draft)}>
             Save
@@ -647,12 +672,11 @@ function PlaceSheet({
 function SettingsCard() {
   const { activeHousehold, updateSettings, renameHousehold } = useHousehold();
   const [name, setName] = useState(activeHousehold?.name ?? '');
-  const [renaming, setRenaming] = useState(false);
-  const [renamed, setRenamed] = useState(false);
   const [servings, setServings] = useState<number | null>(activeHousehold?.defaultServings ?? 1);
   const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeHousehold) {
@@ -662,65 +686,46 @@ function SettingsCard() {
     }
   }, [activeHousehold]);
 
-  async function onRename(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === activeHousehold?.name) return;
-    setRenaming(true);
-    try {
-      await renameHousehold(trimmed);
-      setRenamed(true);
-      setTimeout(() => setRenamed(false), 1500);
-    } finally {
-      setRenaming(false);
-    }
-  }
+  const isOwner = activeHousehold?.role === 'OWNER';
+  const renamed = isOwner && name.trim() !== '' && name.trim() !== activeHousehold?.name;
 
+  /** One Save for the whole sheet: the rename (owners only) and the numbers. */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setSettingsError(null);
     try {
+      if (renamed) await renameHousehold(name.trim());
       await updateSettings({
         defaultServings: servings ?? 1,
         planningHorizonDays: horizonDays ?? 7,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
+    } catch {
+      setSettingsError('Names can be up to 60 characters, servings 1–50, and days ahead 1–60.');
     } finally {
       setSaving(false);
     }
   }
 
-  const isOwner = activeHousehold?.role === 'OWNER';
-
   return (
-    <Card title="Settings">
-      {isOwner && (
-        <form onSubmit={onRename} className="mb-4 border-b border-line pb-4">
-          <Field label="Household name">
-            <div className="flex gap-2">
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-              <Button
-                type="submit"
-                variant="secondary"
-                disabled={renaming || !name.trim() || name.trim() === activeHousehold?.name}
-              >
-                {renamed ? 'Saved' : 'Rename'}
-              </Button>
-            </div>
-          </Field>
-        </form>
-      )}
-
+    <Card title="Household">
       <form onSubmit={onSubmit} className="space-y-3">
+        {isOwner && (
+          <Field label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+          </Field>
+        )}
         <Field label="Default servings">
-          <NumberInput min={1} value={servings} onChange={setServings} />
+          <NumberInput min={1} max={50} value={servings} onChange={setServings} />
         </Field>
         <Field label="Days ahead to plan">
-          <NumberInput min={1} value={horizonDays} onChange={setHorizonDays} />
+          <NumberInput min={1} max={60} value={horizonDays} onChange={setHorizonDays} />
         </Field>
+        {settingsError && <ErrorText>{settingsError}</ErrorText>}
         <Button type="submit" full size="lg" disabled={saving}>
-          {saved ? 'Saved' : 'Save settings'}
+          {saved ? 'Saved' : 'Save'}
         </Button>
       </form>
     </Card>
@@ -772,10 +777,10 @@ function StoreLayoutCard() {
   }
 
   return (
-    <Card title="Store layout">
+    <Card title="Store aisles">
       <p className="mb-2 text-sm text-muted">
-        The order you walk your store, and what you call each aisle. The grocery list follows it,
-        top to bottom — and Sort classifies into these same categories.
+        The order you walk your store, and what you call each aisle. Groceries are listed in this
+        order, top to bottom.
       </p>
       <ol className="divide-y divide-line">
         {ordered.map((category, i) => (
@@ -991,6 +996,7 @@ function AddPersonForm({
             onChange={(e) => setUsername(e.target.value)}
             placeholder="username"
             aria-label={label}
+            {...usernameInputProps}
           />
           <Button type="submit" variant="secondary" disabled={busy || !username.trim()}>
             {action}

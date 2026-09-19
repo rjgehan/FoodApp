@@ -1,0 +1,63 @@
+From 6fdccaebdd4ae2192c6da7d75cef8203951cb668 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:44:15 -0400
+Subject: [PATCH 09/12] Today: don't call tonight's dinner "made yesterday", or
+ suggest what's already planned
+
+"Not made in a while" counted today's planned meal as made, rounded
+zero days to "yesterday", measured from now rather than midnight, and
+suggested recipes already on the plan.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ web/src/pages/DashboardPage.tsx | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/web/src/pages/DashboardPage.tsx b/web/src/pages/DashboardPage.tsx
+index 0a2f9bc..f41a6cf 100644
+--- a/web/src/pages/DashboardPage.tsx
++++ b/web/src/pages/DashboardPage.tsx
+@@ -28,8 +28,12 @@ function addDays(d: Date, n: number): Date {
+ /** How long ago, in the roughest terms that are still true. */
+ function agoLabel(iso: string | null): string {
+   if (!iso) return 'never made';
+-  const days = Math.round((Date.now() - new Date(`${iso}T00:00:00`).getTime()) / 86400000);
+-  if (days <= 1) return 'made yesterday';
++  // Calendar days between midnights, so last night's dinner is "yesterday" even at 11pm.
++  const midnight = new Date();
++  midnight.setHours(0, 0, 0, 0);
++  const days = Math.round((midnight.getTime() - new Date(`${iso}T00:00:00`).getTime()) / 86400000);
++  if (days <= 0) return 'made today';
++  if (days === 1) return 'made yesterday';
+   if (days < 14) return `made ${days} days ago`;
+   if (days < 60) return `made ${Math.round(days / 7)} weeks ago`;
+   return `made ${Math.round(days / 30)} months ago`;
+@@ -189,14 +193,22 @@ export default function DashboardPage() {
+    * and the failure mode is cooking the same six things while forty sit unread — so this is
+    * drawn from what the household has actually planned, not invented.
+    */
++  // Made means before today: tonight's dinner hasn't been cooked yet. Anything already on the
++  // plan from today on is not a suggestion either — it's handled.
++  const todayIso = isoDate(now);
+   const lastMade = new Map<string, string>();
++  const alreadyPlanned = new Set<string>();
+   for (const e of history) {
+-    if (!e.recipeId || e.date > isoDate(now)) continue;
++    if (!e.recipeId) continue;
++    if (e.date >= todayIso) {
++      alreadyPlanned.add(e.recipeId);
++      continue;
++    }
+     const seen = lastMade.get(e.recipeId);
+     if (!seen || e.date > seen) lastMade.set(e.recipeId, e.date);
+   }
+   const neglected = recipes
+-    .filter((r) => !r.shared && r.section)
++    .filter((r) => !r.shared && r.section && !alreadyPlanned.has(r.id))
+     .map((r) => ({ recipe: r, last: lastMade.get(r.id) ?? null }))
+     .sort((a, b) => (a.last ?? '').localeCompare(b.last ?? ''));
+   // Rotate through the five most neglected by day, so it changes daily without being random on
+-- 
+2.42.0
+

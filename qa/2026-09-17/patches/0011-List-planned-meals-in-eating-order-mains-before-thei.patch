@@ -1,0 +1,77 @@
+From db2d8611194b2c1b55f720b5252c4d0c55d4e205 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:56:42 -0400
+Subject: [PATCH 11/12] List planned meals in eating order, mains before their
+ sides
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Meal types are stored as text, so the database sorted DINNER before
+LUNCH — the week summary read Breakfast, Dinner, Dinner, Lunch — and a
+meal's main and sides came back in no fixed order, in the app and the
+dashboard API alike.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../com/gehan/mealplanner/domain/MealPlanEntry.java   | 11 +++++++++++
+ .../mealplanner/integration/IntegrationService.java   |  1 +
+ .../gehan/mealplanner/service/MealPlanService.java    |  2 +-
+ 3 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java b/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
+index bf54844..5ba4876 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
++++ b/backend/src/main/java/com/gehan/mealplanner/domain/MealPlanEntry.java
+@@ -10,6 +10,7 @@ import lombok.Setter;
+ import java.time.Instant;
+ import java.time.LocalDate;
+ import java.time.LocalTime;
++import java.util.Comparator;
+ import java.util.HashSet;
+ import java.util.Set;
+ import java.util.UUID;
+@@ -87,4 +88,14 @@ public class MealPlanEntry {
+     @Column(nullable = false, updatable = false)
+     @Builder.Default
+     private Instant createdAt = Instant.now();
++
++    /**
++     * Day, then breakfast → lunch → dinner → snack, then the order things were added — so a main
++     * comes before the sides added to it. The database can't do this: meal types are stored as
++     * text, which sorts DINNER before LUNCH, and it has no fixed order within a meal.
++     */
++    public static final Comparator<MealPlanEntry> EATING_ORDER = Comparator
++            .comparing(MealPlanEntry::getDate)
++            .thenComparing(MealPlanEntry::getMealType)
++            .thenComparing(MealPlanEntry::getCreatedAt);
+ }
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+index 90d67e3..1d0a99a 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+@@ -65,6 +65,7 @@ public class IntegrationService {
+         }
+         mealPlanEntryRepository
+                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
++                .stream().sorted(MealPlanEntry.EATING_ORDER)
+                 .forEach(e -> byDate.computeIfAbsent(e.getDate(), k -> new ArrayList<>()).add(e));
+ 
+         return byDate.entrySet().stream().map(e -> new DayResponse(e.getKey(), meals(e.getValue()))).toList();
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+index 8195a9d..1bbb6fa 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/MealPlanService.java
+@@ -59,7 +59,7 @@ public class MealPlanService {
+         Map<UUID, CupboardItem> cupboard = cupboard(householdId);
+         return mealPlanEntryRepository
+                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
+-                .stream().map(e -> toResponse(e, cupboard)).toList();
++                .stream().sorted(MealPlanEntry.EATING_ORDER).map(e -> toResponse(e, cupboard)).toList();
+     }
+ 
+     /** Adds a dish to a slot. Call it again to put sides alongside a main. */
+-- 
+2.42.0
+

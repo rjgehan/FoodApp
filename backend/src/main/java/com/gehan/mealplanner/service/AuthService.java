@@ -91,31 +91,34 @@ public class AuthService {
     /** Backs the "sign in with a username instead" escape hatch, for people in no household yet. */
     @Transactional(readOnly = true)
     public UserSummary findUser(String username) {
-        return userRepository.findByUsername(username.trim())
+        return userRepository.findForSignIn(username)
                 .map(this::toSummary)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
     }
 
     public AuthResponse login(LoginRequest request) {
         String username = request.username().trim();
+        // One counter per account, however it is capitalised — otherwise "Ryan", "RYAN" and
+        // "ryan" would each get their own five tries.
+        String limiterKey = username.toLowerCase(java.util.Locale.ROOT);
 
-        long lockedFor = attemptLimiter.secondsUntilUnlocked(username);
+        long lockedFor = attemptLimiter.secondsUntilUnlocked(limiterKey);
         if (lockedFor > 0) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Too many incorrect PINs. Try again in " + Math.max(lockedFor / 60, 1) + " min.");
         }
 
-        User user = userRepository.findByUsername(username).orElse(null);
+        User user = userRepository.findForSignIn(username).orElse(null);
         if (user != null && user.getPinHash() == null) {
             // The UI normally routes these to the set-a-PIN flow; this covers a stale page.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account still needs a PIN");
         }
         if (user == null || !passwordEncoder.matches(request.pin(), user.getPinHash())) {
-            attemptLimiter.recordFailure(username);
+            attemptLimiter.recordFailure(limiterKey);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect username or PIN");
         }
 
-        attemptLimiter.recordSuccess(username);
+        attemptLimiter.recordSuccess(limiterKey);
         return toAuthResponse(user);
     }
 
@@ -125,7 +128,7 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse setInitialPin(SetPinRequest request) {
-        User user = userRepository.findByUsername(request.username().trim())
+        User user = userRepository.findForSignIn(request.username())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No account with that name"));
         if (user.getPinHash() != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This account already has a PIN");

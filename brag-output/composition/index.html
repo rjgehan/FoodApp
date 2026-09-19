@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Meal Planner — Brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #ffffff;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #1d1d1f;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+      }
+      .scene-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        gap: 40px;
+      }
+
+      /* ---- phone chrome ---- */
+      .phone {
+        width: 420px;
+        height: 872px;
+        border-radius: 56px;
+        border: 12px solid #1d1d1f;
+        background: #ffffff;
+        box-shadow: 0 50px 100px -20px rgba(0,0,0,.35), 0 30px 60px -30px rgba(0,0,0,.25);
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .phone-sm { width: 340px; height: 706px; border-radius: 46px; border-width: 10px; }
+      .phone-notch {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        margin-left: -60px;
+        width: 120px;
+        height: 26px;
+        background: #1d1d1f;
+        border-radius: 20px;
+        z-index: 5;
+      }
+      .phone-sm .phone-notch { width: 96px; height: 20px; margin-left: -48px; }
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 64px 26px 26px;
+      }
+      .phone-sm .screen { padding: 52px 20px 20px; }
+
+      .eyebrow { font-size: 15px; font-weight: 600; color: #6e6e73; letter-spacing: .02em; text-align: center; }
+      .phone-sm .eyebrow { font-size: 13px; }
+      .screen-title { font-size: 30px; font-weight: 700; color: #1d1d1f; text-align: center; margin-top: 6px; }
+      .phone-sm .screen-title { font-size: 22px; }
+      .screen-sub { font-size: 16px; color: #6e6e73; text-align: center; margin-top: 6px; }
+
+      /* ---- caption text under phone ---- */
+      .caption {
+        font-size: 40px;
+        font-weight: 600;
+        text-align: center;
+        color: #1d1d1f;
+        opacity: 0;
+      }
+      .caption .accent { color: #ea580c; }
+
+      /* ---- avatars (scene 1) ---- */
+      .avatar-row { display: flex; justify-content: center; gap: 30px; margin-top: 56px; }
+      .avatar-col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      .avatar {
+        width: 100px; height: 100px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 40px; font-weight: 700;
+        position: relative;
+      }
+      .avatar-name { font-size: 15px; color: #6e6e73; font-weight: 600; }
+      .tap-ring {
+        position: absolute; inset: -8px; border-radius: 50%;
+        border: 4px solid #ea580c; opacity: 0;
+      }
+      .cursor-dot {
+        position: absolute; width: 34px; height: 34px; border-radius: 50%;
+        background: rgba(29,29,31,.85); opacity: 0;
+        box-shadow: 0 6px 16px rgba(0,0,0,.3);
+      }
+
+      /* ---- keypad (scene 2) ---- */
+      .dot-row { display: flex; justify-content: center; gap: 18px; margin: 34px 0 30px; }
+      .pin-dot {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid #1d1d1f; background: transparent;
+      }
+      .pin-dot-fill { width: 100%; height: 100%; border-radius: 50%; background: #ea580c; opacity: 0; transform: scale(0); }
+      .keypad { display: grid; grid-template-columns: repeat(3, 78px); gap: 18px; justify-content: center; margin: 0 auto; }
+      .key {
+        width: 78px; height: 78px; border-radius: 50%;
+        background: #f2f2f7; display: flex; align-items: center; justify-content: center;
+        font-size: 28px; font-weight: 600; color: #1d1d1f;
+      }
+      .key-ghost { visibility: hidden; }
+
+      /* ---- dashboard hero (scene 3) ---- */
+      .hero-card { width: 100%; }
+      .hero-cover {
+        width: 100%; height: 240px; border-radius: 24px;
+        background: linear-gradient(135deg, #fb923c 0%, #ea580c 60%, #c2410c 100%);
+      }
+      .hero-name { font-size: 26px; font-weight: 700; margin-top: 18px; }
+      .hero-sub { font-size: 15px; color: #6e6e73; margin-top: 4px; }
+      .hero-btn {
+        margin-top: 22px; width: 100%; height: 56px; border-radius: 18px;
+        background: #ea580c; color: #fff; font-size: 18px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+      }
+
+      /* ---- grocery sync (scene 4) ---- */
+      .phones-row { display: flex; gap: 90px; align-items: flex-start; }
+      .grocery-row {
+        display: flex; align-items: center; gap: 14px;
+        padding: 12px 4px; border-bottom: 1px solid #d8d8dc;
+      }
+      .checkbox {
+        width: 26px; height: 26px; border-radius: 8px; border: 2px solid #d8d8dc;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        background: #ffffff;
+      }
+      .checkbox .mark { font-size: 16px; color: #fff; font-weight: 800; opacity: 0; }
+      .grocery-label { font-size: 18px; font-weight: 600; color: #1d1d1f; }
+      .phone-sm .grocery-label { font-size: 16px; }
+      .tap-ripple {
+        position: absolute; width: 46px; height: 46px; border-radius: 50%;
+        border: 3px solid #ea580c; opacity: 0;
+      }
+      .sync-caption { font-size: 36px; font-weight: 600; text-align: center; position: relative; height: 50px; }
+      .sync-caption span { position: absolute; left: 0; right: 0; opacity: 0; }
+
+      /* ---- recipe tree (scene 5) ---- */
+      .tree-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; opacity: 0; }
+      .tree-row .chev { font-size: 13px; color: #6e6e73; width: 14px; }
+      .tree-row .label { font-size: 18px; font-weight: 600; color: #1d1d1f; }
+      .tree-row.child { padding-left: 30px; }
+      .tree-row.child .label { font-size: 16px; font-weight: 500; color: #3a3a3c; }
+      .tree-row.empty .label { font-style: italic; color: #a1a1a6; font-weight: 500; }
+      .tree-count {
+        margin-left: auto; font-size: 13px; color: #6e6e73; background: #f2f2f7;
+        padding: 2px 10px; border-radius: 999px;
+      }
+
+      /* ---- outro (scene 6) ---- */
+      .outro-word { font-size: 108px; font-weight: 800; letter-spacing: -0.02em; opacity: 0; display: flex; align-items: center; gap: 20px; }
+      .outro-word .dot { width: 20px; height: 20px; border-radius: 50%; background: #ea580c; margin-bottom: 10px; }
+      .outro-line1 { font-size: 34px; font-weight: 600; color: #3a3a3c; opacity: 0; }
+      .outro-line2 { font-size: 24px; font-weight: 500; color: #86868b; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-kgqb" id="root" data-composition-id="main" data-start="0" data-duration="19.5" data-width="1920" data-height="1080">
+      <!-- Scene 1: Who's cooking (0 - 3.0) -->
+      <div data-hf-id="hf-6iyi" class="clip" id="scene-1-whos-cooking" data-start="0" data-duration="3.0" data-track-index="0">
+        <div data-hf-id="hf-bbya" class="scene-inner" id="s1-inner">
+          <div data-hf-id="hf-kda4" class="phone">
+            <div data-hf-id="hf-c27x" class="phone-notch"></div>
+            <div data-hf-id="hf-cdmk" class="screen">
+              <div data-hf-id="hf-f5lk" class="eyebrow">Gehan House</div>
+              <div data-hf-id="hf-s8eu" class="screen-title">Who's cooking?</div>
+              <div data-hf-id="hf-1lfk" class="screen-sub">Tap your name</div>
+              <div data-hf-id="hf-3ys0" class="avatar-row">
+                <div data-hf-id="hf-ua7u" class="avatar-col">
+                  <div data-hf-id="hf-nc78" class="avatar" id="s1-avatar-r" style="background:#ea580c;">
+                    R
+                    <div data-hf-id="hf-ltlb" class="tap-ring" id="s1-ring"></div>
+                  </div>
+                  <div data-hf-id="hf-keoj" class="avatar-name">Ryan</div>
+                </div>
+                <div data-hf-id="hf-by72" class="avatar-col">
+                  <div data-hf-id="hf-5gt1" class="avatar" style="background:#0d9488;">M</div>
+                  <div data-hf-id="hf-fxud" class="avatar-name">Maya</div>
+                </div>
+                <div data-hf-id="hf-cci3" class="avatar-col">
+                  <div data-hf-id="hf-6mbs" class="avatar" style="background:#7c3aed;">D</div>
+                  <div data-hf-id="hf-njaz" class="avatar-name">Dana</div>
+                </div>
+              </div>
+              <div data-hf-id="hf-rns9" class="cursor-dot" id="s1-cursor"></div>
+            </div>
+          </div>
+          <div data-hf-id="hf-cx0r" class="caption" id="s1-caption">No emails. <span data-hf-id="hf-0wms" class="accent">No passwords.</span></div>
+        </div>
+      </div>
+
+      <!-- Scene 2: The keypad (3.0 - 6.0) -->
+      <div data-hf-id="hf-2b3g" class="clip" id="scene-2-keypad" data-start="3.0" data-duration="3.0" data-track-index="0">
+        <div data-hf-id="hf-gs0d" class="scene-inner" id="s2-inner">
+          <div data-hf-id="hf-r5ea" class="phone" id="s2-phone">
+            <div data-hf-id="hf-ce35" class="phone-notch"></div>
+            <div data-hf-id="hf-0hv8" class="screen">
+              <div data-hf-id="hf-gjy7" class="eyebrow">Ryan</div>
+              <div data-hf-id="hf-31ze" class="screen-title">Enter PIN</div>
+              <div data-hf-id="hf-j1m6" class="dot-row">
+                <div data-hf-id="hf-c5nj" class="pin-dot"><div data-hf-id="hf-xlk1" class="pin-dot-fill" id="s2-dot1"></div></div>
+                <div data-hf-id="hf-302n" class="pin-dot"><div data-hf-id="hf-1jo2" class="pin-dot-fill" id="s2-dot2"></div></div>
+                <div data-hf-id="hf-2lrm" class="pin-dot"><div data-hf-id="hf-5hs3" class="pin-dot-fill" id="s2-dot3"></div></div>
+                <div data-hf-id="hf-27gl" class="pin-dot"><div data-hf-id="hf-i0ak" class="pin-dot-fill" id="s2-dot4"></div></div>
+              </div>
+              <div data-hf-id="hf-0a74" class="keypad">
+                <div data-hf-id="hf-wj7e" class="key" id="s2-key1">1</div>
+                <div data-hf-id="hf-j16q" class="key" id="s2-key2">2</div>
+                <div data-hf-id="hf-wvoa" class="key" id="s2-key3">3</div>
+                <div data-hf-id="hf-dkkq" class="key" id="s2-key4">4</div>
+                <div data-hf-id="hf-gikw" class="key">5</div>
+                <div data-hf-id="hf-fbnt" class="key">6</div>
+                <div data-hf-id="hf-fpyu" class="key">7</div>
+                <div data-hf-id="hf-bclj" class="key">8</div>
+                <div data-hf-id="hf-bqwk" class="key">9</div>
+                <div data-hf-id="hf-vfvq" class="key key-ghost">0</div>
+                <div data-hf-id="hf-ej1r" class="key">0</div>
+                <div data-hf-id="hf-mg16" class="key key-ghost">0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 3: Tonight's dinner (6.0 - 9.5) -->
+      <div data-hf-id="hf-vnlw" class="clip" id="scene-3-dashboard-hero" data-start="6.0" data-duration="3.5" data-track-index="0">
+        <div data-hf-id="hf-tktc" class="scene-inner" id="s3-inner">
+          <div data-hf-id="hf-3kj8" class="phone">
+            <div data-hf-id="hf-dl08" class="phone-notch"></div>
+            <div data-hf-id="hf-zay5" class="screen">
+              <div data-hf-id="hf-swv3" class="eyebrow">Dashboard</div>
+              <div data-hf-id="hf-j6bv" class="hero-card">
+                <div data-hf-id="hf-3z6q" class="hero-cover"></div>
+                <div data-hf-id="hf-2lu4" class="hero-name">Lemon Garlic Chicken</div>
+                <div data-hf-id="hf-8rm8" class="hero-sub">Dinner · Serves 4</div>
+                <div data-hf-id="hf-7tug" class="hero-btn" id="s3-btn" style="position:relative;">
+                  <span data-hf-id="hf-oyby" id="s3-btn-label-1" data-layout-allow-overlap="">+ Add to grocery list</span>
+                  <span data-hf-id="hf-kh7t" id="s3-btn-label-2" data-layout-allow-overlap="" style="position:absolute; opacity:0;">✓ Added</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div data-hf-id="hf-v2gc" class="caption" id="s3-caption">Tonight's dinner, right up front.</div>
+        </div>
+      </div>
+
+      <!-- Scene 4: It syncs, actually (9.5 - 13.5) -->
+      <div data-hf-id="hf-47hz" class="clip" id="scene-4-grocery-sync" data-start="9.5" data-duration="4.0" data-track-index="0">
+        <div data-hf-id="hf-qvcj" class="scene-inner" id="s4-inner">
+          <div data-hf-id="hf-7lsk" class="phones-row">
+            <div data-hf-id="hf-oj9l" class="phone phone-sm">
+              <div data-hf-id="hf-d6p7" class="phone-notch"></div>
+              <div data-hf-id="hf-zp96" class="screen">
+                <div data-hf-id="hf-eh50" class="eyebrow">Grocery List</div>
+                <div data-hf-id="hf-ylmu" class="grocery-row"><div data-hf-id="hf-n30j" class="checkbox"><span data-hf-id="hf-1gjz" class="mark">✓</span></div><div data-hf-id="hf-cy6f" class="grocery-label">Milk</div></div>
+                <div data-hf-id="hf-ywp6" class="grocery-row"><div data-hf-id="hf-x6df" class="checkbox"><span data-hf-id="hf-1flb" class="mark">✓</span></div><div data-hf-id="hf-s8r2" class="grocery-label">Eggs</div></div>
+                <div data-hf-id="hf-q3ri" class="grocery-row" id="s4-p1-garlic" style="position:relative;">
+                  <div data-hf-id="hf-6kn0" class="checkbox" id="s4-p1-box"><span data-hf-id="hf-6s48" class="mark" id="s4-p1-mark">✓</span></div>
+                  <div data-hf-id="hf-r6aa" class="grocery-label">Garlic</div>
+                  <div data-hf-id="hf-ytam" class="tap-ripple" id="s4-p1-ripple"></div>
+                </div>
+                <div data-hf-id="hf-zb07" class="grocery-row"><div data-hf-id="hf-ws2e" class="checkbox"><span data-hf-id="hf-11aa" class="mark">✓</span></div><div data-hf-id="hf-py1r" class="grocery-label">Lemon</div></div>
+                <div data-hf-id="hf-zpb8" class="grocery-row"><div data-hf-id="hf-wdrd" class="checkbox"><span data-hf-id="hf-0mz9" class="mark">✓</span></div><div data-hf-id="hf-dbgb" class="grocery-label">Chicken</div></div>
+              </div>
+            </div>
+            <div data-hf-id="hf-i5x9" class="phone phone-sm">
+              <div data-hf-id="hf-756y" class="phone-notch"></div>
+              <div data-hf-id="hf-1osb" class="screen">
+                <div data-hf-id="hf-ygl8" class="eyebrow">Grocery List</div>
+                <div data-hf-id="hf-03m9" class="grocery-row"><div data-hf-id="hf-vzgc" class="checkbox"><span data-hf-id="hf-3f4g" class="mark">✓</span></div><div data-hf-id="hf-c0fb" class="grocery-label">Milk</div></div>
+                <div data-hf-id="hf-0hxa" class="grocery-row"><div data-hf-id="hf-vl5b" class="checkbox"><span data-hf-id="hf-30tf" class="mark">✓</span></div><div data-hf-id="hf-4itu" class="grocery-label">Eggs</div></div>
+                <div data-hf-id="hf-fb3n" class="grocery-row" id="s4-p2-garlic">
+                  <div data-hf-id="hf-9lcb" class="checkbox" id="s4-p2-box"><span data-hf-id="hf-dw3f" class="mark" id="s4-p2-mark">✓</span></div>
+                  <div data-hf-id="hf-op1y" class="grocery-label">Garlic</div>
+                </div>
+                <div data-hf-id="hf-0w8b" class="grocery-row"><div data-hf-id="hf-v6ua" class="checkbox"><span data-hf-id="hf-2mie" class="mark">✓</span></div><div data-hf-id="hf-weu7" class="grocery-label">Lemon</div></div>
+                <div data-hf-id="hf-1ajc" class="grocery-row"><div data-hf-id="hf-usj9" class="checkbox"><span data-hf-id="hf-287d" class="mark">✓</span></div><div data-hf-id="hf-5wjf" class="grocery-label">Chicken</div></div>
+              </div>
+            </div>
+          </div>
+          <div data-hf-id="hf-ncus" class="sync-caption">
+            <span data-hf-id="hf-77jk" id="s4-caption-a">Check it off here.</span>
+            <span data-hf-id="hf-cgew" id="s4-caption-b">It disappears everywhere.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 5: Real depth underneath (13.5 - 16.5) -->
+      <div data-hf-id="hf-pf68" class="clip" id="scene-5-recipe-tree" data-start="13.5" data-duration="3.0" data-track-index="0">
+        <div data-hf-id="hf-jl7y" class="scene-inner" id="s5-inner">
+          <div data-hf-id="hf-2dm5" class="phone">
+            <div data-hf-id="hf-6qvx" class="phone-notch"></div>
+            <div data-hf-id="hf-233c" class="screen">
+              <div data-hf-id="hf-7xk0" class="eyebrow">Recipes</div>
+              <div data-hf-id="hf-5ou5" class="screen-title" style="font-size:24px;">Dinner</div>
+              <div data-hf-id="hf-4bh0" style="margin-top:22px;">
+                <div data-hf-id="hf-w1hg" class="tree-row" id="s5-row-1"><span data-hf-id="hf-kz6j" class="chev">▼</span><span data-hf-id="hf-kd28" class="label">Main Dishes</span><span data-hf-id="hf-9jzn" class="tree-count">2</span></div>
+                <div data-hf-id="hf-5uv5" class="tree-row child" id="s5-row-2"><span data-hf-id="hf-1isj" class="label">Chicken Piccata</span></div>
+                <div data-hf-id="hf-537c" class="tree-row child" id="s5-row-3"><span data-hf-id="hf-1uxu" class="label">Beef Stew</span></div>
+                <div data-hf-id="hf-5d61" class="tree-row" id="s5-row-4"><span data-hf-id="hf-9obf" class="chev">▼</span><span data-hf-id="hf-nr6n" class="label">Sides</span><span data-hf-id="hf-95om" class="tree-count">1</span></div>
+                <div data-hf-id="hf-x6za" class="tree-row child" id="s5-row-5"><span data-hf-id="hf-x039" class="label">Garlic Bread</span></div>
+                <div data-hf-id="hf-jiyz" class="tree-row" id="s5-row-6"><span data-hf-id="hf-9a0e" class="chev">▼</span><span data-hf-id="hf-e37c" class="label">Freezer</span><span data-hf-id="hf-8rdl" class="tree-count">0</span></div>
+                <div data-hf-id="hf-z4tv" class="tree-row child empty" id="s5-row-7"><span data-hf-id="hf-i492" class="label">Empty</span></div>
+              </div>
+            </div>
+          </div>
+          <div data-hf-id="hf-vea1" class="caption" id="s5-caption">Recipes, organized your way.</div>
+        </div>
+      </div>
+
+      <!-- Scene 6: Outro (16.5 - 19.5) -->
+      <div data-hf-id="hf-rizk" class="clip" id="scene-6-outro" data-start="16.5" data-duration="3.0" data-track-index="0">
+        <div data-hf-id="hf-cp9g" class="scene-inner" id="s6-inner" style="gap:26px;">
+          <div data-hf-id="hf-e99f" class="outro-word" id="s6-word"><span data-hf-id="hf-9gry" class="dot"></span>Meal Planner</div>
+          <div data-hf-id="hf-29q0" class="outro-line1" id="s6-line1">Self-hosted. Family and friends only.</div>
+          <div data-hf-id="hf-n24d" class="outro-line2" id="s6-line2">Currently serving four people.</div>
+        </div>
+      </div>
+
+      <!-- Audio: music bed -->
+      <audio data-hf-id="hf-3ox7" id="bgm" src="assets/music/happy-beats-business-moves-vol-1-by-ende-dot-app.mp3" data-start="0" data-duration="19.5"></audio>
+
+      <!-- Audio: SFX -->
+      <audio data-hf-id="hf-4bl9" id="sfx-tap-avatar" src="assets/sfx/click1.ogg" data-start="1.7" data-duration="0.10"></audio>
+      <audio data-hf-id="hf-hrtv" id="sfx-key-1" src="assets/sfx/keypress-001.wav" data-start="3.3" data-duration="0.3"></audio>
+      <audio data-hf-id="hf-yztf" id="sfx-key-2" src="assets/sfx/keypress-002.wav" data-start="3.7" data-duration="0.3"></audio>
+      <audio data-hf-id="hf-96jk" id="sfx-key-3" src="assets/sfx/keypress-003.wav" data-start="4.1" data-duration="0.3"></audio>
+      <audio data-hf-id="hf-su48" id="sfx-key-4" src="assets/sfx/keypress-004.wav" data-start="4.5" data-duration="0.3"></audio>
+      <audio data-hf-id="hf-owxp" id="sfx-unlock" src="assets/sfx/bong_001.ogg" data-start="4.85" data-duration="0.13"></audio>
+      <audio data-hf-id="hf-we5v" id="sfx-btn-click" src="assets/sfx/click2.ogg" data-start="7.3" data-duration="0.06"></audio>
+      <audio data-hf-id="hf-14h3" id="sfx-confirm" src="assets/sfx/select_008.ogg" data-start="7.55" data-duration="0.05"></audio>
+      <audio data-hf-id="hf-p8sc" id="sfx-check-1" src="assets/sfx/click3.ogg" data-start="10.5" data-duration="0.09"></audio>
+      <audio data-hf-id="hf-mp0z" id="sfx-check-2" src="assets/sfx/click4.ogg" data-start="11.0" data-duration="0.04"></audio>
+    </div>
+
+    <script>
+      var tl = gsap.timeline({ paused: true });
+
+      /* ---------- shared entrance/exit slide per scene ---------- */
+      function sceneTransition(id, start, duration) {
+        tl.fromTo("#" + id, { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, start);
+        tl.to("#" + id, { opacity: 0, y: -16, duration: 0.25, ease: "power2.in" }, start + duration - 0.25);
+      }
+
+      sceneTransition("s1-inner", 0, 3.0);
+      sceneTransition("s2-inner", 3.0, 3.0);
+      sceneTransition("s3-inner", 6.0, 3.5);
+      sceneTransition("s4-inner", 9.5, 4.0);
+      sceneTransition("s5-inner", 13.5, 3.0);
+      sceneTransition("s6-inner", 16.5, 3.0);
+
+      /* ---------- Scene 1: avatar tap ---------- */
+      tl.fromTo("#s1-cursor", { opacity: 0, x: -6, y: 70 }, { opacity: 1, x: -6, y: 6, duration: 0.4, ease: "power2.out" }, 1.15);
+      tl.to("#s1-cursor", { scale: 0.8, duration: 0.12, ease: "power1.in" }, 1.55);
+      tl.to("#s1-cursor", { scale: 1, opacity: 0, duration: 0.25, ease: "power1.out" }, 1.7);
+      tl.fromTo("#s1-ring", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1.15, duration: 0.3, ease: "power2.out" }, 1.65);
+      tl.to("#s1-ring", { opacity: 0, duration: 0.35, ease: "power1.out" }, 2.0);
+      tl.fromTo("#s1-avatar-r", { scale: 1 }, { scale: 1.08, duration: 0.15, ease: "power1.out" }, 1.65);
+      tl.to("#s1-avatar-r", { scale: 1, duration: 0.2, ease: "power1.inOut" }, 1.85);
+      tl.fromTo("#s1-caption", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 2.0);
+
+      /* ---------- Scene 2: PIN keypad ---------- */
+      var keyIds = ["#s2-key1", "#s2-key2", "#s2-key3", "#s2-key4"];
+      var dotIds = ["#s2-dot1", "#s2-dot2", "#s2-dot3", "#s2-dot4"];
+      var keyTimes = [3.3, 3.7, 4.1, 4.5];
+      for (var i = 0; i < 4; i++) {
+        (function (keySel, dotSel, t) {
+          tl.to(keySel, { backgroundColor: "#ea580c", duration: 0.1, ease: "power1.out" }, t);
+          tl.to(keySel, { scale: 0.92, duration: 0.1, ease: "power1.out" }, t);
+          tl.to(keySel, { backgroundColor: "#f2f2f7", scale: 1, duration: 0.2, ease: "power1.inOut" }, t + 0.12);
+          tl.to(dotSel, { opacity: 1, scale: 1, duration: 0.18, ease: "back.out(2)" }, t + 0.05);
+        })(keyIds[i], dotIds[i], keyTimes[i]);
+      }
+      tl.fromTo("#s2-phone", { scale: 1 }, { scale: 1.035, duration: 0.16, ease: "power2.out" }, 4.85);
+      tl.to("#s2-phone", { scale: 1, duration: 0.28, ease: "elastic.out(1, 0.5)" }, 5.01);
+
+      /* ---------- Scene 3: add to grocery list ---------- */
+      tl.to("#s3-btn", { scale: 0.96, duration: 0.1, ease: "power1.out" }, 7.3);
+      tl.to("#s3-btn", { scale: 1, backgroundColor: "#16a34a", duration: 0.2, ease: "power1.out" }, 7.4);
+      tl.to("#s3-btn-label-1", { opacity: 0, duration: 0.15 }, 7.5);
+      tl.to("#s3-btn-label-2", { opacity: 1, duration: 0.15 }, 7.55);
+      tl.fromTo("#s3-caption", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 6.35);
+
+      /* ---------- Scene 4: sync payoff ---------- */
+      tl.fromTo("#s4-caption-a", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 9.85);
+      tl.fromTo("#s4-p1-ripple", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.15, ease: "power1.out" }, 10.5);
+      tl.to("#s4-p1-ripple", { opacity: 0, duration: 0.3, ease: "power1.out" }, 10.65);
+      tl.to("#s4-p1-box", { backgroundColor: "#ea580c", borderColor: "#ea580c", duration: 0.12 }, 10.5);
+      tl.to("#s4-p1-mark", { opacity: 1, duration: 0.12 }, 10.55);
+      tl.to("#s4-p1-garlic", { opacity: 0.25, duration: 0.35, ease: "power1.out" }, 10.85);
+      tl.to("#s4-p2-box", { backgroundColor: "#ea580c", borderColor: "#ea580c", duration: 0.12 }, 11.0);
+      tl.to("#s4-p2-mark", { opacity: 1, duration: 0.12 }, 11.05);
+      tl.to("#s4-p2-garlic", { opacity: 0.25, duration: 0.35, ease: "power1.out" }, 11.35);
+      tl.to("#s4-caption-a", { opacity: 0, duration: 0.2 }, 11.0);
+      tl.fromTo("#s4-caption-b", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 11.2);
+
+      /* ---------- Scene 5: recipe tree stagger ---------- */
+      var treeRows = ["#s5-row-1", "#s5-row-2", "#s5-row-3", "#s5-row-4", "#s5-row-5", "#s5-row-6", "#s5-row-7"];
+      for (var r = 0; r < treeRows.length; r++) {
+        tl.fromTo(treeRows[r], { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.25, ease: "power2.out" }, 13.75 + r * 0.09);
+      }
+      tl.fromTo("#s5-caption", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 13.85);
+
+      /* ---------- Scene 6: outro sequence ---------- */
+      tl.fromTo("#s6-word", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 16.7);
+      tl.fromTo("#s6-line1", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 17.5);
+      tl.fromTo("#s6-line2", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 18.35);
+
+      /* ---------- music bed volume automation ---------- */
+      var bgm = document.getElementById("bgm");
+      bgm.volume = 0;
+      tl.to(bgm, { volume: 0.32, duration: 0.4, ease: "none" }, 0);
+      tl.to(bgm, { volume: 0.4, duration: 0.3, ease: "none" }, 9.5);
+      tl.to(bgm, { volume: 0.32, duration: 0.3, ease: "none" }, 13.5);
+      tl.to(bgm, { volume: 0, duration: 1.0, ease: "none" }, 18.5);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

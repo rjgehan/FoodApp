@@ -1,0 +1,323 @@
+From 135b963a6542dce62a7fcfb86b6413fe60b63f52 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:38:42 -0400
+Subject: [PATCH 06/12] Accept links typed without https://, and say so when a
+ link is refused
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+"tiktok.com/@cook/…" was refused. On a recipe that replaced the whole
+page with an error; on a place the sheet just sat there with the 400
+in the console. Bare addresses now get https:// added (javascript: and
+friends are still refused), and a refusal shows under the field.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ .../mealplanner/service/PlaceService.java     | 18 +------
+ .../mealplanner/service/RecipeService.java    | 24 +--------
+ .../gehan/mealplanner/service/WebLinks.java   | 49 +++++++++++++++++++
+ .../mealplanner/service/WebLinksTest.java     | 38 ++++++++++++++
+ web/src/pages/HouseholdPage.tsx               | 14 +++++-
+ web/src/pages/RecipeDetailPage.tsx            | 10 +++-
+ 6 files changed, 112 insertions(+), 41 deletions(-)
+ create mode 100644 backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java
+ create mode 100644 backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java
+
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java b/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
+index 9d03317..0dcb8bd 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/PlaceService.java
+@@ -14,8 +14,6 @@ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+ import org.springframework.web.server.ResponseStatusException;
+ 
+-import java.net.URI;
+-import java.net.URISyntaxException;
+ import java.util.List;
+ import java.util.UUID;
+ 
+@@ -117,21 +115,9 @@ public class PlaceService {
+         return value == null || value.isBlank() ? null : value.trim();
+     }
+ 
+-    /** Same rule as recipe video links: this becomes an href, so only http(s) gets through. */
++    /** See {@link WebLinks}. */
+     private static String normalizeLink(String raw) {
+-        String trimmed = blankToNull(raw);
+-        if (trimmed == null) {
+-            return null;
+-        }
+-        try {
+-            String scheme = new URI(trimmed).getScheme();
+-            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
+-            }
+-        } catch (URISyntaxException e) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
+-        }
+-        return trimmed;
++        return WebLinks.normalize(raw);
+     }
+ 
+     private PlaceResponse toResponse(Place place) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+index 3e15a96..93d6dfb 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/service/RecipeService.java
+@@ -36,8 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
+ import org.springframework.web.server.ResponseStatusException;
+ 
+ import java.util.ArrayList;
+-import java.net.URI;
+-import java.net.URISyntaxException;
+ import java.util.LinkedHashSet;
+ import java.util.List;
+ import java.util.EnumMap;
+@@ -243,27 +241,9 @@ public class RecipeService {
+         return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
+     }
+ 
+-    /**
+-     * Only http(s) survives. This link is rendered as an anchor, so letting through something like
+-     * a javascript: url would hand whoever saved it a script injection on everyone who opens the
+-     * recipe — including the households it was shared with.
+-     */
++    /** See {@link WebLinks}. */
+     private static String normalizeLink(String raw) {
+-        if (raw == null || raw.isBlank()) {
+-            return null;
+-        }
+-        String trimmed = raw.trim();
+-        URI uri;
+-        try {
+-            uri = new URI(trimmed);
+-        } catch (URISyntaxException e) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
+-        }
+-        String scheme = uri.getScheme();
+-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
+-        }
+-        return trimmed;
++        return WebLinks.normalize(raw);
+     }
+ 
+     /** Attaches a cover and photo strip. Only the owning household can change a recipe's pictures. */
+diff --git a/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java b/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java
+new file mode 100644
+index 0000000..dee3ff8
+--- /dev/null
++++ b/backend/src/main/java/com/gehan/mealplanner/service/WebLinks.java
+@@ -0,0 +1,49 @@
++package com.gehan.mealplanner.service;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.web.server.ResponseStatusException;
++
++import java.net.URI;
++import java.net.URISyntaxException;
++import java.util.regex.Pattern;
++
++/**
++ * Links people paste or type — a recipe's video, a restaurant's menu. They end up as an href, so
++ * only http(s) gets through: a javascript: url would be a script injection on everyone who opens
++ * the page, including households a recipe was shared with.
++ *
++ * People type "tiktok.com/@cook/…" rather than the full thing, so a bare address gets https://
++ * put in front instead of being refused.
++ */
++final class WebLinks {
++
++    /** Something with a scheme already — "https:", "javascript:", "mailto:". */
++    private static final Pattern HAS_SCHEME = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\\d)");
++
++    private WebLinks() {
++    }
++
++    static String normalize(String raw) {
++        if (raw == null || raw.isBlank()) {
++            return null;
++        }
++        String link = raw.trim();
++        if (!HAS_SCHEME.matcher(link).find()) {
++            link = "https://" + link.replaceFirst("^/+", "");
++        }
++        URI uri;
++        try {
++            uri = new URI(link);
++        } catch (URISyntaxException e) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
++        }
++        String scheme = uri.getScheme();
++        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Links must start with http:// or https://");
++        }
++        if (uri.getHost() == null || !uri.getHost().contains(".")) {
++            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like a link.");
++        }
++        return link;
++    }
++}
+diff --git a/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java b/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java
+new file mode 100644
+index 0000000..b88c88e
+--- /dev/null
++++ b/backend/src/test/java/com/gehan/mealplanner/service/WebLinksTest.java
+@@ -0,0 +1,38 @@
++package com.gehan.mealplanner.service;
++
++import org.junit.jupiter.api.Test;
++import org.springframework.web.server.ResponseStatusException;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++class WebLinksTest {
++
++    @Test
++    void keepsFullLinks() {
++        assertThat(WebLinks.normalize(" https://www.tiktok.com/@cook/video/1 ")).isEqualTo("https://www.tiktok.com/@cook/video/1");
++        assertThat(WebLinks.normalize("http://example.com/menu")).isEqualTo("http://example.com/menu");
++    }
++
++    @Test
++    void addsHttpsToWhatPeopleType() {
++        assertThat(WebLinks.normalize("tiktok.com/@cook/video/1")).isEqualTo("https://tiktok.com/@cook/video/1");
++        assertThat(WebLinks.normalize("www.tonys.com")).isEqualTo("https://www.tonys.com");
++        assertThat(WebLinks.normalize("//tonys.com/menu")).isEqualTo("https://tonys.com/menu");
++        assertThat(WebLinks.normalize("tonys.com:8080/menu")).isEqualTo("https://tonys.com:8080/menu");
++    }
++
++    @Test
++    void blankIsNoLink() {
++        assertThat(WebLinks.normalize(null)).isNull();
++        assertThat(WebLinks.normalize("   ")).isNull();
++    }
++
++    @Test
++    void refusesAnythingThatIsNotAWebLink() {
++        for (String bad : new String[] {"javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,hi", "mailto:a@b.co",
++                "not a link", "localhost", "https://"}) {
++            assertThatThrownBy(() -> WebLinks.normalize(bad)).as(bad).isInstanceOf(ResponseStatusException.class);
++        }
++    }
++}
+diff --git a/web/src/pages/HouseholdPage.tsx b/web/src/pages/HouseholdPage.tsx
+index afbed04..61773fa 100644
+--- a/web/src/pages/HouseholdPage.tsx
++++ b/web/src/pages/HouseholdPage.tsx
+@@ -455,6 +455,7 @@ function LeaveCard({ householdId, name }: { householdId: string; name: string })
+ function PlacesCard({ householdId }: { householdId: string }) {
+   const [places, setPlaces] = useState<Place[] | null>(null);
+   const [editing, setEditing] = useState<Place | null>(null);
++  const [sheetError, setSheetError] = useState<string | null>(null);
+   const [newName, setNewName] = useState('');
+   const [busy, setBusy] = useState(false);
+ 
+@@ -484,6 +485,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
+ 
+   async function save(place: Place) {
+     setBusy(true);
++    setSheetError(null);
+     try {
+       await api('PUT', `/api/places/${place.id}`, {
+         name: place.name,
+@@ -494,6 +496,9 @@ function PlacesCard({ householdId }: { householdId: string }) {
+       });
+       setEditing(null);
+       await load();
++    } catch (err) {
++      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
++      setSheetError(message ?? 'Could not save that.');
+     } finally {
+       setBusy(false);
+     }
+@@ -562,9 +567,13 @@ function PlacesCard({ householdId }: { householdId: string }) {
+           householdId={householdId}
+           place={editing}
+           busy={busy}
++          error={sheetError}
+           onSave={save}
+           onDelete={remove}
+-          onClose={() => setEditing(null)}
++          onClose={() => {
++            setEditing(null);
++            setSheetError(null);
++          }}
+         />
+       )}
+     </Card>
+@@ -575,6 +584,7 @@ function PlaceSheet({
+   householdId,
+   place,
+   busy,
++  error,
+   onSave,
+   onDelete,
+   onClose,
+@@ -582,6 +592,7 @@ function PlaceSheet({
+   householdId: string;
+   place: Place;
+   busy: boolean;
++  error: string | null;
+   onSave: (place: Place) => void;
+   onDelete: (place: Place) => void;
+   onClose: () => void;
+@@ -632,6 +643,7 @@ function PlaceSheet({
+           <Input value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })} />
+         </Field>
+ 
++        {error && <ErrorText>{error}</ErrorText>}
+         <div className="flex gap-2">
+           <Button className="flex-1" disabled={busy || !draft.name.trim()} onClick={() => onSave(draft)}>
+             Save
+diff --git a/web/src/pages/RecipeDetailPage.tsx b/web/src/pages/RecipeDetailPage.tsx
+index f81e8fa..e5339d8 100644
+--- a/web/src/pages/RecipeDetailPage.tsx
++++ b/web/src/pages/RecipeDetailPage.tsx
+@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
+ import { api, ApiError, imageUrl } from '../api/client';
+ import type { Recipe, ShareTarget } from '../api/types';
+ import { useHousehold } from '../household/HouseholdContext';
+-import { Button, Card, CheckCircle, cx, EmptyState, Field, IconButton, Input, Sheet } from '../components/ui';
++import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
+ import { ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
+ import RecipeIndexCard from '../components/RecipeIndexCard';
+ import { PageTitle } from '../components/PageTitle';
+@@ -31,6 +31,7 @@ export default function RecipeDetailPage() {
+   const [draft, setDraft] = useState<Filing | null>(null);
+   const [photosBusy, setPhotosBusy] = useState(false);
+   const [videoDraft, setVideoDraft] = useState('');
++  const [videoError, setVideoError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     if (!recipeId) return;
+@@ -142,10 +143,14 @@ export default function RecipeDetailPage() {
+   async function saveVideo(url: string) {
+     if (!recipe) return;
+     setPhotosBusy(true);
++    setVideoError(null);
+     try {
+       setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/video`, { videoUrl: url }));
++      setVideoDraft('');
+     } catch (err) {
+-      setError(err instanceof ApiError ? 'That link needs to start with http:// or https://' : 'Could not save that link.');
++      // Said next to the field. Setting the page error here replaced the whole recipe with it.
++      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
++      setVideoError(message ?? 'Could not save that link.');
+     } finally {
+       setPhotosBusy(false);
+     }
+@@ -390,6 +395,7 @@ export default function RecipeDetailPage() {
+                       </Button>
+                     </div>
+                   </Field>
++                  {videoError && <ErrorText>{videoError}</ErrorText>}
+                   {recipe.videoUrl && (
+                     <Button
+                       variant="ghost"
+-- 
+2.42.0
+

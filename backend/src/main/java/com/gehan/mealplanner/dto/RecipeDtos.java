@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.Valid;
 
 import java.math.BigDecimal;
@@ -14,15 +16,21 @@ import java.util.UUID;
 public class RecipeDtos {
 
     public record RecipeIngredientRequest(
-            @NotBlank String ingredientName,
-            @NotNull BigDecimal quantity,
-            String unit,
-            String notes) {
+            @NotBlank @Size(max = 200) String ingredientName,
+            @NotNull @PositiveOrZero BigDecimal quantity,
+            @Size(max = 40) String unit,
+            String notes,
+            /**
+             * Something a cook might skip — chosen per occasion when the recipe is planned. A
+             * Boolean so that leaving it out means "no": a phone still running the app from before
+             * this field existed must still be able to save a recipe.
+             */
+            Boolean optional) {
     }
 
     /** Ingredient quantities are for the given servings count, as written — not normalized to 1 person. */
     public record RecipeRequest(
-            @NotBlank String name,
+            @NotBlank @Size(max = 200) String name,
             String description,
             String instructions,
             Integer prepTimeMinutes,
@@ -75,7 +83,7 @@ public class RecipeDtos {
     }
 
     public record PublicIngredientResponse(
-            String ingredientName, BigDecimal quantity, String unit, String notes) {
+            String ingredientName, BigDecimal quantity, String unit, String notes, boolean optional) {
     }
 
     /** The share link for a recipe. A null token means no link exists yet. */
@@ -83,7 +91,7 @@ public class RecipeDtos {
     }
 
     public record RecipeIngredientResponse(
-            UUID id, String ingredientName, BigDecimal quantity, String unit, String notes) {
+            UUID id, String ingredientName, BigDecimal quantity, String unit, String notes, boolean optional) {
     }
 
     public record RecipeResponse(
@@ -110,11 +118,13 @@ public class RecipeDtos {
     }
 
     /** `parentId` is the group this one sits inside; null at the top of a drawer. */
-    public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId) {
+    /** `section` is the drawer the group belongs to; null means it shows in every drawer. */
+    public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId, RecipeSection section) {
     }
 
     /** A new group, optionally inside another. Names are unique within a household. */
-    public record CreateCategoryRequest(@NotBlank String name, UUID parentId) {
+    /** `section` is ignored when `parentId` is given — a nested group joins its parent's drawer. */
+    public record CreateCategoryRequest(@NotBlank String name, UUID parentId, RecipeSection section) {
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.HouseholdRole;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -10,7 +11,7 @@ import java.util.UUID;
 
 public class HouseholdDtos {
 
-    public record CreateHouseholdRequest(@NotBlank String name) {
+    public record CreateHouseholdRequest(@NotBlank @Size(max = 60) String name) {
     }
 
     /** `role` is the *requesting* user's role in this household, not a property of the household. */
@@ -22,8 +23,11 @@ public class HouseholdDtos {
     }
 
     public record UpdateHouseholdSettingsRequest(
-            @NotNull @Min(1) Integer defaultServings,
-            @NotNull @Min(1) Integer planningHorizonDays) {
+            @NotNull @Min(1) @Max(MAX_SERVINGS) Integer defaultServings,
+            // Today and the Plan tab load this many days ahead, so it has to stay sensible.
+            @NotNull @Min(1) @Max(MAX_PLANNING_DAYS) Integer planningHorizonDays) {
+        public static final int MAX_SERVINGS = 50;
+        public static final int MAX_PLANNING_DAYS = 60;
     }
 
     /** Adds an account that already exists — including one belonging to another household. */

@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -58,7 +59,7 @@ public class MealPlanService {
         Map<UUID, CupboardItem> cupboard = cupboard(householdId);
         return mealPlanEntryRepository
                 .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
-                .stream().map(e -> toResponse(e, cupboard)).toList();
+                .stream().sorted(MealPlanEntry.EATING_ORDER).map(e -> toResponse(e, cupboard)).toList();
     }
 
     /** Adds a dish to a slot. Call it again to put sides alongside a main. */
@@ -100,6 +101,10 @@ public class MealPlanService {
                 .servings(request.recipeId() == null ? null
                         : request.servings() != null ? request.servings() : household.getDefaultServings())
                 .notes(request.notes())
+                // A mutable set, not Set.of()/copyOf() — Hibernate mutates this collection in
+                // place (clear-then-refill) on every merge, which throws on an immutable one.
+                .includedOptionalIngredientIds(request.includedOptionalIngredientIds() == null
+                        ? new HashSet<>() : new HashSet<>(request.includedOptionalIngredientIds()))
                 .build();
 
         return toResponse(mealPlanEntryRepository.save(entry), cupboard(householdId));
@@ -140,6 +145,9 @@ public class MealPlanService {
         }
         if (request.notes() != null) {
             entry.setNotes(request.notes());
+        }
+        if (request.includedOptionalIngredientIds() != null) {
+            entry.setIncludedOptionalIngredientIds(new HashSet<>(request.includedOptionalIngredientIds()));
         }
         return toResponse(mealPlanEntryRepository.save(entry), cupboard(householdId));
     }
@@ -191,10 +199,11 @@ public class MealPlanService {
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
                 item != null ? item.getName() : null,
-                stocked != null,
-                stocked != null && stocked.isRunningLow(),
+                stocked != null && !stocked.isUsedUp(),
+                stocked != null && stocked.isShort(),
                 entry.getTime(),
                 entry.getServings(),
-                entry.getNotes());
+                entry.getNotes(),
+                List.copyOf(entry.getIncludedOptionalIngredientIds()));
     }
 }

@@ -86,7 +86,7 @@ public class RecipeLinkService {
         // Materialized inside the transaction: Jackson serializes long after it has closed.
         List<PublicIngredientResponse> ingredients = recipe.getIngredients().stream()
                 .map(i -> new PublicIngredientResponse(
-                        i.getIngredient().getName(), i.getQuantity(), i.getUnit(), i.getNotes()))
+                        i.getIngredient().getName(), i.getQuantity(), i.getUnit(), i.getNotes(), i.isOptional()))
                 .toList();
         List<UUID> photoIds = recipe.getPhotos().stream().map(StoredImage::getId).toList();
 

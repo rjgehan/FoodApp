@@ -11,8 +11,8 @@ import { PageTitle } from '../components/PageTitle';
 import RecipeForm from '../components/RecipeForm';
 import { WriteForMe } from '../components/RecipeWriter';
 import { PasteFromChatGpt } from '../components/RecipePaste';
-import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, NumberInput, Sheet } from '../components/ui';
-import { BookIcon, CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
+import { Button, Card, CheckCircle, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
+import { BookIcon, CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -49,7 +49,9 @@ export default function MealPlanPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
   // The week is the working view; the calendar is for looking back over what you ate.
   const [mode, setMode] = useState<'week' | 'calendar'>('week');
-  const [confirmingWeek, setConfirmingWeek] = useState(false);
+  // The meals in the planning window, loaded when "Add … to Groceries" is pressed. That window runs
+  // from today, so on a Thursday it reaches into next week — past what the week view has loaded.
+  const [windowEntries, setWindowEntries] = useState<MealPlanEntry[] | null>(null);
   const [addingWeek, setAddingWeek] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
@@ -119,7 +121,6 @@ export default function MealPlanPage() {
     await api('POST', `/api/households/${activeHouseholdId}/grocery-list/add-all?start=${isoDate(start)}&end=${isoDate(end)}`);
   }
 
-  const weekEnd = addDays(weekStart, 6);
 
   /*
    * The planning window from Settings, drawn on the week so "how far ahead do we plan" is
@@ -131,7 +132,16 @@ export default function MealPlanPage() {
   const inWindow = weekDays.map((d) => d >= today && d <= horizonEnd);
   const windowStart = inWindow.indexOf(true);
   const windowLength = inWindow.filter(Boolean).length;
-  const weekEntries = entries.filter((e) => e.date >= isoDate(weekStart) && e.date <= isoDate(weekEnd));
+  const windowLabel = `${today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${horizonEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+
+  async function confirmWindow() {
+    setWindowEntries(
+      await api<MealPlanEntry[]>(
+        'GET',
+        `/api/households/${activeHouseholdId}/meal-plan?start=${isoDate(today)}&end=${isoDate(horizonEnd)}`,
+      ),
+    );
+  }
   const awayFromToday =
     mode === 'week'
       ? isoDate(weekStart) !== isoDate(startOfWeek(today))
@@ -140,18 +150,18 @@ export default function MealPlanPage() {
   return (
     <div className="space-y-4">
       <PageTitle title="Plan" />
-      {confirmingWeek && (
+      {windowEntries && (
         <ConfirmAddToGroceries
-          dates={contributingDates(weekEntries)}
-          missing={missingIngredients(weekEntries)}
-          items={singleItems(weekEntries)}
+          dates={contributingDates(windowEntries)}
+          missing={missingIngredients(windowEntries)}
+          items={singleItems(windowEntries)}
           busy={addingWeek}
-          onCancel={() => setConfirmingWeek(false)}
+          onCancel={() => setWindowEntries(null)}
           onConfirm={async () => {
             setAddingWeek(true);
             try {
-              await addRangeToList(weekStart, weekEnd);
-              setConfirmingWeek(false);
+              await addRangeToList(today, horizonEnd);
+              setWindowEntries(null);
             } finally {
               setAddingWeek(false);
             }
@@ -270,10 +280,6 @@ export default function MealPlanPage() {
                   className="h-2 rounded-b-md border-x-2 border-b-2 border-accent/50"
                 />
               </div>
-              <p className="mt-1.5 text-center text-xs text-subtle">
-                Planning {horizonDays} {horizonDays === 1 ? 'day' : 'days'} ahead — through{' '}
-                {horizonEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-              </p>
             </div>
           )}
 
@@ -304,11 +310,12 @@ export default function MealPlanPage() {
               ))}
           </ul>
 
-          {/* Secondary, not filled: a filled button at the bottom of a screen reads as "save",
-              and this one has a side effect on a different page entirely. */}
-          <Button full variant="ghost" onClick={() => setConfirmingWeek(true)}>
+          {/* Plan → Groceries. It covers the bracketed days above — the ones being shopped for —
+              not whichever week is on screen. Secondary, not filled: a filled button at the bottom
+              of a screen reads as "save", and this one changes a different page. */}
+          <Button full variant="secondary" onClick={confirmWindow}>
             <CartIcon className="h-5 w-5" />
-            Add this week to Groceries
+            Add {windowLabel} to Groceries
           </Button>
         </>
       ) : (
@@ -429,12 +436,14 @@ function DaySheet({
   const [picking, setPicking] = useState<{ meal: MealType; entryId: string | null } | null>(null);
   // The name typed into the picker, while a new recipe for it is being made.
   const [creating, setCreating] = useState<string | null>(null);
+  // A recipe with optional ingredients was just picked — choosing which of them to buy this time,
+  // before the entry is actually saved.
+  const [choosingOptionals, setChoosingOptionals] = useState<{ recipe: Recipe; selected: Set<string> } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [cupboard, setCupboard] = useState<CupboardItem[]>([]);
   // Lives here, not in the picker, so it survives switching tabs while deciding.
   const [outTime, setOutTime] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [extraMeals, setExtraMeals] = useState<MealType[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
@@ -455,12 +464,12 @@ function DaySheet({
 
   // The three staples, plus any other slot that already has something in it.
   const slots = ALL_MEALS.filter(
-    (m) => BASE_MEALS.includes(m) || extraMeals.includes(m) || entries.some((e) => e.mealType === m),
+    (m) => BASE_MEALS.includes(m) || entries.some((e) => e.mealType === m),
   );
   const missing = ALL_MEALS.filter((m) => !slots.includes(m));
 
   /** Puts a recipe or a single item in the slot being picked for — or swaps the dish being changed. */
-  async function fill(what: { recipeId: string } | { itemName: string }) {
+  async function fill(what: { recipeId: string; includedOptionalIngredientIds?: string[] } | { itemName: string }) {
     if (!picking) return;
     setBusy(true);
     setError(null);
@@ -478,6 +487,7 @@ function DaySheet({
       await onChanged();
       setPicking(null);
       setCreating(null);
+      setChoosingOptionals(null);
       setExpanded(null);
     } catch (err) {
       setError(
@@ -494,6 +504,25 @@ function DaySheet({
   async function recipeMade(recipe: Recipe) {
     onRecipeCreated(recipe);
     await fill({ recipeId: recipe.id });
+  }
+
+  /**
+   * A recipe with no optional ingredients goes straight in, same as always. One with some pauses
+   * on a checklist first — asked once, here, rather than every time something later puts this
+   * meal's ingredients on the grocery list.
+   */
+  function pickRecipe(recipe: Recipe) {
+    const optionalIngredients = recipe.ingredients.filter((i) => i.optional);
+    if (optionalIngredients.length === 0) {
+      fill({ recipeId: recipe.id });
+      return;
+    }
+    // Re-picking the same recipe you're already swapping keeps whatever was chosen last time.
+    const current = picking?.entryId ? entries.find((e) => e.id === picking.entryId) : null;
+    const selected = new Set(
+      current?.recipeId === recipe.id ? current.includedOptionalIngredientIds : [],
+    );
+    setChoosingOptionals({ recipe, selected });
   }
 
   /** Typing a name that is not saved yet creates the place, the way a new category works. */
@@ -619,6 +648,53 @@ function DaySheet({
     );
   }
 
+  if (picking && choosingOptionals) {
+    const optionalIngredients = choosingOptionals.recipe.ingredients.filter((i) => i.optional);
+    return (
+      <Sheet title={choosingOptionals.recipe.name} onClose={() => setChoosingOptionals(null)}>
+        {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
+        <p className="mb-2 text-sm text-muted">Buying the optional extras this time?</p>
+        <ul className="divide-y divide-line">
+          {optionalIngredients.map((ing) => {
+            const checked = choosingOptionals.selected.has(ing.id);
+            return (
+              <li key={ing.id}>
+                <button
+                  type="button"
+                  aria-pressed={checked}
+                  onClick={() =>
+                    setChoosingOptionals((prev) => {
+                      if (!prev) return prev;
+                      const next = new Set(prev.selected);
+                      if (next.has(ing.id)) next.delete(ing.id);
+                      else next.add(ing.id);
+                      return { ...prev, selected: next };
+                    })
+                  }
+                  className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+                >
+                  <CheckCircle checked={checked} />
+                  <span>{ing.ingredientName}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <Button
+          full
+          className="mt-3"
+          disabled={busy}
+          onClick={() => {
+            const recipe = choosingOptionals.recipe;
+            fill({ recipeId: recipe.id, includedOptionalIngredientIds: [...choosingOptionals.selected] });
+          }}
+        >
+          Add to {titleCase(picking.meal)}
+        </Button>
+      </Sheet>
+    );
+  }
+
   if (picking) {
     return (
       <Sheet title={`${titleCase(picking.meal)} · ${label}`} onClose={() => setPicking(null)} tall>
@@ -630,7 +706,7 @@ function DaySheet({
           disabled={busy}
           time={outTime}
           onTimeChange={setOutTime}
-          onPickRecipe={(recipe) => fill({ recipeId: recipe.id })}
+          onPickRecipe={pickRecipe}
           onPickItem={(name) => fill({ itemName: name })}
           onNewRecipe={(name) => {
             setError(null);
@@ -653,10 +729,13 @@ function DaySheet({
             <li key={meal} className="py-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-muted">{titleCase(meal)}</span>
-                <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
-                  <PlusIcon className="h-4 w-4" />
-                  {dishes.length ? 'Add side' : 'Add'}
-                </Button>
+                {/* A side goes with something cooked; a night out or a single food takes none. */}
+                {(dishes.length === 0 || dishes.some((d) => d.recipeId)) && (
+                  <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
+                    <PlusIcon className="h-4 w-4" />
+                    {dishes.length ? 'Add side' : 'Add'}
+                  </Button>
+                )}
               </div>
 
               {dishes.length === 0 ? (
@@ -684,10 +763,8 @@ function DaySheet({
                         </button>
 
                         {open && (
-                          <div className="flex flex-wrap items-center gap-2 pb-3">
-                            <Button size="sm" variant="secondary" onClick={() => setPicking({ meal, entryId: entry.id })}>
-                              Change
-                            </Button>
+                          <div className="space-y-1 pb-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             {entry.recipeId && (
                               <Link to={entry.needsIngredients ? `/recipes/${entry.recipeId}/edit` : `/recipes/${entry.recipeId}`}>
                                 <Button size="sm" variant="secondary">
@@ -703,7 +780,7 @@ function DaySheet({
                                 onClick={() => addItemToList(entry)}
                               >
                                 <CartIcon className="h-4 w-4" />
-                                {listed.includes(entry.id) ? 'On the list' : 'Add to grocery list'}
+                                {listed.includes(entry.id) ? 'In Groceries' : 'Add to Groceries'}
                               </Button>
                             )}
                             {entry.placeId && <PlaceActions place={places.find((p) => p.id === entry.placeId)} />}
@@ -726,9 +803,16 @@ function DaySheet({
                                 onChange={(v) => setServings(entry, v)}
                               />
                             )}
-                            <IconButton label="Remove dish" disabled={busy} onClick={() => remove(entry)}>
-                              <TrashIcon className="h-5 w-5" />
-                            </IconButton>
+                          </div>
+                          {/* The rare two, quiet and together. */}
+                          <div className="-ml-3 flex items-center">
+                            <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: entry.id })}>
+                              Change
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-danger" disabled={busy} onClick={() => remove(entry)}>
+                              Remove
+                            </Button>
+                          </div>
                           </div>
                         )}
                       </li>
@@ -742,9 +826,9 @@ function DaySheet({
       </ul>
 
       {missing.length > 0 && (
-        <Button variant="ghost" full className="mt-2" onClick={() => setExtraMeals((m) => [...m, missing[0]])}>
+        <Button variant="ghost" full className="mt-2" onClick={() => setPicking({ meal: missing[0], entryId: null })}>
           <PlusIcon className="h-5 w-5" />
-          Add {titleCase(missing[0])}
+          Add a {missing[0].toLowerCase()}
         </Button>
       )}
 
@@ -786,26 +870,31 @@ function ServingsControl({
   disabled: boolean;
   onChange: (value: number) => void;
 }) {
-  const [draft, setDraft] = useState<number | null>(value);
-
+  // Same shape as the cupboard's amount stepper, labelled, and saved on each tap.
   return (
-    <span className="flex items-center gap-1">
-      <NumberInput
-        min={1}
-        className="w-16"
-        value={draft}
-        onChange={setDraft}
-        aria-label="Servings"
-        disabled={disabled}
-      />
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={disabled || draft === null || draft === value}
-        onClick={() => draft !== null && onChange(draft)}
-      >
-        Set
-      </Button>
+    <span className="flex items-center gap-2">
+      <span className="text-sm text-muted">Serves</span>
+      <span className="flex items-center gap-1.5 rounded-[9px] bg-elevated px-1 py-0.5" role="group" aria-label="Servings">
+        <button
+          type="button"
+          aria-label="Fewer servings"
+          disabled={disabled || value <= 1}
+          onClick={() => onChange(value - 1)}
+          className="flex h-9 w-9 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface disabled:opacity-40"
+        >
+          −
+        </button>
+        <span className="min-w-[1.5rem] text-center text-[0.9375rem] font-semibold tabular-nums">{value}</span>
+        <button
+          type="button"
+          aria-label="More servings"
+          disabled={disabled || value >= 50}
+          onClick={() => onChange(value + 1)}
+          className="flex h-9 w-9 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface disabled:opacity-40"
+        >
+          +
+        </button>
+      </span>
     </span>
   );
 }
@@ -842,7 +931,7 @@ function ConfirmAddToGroceries({
         <p className="text-lg">
           {dates.length === 0
             ? 'Nothing planned to add.'
-            : `Confirm adding ${listed} meals to grocery list?`}
+            : `Add the meals from ${listed} to Groceries?`}
         </p>
         {missing.length > 0 && (
           <p className="text-sm text-muted">
@@ -852,13 +941,13 @@ function ConfirmAddToGroceries({
         )}
         {items > 0 && (
           <p className="text-sm text-muted">
-            Single items aren't included — tap one on its day to add it to the list.
+            Single foods aren't included — tap one on its day to add it to Groceries.
           </p>
         )}
         <div className="flex gap-2">
           <Button className="flex-1" disabled={busy || dates.length === 0} onClick={onConfirm}>
             <CartIcon className="h-5 w-5" />
-            {busy ? 'Adding…' : 'Add them'}
+            {busy ? 'Adding…' : 'Add to Groceries'}
           </Button>
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             Cancel
@@ -1294,7 +1383,7 @@ function NewRecipeFromPlan({
           {busy ? 'Saving…' : 'Save the name, fill it in later'}
         </Button>
         <p className="text-sm text-muted">
-          It goes on the plan now. Until it has ingredients, it won't add anything to the grocery list.
+          It goes on the plan now. Until it has ingredients, it won't add anything to Groceries.
         </p>
       </div>
       <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('write')}>

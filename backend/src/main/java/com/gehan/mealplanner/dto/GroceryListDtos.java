@@ -1,6 +1,8 @@
 package com.gehan.mealplanner.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -11,9 +13,9 @@ import java.util.UUID;
 public class GroceryListDtos {
 
     public record AddItemRequest(
-            String ingredientName,
-            BigDecimal quantity,
-            String unit) {
+            @Size(max = 200) String ingredientName,
+            @PositiveOrZero BigDecimal quantity,
+            @Size(max = 40) String unit) {
     }
 
     /**

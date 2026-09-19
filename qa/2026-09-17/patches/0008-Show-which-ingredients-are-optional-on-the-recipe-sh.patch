@@ -1,0 +1,116 @@
+From 6fa7137de7052779ec73a70608b716ba55180daf Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 17 Sep 2026 03:41:09 -0400
+Subject: [PATCH 08/12] =?UTF-8?q?Show=20which=20ingredients=20are=20option?=
+ =?UTF-8?q?al=20=E2=80=94=20on=20the=20recipe,=20share=20link,=20index=20c?=
+ =?UTF-8?q?ard=20and=20dashboard=20API?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The flag was saved and used for the grocery list, but nowhere a cook
+reads the recipe said so. The integration API gains an "optional"
+field (additive) and "(optional)" on the pre-rendered line.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NQLiThQhdxj2iQfcYnJXAQ
+---
+ INTEGRATION.md                                               | 5 +++--
+ .../com/gehan/mealplanner/integration/IntegrationDtos.java   | 2 +-
+ .../gehan/mealplanner/integration/IntegrationService.java    | 5 +++--
+ web/src/components/RecipeIndexCard.tsx                       | 1 +
+ web/src/pages/PublicRecipePage.tsx                           | 1 +
+ web/src/pages/RecipeDetailPage.tsx                           | 1 +
+ 6 files changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/INTEGRATION.md b/INTEGRATION.md
+index dc586ba..8eda237 100644
+--- a/INTEGRATION.md
++++ b/INTEGRATION.md
+@@ -188,7 +188,7 @@ files it; without it both come back empty.
+   "videoUrl": "https://www.tiktok.com/…",
+   "ingredients": [
+     { "name": "sweetened condensed milk", "quantity": "⅓", "unit": "cup",
+-      "notes": null, "text": "⅓ cup sweetened condensed milk" }
++      "notes": null, "optional": false, "text": "⅓ cup sweetened condensed milk" }
+   ],
+   "steps": [
+     "Preheat the oven to 350°F and line a small baking dish with parchment paper.",
+@@ -201,7 +201,8 @@ Two things done for you, so you don't reimplement them and drift out of step wit
+ 
+ - **`ingredients[].text`** is the whole line pre-rendered — `"⅓ cup sweetened condensed milk"`.
+   `quantity` is already a fraction glyph, not `0.333`. The separate fields are there if you want
+-  to lay out columns instead.
++  to lay out columns instead. An ingredient a cook can skip has `"optional": true`, and its `text`
++  ends in `(optional)`.
+ - **`steps`** is the instructions split one per line with any numbering the writer typed
+   (`1.`, `-`, `•`) already stripped. Render them in an `<ol>`.
+ 
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+index 549d9a3..bb889a5 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationDtos.java
+@@ -84,7 +84,7 @@ public class IntegrationDtos {
+      * `text` is the whole line pre-rendered — "1½ cup flour, sifted" — because a dashboard
+      * almost always wants to print it rather than lay out three columns.
+      */
+-    public record IngredientLine(String name, String quantity, String unit, String notes, String text) {
++    public record IngredientLine(String name, String quantity, String unit, String notes, boolean optional, String text) {
+     }
+ 
+     public record GroceryItem(UUID id, String name, String quantity, String unit, boolean checked) {
+diff --git a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+index 7890034..90d67e3 100644
+--- a/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
++++ b/backend/src/main/java/com/gehan/mealplanner/integration/IntegrationService.java
+@@ -136,8 +136,9 @@ public class IntegrationService {
+             String unit = i.getUnit() == null ? "" : i.getUnit();
+             String name = i.getIngredient().getName();
+             String text = (quantity + " " + unit).trim();
+-            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes());
+-            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), text);
++            text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes())
++                    + (i.isOptional() ? " (optional)" : "");
++            return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), i.isOptional(), text);
+         }).toList();
+ 
+         return new RecipeDetail(
+diff --git a/web/src/components/RecipeIndexCard.tsx b/web/src/components/RecipeIndexCard.tsx
+index e269df1..52c2953 100644
+--- a/web/src/components/RecipeIndexCard.tsx
++++ b/web/src/components/RecipeIndexCard.tsx
+@@ -37,6 +37,7 @@ export default function RecipeIndexCard({ recipe }: { recipe: Recipe }) {
+               <span>
+                 {i.ingredientName}
+                 {i.notes ? <span className="text-[#6b5744]">, {i.notes}</span> : null}
++                {i.optional ? <span className="text-[#6b5744]"> (optional)</span> : null}
+               </span>
+             </li>
+           ))}
+diff --git a/web/src/pages/PublicRecipePage.tsx b/web/src/pages/PublicRecipePage.tsx
+index 65dd222..1eb2732 100644
+--- a/web/src/pages/PublicRecipePage.tsx
++++ b/web/src/pages/PublicRecipePage.tsx
+@@ -90,6 +90,7 @@ export default function PublicRecipePage() {
+               <span className="flex-1">
+                 {i.ingredientName}
+                 {i.notes && <span className="text-muted"> — {i.notes}</span>}
++                {i.optional && <span className="text-muted"> · optional</span>}
+               </span>
+             </li>
+           ))}
+diff --git a/web/src/pages/RecipeDetailPage.tsx b/web/src/pages/RecipeDetailPage.tsx
+index e5339d8..c1a1dc0 100644
+--- a/web/src/pages/RecipeDetailPage.tsx
++++ b/web/src/pages/RecipeDetailPage.tsx
+@@ -324,6 +324,7 @@ export default function RecipeDetailPage() {
+                     <span className="min-w-0">
+                       {i.ingredientName}
+                       {i.notes && <span className="text-muted">, {i.notes}</span>}
++                      {i.optional && <span className="text-muted"> · optional</span>}
+                     </span>
+                   </li>
+                 ))}
+-- 
+2.42.0
+

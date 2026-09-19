@@ -1,26 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { Recipe, RecipeCategory } from '../api/types';
+import type { Recipe, RecipeCategory, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, Chip, cx, EmptyState, ErrorText, Field, Input, Sheet } from '../components/ui';
-import { ChevronLeftIcon, PlusIcon } from '../components/icons';
+import { ActionMenu, Button, Card, Chip, EmptyState, ErrorText, Field, Input, Sheet } from '../components/ui';
+import { ChevronLeftIcon } from '../components/icons';
 import RecipeGrid from '../components/RecipeGrid';
 import { PageTitle } from '../components/PageTitle';
-import { coverClass } from '../utils/recipeFormat';
 import { SHARED_KEY, sectionFromSlug, sectionLabel } from '../utils/recipeMeta';
 import { buildTree, isIn, suggestGroup, suggestSplit, type CategoryTree } from '../utils/categoryTree';
+import GroupTree from '../components/GroupTree';
 
 function errorMessage(err: unknown, fallback: string): string {
   return (err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null) ?? fallback;
 }
 
 /**
- * One drawer of the catalog, opened a level at a time. Dinner shows its groups — Main dish,
- * Side — and Main dish shows its own — Chicken, Seafood — and recipes only appear once there is
- * nothing smaller to open, instead of every recipe in the drawer at once.
- *
- * The level is in the URL (?group=), so Back walks up the levels the way you came down.
+ * One drawer of the catalog. Dinner shows every group nested inside it at once — Main dish, and
+ * Chicken indented under it, and so on — rather than one level per screen, and recipes only
+ * appear once there is nothing smaller to open. The current group is in the URL (?group=), so
+ * opening one re-roots the tree there and Back walks back up to where you came from.
  */
 export default function RecipeSectionPage() {
   const { section: slug } = useParams<{ section: string }>();
@@ -32,7 +31,8 @@ export default function RecipeSectionPage() {
   const [sorting, setSorting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [splitDismissed, setSplitDismissed] = useState<string[]>([]);
+  // Remembered on this phone: "Not now" that comes back on the next visit is just nagging.
+  const [splitDismissed, setSplitDismissed] = useState<string[]>(readDismissedSplits);
 
   const isShared = slug === SHARED_KEY;
   const section = sectionFromSlug(slug);
@@ -60,7 +60,11 @@ export default function RecipeSectionPage() {
     setEditing(false);
   }, [groupId, slug]);
 
-  const tree = useMemo(() => buildTree(categories), [categories]);
+  // A drawer shows its own groups, plus any group that belongs to every drawer.
+  const tree = useMemo(
+    () => buildTree(categories.filter((c) => c.section === null || c.section === section)),
+    [categories, section],
+  );
 
   const inSection = useMemo(
     () =>
@@ -84,7 +88,7 @@ export default function RecipeSectionPage() {
         <EmptyState>
           No such section.{' '}
           <Link to="/recipes" className="font-medium text-accent underline">
-            Back to the catalog
+            Back to recipes
           </Link>
         </EmptyState>
       </Card>
@@ -101,10 +105,10 @@ export default function RecipeSectionPage() {
   if (isShared) {
     return (
       <div className="space-y-4">
-        <Header backLabel="Catalog" onBack={() => navigate('/recipes')} title={drawerName} />
+        <Header backLabel="Recipes" onBack={() => navigate('/recipes')} title={drawerName} />
         {inSection.length > 0 && (
           <p className="text-sm text-muted">
-            Recipes other households published. Open one and hit Organize to move it into your own catalog.
+            From other households. Open one and choose ••• → Move to my recipes to keep it.
           </p>
         )}
         {recipes === null ? <Loading /> : inSection.length === 0 ? <Empty text="Nothing shared with you." /> : <RecipeGrid recipes={inSection} />}
@@ -116,11 +120,8 @@ export default function RecipeSectionPage() {
   const parent = group?.parentId ? tree.byId.get(group.parentId) ?? null : null;
   const here = group ? inSection.filter((r) => isIn(r, group.id, tree)) : inSection;
 
-  // Every group one level down, and the ones that have something from this drawer in them.
+  // Every group one level down — shown whether or not it holds a recipe from this drawer.
   const allChildren = tree.children(group?.id ?? null);
-  const childGroups = allChildren
-    .map((c) => ({ group: c, recipes: here.filter((r) => isIn(r, c.id, tree)) }))
-    .filter((c) => c.recipes.length > 0);
   // Here, but in none of the groups below: filed on this group itself, or on nothing at all.
   const loose = here.filter((r) => !allChildren.some((c) => isIn(r, c.id, tree)));
 
@@ -134,21 +135,39 @@ export default function RecipeSectionPage() {
   return (
     <div className="space-y-4">
       <Header
-        backLabel={group ? parent?.name ?? drawerName : 'Catalog'}
+        backLabel={group ? parent?.name ?? drawerName : 'Recipes'}
         onBack={() => (group ? goTo(parent?.id ?? null) : navigate('/recipes'))}
         title={group?.name ?? drawerName}
         action={
-          group && (
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              Edit group
-            </Button>
-          )
+          <ActionMenu
+            label={group ? `Options for ${group.name}` : `Options for ${drawerName}`}
+            title={group?.name ?? drawerName}
+            items={[
+              { label: group ? `Add a group inside ${group.name}` : 'Add a group', onSelect: () => setAdding(true) },
+              group && { label: 'Rename or delete', onSelect: () => setEditing(true) },
+            ]}
+          />
         }
       />
 
+      {adding && (
+        <AddGroup
+          householdId={activeHouseholdId}
+          parent={group}
+          section={section}
+          onCancel={() => setAdding(false)}
+          onAdded={async () => {
+            setAdding(false);
+            await load();
+            // A new group is empty until something goes in it, so go straight to filling it.
+            if (loose.length > 0 || (allChildren.length === 0 && here.length > 0)) setSorting(true);
+          }}
+        />
+      )}
+
       {recipes === null ? (
         <Loading />
-      ) : here.length === 0 ? (
+      ) : here.length === 0 && allChildren.length === 0 ? (
         <Empty text={group ? `Nothing from ${drawerName} in ${group.name} yet.` : 'Nothing filed here yet.'} />
       ) : sorting ? (
         <SortList
@@ -161,6 +180,12 @@ export default function RecipeSectionPage() {
         />
       ) : (
         <>
+          {/* Groups but no recipes yet — a new household. The groups are what there is to see. */}
+          {here.length === 0 && (
+            <p className="text-[0.9375rem] text-muted">
+              Nothing filed in {group?.name ?? drawerName} yet. Add a recipe, or open a group.
+            </p>
+          )}
           {splits.length > 0 && (
             <SplitSuggestion
               householdId={activeHouseholdId}
@@ -169,22 +194,30 @@ export default function RecipeSectionPage() {
               suggestions={splits}
               tree={tree}
               onDone={load}
-              onDismiss={() => setSplitDismissed((ids) => [...ids, group!.id])}
+              onDismiss={() =>
+                setSplitDismissed((ids) => {
+                  const next = [...ids, group!.id];
+                  saveDismissedSplits(next);
+                  return next;
+                })
+              }
             />
           )}
 
-          {childGroups.length === 0 ? (
+          {allChildren.length === 0 ? (
             // Nothing smaller to open: this is where the recipes are.
             <RecipeGrid recipes={here} />
           ) : (
             <>
-              <ul className="grid grid-cols-2 gap-3">
-                {childGroups.map(({ group: c, recipes: inGroup }) => (
-                  <li key={c.id}>
-                    <GroupTile group={c} count={inGroup.length} tree={tree} onOpen={() => goTo(c.id)} />
-                  </li>
-                ))}
-              </ul>
+              <GroupTree
+                householdId={activeHouseholdId}
+                tree={tree}
+                rootId={group?.id ?? null}
+                countFor={(id) => here.filter((r) => isIn(r, id, tree)).length}
+                drawerName={drawerName}
+                onNavigate={goTo}
+                onChanged={load}
+              />
 
               {loose.length > 0 && (
                 <section className="space-y-3 pt-2">
@@ -193,32 +226,13 @@ export default function RecipeSectionPage() {
                       {group ? `Everything else in ${group.name}` : 'Not in a group yet'}
                     </h2>
                     <Button size="sm" variant="ghost" onClick={() => setSorting(true)}>
-                      Sort {loose.length}
+                      Put in groups
                     </Button>
                   </div>
                   <RecipeGrid recipes={loose} />
                 </section>
               )}
             </>
-          )}
-
-          {adding ? (
-            <AddGroup
-              householdId={activeHouseholdId}
-              parent={group}
-              onCancel={() => setAdding(false)}
-              onAdded={async () => {
-                setAdding(false);
-                await load();
-                // A new group is empty until something goes in it, so go straight to filling it.
-                if (loose.length > 0 || (childGroups.length === 0 && here.length > 0)) setSorting(true);
-              }}
-            />
-          ) : (
-            <Button variant="ghost" size="sm" className="-ml-3" onClick={() => setAdding(true)}>
-              <PlusIcon className="h-4 w-4" />
-              {group ? `Add a group inside ${group.name}` : 'Add a group'}
-            </Button>
           )}
         </>
       )}
@@ -281,43 +295,30 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-function GroupTile({
-  group,
-  count,
-  tree,
-  onOpen,
-}: {
-  group: RecipeCategory;
-  count: number;
-  tree: CategoryTree;
-  onOpen: () => void;
-}) {
-  // What is inside, so you know whether it opens onto more groups or onto recipes.
-  const inside = tree.children(group.id).map((c) => c.name);
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={cx(
-        'flex min-h-[6.5rem] w-full flex-col justify-end rounded-2xl p-4 text-left transition-transform active:scale-[0.98]',
-        coverClass(group.id),
-      )}
-    >
-      <span className="text-lg font-semibold leading-tight">{group.name}</span>
-      <span className="text-sm text-muted">
-        {count} {count === 1 ? 'recipe' : 'recipes'}
-      </span>
-      {inside.length > 0 && <span className="mt-0.5 truncate text-xs text-ink/50">{inside.join(', ')}</span>}
-    </button>
-  );
-}
-
 /**
  * Offered once, on a group big enough to be worth it and with nothing inside it yet: "your
  * Main dish looks like Chicken, Beef and Seafood — make those?" Read from the recipes' names and
  * ingredients, so it costs nothing, and every group can be unticked before anything happens.
  */
+const DISMISSED_SPLITS_KEY = 'mp_dismissedSplits';
+
+function readDismissedSplits(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DISMISSED_SPLITS_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissedSplits(ids: string[]) {
+  try {
+    localStorage.setItem(DISMISSED_SPLITS_KEY, JSON.stringify(ids.slice(-200)));
+  } catch {
+    // Private browsing and the like: it just won't be remembered.
+  }
+}
+
 function SplitSuggestion({
   householdId,
   group,
@@ -390,7 +391,7 @@ function SplitSuggestion({
       </div>
       {total - sorted > 0 && (
         <p className="mt-2 text-sm text-muted">
-          {total - sorted} {total - sorted === 1 ? 'recipe stays' : 'recipes stay'} in {group.name} for you to sort.
+          {total - sorted} {total - sorted === 1 ? 'recipe stays' : 'recipes stay'} in {group.name} to put in a group yourself.
         </p>
       )}
       {error && (
@@ -399,10 +400,11 @@ function SplitSuggestion({
         </div>
       )}
       <div className="mt-3 flex gap-2">
-        <Button className="flex-1" disabled={busy || picked.length === 0} onClick={apply}>
-          {busy ? 'Sorting…' : `Make ${picked.length} ${picked.length === 1 ? 'group' : 'groups'}`}
+        {/* A suggestion, not the page's job — so it is not the filled button on the page. */}
+        <Button variant="secondary" className="flex-1" disabled={busy || picked.length === 0} onClick={apply}>
+          {busy ? 'Making…' : `Make ${picked.length} ${picked.length === 1 ? 'group' : 'groups'}`}
         </Button>
-        <Button variant="secondary" disabled={busy} onClick={onDismiss}>
+        <Button variant="ghost" disabled={busy} onClick={onDismiss}>
           Not now
         </Button>
       </div>
@@ -450,7 +452,7 @@ function SortList({
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{left.length ? `Sort ${left.length} into a group` : 'All sorted'}</h2>
+        <h2 className="font-semibold">{left.length ? `Put ${left.length} in a group` : 'All in groups'}</h2>
         <Button
           size="sm"
           onClick={async () => {
@@ -481,19 +483,22 @@ function SortList({
           );
         })}
       </ul>
-      {groups.length === 0 && <p className="text-sm text-muted">Add a group first, then sort into it.</p>}
+      {groups.length === 0 && <p className="text-sm text-muted">Add a group first (••• above), then put recipes in it.</p>}
     </section>
   );
 }
 
-function AddGroup({
+export function AddGroup({
   householdId,
   parent,
+  section = null,
   onAdded,
   onCancel,
 }: {
   householdId: string;
   parent: RecipeCategory | null;
+  /** The drawer a new top-level group joins. Ignored when it goes inside another group. */
+  section?: RecipeSection | null;
   onAdded: () => Promise<void>;
   onCancel: () => void;
 }) {
@@ -510,6 +515,8 @@ function AddGroup({
       await api('POST', `/api/households/${householdId}/recipe-categories`, {
         name: name.trim(),
         parentId: parent?.id ?? null,
+        // A group inside another joins its drawer; a top-level one joins the drawer it is made in.
+        section: parent ? null : section,
       });
       await onAdded();
     } catch (err) {
@@ -526,7 +533,7 @@ function AddGroup({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={parent ? 'Chicken, Seafood, Pasta…' : 'Main dish, Side…'}
+            placeholder={parent ? 'A kind of ' + parent.name.toLowerCase() + '…' : 'Main dish, Side…'}
           />
           <Button type="submit" disabled={busy || !name.trim()}>
             Add
@@ -542,11 +549,12 @@ function AddGroup({
 }
 
 /** Rename, or delete — which moves everything in it up a level rather than losing it. */
-function EditGroup({
+export function EditGroup({
   householdId,
   group,
   upTo,
   onClose,
+  onAddInside,
   onRenamed,
   onDeleted,
 }: {
@@ -554,6 +562,8 @@ function EditGroup({
   group: RecipeCategory;
   upTo: string;
   onClose: () => void;
+  /** Offered when the sheet was opened from a group card. */
+  onAddInside?: () => void;
   onRenamed: () => Promise<void>;
   onDeleted: () => Promise<void>;
 }) {
@@ -601,6 +611,12 @@ function EditGroup({
             </div>
           </Field>
         </form>
+
+        {onAddInside && (
+          <Button variant="secondary" full onClick={onAddInside}>
+            Add a group inside {group.name}
+          </Button>
+        )}
 
         {confirming ? (
           <div className="space-y-2">

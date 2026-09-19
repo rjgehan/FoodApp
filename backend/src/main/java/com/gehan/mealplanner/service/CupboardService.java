@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -119,7 +120,36 @@ public class CupboardService {
         if (request.staple() != null) {
             item.setStaple(request.staple());
         }
+        if (Boolean.FALSE.equals(request.trackQuantity())) {
+            item.setQuantity(null);
+            item.setUnit(null);
+        } else if (Boolean.TRUE.equals(request.trackQuantity()) || item.getQuantity() != null) {
+            if (request.quantity() != null) {
+                item.setQuantity(request.quantity());
+            } else if (item.getQuantity() == null) {
+                // Switching into quantity mode with no starting amount given — zero is a real count.
+                item.setQuantity(BigDecimal.ZERO);
+            }
+            if (request.unit() != null) {
+                item.setUnit(blankToNull(request.unit()));
+            }
+        }
         return toResponse(cupboardRepository.save(item), householdId);
+    }
+
+    /** Nudges an item already tracking an exact amount up or down — never below zero. */
+    @Transactional
+    public CupboardItemResponse adjustQuantity(UUID householdId, UUID itemId, UUID requesterId, BigDecimal delta) {
+        householdService.assertMember(householdId, requesterId);
+        CupboardItem item = findItem(householdId, itemId);
+        BigDecimal current = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+        BigDecimal next = current.add(delta);
+        item.setQuantity(next.max(BigDecimal.ZERO));
+        return toResponse(cupboardRepository.save(item), householdId);
+    }
+
+    private static String blankToNull(String value) {
+        return value.isBlank() ? null : value.trim();
     }
 
     /** Used up, and that is all. */
@@ -203,6 +233,8 @@ public class CupboardService {
                 item.isStaple(),
                 category != null ? category.getId() : null,
                 category != null,
-                onList.contains(ingredient.getId()));
+                onList.contains(ingredient.getId()),
+                item.getQuantity(),
+                item.getUnit());
     }
 }

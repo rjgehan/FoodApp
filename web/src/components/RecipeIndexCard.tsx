@@ -37,6 +37,7 @@ export default function RecipeIndexCard({ recipe }: { recipe: Recipe }) {
               <span>
                 {i.ingredientName}
                 {i.notes ? <span className="text-[#6b5744]">, {i.notes}</span> : null}
+                {i.optional ? <span className="text-[#6b5744]"> (optional)</span> : null}
               </span>
             </li>
           ))}

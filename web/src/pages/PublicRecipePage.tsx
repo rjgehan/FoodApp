@@ -90,6 +90,7 @@ export default function PublicRecipePage() {
               <span className="flex-1">
                 {i.ingredientName}
                 {i.notes && <span className="text-muted"> — {i.notes}</span>}
+                {i.optional && <span className="text-muted"> · optional</span>}
               </span>
             </li>
           ))}

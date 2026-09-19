@@ -1,10 +1,12 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.MealType;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 public class MealPlanDtos {
@@ -24,8 +26,13 @@ public class MealPlanDtos {
             String itemName,
             /** Optional "HH:mm". Null simply means no particular time. */
             LocalTime time,
-            Integer servings,
-            String notes) {
+            @Min(1) Integer servings,
+            String notes,
+            /**
+             * Which of the recipe's optional ingredients to buy this time — asked for once, when
+             * the recipe is planned onto this slot. Omitted or null means none of them.
+             */
+            List<UUID> includedOptionalIngredientIds) {
     }
 
     /** Swaps what is in the slot, or changes the servings on one dish already in it. */
@@ -40,8 +47,10 @@ public class MealPlanDtos {
              * means, and there is no way for JSON to tell that apart from "set it to nothing".
              */
             Boolean clearTime,
-            Integer servings,
-            String notes) {
+            @Min(1) Integer servings,
+            String notes,
+            /** Same meaning as on {@link AddMealPlanEntryRequest}; null leaves it unchanged. */
+            List<UUID> includedOptionalIngredientIds) {
     }
 
     public record MealPlanEntryResponse(
@@ -64,6 +73,8 @@ public class MealPlanDtos {
             boolean runningLow,
             LocalTime time,
             Integer servings,
-            String notes) {
+            String notes,
+            /** Which of the recipe's optional ingredients were chosen for this occurrence. */
+            List<UUID> includedOptionalIngredientIds) {
     }
 }

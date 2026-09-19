@@ -36,12 +36,27 @@ export default function UnitInput({
 }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  // Near the bottom of a sheet the list has no room below the field, so it opens upward instead.
+  const [dropUp, setDropUp] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Typing narrows the list; an exact match stops it hovering over the field for no reason.
+  // Typing narrows the list, with an exact match first so Return keeps what was typed ("l" stays
+  // "l", not "lb"). A unit typed in full needs no list at all.
   const query = value.trim().toLowerCase();
-  const matches = COMMON_UNITS.filter((u) => u.startsWith(query));
-  const options = query && !(matches.length === 1 && matches[0] === query) ? matches : COMMON_UNITS;
+  const matches = COMMON_UNITS.filter((u) => u.startsWith(query)).sort(
+    (a, b) => Number(b === query) - Number(a === query),
+  );
+  const options = !query ? COMMON_UNITS : matches.length === 1 && matches[0] === query ? [] : matches;
+
+  function openList() {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const viewportBottom = window.visualViewport
+      ? window.visualViewport.offsetTop + window.visualViewport.height
+      : window.innerHeight;
+    // 14rem is the list's max height, plus its margin.
+    setDropUp(!!rect && rect.bottom + 232 > viewportBottom && rect.top > 232);
+    setOpen(true);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -61,7 +76,7 @@ export default function UnitInput({
     if (e.key === 'Escape') return setOpen(false);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) return setOpen(true);
+      if (!open) return openList();
       setHighlight((h) => {
         const next = e.key === 'ArrowDown' ? h + 1 : h - 1;
         return (next + options.length) % options.length;
@@ -88,16 +103,16 @@ export default function UnitInput({
         onChange={(e) => {
           onChange(e.target.value);
           setHighlight(0);
-          setOpen(true);
+          openList();
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={openList}
         onKeyDown={onKeyDown}
       />
       <button
         type="button"
         tabIndex={-1}
         aria-label="Show units"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? setOpen(false) : openList())}
         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted"
       >
         <ChevronDownIcon className="h-4 w-4" />
@@ -106,8 +121,10 @@ export default function UnitInput({
       {open && options.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-line
-                     bg-elevated py-1 shadow-lg"
+          className={cx(
+            'absolute z-20 max-h-56 w-full overflow-auto rounded-xl border border-line bg-elevated py-1 shadow-lg',
+            dropUp ? 'bottom-full mb-1' : 'mt-1',
+          )}
         >
           {options.map((unit, i) => (
             <li key={unit}>

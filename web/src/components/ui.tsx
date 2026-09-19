@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -16,6 +16,7 @@ import {
   velocityOf,
   type Animation,
 } from '../utils/spring';
+import { ChevronRightIcon, MoreIcon } from './icons';
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -25,8 +26,11 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
  * A titled section of a page — deliberately not a box. A heading and some space do the grouping;
  * dividers are kept for rows in a list.
  */
+/** Inside a sheet the sheet already names the section, so cards there drop their own title. */
+const CardInSheet = createContext(false);
+
 export function Card({
-  title,
+  title: ownTitle,
   actions,
   children,
   className,
@@ -38,6 +42,7 @@ export function Card({
   className?: string;
   bodyClassName?: string;
 }) {
+  const title = useContext(CardInSheet) ? null : ownTitle;
   return (
     <section className={cx('py-2', className)}>
       {(title || actions) && (
@@ -160,6 +165,16 @@ function controlClass(extra?: string, className?: string) {
   const merged = cx(extra, className);
   return cx(CONTROL, !/(^|\s)w-/.test(merged) && 'w-full', merged);
 }
+
+/**
+ * For any field that takes a username. iOS capitalises the first letter and "corrects" names
+ * unless told not to, and a username is neither a sentence nor a word.
+ */
+export const usernameInputProps = {
+  autoCapitalize: 'none',
+  autoCorrect: 'off',
+  spellCheck: false,
+} as const;
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={controlClass(undefined, className)} {...props} />;
@@ -530,5 +545,101 @@ export function Chip({
     >
       {children}
     </button>
+  );
+}
+
+export type MenuItem = {
+  label: ReactNode;
+  onSelect: () => void;
+  tone?: 'danger';
+  disabled?: boolean;
+};
+
+/**
+ * The ••• for a screen's or a row's less-common actions. Opens as a sheet of large rows — the
+ * iOS action sheet — so every choice is a full-width target rather than another small button
+ * competing with the one that matters.
+ */
+export function ActionMenu({
+  label,
+  title,
+  items,
+  className,
+}: {
+  label: string;
+  title?: ReactNode;
+  items: (MenuItem | false | null | undefined)[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const shown = items.filter(Boolean) as MenuItem[];
+  if (shown.length === 0) return null;
+
+  return (
+    <>
+      <IconButton label={label} variant="ghost" className={className} onClick={() => setOpen(true)}>
+        <MoreIcon className="h-5 w-5" />
+      </IconButton>
+      {open && (
+        <Sheet title={title ?? label} onClose={() => setOpen(false)}>
+          <ul className="divide-y divide-line">
+            {shown.map((item, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  disabled={item.disabled}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                  className={cx(
+                    'press flex min-h-touch w-full items-center py-3 text-left text-[1.0625rem] disabled:opacity-40',
+                    item.tone === 'danger' ? 'text-danger' : 'text-accent',
+                  )}
+                >
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
+/**
+ * A row in a settings-style list that opens its section in a sheet — for the things set once
+ * and rarely touched, so they stop filling the page.
+ */
+export function SheetRow({
+  label,
+  detail,
+  tone,
+  children,
+}: {
+  label: ReactNode;
+  detail?: ReactNode;
+  tone?: 'danger';
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="press flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+      >
+        <span className={cx('min-w-0 flex-1 truncate', tone === 'danger' && 'text-danger')}>{label}</span>
+        {detail && <span className="shrink-0 text-[0.9375rem] text-muted">{detail}</span>}
+        <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+      </button>
+      {open && (
+        <Sheet title={label} onClose={() => setOpen(false)}>
+          <CardInSheet.Provider value={true}>{children(() => setOpen(false))}</CardInSheet.Provider>
+        </Sheet>
+      )}
+    </>
   );
 }

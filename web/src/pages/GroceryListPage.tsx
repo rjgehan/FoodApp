@@ -10,6 +10,7 @@ import { useAiAvailable } from '../utils/useAiAvailable';
 import { splitAmount } from '../utils/amount';
 import { groupByCategory } from '../utils/storeSections';
 import {
+  ActionMenu,
   Button,
   CheckCircle,
   cx,
@@ -160,17 +161,24 @@ export default function GroceryListPage() {
           </>
         }
       >
-        {toBuy.length > 0 && (
-          <>
-            {aiAvailable && unsorted > 0 && !moving && (
-              <Button size="sm" variant="ghost" onClick={() => setSheet('sort')}>
-                ✨ Sort
-              </Button>
-            )}
-            <Button size="sm" variant={moving ? 'primary' : 'ghost'} onClick={() => setMoving((m) => !m)}>
-              {moving ? 'Done' : 'Move'}
-            </Button>
-          </>
+        {/* Ticking things off is the job here; arranging the list is a side trip, so it waits behind •••. */}
+        {moving ? (
+          <Button size="sm" onClick={() => setMoving(false)}>
+            Done
+          </Button>
+        ) : (
+          toBuy.length > 0 && (
+            <ActionMenu
+              label="List options"
+              items={[
+                { label: 'Change aisles', onSelect: () => setMoving(true) },
+                aiAvailable && unsorted > 0 && {
+                  label: `✨ Sort ${unsorted} ${unsorted === 1 ? 'item' : 'items'} into aisles`,
+                  onSelect: () => setSheet('sort'),
+                },
+              ]}
+            />
+          )
         )}
       </PageTitle>
 
@@ -190,17 +198,17 @@ export default function GroceryListPage() {
       {notice && <p className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">{notice}</p>}
 
       {moving && (
-        <p className="text-[0.9375rem] text-muted">
-          Pick the aisle each item is in at your store — it sticks for next time. The order of the aisles is on the{' '}
-          <Link to="/household" className="font-medium text-accent">
-            Household
-          </Link>{' '}
-          page.
-        </p>
+        <p className="text-[0.9375rem] text-muted">Pick the aisle each item is in — it sticks for next time.</p>
       )}
 
       {items.length === 0 ? (
-        <EmptyState>Nothing on the list yet.</EmptyState>
+        <EmptyState>
+          Nothing on the list. Add planned meals from{' '}
+          <Link to="/meal-plan" className="font-medium text-accent">
+            Plan
+          </Link>
+          , or type something above.
+        </EmptyState>
       ) : (
         <div>
           {groups.map(({ category, items: rows }) => (
@@ -250,13 +258,7 @@ export default function GroceryListPage() {
         </div>
       )}
 
-      <p className="pt-2 text-[0.8125rem] text-subtle">
-        Swipe an item left to remove it. Salt, oil and other things you always have are marked “Always have” in the{' '}
-        <Link to="/cupboard" className="font-medium text-accent">
-          Cupboard
-        </Link>
-        , so meals leave them off.
-      </p>
+      {items.length > 0 && <p className="pt-2 text-[0.8125rem] text-subtle">Swipe an item left to remove it.</p>}
 
       {sheet === 'sort' && (
         <SortSheet
@@ -268,7 +270,7 @@ export default function GroceryListPage() {
             await refreshItems();
             flash(
               (sorted ? `Sorted ${sorted} ${sorted === 1 ? 'item' : 'items'}.` : 'Nothing new to sort.') +
-                (left ? ` ${left} couldn't be placed — use Move for those.` : ''),
+                (left ? ` ${left} couldn't be placed — use Change aisles for those.` : ''),
             );
           }}
         />
@@ -331,7 +333,7 @@ function ItemRow({
           {(detail || have) && (
             <span className="block truncate text-[0.9375rem] text-muted">
               {detail}
-              {have && <span className="text-success">{detail ? ' · ' : ''}Cupboard says you have this</span>}
+              {have && <span className="text-success">{detail ? ' · ' : ''}In the cupboard</span>}
             </span>
           )}
         </span>
@@ -476,7 +478,7 @@ function PutAwaySheet({
     <Sheet title="Done shopping" onClose={onClose}>
       <div className="space-y-3">
         <p className="text-[0.9375rem] text-muted">
-          Untick anything that isn't for the house. The rest goes in the cupboard, and all of it comes off the list.
+          Untick anything that isn't for the house. The rest goes in the Cupboard, and all of it comes off the list.
         </p>
         <ul className="inset-rows" style={ROW_INSET}>
           {items.map((item) => {
