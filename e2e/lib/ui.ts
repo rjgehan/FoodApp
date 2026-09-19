@@ -58,3 +58,16 @@ export async function swipeLeft(page: Page, row: Locator, distance = 160) {
   }
   await page.mouse.up();
 }
+
+/**
+ * A day on the Plan page's month calendar. The grid always shows the month around today, so a
+ * date in the next month needs one page forward first.
+ */
+export async function calendarDay(page: Page, date: Date) {
+  const today = new Date();
+  const monthsAhead =
+    (date.getFullYear() - today.getFullYear()) * 12 + (date.getMonth() - today.getMonth());
+  for (let i = 0; i < monthsAhead; i++) await page.getByRole('button', { name: 'Next month' }).click();
+  const label = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  return page.getByRole('button', { name: new RegExp(`^${label}(,|$)`) });
+}

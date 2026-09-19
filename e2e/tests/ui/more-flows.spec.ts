@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { admin, call, find, groceries, isoDate, newHousehold, newRecipe, plan, unique } from '../../lib/api';
-import { fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
+import { calendarDay, fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
 
 /** The everyday paths not covered by the core loop. */
 
@@ -68,13 +68,13 @@ test('eat out: type a new place and it is saved for next time', async ({ page })
   expect(e).toMatchObject({ mealType: 'LUNCH', placeName: 'Noodle Bar' });
 });
 
-test('month view shows planned days and opens one', async ({ page }) => {
+test('the month calendar shows planned days and opens one', async ({ page }) => {
   const hh = await newHousehold();
   await plan(hh.id, isoDate(0), 'DINNER', { itemName: 'tacos' });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
-  await page.getByRole('button', { name: 'Show the month' }).click();
-  await page.getByText(String(new Date().getDate()), { exact: true }).first().click();
+  // The calendar is always on screen now — it is the bottom half of the page.
+  await (await calendarDay(page, new Date())).click();
   await expect(sheet(page).getByText('tacos')).toBeVisible();
 });
 
@@ -224,4 +224,29 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
   await expect.poll(async () =>
     (await call('GET', `/api/households/${theirs.id}/recipes`, { token: theirs.owner.token }))
       .some((x: any) => x.id === r.id)).toBe(true);
+});
+
+test('the list copies as plain lines, ready for a Notes checklist', async ({ page, context }) => {
+  // Notes will not take checkboxes from a paste, so what goes on the clipboard is one item per
+  // line and nothing else — the shape its "turn these into a checklist" button expects.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const hh = await newHousehold();
+  await call('POST', `/api/households/${hh.id}/grocery-list/items`, {
+    token: hh.owner.token,
+    body: { ingredientName: 'chicken thighs', quantity: 2, unit: 'lb' },
+  });
+  await call('POST', `/api/households/${hh.id}/grocery-list/items`, {
+    token: hh.owner.token,
+    body: { ingredientName: 'milk' },
+  });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/grocery-list');
+
+  await fromMenu(page, 'List options', 'Copy for Notes');
+  await expect(page.getByText(/Copied 2 items/)).toBeVisible();
+
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied.split('\n').sort()).toEqual(['2 lb chicken thighs', 'milk']);
+  // No headings, no title: every line has to be a real item or it becomes a stray checkbox.
+  expect(copied).not.toMatch(/Unsorted|Groceries/);
 });

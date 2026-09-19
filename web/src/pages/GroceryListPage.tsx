@@ -9,6 +9,7 @@ import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import { splitAmount } from '../utils/amount';
 import { groupByCategory } from '../utils/storeSections';
+import { copyText, listAsText } from '../utils/exportList';
 import {
   ActionMenu,
   Button,
@@ -36,6 +37,8 @@ export default function GroceryListPage() {
   const [connected, setConnected] = useState(false);
   const [moving, setMoving] = useState(false);
   const [sheet, setSheet] = useState<'sort' | 'putAway' | null>(null);
+  // Set only when the clipboard refused, so the text can be copied by hand instead.
+  const [exported, setExported] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -96,6 +99,22 @@ export default function GroceryListPage() {
       setConnected(false);
     };
   }, [activeHouseholdId, refreshItems]);
+
+  /*
+   * The list as plain lines, in aisle order, ready to paste. Built from what is already on
+   * screen and copied in the same tick as the tap: an await before the copy loses the user
+   * gesture that Safari requires.
+   */
+  async function copyForNotes() {
+    const lines = listAsText(groupByCategory(items.filter((i) => !i.checked), groceryCategories).flatMap((g) => g.items));
+    if (!lines) return;
+    const count = lines.split('\n').length;
+    if (await copyText(lines)) {
+      flash(`Copied ${count} ${count === 1 ? 'item' : 'items'}. In Notes: paste, select the lines, then tap ✓ to turn them into checkboxes.`);
+    } else {
+      setExported(lines);
+    }
+  }
 
   function flash(message: string) {
     setNotice(message);
@@ -171,6 +190,7 @@ export default function GroceryListPage() {
             <ActionMenu
               label="List options"
               items={[
+                { label: 'Copy for Notes', onSelect: copyForNotes },
                 { label: 'Change aisles', onSelect: () => setMoving(true) },
                 aiAvailable && unsorted > 0 && {
                   label: `✨ Sort ${unsorted} ${unsorted === 1 ? 'item' : 'items'} into aisles`,
@@ -259,6 +279,21 @@ export default function GroceryListPage() {
       )}
 
       {items.length > 0 && <p className="pt-2 text-[0.8125rem] text-subtle">Swipe an item left to remove it.</p>}
+
+      {exported !== null && (
+        <Sheet title="Copy for Notes" onClose={() => setExported(null)}>
+          <p className="text-[0.9375rem] text-muted">
+            This browser would not let the app reach the clipboard. Select all of this and copy it,
+            then in Notes paste, select the lines, and tap ✓ to turn them into checkboxes.
+          </p>
+          <textarea
+            readOnly
+            value={exported}
+            onFocus={(e) => e.currentTarget.select()}
+            className="h-64 w-full rounded-xl border border-line bg-surface p-3 font-mono text-[0.8125rem] text-ink"
+          />
+        </Sheet>
+      )}
 
       {sheet === 'sort' && (
         <SortSheet

@@ -204,18 +204,13 @@ test('capture every screen', async ({ page }) => {
     await page.getByText('Steak Frites', { exact: true }).last().click();
     await shot(page, 'Optional extras prompt');
   });
-  await step('next week', async () => {
+  await step('next month', async () => {
     await page.goto('/meal-plan');
-    await page.getByRole('button', { name: 'Next week' }).click();
-    await shot(page, 'Plan — next week');
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await shot(page, 'Plan — next month', 'The rail lists that month\u2019s planned days; empty months say so.');
     await page.goto('/meal-plan');
     await page.getByRole('button', { name: /^Add .+ to Groceries$/ }).click();
     await shot(page, 'Add planned meals to Groceries — confirm');
-  });
-  await step('month', async () => {
-    await page.goto('/meal-plan');
-    await page.getByRole('button', { name: 'Show the month' }).click();
-    await shot(page, 'Plan — month view', '', { full: true });
   });
 
   group = 'Recipes';
@@ -295,6 +290,12 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'Groceries ••• menu');
     await sheet(page).getByRole('button', { name: 'Change aisles' }).click();
     await shot(page, 'Change aisles');
+  });
+  await step('copy for notes', async () => {
+    await page.goto('/grocery-list');
+    await page.getByRole('button', { name: 'List options' }).click();
+    await sheet(page).getByRole('button', { name: 'Copy for Notes' }).click();
+    await shot(page, 'Copied for Notes', 'Plain lines, aisle order — Notes turns them into checkboxes.');
   });
   await step('swipe', async () => {
     await page.goto('/grocery-list');

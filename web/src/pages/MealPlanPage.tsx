@@ -12,7 +12,7 @@ import RecipeForm from '../components/RecipeForm';
 import { WriteForMe } from '../components/RecipeWriter';
 import { PasteFromChatGpt } from '../components/RecipePaste';
 import { Button, Card, CheckCircle, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
-import { BookIcon, CalendarIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon } from '../components/icons';
+import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon } from '../components/icons';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -35,9 +35,6 @@ function startOfDay(d: Date): Date {
 function addDays(d: Date, days: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 }
-function startOfWeek(d: Date): Date {
-  return addDays(startOfDay(d), -d.getDay());
-}
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -47,25 +44,28 @@ function titleCase(v: string): string {
 
 export default function MealPlanPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
-  // The week is the working view; the calendar is for looking back over what you ate.
-  const [mode, setMode] = useState<'week' | 'calendar'>('week');
   // The meals in the planning window, loaded when "Add … to Groceries" is pressed. That window runs
-  // from today, so on a Thursday it reaches into next week — past what the week view has loaded.
+  // from today, so on a Thursday it reaches past the end of this month's grid.
   const [windowEntries, setWindowEntries] = useState<MealPlanEntry[] | null>(null);
   const [addingWeek, setAddingWeek] = useState(false);
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
   const [entries, setEntries] = useState<MealPlanEntry[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [openDay, setOpenDay] = useState<string | null>(null);
 
+  /*
+   * One load covers both halves of the page: the month on screen, and the planning window that
+   * runs from today — which can start before this month's grid or end after it.
+   */
   const range = useMemo(() => {
-    if (mode === 'week') return { start: weekStart, end: addDays(weekStart, 6) };
     const first = startOfMonth(monthCursor);
     const gridStart = addDays(first, -first.getDay());
     const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
-    return { start: gridStart, end: addDays(last, 6 - last.getDay()) };
-  }, [mode, weekStart, monthCursor]);
+    const gridEnd = addDays(last, 6 - last.getDay());
+    const from = startOfDay(new Date());
+    const to = addDays(from, (activeHousehold?.planningHorizonDays ?? 7) - 1);
+    return { start: gridStart < from ? gridStart : from, end: gridEnd > to ? gridEnd : to };
+  }, [monthCursor, activeHousehold?.planningHorizonDays]);
 
   const refresh = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -115,24 +115,40 @@ export default function MealPlanPage() {
   }
 
   const today = startOfDay(new Date());
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   async function addRangeToList(start: Date, end: Date) {
     await api('POST', `/api/households/${activeHouseholdId}/grocery-list/add-all?start=${isoDate(start)}&end=${isoDate(end)}`);
   }
 
-
   /*
-   * The planning window from Settings, drawn on the week so "how far ahead do we plan" is
-   * something you can see rather than a number buried in a form. It runs from today, so it
-   * slides out of view as you page back and shrinks as the week runs out.
+   * The planning window from Settings, drawn on the calendar so "how far ahead do we plan" is
+   * something you can see rather than a number buried in a form.
    */
   const horizonDays = activeHousehold?.planningHorizonDays ?? 7;
   const horizonEnd = addDays(today, horizonDays - 1);
-  const inWindow = weekDays.map((d) => d >= today && d <= horizonEnd);
-  const windowStart = inWindow.indexOf(true);
-  const windowLength = inWindow.filter(Boolean).length;
   const windowLabel = `${today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${horizonEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+
+  /*
+   * The top of the page is the plan itself — only the days that have something on them. A fixed
+   * Sunday-to-Saturday strip spent most of its width on empty days; this spends it on the meals,
+   * and the month below is where you go to fill a day that is not here yet.
+   *
+   * On the current month that means today forward: what you still have to cook. On any other
+   * month it is that whole month, which is how you look back at what you ate.
+   */
+  const viewingThisMonth =
+    monthCursor.getMonth() === today.getMonth() && monthCursor.getFullYear() === today.getFullYear();
+  const planDays: { day: Date; planned: MealPlanEntry[] }[] = [];
+  {
+    const first = startOfMonth(monthCursor);
+    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    const from = viewingThisMonth && today > first ? today : first;
+    const to = viewingThisMonth && horizonEnd > last ? horizonEnd : last;
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      const planned = (byDate.get(isoDate(d)) ?? []).filter(isPlanned);
+      if (planned.length > 0) planDays.push({ day: d, planned });
+    }
+  }
 
   async function confirmWindow() {
     setWindowEntries(
@@ -142,13 +158,11 @@ export default function MealPlanPage() {
       ),
     );
   }
-  const awayFromToday =
-    mode === 'week'
-      ? isoDate(weekStart) !== isoDate(startOfWeek(today))
-      : monthCursor.getMonth() !== today.getMonth() || monthCursor.getFullYear() !== today.getFullYear();
 
   return (
-    <div className="space-y-4">
+    /* Full height on purpose: the month below stretches into whatever the plan does not use,
+       instead of leaving half a phone screen of black. */
+    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-4">
       <PageTitle title="Plan" />
       {windowEntries && (
         <ConfirmAddToGroceries
@@ -169,163 +183,75 @@ export default function MealPlanPage() {
         />
       )}
 
-      <div className="flex items-center gap-1">
-        <IconButton
-          label={mode === 'week' ? 'Previous week' : 'Previous month'}
-          onClick={() =>
-            mode === 'week'
-              ? setWeekStart((w) => addDays(w, -7))
-              : setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
-          }
-        >
-          <ChevronLeftIcon className="h-5 w-5" />
-        </IconButton>
-
-        <h2 className="flex-1 text-center font-semibold">
-          {mode === 'week'
-            ? `${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${addDays(weekStart, 6).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
-            : monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </h2>
-
-        <IconButton
-          label={mode === 'week' ? 'Next week' : 'Next month'}
-          onClick={() =>
-            mode === 'week'
-              ? setWeekStart((w) => addDays(w, 7))
-              : setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
-          }
-        >
-          <ChevronRightIcon className="h-5 w-5" />
-        </IconButton>
-        {/* Only offered once you have paged away — on this week it would do nothing. */}
-        {awayFromToday && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setWeekStart(startOfWeek(new Date()));
-              setMonthCursor(startOfMonth(new Date()));
-            }}
-          >
-            Today
-          </Button>
-        )}
-        <IconButton
-          label={mode === 'calendar' ? 'Show the week' : 'Show the month'}
-          variant={mode === 'calendar' ? 'secondary' : 'ghost'}
-          onClick={() => setMode(mode === 'calendar' ? 'week' : 'calendar')}
-        >
-          <CalendarIcon className="h-5 w-5" />
-        </IconButton>
-      </div>
-
-      {mode === 'week' ? (
-        <>
-          {/* Seven across, so the week reads as a week. Detail lives in the day sheet. */}
-          <div className="grid grid-cols-7 gap-1">
-            {weekDays.map((day) => {
-              const key = isoDate(day);
-              const planned = (byDate.get(key) ?? []).filter(isPlanned);
-              const isToday = key === isoDate(today);
-
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setOpenDay(key)}
-                  className={cx(
-                    'flex min-h-28 flex-col items-center rounded-xl border p-1.5 text-left transition-colors',
-                    isToday ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface hover:bg-elevated',
-                  )}
-                >
-                  <span className={cx('text-[0.7rem] font-medium', isToday ? 'text-accent' : 'text-muted')}>
-                    {WEEKDAY_LABELS[day.getDay()]}
-                  </span>
-                  <span
-                    className={cx(
-                      'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-                      isToday ? 'bg-accent text-accent-ink' : 'text-ink',
-                    )}
-                  >
-                    {day.getDate()}
-                  </span>
-
-                  {/* Phones get dots — a recipe name is unreadable in a seventh of the screen. */}
-                  <span className="mt-1.5 flex flex-wrap items-center justify-center gap-0.5 sm:hidden">
-                    {planned.slice(0, 4).map((e) => (
-                      <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-accent" />
-                    ))}
-                  </span>
-
-                  <span className="mt-1 hidden min-w-0 flex-1 flex-col gap-0.5 self-stretch sm:flex">
-                    {planned.slice(0, 3).map((e) => (
-                      <span key={e.id} className="truncate text-[11px] leading-tight text-muted">
-                        {entryLabel(e)}
-                        {e.time && <span className="text-muted"> · {formatTime(e.time)}</span>}
-                      </span>
-                    ))}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {windowLength > 0 && (
-            <div className="-mt-2">
-              {/* The same seven-column grid, so the bracket lines up under the tiles.
-                  gridColumn is inline because Tailwind cannot see a class it has to compute. */}
-              <div className="grid grid-cols-7 gap-1">
-                <div
-                  style={{ gridColumn: `${windowStart + 1} / span ${windowLength}` }}
-                  className="h-2 rounded-b-md border-x-2 border-b-2 border-accent/50"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* The names the strip can no longer show, for the days that have any. */}
-          <ul className="divide-y divide-line sm:hidden">
-            {weekDays
-              .map((day) => ({ day, planned: (byDate.get(isoDate(day)) ?? []).filter(isPlanned) }))
-              .filter(({ planned }) => planned.length > 0)
-              .map(({ day, planned }) => (
-                <li key={isoDate(day)}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenDay(isoDate(day))}
-                    className="flex w-full items-baseline gap-3 py-2.5 text-left"
-                  >
-                    <span className="w-10 shrink-0 text-sm font-medium text-muted">
-                      {day.toLocaleDateString(undefined, { weekday: 'short' })}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      {planned.map((e) => (
-                        <span key={e.id} className="block truncate text-sm">
-                          <span className="text-muted">{titleCase(e.mealType)}</span> · {entryLabel(e)}
-                        </span>
-                      ))}
-                    </span>
-                  </button>
-                </li>
-              ))}
-          </ul>
-
-          {/* Plan → Groceries. It covers the bracketed days above — the ones being shopped for —
-              not whichever week is on screen. Secondary, not filled: a filled button at the bottom
-              of a screen reads as "save", and this one changes a different page. */}
-          <Button full variant="secondary" onClick={confirmWindow}>
-            <CartIcon className="h-5 w-5" />
-            Add {windowLabel} to Groceries
-          </Button>
-        </>
+      {/* The plan itself: only the days with something on them, as wide as they need to be
+          readable. Scrolls sideways when the month is full. */}
+      {planDays.length === 0 ? (
+        <Card>
+          <EmptyState>
+            {viewingThisMonth
+              ? 'Nothing planned from today on. Pick a day below to start.'
+              : monthCursor < today
+                ? `Nothing was planned in ${monthCursor.toLocaleDateString(undefined, { month: 'long' })}.`
+                : `Nothing planned in ${monthCursor.toLocaleDateString(undefined, { month: 'long' })} yet. Pick a day below.`}
+          </EmptyState>
+        </Card>
       ) : (
-        <CalendarGrid
-          monthCursor={monthCursor}
-          byDate={byDate}
-          today={today}
-          onPick={(key) => setOpenDay(key)}
-        />
+        <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1">
+          {planDays.map(({ day, planned }) => {
+            const key = isoDate(day);
+            const isToday = key === isoDate(today);
+
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-label={`Plan for ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`}
+                onClick={() => setOpenDay(key)}
+                className={cx(
+                  'flex w-36 shrink-0 snap-start flex-col rounded-2xl border p-3 text-left transition-colors',
+                  isToday ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface active:bg-elevated',
+                )}
+              >
+                <span className={cx('text-[0.8125rem] font-medium', isToday ? 'text-accent' : 'text-muted')}>
+                  {isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday: 'short' })}
+                </span>
+                <span className="text-2xl font-semibold leading-tight">{day.getDate()}</span>
+                <span className="mt-2 flex min-w-0 flex-col gap-1">
+                  {planned.slice(0, 3).map((e) => (
+                    <span key={e.id} className="truncate text-[0.8125rem] leading-tight">
+                      <span className="text-muted">{titleCase(e.mealType)}</span>
+                      <span className="block truncate">{entryLabel(e)}</span>
+                    </span>
+                  ))}
+                  {planned.length > 3 && (
+                    <span className="text-[0.8125rem] text-muted">+{planned.length - 3} more</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
+
+      {/* Plan → Groceries. It covers the planning window — the days being shopped for — not
+          whichever month is on screen. Secondary, not filled: a filled button at the bottom of a
+          screen reads as "save", and this one changes a different page. */}
+      <Button full variant="secondary" onClick={confirmWindow}>
+        <CartIcon className="h-5 w-5" />
+        Add {windowLabel} to Groceries
+      </Button>
+
+      {/* The whole picture, in the space this page used to leave empty. Every day is tappable,
+          including the empty ones — that is how a day that is not in the rail above gets filled. */}
+      <MonthCalendar
+        monthCursor={monthCursor}
+        byDate={byDate}
+        today={today}
+        horizonEnd={horizonEnd}
+        onMonth={(delta) => setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1))}
+        onToday={() => setMonthCursor(startOfMonth(new Date()))}
+        onPick={(key) => setOpenDay(key)}
+      />
 
       {openDay && (
         <DaySheet
@@ -344,49 +270,85 @@ export default function MealPlanPage() {
   );
 }
 
-/** Read-only overview: which days have meals on them. Tapping still opens the day. */
-function CalendarGrid({
+/**
+ * The month, and the second half of this page. It is the date picker as much as the overview:
+ * tapping any square opens that day, so an empty Thursday is one tap from having dinner on it.
+ * Days inside the planning window carry a soft ring, which is what "we plan a week ahead" looks
+ * like when it is a setting you can see.
+ */
+function MonthCalendar({
   monthCursor,
   byDate,
   today,
+  horizonEnd,
+  onMonth,
+  onToday,
   onPick,
 }: {
   monthCursor: Date;
   byDate: Map<string, MealPlanEntry[]>;
   today: Date;
+  horizonEnd: Date;
+  onMonth: (delta: number) => void;
+  onToday: () => void;
   onPick: (key: string) => void;
 }) {
   const first = startOfMonth(monthCursor);
   const gridStart = addDays(first, -first.getDay());
   const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
   const gridEnd = addDays(last, 6 - last.getDay());
+  const away = monthCursor.getMonth() !== today.getMonth() || monthCursor.getFullYear() !== today.getFullYear();
 
   const days: Date[] = [];
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
 
   return (
-    <div>
-      <div className="mb-1 grid grid-cols-7">
+    <div className="flex flex-1 flex-col pt-1">
+      <div className="flex items-center gap-1 pb-1">
+        <IconButton label="Previous month" onClick={() => onMonth(-1)}>
+          <ChevronLeftIcon className="h-5 w-5" />
+        </IconButton>
+        <h2 className="flex-1 text-center font-semibold">
+          {monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+        </h2>
+        {/* Only offered once you have paged away — on this month it would do nothing. */}
+        {away && (
+          <Button size="sm" variant="ghost" onClick={onToday}>
+            Today
+          </Button>
+        )}
+        <IconButton label="Next month" onClick={() => onMonth(1)}>
+          <ChevronRightIcon className="h-5 w-5" />
+        </IconButton>
+      </div>
+
+      <div className="grid grid-cols-7">
         {WEEKDAY_LABELS.map((w, i) => (
           <div key={i} className="py-1 text-center text-xs font-semibold text-subtle">
             {w}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div
+        className="grid flex-1 grid-cols-7 gap-1"
+        style={{ gridTemplateRows: `repeat(${days.length / 7}, minmax(3rem, 1fr))` }}
+      >
         {days.map((day) => {
           const key = isoDate(day);
           const planned = (byDate.get(key) ?? []).filter(isPlanned);
           const inMonth = day.getMonth() === monthCursor.getMonth();
           const isToday = key === isoDate(today);
+          const inWindow = day >= today && day <= horizonEnd;
 
           return (
             <button
               key={key}
               type="button"
+              aria-label={`${day.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}${planned.length ? `, ${planned.length} planned` : ''}`}
               onClick={() => onPick(key)}
               className={cx(
-                'flex aspect-square flex-col items-center rounded-xl p-1 transition-colors hover:bg-elevated',
+                'flex flex-col items-center justify-center rounded-xl border p-1 transition-colors active:bg-elevated',
+                inWindow ? 'border-accent/30' : 'border-transparent',
                 !inMonth && 'opacity-35',
               )}
             >

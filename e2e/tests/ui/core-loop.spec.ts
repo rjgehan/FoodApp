@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { admin, call, groceries, find, isoDate, newHousehold, newRecipe, plan } from '../../lib/api';
-import { sheet, signIn, tab, tapRowStart } from '../../lib/ui';
+import { calendarDay, sheet, signIn, tab, tapRowStart } from '../../lib/ui';
 
 /**
  * Recipe → plan → groceries → shop → cupboard, clicked through at iPhone size, the way the
@@ -28,14 +28,13 @@ test('plan a recipe for next Tuesday from the Plan tab', async ({ page }) => {
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
 
-  // The coming Tuesday; the strip runs Sunday–Saturday, so it may be on next week's page.
+  // The coming Tuesday, picked off the month calendar at the bottom of the page.
   const today = new Date();
   const ahead = (2 - today.getDay() + 7) % 7 || 7;
   const d = new Date(today);
   d.setDate(today.getDate() + ahead);
-  if (ahead > 6 - today.getDay()) await page.getByRole('button', { name: 'Next week' }).click();
 
-  await page.getByText(String(d.getDate()), { exact: true }).first().click();
+  await (await calendarDay(page, d)).click();
   await sheet(page).getByRole('button', { name: /^\+?\s*Add$/ }).nth(2).click(); // Dinner
   await page.getByText('Chicken Parmesan', { exact: true }).last().click();
 
