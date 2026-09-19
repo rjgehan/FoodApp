@@ -10,16 +10,18 @@
 		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
 		<key>NSExtensionAttributes</key>
 		<dict>
-			<!-- Text or a link: a pasted recipe, or the page it is on. -->
 			<!-- Runs in the page first, so a shared page arrives as its text. -->
 			<key>NSExtensionJavaScriptPreprocessingFile</key>
 			<string>GetPageText</string>
+			<!--
+			  WebPage only, deliberately. Listing NSExtensionActivationSupportsWebURLWithMaxCount
+			  alongside it makes Safari hand over the address and skip the JavaScript
+			  preprocessor, which is how a shared page arrived as nothing but its title and URL.
+			-->
 			<key>NSExtensionActivationRule</key>
 			<dict>
 				<key>NSExtensionActivationSupportsText</key>
 				<true/>
-				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
-				<integer>1</integer>
 				<key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
 				<integer>1</integer>
 			</dict>

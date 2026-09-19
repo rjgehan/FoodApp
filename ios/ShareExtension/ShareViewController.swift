@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
  */
 final class ShareViewController: UIViewController {
     private let label = UILabel()
+    private var finished = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -30,7 +31,15 @@ final class ShareViewController: UIViewController {
             label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
         ])
 
-        Task { await handle() }
+        Task {
+            await handle()
+        }
+        // Never sit there forever: a share extension that hangs is killed, and iOS quietly
+        // stops offering it afterwards.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self, !self.finished else { return }
+            self.finish(with: "That took too long.")
+        }
     }
 
     private func handle() async {
@@ -82,12 +91,19 @@ final class ShareViewController: UIViewController {
             }
         }
 
+        /*
+         A recipe is never a hundred characters. Anything shorter is a page title or a stray
+         line, and sending it on is what produced a recipe invented from three words — so a
+         short capture loses to the link, which the app can go and fetch.
+         */
+        let enough = 200
+
         // A selection beats the whole page: someone who highlighted the ingredients meant it.
-        if let selection, selection.count > 40 { return selection }
-        if let pageText, pageText.count > 40 { return pageText }
-        if let selection { return selection }
-        // Nothing readable — hand over the address and let the app fetch it.
+        if let selection, selection.count >= enough { return selection }
+        if let pageText, pageText.count >= enough { return pageText }
         if let link { return "\u{1F517}\(link)" }
+        if let selection { return selection }
+        if let pageText { return pageText }
         return nil
     }
 
@@ -124,10 +140,14 @@ final class ShareViewController: UIViewController {
     }
 
     private func done() {
+        guard !finished else { return }
+        finished = true
         extensionContext?.completeRequest(returningItems: nil)
     }
 
     private func finish(with message: String) {
+        guard !finished else { return }
+        finished = true
         label.text = message
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil)
