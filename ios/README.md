@@ -30,6 +30,24 @@ Two ways, both without a backend:
 - **The Gallery tab** — a debug-only tab listing every screen, with a light/dark switch. It is
   the app's version of the screen-inventory PDF the web has. It never calls the network.
 
+## Landing straight in a household (debug builds)
+
+Command-line arguments become UserDefaults, so a screenshot or automation run can skip the PIN
+pad and pick a tab:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'content-type: application/json' -d '{"username":"ryan","pin":"1234"}' | jq -r .token)
+
+xcrun simctl launch <udid> cloud.gehan.mealplanner \
+  -mp_debug_token "$TOKEN" \
+  -mp_debug_household "<household-uuid>" \
+  -mp_debug_household_name "Gehan House" \
+  -mp_debug_tab groceries          # plan | recipes | groceries | household | gallery
+```
+
+Both hooks are inside `#if DEBUG`, so a release build has neither.
+
 ## Where the server is
 
 `Config.baseURL`, default `http://localhost:8080`, which is what the simulator sees on this

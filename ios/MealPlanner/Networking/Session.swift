@@ -58,6 +58,26 @@ final class Session {
 
     /// Restores the last session so the app opens on the plan, not on a PIN pad.
     func restore() async {
+        #if DEBUG
+        // Launch straight into a household, for screenshots and UI automation:
+        //   xcrun simctl launch <udid> cloud.gehan.mealplanner \
+        //     -mp_debug_token "<token>" -mp_debug_household "<uuid>" -mp_debug_household_name "Gehan House"
+        // Command-line arguments land in UserDefaults, so nothing else has to know about this.
+        let defaults = UserDefaults.standard
+        if let token = defaults.string(forKey: "mp_debug_token"),
+           let id = defaults.string(forKey: "mp_debug_household").flatMap(UUID.init(uuidString:)) {
+            self.token = token
+            self.displayName = defaults.string(forKey: "mp_debug_name") ?? "Debug"
+            self.household = HouseholdSummary(
+                id: id,
+                name: defaults.string(forKey: "mp_debug_household_name") ?? "Household",
+                memberCount: 0
+            )
+            await APIClient.shared.use(token: token)
+            return
+        }
+        #endif
+
         guard let token = TokenStore.read() else { return }
         self.token = token
         self.displayName = UserDefaults.standard.string(forKey: Self.nameKey)

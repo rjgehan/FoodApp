@@ -22,21 +22,36 @@ struct MealPlannerApp: App {
 struct RootView: View {
     @Bindable var session: Session
 
+    /// Which tab is up. Seeded from `-mp_debug_tab` in debug builds so a screenshot run can
+    /// land on any tab without tapping.
+    @State private var tab: String = {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "mp_debug_tab") ?? "plan"
+        #else
+        return "plan"
+        #endif
+    }()
+
     var body: some View {
         if session.isSignedIn {
-            TabView {
+            TabView(selection: $tab) {
                 PlanView(session: session)
                     .tabItem { Label("Plan", systemImage: "calendar") }
+                    .tag("plan")
                 RecipesView(session: session)
                     .tabItem { Label("Recipes", systemImage: "book") }
+                    .tag("recipes")
                 GroceriesView(session: session)
                     .tabItem { Label("Groceries", systemImage: "cart") }
+                    .tag("groceries")
                 HouseholdView(session: session)
                     .tabItem { Label("Household", systemImage: "person.2") }
+                    .tag("household")
                 #if DEBUG
                 // Ships in debug only: the whole interface, on sample data.
                 GalleryView()
                     .tabItem { Label("Gallery", systemImage: "square.grid.2x2") }
+                    .tag("gallery")
                 #endif
             }
         } else {
