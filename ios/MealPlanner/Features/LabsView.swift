@@ -30,6 +30,9 @@ struct LabsView: View {
     @State private var sorting = false
     @State private var sorted: [(item: String, aisle: String)] = []
     @State private var sortNote: String?
+    #if DEBUG
+    @State private var showPaste = UserDefaults.standard.bool(forKey: "mp_debug_paste_screen")
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -91,6 +94,16 @@ struct LabsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        LabsPasteView(session: session)
+                    } label: {
+                        Label("Paste → recipe", systemImage: "doc.on.clipboard")
+                    }
+                } footer: {
+                    Text("Extraction is what the small on-device model is good at: it fills in a fixed shape rather than writing prose.")
+                }
+
+                Section {
                     Button(sorting ? "Sorting…" : "Sort the list into our aisles", systemImage: "arrow.triangle.branch") {
                         Task { await sortIntoAisles() }
                     }
@@ -122,6 +135,9 @@ struct LabsView: View {
                 }
             }
             .navigationTitle("Labs")
+            #if DEBUG
+            .navigationDestination(isPresented: $showPaste) { LabsPasteView(session: session) }
+            #endif
             .playgroundSheet(isPresented: $sheetUp, concept: prompt) { url in
                 Task { await loadGenerated(from: url) }
             }
@@ -165,7 +181,9 @@ struct LabsView: View {
         if #available(iOS 26.0, *) {
             switch SystemLanguageModel.default.availability {
             case .available:
-                modelStatus = "Ready"
+                // Availability is about entitlement, not about the weights being present —
+                // the Simulator says available and then fails at execute time.
+                modelStatus = "Available (weights checked on first use)"
             case .unavailable(.deviceNotEligible):
                 modelStatus = "Device not eligible"
             case .unavailable(.appleIntelligenceNotEnabled):

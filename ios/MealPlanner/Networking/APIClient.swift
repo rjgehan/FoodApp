@@ -89,6 +89,11 @@ actor APIClient {
         try await get("/api/households/\(household.uuidString)/recipes")
     }
 
+    @discardableResult
+    func createRecipe(household: UUID, body: [String: Any]) async throws -> Recipe {
+        try await send("POST", "/api/households/\(household.uuidString)/recipes", body: body)
+    }
+
     func recipeCategories(household: UUID) async throws -> [RecipeCategory] {
         try await get("/api/households/\(household.uuidString)/recipe-categories")
     }
