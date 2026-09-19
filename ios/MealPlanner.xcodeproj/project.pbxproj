@@ -7,11 +7,18 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		AA0000000000000000000101 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000001 /* MealPlanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MealPlanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000002 /* MealPlanner-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MealPlanner-Info.plist"; sourceTree = "<group>"; };
+		AA0000000000000000000003 /* ShareExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ShareExtension-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000000110 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000010 /* MealPlanner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MealPlanner;
@@ -20,6 +27,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000131 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000031 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -34,7 +48,9 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000010 /* MealPlanner */,
+				AA0000000000000000000110 /* ShareExtension */,
 				AA0000000000000000000002 /* MealPlanner-Info.plist */,
+				AA0000000000000000000003 /* ShareExtension-Info.plist */,
 				AA0000000000000000000021 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* MealPlanner.app */,
+				AA0000000000000000000101 /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -50,6 +67,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AA0000000000000000000141 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000152 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				AA0000000000000000000130 /* Sources */,
+				AA0000000000000000000131 /* Frameworks */,
+				AA0000000000000000000132 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000110 /* ShareExtension */,
+			);
+			name = ShareExtension;
+			productName = ShareExtension;
+			productReference = AA0000000000000000000101 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		AA0000000000000000000040 /* MealPlanner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AA0000000000000000000051 /* Build configuration list for PBXNativeTarget "MealPlanner" */;
@@ -57,10 +94,12 @@
 				AA0000000000000000000030 /* Sources */,
 				AA0000000000000000000031 /* Frameworks */,
 				AA0000000000000000000032 /* Resources */,
+				AA0000000000000000000133 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA0000000000000000000143 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000010 /* MealPlanner */,
@@ -71,6 +110,24 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000142 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000041 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000141;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000143 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000141 /* ShareExtension */;
+			targetProxy = AA0000000000000000000142 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		AA0000000000000000000041 /* Project object */ = {
@@ -100,11 +157,19 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000040 /* MealPlanner */,
+				AA0000000000000000000141 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AA0000000000000000000132 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000032 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -114,7 +179,32 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0000000000000000000133 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0000000000000000000140 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000140 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000101 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000130 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000030 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -231,6 +321,52 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000150 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = cloud.gehan.mealplanner.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000151 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = cloud.gehan.mealplanner.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -248,6 +384,15 @@
 			buildConfigurations = (
 				AA0000000000000000000062 /* Debug */,
 				AA0000000000000000000063 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000152 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000150 /* Debug */,
+				AA0000000000000000000151 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

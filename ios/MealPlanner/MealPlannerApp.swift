@@ -4,6 +4,8 @@ import SwiftUI
 struct MealPlannerApp: App {
     @State private var session = Session()
     @State private var restored = false
+    /// Text handed over by the share extension, waiting to be read.
+    @State private var shared: String?
 
     var body: some Scene {
         WindowGroup {
@@ -14,8 +16,26 @@ struct MealPlannerApp: App {
                     restored = true
                     await session.loadHouseholds()
                 }
+                // mealplanner://paste?text=… — what the share extension sends.
+                .onOpenURL { url in
+                    guard url.scheme == "mealplanner", url.host == "paste" else { return }
+                    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                    shared = items?.first(where: { $0.name == "text" })?.value
+                }
+                .sheet(item: Binding(get: { shared.map(SharedText.init) }, set: { shared = $0?.text })) { incoming in
+                    NavigationStack {
+                        LabsPasteView(session: session, incoming: incoming.text)
+                    }
+                }
         }
     }
+}
+
+/// `sheet(item:)` needs something Identifiable, and a String is not.
+struct SharedText: Identifiable {
+    let text: String
+    var id: String { text }
+    init(_ text: String) { self.text = text }
 }
 
 /// Signed out: the PIN flow. Signed in: the same tabs as the web, in the same order, so the

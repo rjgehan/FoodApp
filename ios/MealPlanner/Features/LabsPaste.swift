@@ -51,6 +51,8 @@ struct ParsedRecipe {
 
 struct LabsPasteView: View {
     var session: Session
+    /// Handed in by the share extension; typed by hand otherwise.
+    var incoming: String?
 
     @State private var text = ""
     @State private var busy = false
@@ -135,6 +137,12 @@ struct LabsPasteView: View {
         }
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if let incoming, text.isEmpty {
+                text = incoming
+                await parse()
+            }
+        }
         #if DEBUG
         // -mp_debug_paste "<text>" fills the box, so a screenshot run can test the parse
         // without a keyboard. Add -mp_debug_autoparse 1 to read it straight away.
