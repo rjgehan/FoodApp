@@ -53,15 +53,16 @@ if [[ -n "$PHONE" ]]; then
     exit 1
   fi
   echo "Phone: ${name:-iPhone} ($udid)"
-  echo "  connection: $state   developer mode: $devmode"
-  if [[ "$state" != "connected" ]]; then
-    echo "Paired but not connected. Plug it in and unlock it, then rerun." >&2
+
+  # `list devices` reports a stale tunnelState — it connects lazily — and developerModeStatus
+  # comes back empty even when Developer Mode is on. Asking the device is the real test.
+  if ! xcrun devicectl device info details --device "$udid" >/tmp/mp-device-info.txt 2>&1; then
+    echo "Cannot reach the phone. Unlock it, tap Trust, and check Developer Mode is on:" >&2
+    echo "  Settings → Privacy & Security → Developer Mode" >&2
+    tail -3 /tmp/mp-device-info.txt >&2
     exit 1
   fi
-  if [[ "$devmode" == "disabled" ]]; then
-    echo "Turn on Settings → Privacy & Security → Developer Mode, then rerun." >&2
-    exit 1
-  fi
+  echo "  $(sed -n 's/.*Device State: /state: /p' /tmp/mp-device-info.txt | head -1)"
 
   # The team Xcode already knows beats reading it off a certificate that may have expired.
   TEAM="${DEVELOPMENT_TEAM:-$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null \
@@ -84,6 +85,7 @@ if [[ -n "$PHONE" ]]; then
     CODE_SIGNING_ALLOWED=YES \
     CODE_SIGNING_REQUIRED=YES \
     CODE_SIGN_STYLE=Automatic \
+    "CODE_SIGN_IDENTITY=Apple Development" \
     DEVELOPMENT_TEAM="$TEAM" \
     -quiet \
     build
@@ -92,9 +94,23 @@ if [[ -n "$PHONE" ]]; then
   [[ -d "$app" ]] || { echo "Build produced no app at $app" >&2; exit 1; }
 
   xcrun devicectl device install app --device "$udid" "$app"
-  xcrun devicectl device process launch --device "$udid" "$BUNDLE_ID"
+
+  # A free personal team's certificate is untrusted until someone says so on the phone. The
+  # app is installed either way; it just will not launch yet.
+  if ! xcrun devicectl device process launch --device "$udid" "$BUNDLE_ID" >/tmp/mp-launch.txt 2>&1; then
+    if grep -q "not been explicitly trusted" /tmp/mp-launch.txt; then
+      echo
+      echo "Installed, but the phone does not trust the developer certificate yet."
+      echo "On the phone: Settings → General → VPN & Device Management → Developer App"
+      echo "  → Apple Development: <your Apple ID> → Trust."
+      echo "Then tap the Meal Planner icon, or rerun this."
+      exit 0
+    fi
+    tail -6 /tmp/mp-launch.txt >&2
+    exit 1
+  fi
   echo
-  echo "Installed. On the phone: sign-in screen → Server → http://$(ipconfig getifaddr en0 2>/dev/null):8080"
+  echo "Installed and running. On the phone: sign-in screen → Server → http://$(ipconfig getifaddr en0 2>/dev/null):8080"
   exit 0
 fi
 

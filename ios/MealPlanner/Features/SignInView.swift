@@ -73,7 +73,8 @@ struct SignInView: View {
                         household = h
                         Task { await loadPeople(h) }
                     } label: {
-                        LabeledContent(h.name, value: "\(h.memberCount) \(h.memberCount == 1 ? "person" : "people")")
+                        let members = h.memberCount ?? 0
+                        LabeledContent(h.name, value: "\(members) \(members == 1 ? "person" : "people")")
                     }
                 }
             }
