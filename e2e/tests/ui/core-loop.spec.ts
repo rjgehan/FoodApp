@@ -178,7 +178,19 @@ test('sign out lives under Household → You, not in the header', async ({ page 
   await page.goto('/meal-plan');
   await expect(page.getByRole('button', { name: /log out|sign out/i })).toHaveCount(0);
   await page.goto('/household');
-  await page.getByRole('button', { name: /^You/ }).click();
+  // The row reads "You" plus your name; the header's avatar is "Your account".
+  await page.getByRole('button', { name: /^You / }).click();
   await sheet(page).getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByText('Who’s cooking?')).toBeVisible();
+});
+
+test('the avatar opens your account, the same sheet as Household → You', async ({ page }) => {
+  const hh = await newHousehold();
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByRole('button', { name: 'Your account' }).click();
+  await expect(sheet(page).getByText('Username')).toBeVisible();
+  await expect(sheet(page).getByRole('button', { name: 'Sign out' })).toBeVisible();
+  // The sheet names itself once: the card inside drops its own title.
+  await expect(sheet(page).getByText('You', { exact: true })).toHaveCount(1);
 });

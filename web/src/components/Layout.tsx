@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
-import { cx } from './ui';
+import { CardInSheetProvider, cx, Sheet } from './ui';
+import ProfileCard from './ProfileCard';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
@@ -28,6 +29,7 @@ const navItems = [
  */
 export default function Layout({ children }: { children: ReactNode }) {
   const { session } = useAuth();
+  const [showProfile, setShowProfile] = useState(false);
   const { households, activeHouseholdId, setActiveHouseholdId } = useHousehold();
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
@@ -87,17 +89,22 @@ export default function Layout({ children }: { children: ReactNode }) {
               {compactTitle}
             </span>
 
-            {/* Who is signed in. Signing out is rare and lives under Household → You, not a tap away here. */}
-            <div className="ml-auto flex h-11 items-center gap-1">
+            {/* Who is signed in, and the way to your own account — the same sheet as Household → You. */}
+            <button
+              type="button"
+              onClick={() => setShowProfile(true)}
+              aria-label="Your account"
+              className="press ml-auto flex h-11 items-center gap-2 rounded-xl pl-2"
+            >
               <span className="hidden text-sm text-muted sm:inline">{session?.displayName}</span>
               <span
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-sm
-                           font-semibold text-accent sm:hidden"
+                           font-semibold text-accent"
                 aria-hidden="true"
               >
                 {session?.displayName?.charAt(0).toUpperCase()}
               </span>
-            </div>
+            </button>
           </div>
 
           {/* Wide screens get the tabs up here instead of pinned to the bottom. */}
@@ -119,6 +126,14 @@ export default function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
         </header>
+
+        {showProfile && (
+          <Sheet title="You" onClose={() => setShowProfile(false)}>
+            <CardInSheetProvider value={true}>
+              <ProfileCard />
+            </CardInSheetProvider>
+          </Sheet>
+        )}
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
         <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-1 md:pb-10">{children}</main>

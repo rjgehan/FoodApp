@@ -28,6 +28,7 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
  */
 /** Inside a sheet the sheet already names the section, so cards there drop their own title. */
 const CardInSheet = createContext(false);
+export const CardInSheetProvider = CardInSheet.Provider;
 
 export function Card({
   title: ownTitle,
