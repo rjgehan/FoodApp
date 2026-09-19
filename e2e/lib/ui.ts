@@ -29,7 +29,10 @@ export const sheet = (page: Page) => page.getByRole('dialog').last();
  * instead, so the row is centred first.
  */
 export async function tapRowStart(page: Page, row: Locator) {
+  await row.waitFor({ state: 'visible' });
   await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  // The list re-renders as it loads; a tap at a position measured mid-render lands on air.
+  await page.waitForTimeout(150);
   const box = await row.boundingBox();
   if (!box) throw new Error('row is not visible');
   await page.mouse.click(28, box.y + Math.min(12, box.height / 2));

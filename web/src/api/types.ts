@@ -126,6 +126,10 @@ export interface Recipe {
   categories: string[];
   /** Another household owns it: you can file it in your catalog, but not edit it. */
   shared: boolean;
+  /** The household it came from — worth saying on anything you don't own. */
+  ownerName: string | null;
+  /** In Explore, where every signed-in household can read it. Only its owner can change that. */
+  published: boolean;
   /** Households this recipe is shared with. Only meaningful when you own it. */
   sharedWith: string[];
   /** Optional single picture shown at the top of the recipe. */

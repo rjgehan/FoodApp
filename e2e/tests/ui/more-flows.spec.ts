@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, find, groceries, isoDate, newHousehold, newRecipe, plan } from '../../lib/api';
+import { admin, call, find, groceries, isoDate, newHousehold, newRecipe, plan, unique } from '../../lib/api';
 import { fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
 
 /** The everyday paths not covered by the core loop. */
@@ -192,4 +192,36 @@ test('a drawer shows its own groups, not another drawer’s', async ({ page }) =
   for (const meat of ['Beef', 'Chicken', 'Pork', 'Seafood']) {
     await expect(page.getByText(meat, { exact: true })).toBeVisible();
   }
+});
+
+test('publish a recipe, find it in Explore from another household, keep it', async ({ page }) => {
+  const mine = await newHousehold();
+  const theirs = await newHousehold();
+  const name = unique('Published Chili');
+  const r = await newRecipe(mine.id, name, [{ name: 'beans', qty: 2, unit: 'can' }]);
+
+  // Publish it from the household that owns it.
+  await signIn(page, mine.owner, mine.id);
+  await page.goto(`/recipes/${r.id}`);
+  await fromMenu(page, 'Recipe options', /^Share/);
+  await sheet(page).getByRole('button', { name: 'Publish to Explore' }).click();
+  await expect(sheet(page).getByRole('button', { name: 'Take out of Explore' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText(/in Explore/)).toBeVisible();
+
+  // Find it from the other household.
+  await signIn(page, theirs.owner, theirs.id);
+  await page.goto('/recipes');
+  await page.getByText('Explore', { exact: true }).click();
+  await expect(page).toHaveURL(/\/recipes\/explore$/);
+  await expect(page.getByText(name)).toBeVisible();
+  await expect(page.getByText(`from ${mine.name}`).first()).toBeVisible();
+
+  // Keep it: it lands in their own catalog.
+  await page.getByText(name).click();
+  await page.getByRole('button', { name: 'Save to my recipes' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () =>
+    (await call('GET', `/api/households/${theirs.id}/recipes`, { token: theirs.owner.token }))
+      .some((x: any) => x.id === r.id)).toBe(true);
 });

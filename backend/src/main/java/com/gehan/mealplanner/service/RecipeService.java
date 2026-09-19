@@ -35,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -350,9 +351,47 @@ public class RecipeService {
         if (householdId == null) {
             return false;
         }
-        return recipe.getHousehold().getId().equals(householdId)
+        return recipe.isPublished()
+                || recipe.getHousehold().getId().equals(householdId)
+                || filingRepository.findByHouseholdIdAndRecipeId(householdId, recipe.getId()).isPresent()
                 || shareRepository.findByRecipeId(recipe.getId()).stream()
                         .anyMatch(sh -> sh.getHousehold().getId().equals(householdId));
+    }
+
+    /**
+     * Puts a recipe in Explore, or takes it back out. Only the household that owns it decides.
+     * Taking it out is immediate for everyone who has not kept it; a household that filed it in
+     * its own catalog keeps it there, and keeps reading it, until the owner deletes the recipe.
+     */
+    @Transactional
+    public RecipeResponse setPublished(UUID recipeId, UUID requesterId, boolean published) {
+        Recipe recipe = recipeRepository.findById(recipeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+        householdService.assertMember(recipe.getHousehold().getId(), requesterId);
+
+        recipe.setPublished(published);
+        recipe.setPublishedAt(published ? Instant.now() : null);
+        Recipe saved = recipeRepository.save(recipe);
+        return toResponse(saved, null, recipe.getHousehold().getId());
+    }
+
+    /**
+     * Explore: what every household has published, newest first, with this household's own filing
+     * attached so the page can say which ones you already keep.
+     */
+    @Transactional(readOnly = true)
+    public List<RecipeResponse> listPublished(UUID householdId, UUID requesterId, String query) {
+        householdService.assertMember(householdId, requesterId);
+        String q = query == null ? "" : query.trim().toLowerCase();
+
+        return recipeRepository.findByPublishedTrueOrderByPublishedAtDesc().stream()
+                .filter(r -> q.isEmpty()
+                        || r.getName().toLowerCase().contains(q)
+                        || (r.getDescription() != null && r.getDescription().toLowerCase().contains(q))
+                        || r.getIngredients().stream().anyMatch(i -> i.getIngredient().getName().toLowerCase().contains(q)))
+                .map(r -> toResponse(r, filingRepository.findByHouseholdIdAndRecipeId(householdId, r.getId()).orElse(null),
+                        householdId))
+                .toList();
     }
 
     @Transactional
@@ -630,6 +669,8 @@ public class RecipeService {
                 recipe.getServings(), recipe.getSourceUrl(), recipe.getVideoUrl(),
                 filing == null ? null : filing.getSection(), categories,
                 !recipe.getHousehold().getId().equals(viewingHouseholdId),
+                recipe.getHousehold().getName(),
+                recipe.isPublished(),
                 shareRepository.findByRecipeId(recipe.getId()).stream()
                         .map(sh -> sh.getHousehold().getId()).toList(),
                 recipe.getCoverImage() == null ? null : recipe.getCoverImage().getId(),

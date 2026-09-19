@@ -47,6 +47,20 @@ public class Recipe {
 
     private String sourceUrl;
 
+    /**
+     * Published to Explore: every signed-in household on this server can read it and file it in
+     * their own catalog. Off unless the household that owns it says otherwise, and reversible —
+     * unpublishing takes it straight back out of Explore.
+     *
+     * The column carries its own default so Hibernate can add it to a table that already has rows.
+     */
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private boolean published = false;
+
+    /** When it was last published, so Explore can lead with what is new. */
+    private Instant publishedAt;
+
     /** Link to a video of the recipe being made — usually TikTok. Always http(s); see RecipeService. */
     private String videoUrl;
 

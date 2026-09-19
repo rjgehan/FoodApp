@@ -20,6 +20,7 @@ export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [icons, setIcons] = useState<Partial<Record<RecipeSection, string>>>({});
   const [query, setQuery] = useState('');
+  const [exploreCount, setExploreCount] = useState(0);
 
   useEffect(() => {
     if (!activeHouseholdId) return;
@@ -28,6 +29,9 @@ export default function RecipesPage() {
     api<Partial<Record<RecipeSection, string>>>('GET', `/api/households/${activeHouseholdId}/section-icons`)
       .then(setIcons)
       .catch(() => setIcons({}));
+    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/explore`)
+      .then((published) => setExploreCount(published.length))
+      .catch(() => setExploreCount(0));
   }, [activeHouseholdId]);
 
   const results = useMemo(() => {
@@ -112,6 +116,15 @@ export default function RecipesPage() {
             />
           )}
 
+          <SectionTile
+            to="/recipes/explore"
+            label="Explore"
+            count={exploreCount}
+            countLabel="published here"
+            hint="What every household on this server has published"
+            wide
+          />
+
           {all.length === 0 && (
             <Card>
               <EmptyState>
@@ -133,6 +146,7 @@ function SectionTile({
   to,
   label,
   count,
+  countLabel,
   tint,
   hint,
   iconKey,
@@ -141,6 +155,8 @@ function SectionTile({
   to: string;
   label: string;
   count: number;
+  /** What the number counts, when "recipes" is not the word. */
+  countLabel?: string;
   tint?: string;
   hint?: string;
   iconKey?: string;
@@ -160,7 +176,7 @@ function SectionTile({
         {Icon && !wide && <Icon className="mb-auto h-9 w-9 text-ink/55" />}
         <p className="text-lg font-semibold leading-tight">{label}</p>
         <p className="text-sm text-muted">
-          {count} {count === 1 ? 'recipe' : 'recipes'}
+          {count} {countLabel ?? (count === 1 ? 'recipe' : 'recipes')}
         </p>
         {hint && <p className="mt-1 text-xs text-subtle">{hint}</p>}
       </div>

@@ -110,6 +110,10 @@ public class RecipeDtos {
             List<String> categories,
             /** True when another household owns it — you can file it, but not edit it. */
             boolean shared,
+            /** The household that owns it, for a recipe that came from somewhere else. */
+            String ownerName,
+            /** In Explore, where every signed-in household can read it. Only the owner can change it. */
+            boolean published,
             /** Households this recipe is shared with. Only meaningful to the owner. */
             List<UUID> sharedWith,
             UUID coverImageId,
@@ -139,6 +143,9 @@ public class RecipeDtos {
     }
 
     /** Replaces the set of households this recipe is shared with. An empty list unshares it. */
+    public record PublishRequest(boolean published) {
+    }
+
     public record UpdateSharesRequest(List<UUID> householdIds) {
     }
 

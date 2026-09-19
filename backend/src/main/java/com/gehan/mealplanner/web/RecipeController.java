@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.web;
 
+import com.gehan.mealplanner.dto.RecipeDtos.PublishRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeLinkResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
@@ -153,6 +154,22 @@ public class RecipeController {
                                  @PathVariable UUID recipeId,
                                  @Valid @RequestBody RecipeRequest request) {
         return recipeService.update(recipeId, userId, request);
+    }
+
+    /** Explore: every household's published recipes, filtered by `q` when given. */
+    @GetMapping("/api/households/{householdId}/explore")
+    public List<RecipeResponse> explore(@AuthenticationPrincipal UUID userId,
+                                        @PathVariable UUID householdId,
+                                        @RequestParam(required = false) String q) {
+        return recipeService.listPublished(householdId, userId, q);
+    }
+
+    /** Puts a recipe in Explore, or takes it out. The owning household only. */
+    @PutMapping("/api/recipes/{recipeId}/published")
+    public RecipeResponse setPublished(@AuthenticationPrincipal UUID userId,
+                                       @PathVariable UUID recipeId,
+                                       @RequestBody PublishRequest request) {
+        return recipeService.setPublished(recipeId, userId, request.published());
     }
 
     /** Creates the share link, or hands back the one that already exists. */

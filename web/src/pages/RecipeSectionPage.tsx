@@ -108,7 +108,7 @@ export default function RecipeSectionPage() {
         <Header backLabel="Recipes" onBack={() => navigate('/recipes')} title={drawerName} />
         {inSection.length > 0 && (
           <p className="text-sm text-muted">
-            From other households. Open one and choose ••• → Move to my recipes to keep it.
+            From other households. Open one and choose Save to my recipes to keep it.
           </p>
         )}
         {recipes === null ? <Loading /> : inSection.length === 0 ? <Empty text="Nothing shared with you." /> : <RecipeGrid recipes={inSection} />}

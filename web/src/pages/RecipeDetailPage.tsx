@@ -164,6 +164,16 @@ export default function RecipeDetailPage() {
     }
   }
 
+  async function setPublished(published: boolean) {
+    if (!recipe) return;
+    setBusy(true);
+    try {
+      setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/published`, { published }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** One call sets both cover and strip, so every change goes through the same endpoint. */
   async function saveImages(coverImageId: string | null, photoIds: string[]) {
     if (!recipe) return;
@@ -311,10 +321,14 @@ export default function RecipeDetailPage() {
                 items={[
                   mine && { label: 'Edit', onSelect: () => navigate(`/recipes/${recipe.id}/edit`) },
                   mine && {
-                    label: recipe.sharedWith.length ? `Share · with ${recipe.sharedWith.length}` : 'Share',
+                    label: recipe.published
+                      ? 'Share · in Explore'
+                      : recipe.sharedWith.length
+                        ? `Share · with ${recipe.sharedWith.length}`
+                        : 'Share',
                     onSelect: openSharing,
                   },
-                  { label: recipe.section ? 'Organize' : 'Move to my recipes', onSelect: startOrganizing },
+                  { label: recipe.section ? 'Organize' : 'Save to my recipes', onSelect: startOrganizing },
                   mine && { label: 'Photos & video', onSelect: () => setEditingMedia(true) },
                   { label: 'Index card', onSelect: () => setAsCard(true) },
                 ]}
@@ -351,7 +365,12 @@ export default function RecipeDetailPage() {
                 .join(' · ')}
             </p>
             <p className="text-sm text-muted">
-              {[sectionLabel(recipe.section), ...recipe.categories, recipe.shared ? 'from another household' : null]
+              {[
+                sectionLabel(recipe.section),
+                ...recipe.categories,
+                recipe.shared ? `from ${recipe.ownerName ?? 'another household'}` : null,
+                !recipe.shared && recipe.published ? 'in Explore' : null,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </p>
@@ -383,6 +402,11 @@ export default function RecipeDetailPage() {
                 <CalendarIcon className="h-5 w-5" />
                 Add to plan
               </Button>
+              {recipe.shared && !recipe.section && (
+                <Button full size="lg" variant="secondary" disabled={busy} onClick={startOrganizing}>
+                  Save to my recipes
+                </Button>
+              )}
               {isSafeLink(recipe.videoUrl) && (
                 <a
                   href={recipe.videoUrl!}
@@ -399,7 +423,7 @@ export default function RecipeDetailPage() {
           )}
 
           {organizing && draft && activeHouseholdId && (
-            <Card title={recipe.section ? 'Organize' : 'Move to my recipes'}>
+            <Card title={recipe.section ? 'Organize' : 'Save to my recipes'}>
               <RecipeClassifier householdId={activeHouseholdId} value={draft} onChange={setDraft} />
               <div className="mt-4 flex gap-2">
                 <Button className="flex-1" disabled={busy} onClick={saveClassification}>
@@ -509,10 +533,28 @@ export default function RecipeDetailPage() {
                   </div>
                 </div>
               ) : (
-                <Button className="mt-3" full disabled={busy} onClick={createLink}>
+                <Button className="mt-3" full variant="secondary" disabled={busy} onClick={createLink}>
                   Create a link
                 </Button>
               )}
+            </section>
+
+            <section className="border-t border-line pt-4">
+              <h3 className="font-semibold">Explore</h3>
+              <p className="mt-0.5 text-sm text-muted">
+                {recipe.published
+                  ? 'Anyone signed in here can read this and keep it in their own recipes.'
+                  : 'Put it where every household on this server can find it.'}
+              </p>
+              <Button
+                className="mt-3"
+                full
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setPublished(!recipe.published)}
+              >
+                {recipe.published ? 'Take out of Explore' : 'Publish to Explore'}
+              </Button>
             </section>
 
             <section className="border-t border-line pt-4">

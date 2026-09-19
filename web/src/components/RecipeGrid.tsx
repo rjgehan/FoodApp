@@ -39,7 +39,8 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
             {recipe.name.charAt(0).toUpperCase()}
           </span>
         )}
-        {recipe.shared && (
+        {/* Only when the caption below cannot say where it came from. */}
+        {recipe.shared && !recipe.ownerName && (
           <span className="absolute right-2 top-2 rounded-full bg-surface/85 px-2 py-0.5 text-[0.7rem] font-medium text-muted">
             Shared
           </span>
@@ -52,8 +53,12 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
           Serves {recipe.servings}
           {total ? ` · ${formatMinutes(total)}` : ''}
         </p>
-        {recipe.categories.length > 0 && (
-          <p className="mt-1 truncate text-xs text-subtle">{recipe.categories.join(' · ')}</p>
+        {recipe.shared && recipe.ownerName ? (
+          <p className="mt-1 truncate text-xs text-subtle">from {recipe.ownerName}</p>
+        ) : (
+          recipe.categories.length > 0 && (
+            <p className="mt-1 truncate text-xs text-subtle">{recipe.categories.join(' · ')}</p>
+          )
         )}
       </div>
     </Link>
