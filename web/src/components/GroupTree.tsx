@@ -1,24 +1,23 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import type { RecipeCategory } from '../api/types';
 import type { CategoryTree } from '../utils/categoryTree';
 import { AddGroup, EditGroup } from '../pages/RecipeSectionPage';
 import { cx } from './ui';
 import { coverClass } from '../utils/recipeFormat';
-import { ChevronDownIcon, ChevronRightIcon, MoreIcon } from './icons';
-
-/** A full 44pt tap target in a card corner, drawn as a small dot. */
-const cornerButton = (side: string) => cx('absolute top-0 flex h-11 w-11 items-center justify-center', side);
-const cornerDot =
-  'flex h-7 w-7 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80';
+import { MoreIcon } from './icons';
 
 /**
- * Every group nested inside the current one, all at once — Sides indented under Dinner, Chicken
- * double-indented under Sides — like a JSON tree rather than one level per screen. A group shows
- * here whether or not it holds a recipe from this drawer, so an empty one you just made (or an
- * empty leaf three levels down) never looks like it disappeared. Tiles read the same as the
- * catalog's own Dinner/Breakfast cards, just smaller — three to a row instead of two. Add and
- * remove groups from the tile's ••• menu; deleting one moves its recipes and groups up to its
- * own parent, so nothing filed in it is lost.
+ * One level at a time: the groups directly inside the current one, as the same two-up tiles the
+ * catalog uses for Breakfast and Dinner. Tapping one opens it — Dinner, then Full meal, then
+ * Chicken — and Back walks out the way you came.
+ *
+ * The whole tree used to be drawn at once, indented. Three levels of that on a phone is a wall
+ * of tiles where a group and the groups inside it look alike, and which belongs to which is left
+ * to the indentation to explain.
+ *
+ * A group shows here whether or not it holds a recipe from this drawer, so an empty one you just
+ * made never looks like it disappeared. Add and remove groups from a tile's ••• menu; deleting
+ * one moves its recipes and groups up to its own parent, so nothing filed in it is lost.
  */
 export default function GroupTree({
   householdId,
@@ -37,101 +36,67 @@ export default function GroupTree({
   onNavigate: (id: string) => void;
   onChanged: () => Promise<void>;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [addingChildOf, setAddingChildOf] = useState<string | null>(null);
+  const [addingChildOf, setAddingChildOf] = useState<RecipeCategory | null>(null);
   const [editingGroup, setEditingGroup] = useState<RecipeCategory | null>(null);
 
-  const topLevel = tree.children(rootId);
-  if (topLevel.length === 0) return null;
-
-  function toggle(id: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function renderLevel(nodes: RecipeCategory[], depth: number) {
-    return (
-      <div className="flex flex-wrap gap-2" style={depth > 0 ? { paddingLeft: `${depth * 1.25}rem` } : undefined}>
-        {nodes.map((node) => {
-          const children = tree.children(node.id);
-          const isCollapsed = collapsed.has(node.id);
-          const isAdding = addingChildOf === node.id;
-
-          return (
-            <Fragment key={node.id}>
-              <div className="relative w-[calc((100%-1rem)/3)]">
-                <button
-                  type="button"
-                  onClick={() => onNavigate(node.id)}
-                  className={cx(
-                    'flex aspect-[3/2] w-full flex-col justify-end overflow-hidden rounded-2xl p-3 text-left transition-transform active:scale-[0.98]',
-                    coverClass(node.id),
-                  )}
-                >
-                  <span className="text-sm font-semibold leading-tight">{node.name}</span>
-                  <span className="text-xs text-muted">
-                    {countFor(node.id)} {countFor(node.id) === 1 ? 'recipe' : 'recipes'}
-                  </span>
-                </button>
-
-                {children.length > 0 && (
-                  <button
-                    type="button"
-                    aria-label={isCollapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
-                    onClick={() => toggle(node.id)}
-                    className={cornerButton('left-0')}
-                  >
-                    <span className={cornerDot}>
-                      {isCollapsed ? <ChevronRightIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />}
-                    </span>
-                  </button>
-                )}
-
-                {/* One ••• for the rare things — a 44pt target a thumb can hit, where two
-                    24pt buttons side by side were easy to miss. */}
-                <button
-                  type="button"
-                  aria-label={`More for ${node.name}`}
-                  onClick={() => setEditingGroup(node)}
-                  className={cornerButton('right-0')}
-                >
-                  <span className={cornerDot}>
-                    <MoreIcon className="h-3.5 w-3.5" />
-                  </span>
-                </button>
-              </div>
-
-              {isAdding && (
-                <div className="w-full">
-                  <AddGroup
-                    householdId={householdId}
-                    parent={node}
-                    onCancel={() => setAddingChildOf(null)}
-                    onAdded={async () => {
-                      setAddingChildOf(null);
-                      await onChanged();
-                    }}
-                  />
-                </div>
-              )}
-
-              {!isCollapsed && children.length > 0 && (
-                <div className="w-full">{renderLevel(children, depth + 1)}</div>
-              )}
-            </Fragment>
-          );
-        })}
-      </div>
-    );
-  }
+  const groups = tree.children(rootId);
+  if (groups.length === 0) return null;
 
   return (
     <div>
-      {renderLevel(topLevel, 0)}
+      <ul className="grid grid-cols-2 gap-3">
+        {groups.map((node) => {
+          const recipes = countFor(node.id);
+          const inside = tree.children(node.id).length;
+
+          return (
+            <li key={node.id} className="relative">
+              <button
+                type="button"
+                onClick={() => onNavigate(node.id)}
+                className={cx(
+                  'flex aspect-[3/2] w-full flex-col justify-end overflow-hidden rounded-2xl p-3 text-left',
+                  'transition-transform active:scale-[0.98]',
+                  coverClass(node.id),
+                )}
+              >
+                <span className="pr-8 text-lg font-semibold leading-tight">{node.name}</span>
+                <span className="text-sm text-muted">
+                  {/* What is inside, in the order you care: the recipes, then whether it opens further. */}
+                  {recipes} {recipes === 1 ? 'recipe' : 'recipes'}
+                  {inside > 0 && ` · ${inside} ${inside === 1 ? 'group' : 'groups'}`}
+                </span>
+              </button>
+
+              {/* A 44pt target in the corner, drawn as a small dot. */}
+              <button
+                type="button"
+                aria-label={`More for ${node.name}`}
+                onClick={() => setEditingGroup(node)}
+                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-bg/60 text-ink backdrop-blur-sm active:bg-bg/80">
+                  <MoreIcon className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      {addingChildOf && (
+        <div className="mt-3">
+          <AddGroup
+            householdId={householdId}
+            parent={addingChildOf}
+            onCancel={() => setAddingChildOf(null)}
+            onAdded={async () => {
+              setAddingChildOf(null);
+              await onChanged();
+            }}
+          />
+        </div>
+      )}
 
       {editingGroup && (
         <EditGroup
@@ -140,7 +105,7 @@ export default function GroupTree({
           upTo={(editingGroup.parentId && tree.byId.get(editingGroup.parentId)?.name) || drawerName}
           onClose={() => setEditingGroup(null)}
           onAddInside={() => {
-            setAddingChildOf(editingGroup.id);
+            setAddingChildOf(editingGroup);
             setEditingGroup(null);
           }}
           onRenamed={async () => {
