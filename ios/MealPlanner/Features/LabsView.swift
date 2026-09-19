@@ -17,7 +17,6 @@ struct LabsView: View {
     var session: Session
 
     @State private var prompt = "olive oil"
-    @State private var style: Style = .illustration
     @State private var image: CGImage?
     @State private var elapsed: TimeInterval?
     @State private var status: String = "Not checked"
@@ -28,13 +27,9 @@ struct LabsView: View {
     @State private var uploaded: String?
     @State private var items: [GroceryItem] = []
     @State private var sheetUp = false
-
-    /// Mirrors `ImagePlaygroundStyle`, which cannot be used in a Picker below iOS 18.4.
-    enum Style: String, CaseIterable, Identifiable {
-        case illustration, animation, sketch
-        var id: String { rawValue }
-        var title: String { rawValue.capitalized }
-    }
+    @State private var sorting = false
+    @State private var sorted: [(item: String, aisle: String)] = []
+    @State private var sortNote: String?
 
     var body: some View {
         NavigationStack {
@@ -54,15 +49,12 @@ struct LabsView: View {
 
                 Section {
                     TextField("What to draw", text: $prompt)
-                    Picker("Style", selection: $style) {
-                        ForEach(Style.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
                     Button("Open Image Playground", systemImage: "wand.and.stars") {
                         sheetUp = true
                     }
                     .buttonStyle(.borderless)
                     .disabled(prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+
 
                     Button(busy ? "Trying…" : "Try headless (deprecated)", systemImage: "terminal") {
                         Task { await generate() }
@@ -70,7 +62,7 @@ struct LabsView: View {
                     .buttonStyle(.borderless)
                     .disabled(busy || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
                 } footer: {
-                    Text("iOS 27 deprecated generating without UI. The sheet is the supported path, and it needs a person to confirm each image.")
+                    Text("iOS 27 deprecated generating without UI. The sheet is the supported path, and it needs a person to confirm each image. Genmoji uses the same sheet, but that overload segfaults inside SwiftUI on this runtime, so it is not wired up here.")
                 }
 
                 if let error {
@@ -96,6 +88,24 @@ struct LabsView: View {
                             Text(uploaded).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
+                }
+
+                Section {
+                    Button(sorting ? "Sorting…" : "Sort the list into our aisles", systemImage: "arrow.triangle.branch") {
+                        Task { await sortIntoAisles() }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(sorting || items.isEmpty)
+                    if let sortNote {
+                        Text(sortNote).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    ForEach(sorted, id: \.item) { row in
+                        LabeledContent(row.item, value: row.aisle)
+                    }
+                } header: {
+                    Text("On-device model")
+                } footer: {
+                    Text("The aisle names come from the household, and the model is constrained to them — it cannot invent one. This is what the Gemini call does today, minus the quota.")
                 }
 
                 // Real names off the real list, so the test is not all "olive oil".
@@ -201,13 +211,8 @@ struct LabsView: View {
         let started = Date()
         do {
             let creator = try await ImageCreator()
-            let chosen: ImagePlaygroundStyle = switch style {
-            case .illustration: .illustration
-            case .animation: .animation
-            case .sketch: .sketch
-            }
             // One image; the sequence would keep producing variations otherwise.
-            let stream = creator.images(for: [.text(prompt)], style: chosen, limit: 1)
+            let stream = creator.images(for: [.text(prompt)], style: .illustration, limit: 1)
             for try await created in stream {
                 image = created.cgImage
                 elapsed = Date().timeIntervalSince(started)
@@ -218,6 +223,65 @@ struct LabsView: View {
             error = describe(failure)
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// The interesting one: the same job the server asks Gemini to do, on the phone, for free.
+    /// The aisles are whatever this household has, and `anyOf` makes them the only legal
+    /// answers — the model picks from the list rather than inventing "Condiments".
+    private func sortIntoAisles() async {
+        guard #available(iOS 26.0, *) else {
+            sortNote = "Needs iOS 26."
+            return
+        }
+        guard let household = session.household?.id else { return }
+        sorting = true
+        sorted = []
+        defer { sorting = false }
+
+        do {
+            let aisles = try await APIClient.shared.categories(household: household).map(\.name)
+            guard !aisles.isEmpty else {
+                sortNote = "This household has no aisles yet."
+                return
+            }
+            let names = Array(items.filter { !$0.checked }.map(\.name).prefix(12))
+            guard !names.isEmpty else {
+                sortNote = "Nothing on the list to sort."
+                return
+            }
+
+            let aisleSchema = DynamicGenerationSchema(name: "Aisle", anyOf: aisles)
+            let row = DynamicGenerationSchema(name: "Placement", properties: [
+                .init(name: "item", schema: DynamicGenerationSchema(type: String.self)),
+                .init(name: "aisle", schema: DynamicGenerationSchema(referenceTo: "Aisle")),
+            ])
+            let root = DynamicGenerationSchema(name: "Placements", properties: [
+                .init(
+                    name: "placements",
+                    schema: DynamicGenerationSchema(arrayOf: DynamicGenerationSchema(referenceTo: "Placement"))
+                )
+            ])
+            let schema = try GenerationSchema(root: root, dependencies: [aisleSchema, row])
+
+            let started = Date()
+            let session = LanguageModelSession(
+                instructions: "You put grocery items in the aisle of a shop where they are found."
+            )
+            let reply = try await session.respond(
+                to: "Put each of these in an aisle: \(names.joined(separator: ", "))",
+                schema: schema
+            )
+            let placements = try reply.content.value([GeneratedContent].self, forProperty: "placements")
+            sorted = try placements.map {
+                (item: try $0.value(String.self, forProperty: "item"),
+                 aisle: try $0.value(String.self, forProperty: "aisle"))
+            }
+            sortNote = String(format: "%d items in %.1f s", sorted.count, Date().timeIntervalSince(started))
+        } catch let failure as LanguageModelSession.GenerationError {
+            sortNote = "Model error: \(failure.localizedDescription)"
+        } catch {
+            sortNote = error.localizedDescription
         }
     }
 
@@ -248,20 +312,23 @@ struct LabsView: View {
     }
 }
 
-/// The sheet only exists from iOS 18.1, and this app still runs on 17.
+/*
+ The sheet only exists from iOS 18.1, and this app still runs on 17.
+
+ These return AnyView rather than `some View`. A @ViewBuilder returning an opaque type whose
+ branches differ by availability segfaults inside swift_getOpaqueTypeMetadataImpl when the
+ modifier is applied — erasing the type sidesteps it, and this is a debug screen either way.
+ */
 extension View {
-    @ViewBuilder
     func playgroundSheet(
         isPresented: Binding<Bool>,
         concept: String,
         onDone: @escaping (URL) -> Void
-    ) -> some View {
-        if #available(iOS 18.1, *) {
-            self.imagePlaygroundSheet(isPresented: isPresented, concepts: [.text(concept)], onCompletion: onDone)
-        } else {
-            self
-        }
+    ) -> AnyView {
+        guard #available(iOS 18.1, *) else { return AnyView(self) }
+        return AnyView(imagePlaygroundSheet(isPresented: isPresented, concepts: [.text(concept)], onCompletion: onDone))
     }
+
 }
 
 #Preview("Labs") {
