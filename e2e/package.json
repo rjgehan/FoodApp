@@ -5,6 +5,7 @@
   "scripts": {
     "reset": "bash scripts/reset-local.sh",
     "seed": "node scripts/seed-demo.mjs",
+    "seed:showcase": "node scripts/seed-showcase.mjs",
     "test": "playwright test --project=api --project=iphone",
     "test:api": "playwright test --project=api",
     "test:ui": "playwright test --project=iphone",
