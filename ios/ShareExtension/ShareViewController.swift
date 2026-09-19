@@ -45,28 +45,50 @@ final class ShareViewController: UIViewController {
         open(url)
     }
 
-    /// Whatever was shared, as text: the selection, the page URL, or both.
+    /// What was shared, as the recipe's words.
+    ///
+    /// Order matters. The page's own text is what a reader sees; a selection is what they
+    /// chose; a URL is neither, and passing one to a language model produces an invented
+    /// recipe built out of the slug. So a URL is only ever sent as a last resort, and marked
+    /// as such so the app knows to go and fetch it rather than read it.
     private func sharedText() async -> String? {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
-        var pieces: [String] = []
+        var pageText: String?
+        var selection: String?
+        var link: String?
 
         for item in items {
             for provider in item.attachments ?? [] {
-                if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
-                   let text = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
-                    pieces.append(text)
+                // The JavaScript preprocessor's results arrive as a property list.
+                if provider.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier),
+                   let loaded = try? await provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier),
+                   let wrapper = loaded as? [String: Any],
+                   let results = wrapper[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any] {
+                    let title = results["title"] as? String ?? ""
+                    let text = results["text"] as? String ?? ""
+                    if !text.isEmpty { pageText = [title, text].filter { !$0.isEmpty }.joined(separator: "\n\n") }
+                    if let pageURL = results["url"] as? String, !pageURL.isEmpty { link = pageURL }
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
+                          let text = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String,
+                          !text.isEmpty {
+                    selection = text
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                           let url = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
-                    pieces.append(url.absoluteString)
+                    link = url.absoluteString
                 }
             }
-            if let text = item.attributedContentText?.string, !text.isEmpty {
-                pieces.append(text)
+            if selection == nil, let text = item.attributedContentText?.string, !text.isEmpty {
+                selection = text
             }
         }
 
-        let joined = pieces.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return joined.isEmpty ? nil : joined
+        // A selection beats the whole page: someone who highlighted the ingredients meant it.
+        if let selection, selection.count > 40 { return selection }
+        if let pageText, pageText.count > 40 { return pageText }
+        if let selection { return selection }
+        // Nothing readable — hand over the address and let the app fetch it.
+        if let link { return "\u{1F517}\(link)" }
+        return nil
     }
 
     private func encode(_ text: String) -> String {

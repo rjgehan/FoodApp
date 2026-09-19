@@ -154,6 +154,39 @@ struct LabsPasteView: View {
         #endif
     }
 
+    /// Fetches a page and reduces it to its words. Crude on purpose: enough for a recipe
+    /// site, and the alternative — sending the model a URL — is what produced an invented
+    /// recipe in the first place.
+    private static func readable(_ link: String) async -> String? {
+        guard let url = URL(string: link) else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        // Some recipe sites serve a stub to anything that does not look like a browser.
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+            forHTTPHeaderField: "User-Agent"
+        )
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              var html = String(data: data, encoding: .utf8) else { return nil }
+
+        for block in ["script", "style", "noscript", "svg", "head"] {
+            html = html.replacingOccurrences(
+                of: "<\(block)[^>]*>.*?</\(block)>",
+                with: " ",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+        html = html.replacingOccurrences(of: "<[^>]+>", with: "\n", options: .regularExpression)
+        html = html.replacingOccurrences(of: "&nbsp;", with: " ")
+        html = html.replacingOccurrences(of: "&amp;", with: "&")
+        let lines = html
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let text = lines.joined(separator: "\n")
+        return text.count > 200 ? text : nil
+    }
+
     /// The generic "operation couldn't be completed" hides the one failure that actually
     /// happens: availability says the model is there, but its weights are not on this
     /// machine. That is the normal state of the Simulator.
@@ -185,6 +218,19 @@ struct LabsPasteView: View {
 
         var input = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var trimmed = false
+
+        // The share extension marks "all I got was a link" with a 🔗. Fetching it here beats
+        // handing the model an address, which it will answer by inventing a plausible recipe.
+        if input.hasPrefix("\u{1F517}") {
+            let link = String(input.dropFirst()).trimmingCharacters(in: .whitespaces)
+            note = "Fetching \(link)…"
+            guard let fetched = await Self.readable(link) else {
+                error = "Could not read that page. Open it, select the recipe, and share the selection."
+                return
+            }
+            input = fetched
+            text = fetched
+        }
         if input.count > Self.limit {
             input = String(input.prefix(Self.limit))
             trimmed = true
@@ -194,20 +240,28 @@ struct LabsPasteView: View {
         do {
             let model = LanguageModelSession(
                 instructions: """
-                You turn a pasted recipe into structured data. Use only what the text says; \
-                never invent an ingredient or a step. Keep the wording of the steps.
+                You turn a pasted recipe into structured data.
+
+                Use only what the text says. Never invent an ingredient, a step, an amount or \
+                a time — if the text does not give one, use the stated default. Keep the \
+                wording of the steps as written. If the text is not a recipe, return an empty \
+                name and no ingredients rather than making something up.
                 """
             )
             let reply = try await model.respond(to: input, generating: ParsedRecipe.self)
             parsedStore = reply.content
             let seconds = Date().timeIntervalSince(started)
             note = String(
-                format: "%d ingredients, %d steps in %.1f s%@",
+                format: "Read %d characters → %d ingredients, %d steps in %.1f s%@",
+                input.count,
                 reply.content.ingredients.count,
                 reply.content.steps.count,
                 seconds,
-                trimmed ? " · the paste was cut to \(Self.limit) characters" : ""
+                trimmed ? " · cut to \(Self.limit) characters" : ""
             )
+            if reply.content.ingredients.isEmpty {
+                error = "No recipe found in that text — nothing was invented to fill the gap."
+            }
         } catch let failure as LanguageModelSession.GenerationError {
             // The interesting failures: too long for the window, or the guardrails said no.
             error = "Model: \(failure.localizedDescription)"

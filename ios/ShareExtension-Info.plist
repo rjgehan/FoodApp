@@ -11,6 +11,9 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<!-- Text or a link: a pasted recipe, or the page it is on. -->
+			<!-- Runs in the page first, so a shared page arrives as its text. -->
+			<key>NSExtensionJavaScriptPreprocessingFile</key>
+			<string>GetPageText</string>
 			<key>NSExtensionActivationRule</key>
 			<dict>
 				<key>NSExtensionActivationSupportsText</key>
