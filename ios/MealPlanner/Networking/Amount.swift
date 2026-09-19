@@ -55,19 +55,43 @@ struct Amount {
         let lowered = line.lowercased()
         optional = Self.skippable.contains { lowered.contains($0) }
 
-        // Anything after a comma or inside brackets is a note about the ingredient, not part
-        // of its name: "garlic, minced" and "sugar (or to taste)".
-        var head = line
-        var tail: String?
+        /*
+         Brackets come out first, and they nest: "56 oz crushed tomatoes ((2, 28 oz cans))"
+         has a comma inside them. Splitting on that comma first left the name as
+         "crushed tomatoes ((2", so depth is tracked and only a comma outside brackets counts.
+        */
+        var head = ""
+        var bracketed: [String] = []
+        var current = ""
+        var depth = 0
+        for character in line {
+            if character == "(" || character == "[" {
+                depth += 1
+                if depth == 1 { continue }
+            } else if character == ")" || character == "]" {
+                depth -= 1
+                if depth == 0 {
+                    bracketed.append(current.trimmingCharacters(in: .whitespaces))
+                    current = ""
+                    continue
+                }
+                // An unbalanced closer: treat it as text rather than going negative.
+                if depth < 0 { depth = 0; continue }
+            }
+            if depth > 0 { current.append(character) } else { head.append(character) }
+        }
+        // An opener that never closed — keep what it held rather than losing it.
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
+            bracketed.append(current.trimmingCharacters(in: .whitespaces))
+        }
+
+        var tail: String? = bracketed.isEmpty ? nil : bracketed.joined(separator: " · ")
         if let comma = head.firstIndex(of: ",") {
-            tail = String(head[head.index(after: comma)...]).trimmingCharacters(in: .whitespaces)
+            let after = String(head[head.index(after: comma)...]).trimmingCharacters(in: .whitespaces)
+            if !after.isEmpty { tail = [tail, after].compactMap { $0 }.joined(separator: " · ") }
             head = String(head[..<comma])
         }
-        if let open = head.firstIndex(of: "("), let close = head.lastIndex(of: ")"), open < close {
-            let inside = String(head[head.index(after: open)..<close])
-            tail = [tail, inside].compactMap { $0 }.joined(separator: " · ")
-            head = String(head[..<open]).trimmingCharacters(in: .whitespaces)
-        }
+        head = head.replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
 
         var words = head.split(separator: " ").map(String.init)
         guard let amount = Self.leadingNumber(&words) else {
@@ -142,6 +166,7 @@ struct Amount {
 
     private static func clean(_ raw: String) -> String {
         var out = raw.trimmingCharacters(in: .whitespaces)
+        out = out.filter { !"()[]".contains($0) }
         if out.lowercased().hasPrefix("of ") { out = String(out.dropFirst(3)) }
         for phrase in skippable {
             out = out.replacingOccurrences(of: " or \(phrase)", with: "", options: .caseInsensitive)
