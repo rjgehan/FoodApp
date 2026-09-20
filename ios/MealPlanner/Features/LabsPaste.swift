@@ -176,7 +176,9 @@ struct LabsPasteView: View {
                 if !fromPage.steps.isEmpty {
                     Section {
                         ForEach(Array(fromPage.steps.enumerated()), id: \.offset) { index, step in
-                            Text("\(index + 1). \(step)").font(.callout)
+                            (Text("\(index + 1). ") + IngredientMentions.text(
+                                step, names: fromPage.ingredients.map { Amount($0).name })
+                            ).font(.callout)
                         }
                         if let spokenSteps {
                             Button("Use the original wording", systemImage: "arrow.uturn.backward") {

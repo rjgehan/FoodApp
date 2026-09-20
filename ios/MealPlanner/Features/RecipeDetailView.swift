@@ -90,7 +90,7 @@ struct RecipeDetailView: View {
                                     .font(.subheadline.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(.secondary)
                                     .frame(width: 20, alignment: .trailing)
-                                Text(step)
+                                StepText(step: step, names: recipe.ingredients.map(\.ingredientName))
                             }
                         }
                     }
