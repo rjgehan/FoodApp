@@ -8,6 +8,8 @@ struct MealPlannerApp: App {
     @State private var shared: String?
     /// Or the page's own recipe data, which needs no reading at all.
     @State private var sharedRecipe: StructuredRecipe?
+    /// What the share sheet handed over, sent once the session is up.
+    @State private var sharedDiagnostic: String?
 
     var body: some Scene {
         WindowGroup {
@@ -25,9 +27,7 @@ struct MealPlannerApp: App {
                     // What the share sheet handed over, on its way to the import log. An
                     // app that offers nothing useful looks the same as one that offers
                     // nothing at all, and only the note tells them apart.
-                    if let report = items?.first(where: { $0.name == "diag" })?.value {
-                        Task { await session.noteShare(report) }
-                    }
+                    sharedDiagnostic = items?.first(where: { $0.name == "diag" })?.value
                     if let json = items?.first(where: { $0.name == "recipe" })?.value,
                        let data = json.data(using: .utf8),
                        let decoded = try? JSONDecoder().decode(StructuredRecipe.self, from: data) {
@@ -47,7 +47,8 @@ struct MealPlannerApp: App {
                         LabsPasteView(
                             session: session,
                             incoming: sharedRecipe == nil ? incoming.text : nil,
-                            structured: sharedRecipe
+                            structured: sharedRecipe,
+                            diagnostic: sharedDiagnostic
                         )
                     }
                 }

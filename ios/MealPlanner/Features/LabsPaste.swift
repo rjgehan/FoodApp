@@ -100,6 +100,9 @@ struct LabsPasteView: View {
     var incoming: String?
     /// The page's own recipe data, when it had some. Skips the model entirely.
     var structured: StructuredRecipe?
+    /// What the share sheet handed over, for the import log. Sent from here rather than
+    /// from the URL handler, because that runs before the session has been restored.
+    var diagnostic: String?
 
     @State private var text = ""
     @State private var busy = false
@@ -262,6 +265,7 @@ struct LabsPasteView: View {
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            if let diagnostic { await session.noteShare(diagnostic) }
             if let structured, fromPage == nil {
                 fromPage = structured
                 note = "Read straight from the page's own recipe data — nothing was guessed."
