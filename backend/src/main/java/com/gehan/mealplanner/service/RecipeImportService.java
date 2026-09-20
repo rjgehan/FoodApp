@@ -115,14 +115,36 @@ public class RecipeImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That video has no caption to read.");
         }
 
-        GeneratedRecipe draft = fromCaption(caption, uri.toString());
-        if (draft.instructions() != null && !draft.instructions().isBlank()) return draft;
+        GeneratedRecipe draft = readCaption(caption, uri.toString());
+        boolean hasSteps = draft.instructions() != null && !draft.instructions().isBlank();
+        if (hasSteps && !draft.ingredients().isEmpty()) return draft;
 
-        // The caption listed what to buy but not what to do. TikTok transcribes the narration
-        // itself and publishes it beside the video, so the spoken method can be read for free.
+        /*
+         * The caption did not carry the whole recipe. TikTok transcribes the narration itself
+         * and publishes it beside the video, so whatever is missing — the method, the
+         * shopping list, or both — can be read for free out of what the cook said.
+         */
         String spoken = transcript(item);
-        if (spoken == null) return draft;
-        return draft.withMethod(spoken, MethodSource.SPOKEN);
+        if (spoken == null) {
+            if (draft.ingredients().isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "That video has no recipe this can read: the caption lists no ingredients "
+                                + "and the video has no transcript to fall back on.");
+            }
+            return draft;
+        }
+
+        List<GeneratedIngredient> ingredients = draft.ingredients().isEmpty()
+                ? SpokenIngredients.from(spoken)
+                : draft.ingredients();
+        if (ingredients.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Nothing in that video names an ingredient, so there would be nothing to shop for.");
+        }
+        return new GeneratedRecipe(draft.name(), draft.description(), draft.prepTimeMinutes(),
+                draft.cookTimeMinutes(), draft.servings(), ingredients,
+                hasSteps ? draft.instructions() : spoken,
+                hasSteps ? MethodSource.PUBLISHED : MethodSource.SPOKEN);
     }
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
@@ -520,8 +542,18 @@ public class RecipeImportService {
         }
     }
 
-    /** Visible for tests: a caption, split into a recipe. */
+    /** Visible for tests: a caption, split into a recipe. Refuses one with no ingredients. */
     GeneratedRecipe fromCaption(String caption, String sourceUrl) {
+        GeneratedRecipe draft = readCaption(caption, sourceUrl);
+        if (draft.ingredients().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "That caption does not list any ingredients — the recipe is probably spoken in the video.");
+        }
+        return draft;
+    }
+
+    /** The same, but an empty list is an answer: the video may still say them out loud. */
+    private GeneratedRecipe readCaption(String caption, String sourceUrl) {
         List<String> lines = new ArrayList<>();
         for (String raw : caption.replace("\\n", "\n").split("\r?\n")) {
             String line = HASHTAGS.matcher(raw).replaceAll(" ").replaceAll("\\s+", " ").trim();
@@ -570,10 +602,6 @@ public class RecipeImportService {
             }
         }
 
-        if (ingredients.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "That caption does not list any ingredients — the recipe is probably spoken in the video.");
-        }
         return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
                 String.join("\n", steps), MethodSource.PUBLISHED);
     }

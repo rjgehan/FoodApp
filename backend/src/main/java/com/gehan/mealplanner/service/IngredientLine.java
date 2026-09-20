@@ -38,7 +38,19 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
             Map.entry("slice", "slice"), Map.entry("slices", "slice"),
             Map.entry("package", "package"), Map.entry("packages", "package"), Map.entry("pkg", "package"),
             Map.entry("pinch", "pinch"), Map.entry("pinches", "pinch"), Map.entry("dash", "dash"),
-            Map.entry("sprig", "sprig"), Map.entry("sprigs", "sprig"), Map.entry("handful", "handful"));
+            Map.entry("sprig", "sprig"), Map.entry("sprigs", "sprig"), Map.entry("handful", "handful"),
+            // How a cook measures out loud, for the recipes read off a transcript.
+            Map.entry("handfuls", "handful"), Map.entry("knob", "knob"), Map.entry("knobs", "knob"),
+            Map.entry("wedge", "wedge"), Map.entry("wedges", "wedge"),
+            Map.entry("block", "block"), Map.entry("blocks", "block"),
+            Map.entry("packet", "packet"), Map.entry("packets", "packet"),
+            Map.entry("jar", "jar"), Map.entry("jars", "jar"),
+            Map.entry("bottle", "bottle"), Map.entry("bottles", "bottle"),
+            Map.entry("shot", "shot"), Map.entry("shots", "shot"),
+            Map.entry("glug", "glug"), Map.entry("glugs", "glug"),
+            Map.entry("spoonful", "spoonful"), Map.entry("spoonfuls", "spoonful"),
+            Map.entry("sprinkling", "sprinkling"), Map.entry("drizzle", "drizzle"),
+            Map.entry("splash", "splash"));
 
     /** "½ cup" and "1½ cups" are both how recipes are written for people. */
     private static final Map<Character, Double> GLYPHS = Map.of(

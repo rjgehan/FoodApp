@@ -156,6 +156,23 @@ final class StoreSectionKeywords {
         return Optional.empty();
     }
 
+    /**
+     * Is this one word the name of something you eat?
+     *
+     * The same few hundred words that place a line in an aisle also answer "is this food",
+     * which is what tells "a decent pinch of kosher salt" from "a clean kitchen towel" when
+     * reading ingredients out of somebody talking. Household things are deliberately not
+     * food: a towel is in this list, and nobody is cooking it.
+     */
+    static boolean namesFood(String word) {
+        if (word == null || word.isBlank()) return false;
+        String one = singular(word.toLowerCase().replaceAll("[^a-z]", ""));
+        if (one.isEmpty()) return false;
+        StoreSection section = FOODS.get(one);
+        if (section == null) section = FORMS.get(one);
+        return section != null && section != HOUSEHOLD;
+    }
+
     /** Good enough English plurals for grocery words: berries, tomatoes, peaches, eggs. */
     private static String singular(String word) {
         if (word.length() > 4 && word.endsWith("ies")) {
