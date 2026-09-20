@@ -98,6 +98,41 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void splitsAWholeMethodPublishedAsOneStep() {
+        // A real site puts its entire numbered method in a single HowToStep. It arrived as
+        // one enormous step with the numbers still in it.
+        JsonNode found = service.findRecipe(page("""
+            {"@type":"Recipe","name":"Tuscan Chicken","recipeIngredient":["2 chicken breasts"],
+             "recipeInstructions":[{"@type":"HowToStep","text":
+               "1. Season the chicken with salt and pepper. 2. Heat the oil in a skillet. 3. Sear the chicken on both sides."}]}
+            """));
+
+        assertThat(service.toDraft(found, "u").instructions().lines()).containsExactly(
+                "Season the chicken with salt and pepper.",
+                "Heat the oil in a skillet.",
+                "Sear the chicken on both sides.");
+    }
+
+    @Test
+    void leavesAProperlySeparatedMethodAlone() {
+        // The split is only safe because a step that really is one step has no second
+        // number in it. A site that separates its own steps must come through untouched,
+        // numbers, decimals and all.
+        JsonNode found = service.findRecipe(page("""
+            {"@type":"Recipe","name":"Cake","recipeIngredient":["1.5 cups flour"],
+             "recipeInstructions":[
+               {"@type":"HowToStep","text":"Heat the oven to 180C. Line a tin."},
+               {"@type":"HowToStep","text":"1. Beat the butter and sugar."},
+               {"@type":"HowToStep","text":"Bake for 1.5 hours. Cool on a rack."}]}
+            """));
+
+        assertThat(service.toDraft(found, "u").instructions().lines()).containsExactly(
+                "Heat the oven to 180C. Line a tin.",
+                "1. Beat the butter and sugar.",
+                "Bake for 1.5 hours. Cool on a rack.");
+    }
+
+    @Test
     void findsTheRecipeWhenTheAttributeHasNoQuotes() {
         // Quotes around an attribute value are optional in HTML, and a minified page leaves
         // them out. Yoast — which is on a very large share of food blogs — emits exactly

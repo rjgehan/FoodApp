@@ -1079,8 +1079,31 @@ public class RecipeImportService {
         }
         if (node.has("text")) {
             String step = TAGS.matcher(node.get("text").asText()).replaceAll("").trim();
-            if (!step.isBlank()) out.add(step);
+            if (!step.isBlank()) out.addAll(splitRunOnSteps(step));
         }
+    }
+
+    /** Two or more of "1. ", "2. " inside one string: a whole method in a single entry. */
+    private static final Pattern OWN_NUMBER_INSIDE =
+            Pattern.compile("(?<=[.!?\\s])(?=\\d{1,2}[.)]\\s+\\p{Lu})");
+
+    /**
+     * One published step, or a whole method that was published as one.
+     *
+     * Most sites give a step per entry. Some give a single entry holding "1. Season the
+     * chicken... 2. Heat the oil... 3. ...", which arrives as one enormous step with the
+     * numbers still in it. Splitting on the site's own numbering is safe precisely because
+     * a step that is really one step does not contain a second number.
+     */
+    private List<String> splitRunOnSteps(String step) {
+        String[] parts = OWN_NUMBER_INSIDE.split(step);
+        if (parts.length < 3) return List.of(step);   // "1." alone is just a numbered step
+        List<String> out = new ArrayList<>();
+        for (String part : parts) {
+            String one = OWN_NUMBERING.matcher(part.trim()).replaceFirst("").trim();
+            if (!one.isBlank()) out.add(one);
+        }
+        return out.isEmpty() ? List.of(step) : out;
     }
 
     private int servings(JsonNode yield) {
