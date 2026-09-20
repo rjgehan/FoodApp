@@ -81,7 +81,7 @@ struct RootView: View {
         #endif
     }()
 
-    /// -mp_debug_screen "edit", "detail" or "settings" opens that screen straight away, so a screenshot
+    /// -mp_debug_screen "edit", "detail", "settings" or "household" opens that screen straight
     /// run can see something that otherwise needs three taps to reach. With -mp_debug_tab.
     #if DEBUG
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
@@ -127,6 +127,12 @@ struct RootView: View {
                 set: { if !$0 { debugSheet = nil } }
             )) {
                 SettingsView(session: session)
+            }
+            .sheet(isPresented: Binding(
+                get: { debugSheet == "household" },
+                set: { if !$0 { debugSheet = nil } }
+            )) {
+                NavigationStack { HouseholdScreen(session: session) }
             }
             #endif
         } else {

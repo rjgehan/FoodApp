@@ -11,12 +11,29 @@ struct HouseholdSummary: Codable, Identifiable, Hashable {
     let name: String
     /// The landing screen sends this; /api/households does not, so it is optional.
     let memberCount: Int?
+    /// Only /api/households sends the settings — the sign-in screen has no business knowing
+    /// how many a house cooks for.
+    let defaultServings: Int?
+    let planningHorizonDays: Int?
 
-    init(id: UUID, name: String, memberCount: Int? = nil) {
+    init(id: UUID, name: String, memberCount: Int? = nil,
+         defaultServings: Int? = nil, planningHorizonDays: Int? = nil) {
         self.id = id
         self.name = name
         self.memberCount = memberCount
+        self.defaultServings = defaultServings
+        self.planningHorizonDays = planningHorizonDays
     }
+}
+
+/// Somewhere you eat that is not this kitchen — the pub, the Thai place on the corner.
+struct Place: Codable, Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let menuUrl: String?
+    let phone: String?
+    let notes: String?
+    let imageId: UUID?
 }
 
 struct UserSummary: Codable, Identifiable, Hashable {

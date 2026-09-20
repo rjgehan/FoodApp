@@ -125,6 +125,70 @@ actor APIClient {
     // MARK: - The app
 
     /// The households this person belongs to, for the switcher in the header.
+    // MARK: - The household itself
+
+    @discardableResult
+    func createHousehold(name: String) async throws -> HouseholdSummary {
+        try await send("POST", "/api/households", body: ["name": name])
+    }
+
+    @discardableResult
+    func renameHousehold(_ id: UUID, name: String) async throws -> HouseholdSummary {
+        try await send("PATCH", "/api/households/\(id.uuidString)/name", body: ["name": name])
+    }
+
+    @discardableResult
+    func updateHouseholdSettings(_ id: UUID, defaultServings: Int, planningHorizonDays: Int) async throws -> HouseholdSummary {
+        try await send("PATCH", "/api/households/\(id.uuidString)/settings",
+                       body: ["defaultServings": defaultServings, "planningHorizonDays": planningHorizonDays])
+    }
+
+    /// A new person in this house, with no PIN yet — they choose one the first time they sign in.
+    @discardableResult
+    func addPerson(household: UUID, username: String, displayName: String?) async throws -> UserSummary {
+        var body: [String: Any] = ["username": username]
+        if let displayName, !displayName.isEmpty { body["displayName"] = displayName }
+        return try await send("POST", "/api/households/\(household.uuidString)/users", body: body)
+    }
+
+    // MARK: - Places we eat
+
+    func places(household: UUID) async throws -> [Place] {
+        try await get("/api/households/\(household.uuidString)/places")
+    }
+
+    @discardableResult
+    func addPlace(household: UUID, name: String) async throws -> Place {
+        try await send("POST", "/api/households/\(household.uuidString)/places", body: ["name": name])
+    }
+
+    func deletePlace(_ id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/places/\(id.uuidString)")
+    }
+
+    // MARK: - Store aisles
+
+    @discardableResult
+    func addAisle(household: UUID, name: String) async throws -> GroceryCategory {
+        try await send("POST", "/api/households/\(household.uuidString)/categories", body: ["name": name])
+    }
+
+    @discardableResult
+    func renameAisle(household: UUID, aisle: UUID, name: String) async throws -> GroceryCategory {
+        try await send("PATCH", "/api/households/\(household.uuidString)/categories/\(aisle.uuidString)",
+                       body: ["name": name])
+    }
+
+    /// The order they come in as you walk the shop, which is the whole point of them.
+    func reorderAisles(household: UUID, order: [UUID]) async throws {
+        _ = try await sendNoContent("PUT", "/api/households/\(household.uuidString)/categories/order",
+                                    body: ["order": order.map(\.uuidString)])
+    }
+
+    func deleteAisle(household: UUID, aisle: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/categories/\(aisle.uuidString)")
+    }
+
     /// Walking out. The server refuses with 409 when you are the only one left, because an
     /// empty household is one nobody can sign in to and nobody can delete.
     func leaveHousehold(_ id: UUID) async throws {
