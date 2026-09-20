@@ -433,6 +433,29 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void readsAnInstagramCaptionOutOfItsLinkPreview() {
+        // The shape Instagram really serves: the whole caption in og:description, line
+        // breaks intact, wrapped in "N likes, M comments - who on when:" and a full stop.
+        String html = """
+                <html><head>
+                <meta property="og:title" content="Someone on Instagram: ..." />
+                <meta property="og:description" content="643 likes, 6 comments - nurturednutrition_ on July 18, 2026: &quot;Hitting protein goals
+
+                Ingredients:
+                4 boneless, skinless chicken breast cutlets
+                1 cup Parmesan cheese, freshly grated&quot;. " />
+                </head><body>login</body></html>
+                """;
+
+        String caption = service.captionOf(html);
+        assertThat(caption).startsWith("Hitting protein goals").endsWith("freshly grated");
+        assertThat(caption.lines()).contains("Ingredients:", "4 boneless, skinless chicken breast cutlets");
+
+        // A page with no preview tag at all, which is what a browser User-Agent is served.
+        assertThat(service.captionOf("<html><body>Log in</body></html>")).isNull();
+    }
+
+    @Test
     void breaksUpACaptionsNumberedParagraphs() {
         // A real Instagram caption, verbatim. It writes three numbered paragraphs because
         // typing it out longhand is tedious; at the stove they are separate things, each

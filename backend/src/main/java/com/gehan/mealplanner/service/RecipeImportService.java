@@ -48,6 +48,9 @@ public class RecipeImportService {
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ISO_DURATION = Pattern.compile("^P(?:\\d+D)?T(?:(\\d+)H)?(?:(\\d+)M)?");
     private static final Pattern TAGS = Pattern.compile("<[^>]+>");
+    private static final Pattern OG_DESCRIPTION = Pattern.compile(
+            "<meta[^>]+property=\"og:description\"[^>]+content=\"(.*?)\"\\s*/?>", Pattern.DOTALL);
+    private static final Pattern NUMERIC_ENTITY = Pattern.compile("&#(x?[0-9A-Fa-f]+);");
 
     /** "00:00:44.766", and the hour is optional. */
     private static final Pattern TIMING = Pattern.compile("(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{1,3})");
@@ -87,7 +90,9 @@ public class RecipeImportService {
         // all anybody has to go on.
         ImportLog.Entry entry = journal.begin(uri);
         try {
-            GeneratedRecipe draft = isTikTok(uri) ? fromTikTok(uri, entry) : fromPage(uri, entry);
+            GeneratedRecipe draft = isTikTok(uri) ? fromTikTok(uri, entry)
+                    : isInstagram(uri) ? fromInstagram(uri, entry)
+                    : fromPage(uri, entry);
             log.info("Imported \"{}\" from {} — {} ingredients", draft.name(), uri, draft.ingredients().size());
             journal.finish(entry, draft, null);
             return draft;
@@ -97,6 +102,70 @@ public class RecipeImportService {
             journal.finish(entry, null, e.getReason());
             throw e;
         }
+    }
+
+    private boolean isInstagram(URI uri) {
+        String host = uri.getHost().toLowerCase();
+        return host.equals("instagram.com") || host.endsWith(".instagram.com");
+    }
+
+    /**
+     * A Reel's caption, which is where a recipe Instagram puts the recipe.
+     *
+     * The page itself is a JavaScript shell with a login wall in it, but the caption is in
+     * the og:description meta tag that every link preview in the world reads — complete,
+     * and with its line breaks intact, which is more than TikTok's oEmbed manages.
+     *
+     * Instagram serves that tag to anything except a browser. Sending our usual Chrome
+     * string gets the login wall; saying who we actually are gets the caption. There is no
+     * impersonation in this direction, which is the right way round.
+     */
+    private GeneratedRecipe fromInstagram(URI uri, ImportLog.Entry entry) {
+        String caption = captionOf(fetch(uri));
+        entry.caption(caption);
+        if (caption == null || caption.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Could not read that post. If it is from a private account, open it in Safari "
+                            + "and share it from there instead.");
+        }
+        GeneratedRecipe draft = readCaption(caption, uri.toString());
+        if (draft.ingredients().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "That caption does not list any ingredients — the recipe is probably in the video "
+                            + "or behind a link in their bio. Instagram publishes no transcript to fall back on.");
+        }
+        return draft;
+    }
+
+    /** The caption out of og:description, without the "N likes, M comments - who on when" wrapper. */
+    String captionOf(String html) {
+        Matcher matcher = OG_DESCRIPTION.matcher(html);
+        if (!matcher.find()) return null;
+        String text = unescape(matcher.group(1));
+
+        // 643 likes, 6 comments - nurturednutrition_ on July 18, 2026: "<the caption>".
+        int opens = text.indexOf(": \"");
+        int closes = text.lastIndexOf('"');
+        if (opens >= 0 && closes > opens + 2) return text.substring(opens + 3, closes).trim();
+        return text.trim();
+    }
+
+    /** Only the handful that turn up in a meta tag; the rest arrive as real characters. */
+    private static String unescape(String text) {
+        String out = text.replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#039;", "'").replace("&#39;", "'")
+                .replace("&apos;", "'").replace("&nbsp;", " ");
+        Matcher numeric = NUMERIC_ENTITY.matcher(out);
+        StringBuilder built = new StringBuilder();
+        while (numeric.find()) {
+            int code = numeric.group(1).startsWith("x") || numeric.group(1).startsWith("X")
+                    ? Integer.parseInt(numeric.group(1).substring(1), 16)
+                    : Integer.parseInt(numeric.group(1));
+            numeric.appendReplacement(built, Matcher.quoteReplacement(new String(Character.toChars(code))));
+        }
+        numeric.appendTail(built);
+        // Ampersand last, so "&amp;#39;" cannot become a quote.
+        return built.toString().replace("&amp;", "&");
     }
 
     private GeneratedRecipe fromPage(URI uri, ImportLog.Entry entry) {
@@ -824,12 +893,20 @@ public class RecipeImportService {
         return fetch(uri, Duration.ofSeconds(20));
     }
 
+    /** Most sites serve a stub to anything that does not look like a browser. */
+    private static final String AS_A_BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+    /**
+     * Instagram is the other way round: it shows a browser the login wall and gives the
+     * caption to anything that says what it is. So it gets the truth.
+     */
+    private static final String AS_OURSELVES = "MealPlanner/1.0 (+https://meals.gehan.cloud)";
+
     private String fetch(URI uri, Duration timeout) {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
-                // Some recipe sites serve a stub to anything that does not look like a browser.
-                .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                        + "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+                .header("User-Agent", isInstagram(uri) ? AS_OURSELVES : AS_A_BROWSER)
                 .header("Accept", "text/html,application/xhtml+xml")
                 .GET()
                 .build();

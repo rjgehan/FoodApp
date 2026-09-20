@@ -105,6 +105,32 @@ var ExtensionPreprocessingJS = new (function () {
     return null;
   }
 
+  /*
+   Instagram keeps the recipe in the caption, and the page around it is mostly not the
+   recipe: a navigation bar, a comment thread, a sidebar of other posts. Handing all of
+   that over as "the page text" buries the caption in it.
+
+   The og:description tag is the caption, complete and with its line breaks, and it is in
+   the DOM of the logged-in page too. The heading is the fallback for when a single-page
+   navigation has left that tag describing the previous post.
+  */
+  function instagramCaption() {
+    if (!/(^|\.)instagram\.com$/.test(location.hostname)) return "";
+
+    var meta = document.querySelector('meta[property="og:description"]');
+    var described = meta ? meta.getAttribute("content") || "" : "";
+    // 643 likes, 6 comments - someone on July 18, 2026: "<the caption>".
+    var quoted = described.match(/:\s*"([\s\S]*)"\s*\.?\s*$/);
+    var caption = quoted ? quoted[1] : "";
+
+    // A heading on a post page is the caption itself, newlines and all.
+    var heading = document.querySelector("article h1, main h1, h1");
+    var written = heading ? (heading.innerText || "").trim() : "";
+
+    // Whichever is fuller: after an in-app navigation the meta tag can be a post behind.
+    return written.length > caption.length ? written : caption;
+  }
+
   this.run = function (args) {
     var found = null;
     try {
@@ -114,9 +140,15 @@ var ExtensionPreprocessingJS = new (function () {
     }
     var article = document.querySelector("article, main, [itemtype*='Recipe']");
     var body = article || document.body;
+    var caption = "";
+    try {
+      caption = instagramCaption();
+    } catch (e) {
+      caption = "";
+    }
     args.completionFunction({
       title: document.title || "",
-      text: (body.innerText || "").trim(),
+      text: caption || (body.innerText || "").trim(),
       url: document.URL || "",
       recipe: found ? JSON.stringify(found) : "",
     });
