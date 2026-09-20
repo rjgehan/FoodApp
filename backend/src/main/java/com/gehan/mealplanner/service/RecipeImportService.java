@@ -634,7 +634,7 @@ public class RecipeImportService {
         if (ingredientsAt >= 0) {
             int end = stepsAt > ingredientsAt ? stepsAt : lines.size();
             for (String line : lines.subList(ingredientsAt + 1, end)) add(ingredients, line);
-            if (stepsAt >= 0) steps.addAll(lines.subList(stepsAt + 1, lines.size()));
+            if (stepsAt >= 0) addSteps(steps, lines.subList(stepsAt + 1, lines.size()));
         } else {
             /*
              No headings. An ingredient list is a contiguous run of short lines, so find where
@@ -657,12 +657,46 @@ public class RecipeImportService {
                     add(ingredients, lines.get(i));
                     end = i;
                 }
-                if (end + 1 < lines.size()) steps.addAll(lines.subList(end + 1, lines.size()));
+                if (end + 1 < lines.size()) addSteps(steps, lines.subList(end + 1, lines.size()));
             }
         }
 
         return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
                 String.join("\n", steps), MethodSource.PUBLISHED);
+    }
+
+    /** A caption numbers its own steps: "1. ", "2)", "Step 3:". The app numbers them too. */
+    private static final Pattern OWN_NUMBERING = Pattern.compile("^\\s*(?:step\\s*)?\\d{1,2}\\s*[.):\\-]\\s+", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The steps, as things to do rather than as paragraphs.
+     *
+     * A caption writes "1. Place flour in a shallow bowl. Crack eggs into another bowl and
+     * add the milk. Whisk to combine." — three actions under one number, because writing it
+     * out longhand is tedious. At the stove they are three things, each of which you finish
+     * before reading on, so they are three steps here.
+     */
+    private void addSteps(List<String> into, List<String> lines) {
+        for (String line : lines) {
+            String text = OWN_NUMBERING.matcher(line.trim()).replaceFirst("");
+            if (text.isBlank()) continue;
+            for (String sentence : SENTENCE_END.split(text)) {
+                String step = sentence.trim();
+                if (!step.isBlank() && !isASignOff(step)) into.add(step);
+            }
+        }
+    }
+
+    /** "Enjoy!" is a kind wish, not a thing to do. Neither is being asked to tag anybody. */
+    private boolean isASignOff(String step) {
+        String words = step.toLowerCase().replaceAll("[^a-z ]", " ").replaceAll("\\s+", " ").trim();
+        if (words.length() > 40) return false;
+        for (String phrase : List.of("enjoy", "hope you enjoy", "hope you like it", "let me know",
+                "tag me", "save this", "follow for more", "comment below", "thanks for watching",
+                "that s it", "voila", "and enjoy")) {
+            if (words.equals(phrase) || words.equals(phrase + " ")) return true;
+        }
+        return false;
     }
 
     /**

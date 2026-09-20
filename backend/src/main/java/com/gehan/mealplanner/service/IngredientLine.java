@@ -101,9 +101,18 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
         }
         append(notes, inside.toString().trim());
 
+        /*
+         * A comma usually separates the thing from what was done to it — "2 eggs, beaten",
+         * "1 cup Parmesan cheese, freshly grated". Sometimes it separates two adjectives
+         * describing the same thing: "4 boneless, skinless chicken breast cutlets", where
+         * splitting leaves you shopping for boneless.
+         *
+         * What tells them apart is which side names food. Before the comma in the first two
+         * there is an egg and a cheese; in the third there is only "boneless".
+         */
         String rest = head.toString();
         int comma = rest.indexOf(',');
-        if (comma >= 0) {
+        if (comma >= 0 && namesSomething(rest.substring(0, comma))) {
             append(notes, rest.substring(comma + 1).trim());
             rest = rest.substring(0, comma);
         }
@@ -161,6 +170,14 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
 
         String name = String.join(" ", List.of(words).subList(Math.min(index, words.length), words.length));
         return new IngredientLine(quantity, unit, clean(name), notes.isEmpty() ? null : notes.toString(), optional);
+    }
+
+    /** Is there something you could buy in here, or only words describing one? */
+    private static boolean namesSomething(String text) {
+        for (String word : text.toLowerCase().split("[^a-zà-ÿ]+")) {
+            if (StoreSectionKeywords.namesFood(word)) return true;
+        }
+        return false;
     }
 
     private static void append(StringBuilder notes, String piece) {

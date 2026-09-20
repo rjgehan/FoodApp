@@ -315,6 +315,10 @@ struct LabsPasteView: View {
             if imported.methodWasSpoken {
                 note = "The recipe was spoken in the video, not written down. Reading it back…"
                 await tidyTheMethod(said: imported.spokenLines ?? [])
+            } else {
+                // A caption can carry the whole recipe and still be titled "Hitting protein
+                // goals without the protein powder >>>". The steps know what it makes.
+                await nameItIfTheCaptionDidNot()
             }
         } catch {
             note = nil
@@ -370,13 +374,32 @@ struct LabsPasteView: View {
         guard steps.count == floor.count else { return }
         spokenSteps = floor
         fromPage?.steps = steps
-        if let current = fromPage?.name, Self.isAHook(current) {
+        if let current = fromPage?.name,
+           Self.isAHook(current, ingredients: fromPage?.ingredients.map { Amount($0).name } ?? []) {
             if let named = await dishName(from: steps) { fromPage?.name = named }
         }
         note = String(
             format: "Spoken in the video. %d of %d steps rewritten on this phone in %.0f s; the rest kept as they were said.",
             rewrote, steps.count, Date().timeIntervalSince(started)
         )
+        #endif
+    }
+
+    /// Names the dish when the caption never did. The steps are the evidence, so this runs
+    /// after they are settled, and only when the existing name is a hook.
+    private func nameItIfTheCaptionDidNot() async {
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *), let page = fromPage, !page.steps.isEmpty else { return }
+        let names = page.ingredients.map { Amount($0).name }
+        guard Self.isAHook(page.name, ingredients: names) else { return }
+
+        tidying = true
+        defer { tidying = false; tidyProgress = nil }
+        tidyProgress = "naming it"
+        if let named = await dishName(from: page.steps) {
+            fromPage?.name = named
+            note = "The caption never said what this is called, so it was named from the steps, on this phone."
+        }
         #endif
     }
 
@@ -481,10 +504,31 @@ struct LabsPasteView: View {
     }
     #endif
 
-    /// The caption's first line, when the caption opened on a hook rather than a title.
-    private static func isAHook(_ name: String) -> Bool {
+    /**
+     Did the caption open on a hook instead of naming the dish?
+
+     A question is one tell. The better one is that a recipe is almost always named after
+     something in it — salmon, squash, chicken — so a title that shares no word with its own
+     ingredient list is describing something other than the food. Two real captions opened
+     "is it time?" and "Hitting protein goals without the protein powder >>>", and neither
+     names what you are about to cook.
+    */
+    private static func isAHook(_ name: String, ingredients: [String]) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed.hasSuffix("?") || trimmed.count < 3
+        if trimmed.isEmpty || trimmed.hasSuffix("?") || trimmed.count < 3 { return true }
+
+        let words = { (text: String) in
+            Set(text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 3 }
+                .map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 })
+        }
+        let named = words(trimmed)
+        guard !named.isEmpty else { return true }
+        for ingredient in ingredients where !words(ingredient).isDisjoint(with: named) {
+            return false
+        }
+        return true
     }
 
     private static func couldBeADishName(_ name: String) -> Bool {

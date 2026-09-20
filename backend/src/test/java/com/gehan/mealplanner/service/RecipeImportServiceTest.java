@@ -433,6 +433,55 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void breaksUpACaptionsNumberedParagraphs() {
+        // A real Instagram caption, verbatim. It writes three numbered paragraphs because
+        // typing it out longhand is tedious; at the stove they are separate things, each
+        // finished before reading on.
+        GeneratedRecipe draft = service.fromCaption("""
+                Hitting protein goals without the protein powder >>>
+                Ingredients:
+                4 boneless, skinless chicken breast cutlets
+                1 cup Parmesan cheese, freshly grated
+                Instructions:
+                1. Place flour in a shallow bowl. Crack eggs into another shallow bowl and add 1 tbsp milk. Whisk to combine.
+                2. Dredge chicken in flour, then egg. Repeat with all cutlets.
+                3. Fry each cutlet until golden brown on each side. Enjoy!
+                """, "u");
+
+        assertThat(draft.instructions().lines()).containsExactly(
+                "Place flour in a shallow bowl.",
+                "Crack eggs into another shallow bowl and add 1 tbsp milk.",
+                "Whisk to combine.",
+                "Dredge chicken in flour, then egg.",
+                "Repeat with all cutlets.",
+                "Fry each cutlet until golden brown on each side.");
+        // The caption numbers its own steps and so does the app; only one of them should.
+        assertThat(draft.instructions()).doesNotContain("1.").doesNotContain("2.");
+        // "Enjoy!" is a kind wish, not a thing to do.
+        assertThat(draft.instructions()).doesNotContain("Enjoy");
+    }
+
+    @Test
+    void keepsTheAdjectivesThatCameBeforeTheFood() {
+        // "4 boneless, skinless chicken breast cutlets" was being bought as "boneless".
+        // A comma usually divides the thing from what was done to it, but not when the half
+        // in front of it names no food at all.
+        GeneratedRecipe draft = service.fromCaption("""
+                Chicken cutlets
+                Ingredients:
+                4 boneless, skinless chicken breast cutlets
+                2 eggs, beaten
+                1 cup Parmesan cheese, freshly grated
+                """, "u");
+
+        assertThat(draft.ingredients().get(0).ingredientName())
+                .isEqualTo("boneless, skinless chicken breast cutlets");
+        // The genuine preparation notes still come off the name.
+        assertThat(draft.ingredients().get(1).ingredientName()).isEqualTo("eggs");
+        assertThat(draft.ingredients().get(2).ingredientName()).isEqualTo("Parmesan cheese");
+    }
+
+    @Test
     void saysWhetherTheMethodWasWrittenDownOrSpoken() {
         // The app rewrites spoken steps on device and leaves published ones exactly alone,
         // so getting this label wrong would put a language model through a publisher's
