@@ -277,6 +277,15 @@ actor APIClient {
         return try decoder.decode(Uploaded.self, from: data).id
     }
 
+    /// Sets a recipe's pictures without touching anything else about it. The whole-recipe
+    /// PUT would work, but it means sending every field back to change one — and the photo
+    /// list is replaced by whatever arrives, so a mistake there is silent data loss.
+    func setImages(recipeId: UUID, coverImageId: UUID?, photoIds: [UUID]) async throws -> Recipe {
+        var body: [String: Any] = ["photoIds": photoIds.map(\.uuidString)]
+        body["coverImageId"] = coverImageId.map { $0.uuidString as Any } ?? NSNull()
+        return try await send("PUT", "/api/recipes/\(recipeId.uuidString)/images", body: body)
+    }
+
     /// Images are served unauthenticated by design — an `<img>` cannot send a bearer token —
     /// so AsyncImage can load this URL directly.
     nonisolated func imageURL(_ id: UUID) -> URL? {

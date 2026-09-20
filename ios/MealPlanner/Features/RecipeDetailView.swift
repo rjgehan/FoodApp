@@ -8,6 +8,7 @@ struct RecipeDetailView: View {
     @State private var planning = false
     @State private var planned: String?
     @State private var editing = false
+    @State private var changingPhoto = false
 
     /// One step per line, the way it was written.
     private var steps: [String] {
@@ -29,6 +30,36 @@ struct RecipeDetailView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 240)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .onTapGesture { if !recipe.shared { changingPhoto = true } }
+                } else if !recipe.shared {
+                    /*
+                     Offered where the missing picture would be, rather than four taps deep
+                     inside the edit form. This is for the recipes written down months ago
+                     that never got one, which is most of them.
+                    */
+                    Button {
+                        changingPhoto = true
+                    } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo.badge.plus").font(.system(size: 28))
+                            Text("Add a photo").font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 120)
+                        // A dashed outline, because the card colour is the same white as
+                        // the page behind it and an invisible box is not an invitation.
+                        .background(Color.accentColor.opacity(0.06),
+                                    in: RoundedRectangle(cornerRadius: 18))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18)
+                                .strokeBorder(
+                                    Color.accentColor.opacity(0.35),
+                                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
+                                )
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -106,6 +137,11 @@ struct RecipeDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { editing = true }
                 }
+            }
+        }
+        .sheet(isPresented: $changingPhoto) {
+            CoverPhotoSheet(recipe: recipe, session: session) { saved in
+                recipe = saved
             }
         }
         .sheet(isPresented: $editing) {

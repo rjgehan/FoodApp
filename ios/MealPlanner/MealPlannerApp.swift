@@ -81,8 +81,8 @@ struct RootView: View {
         #endif
     }()
 
-    /// -mp_debug_screen "edit" opens the recipe form straight away, so a screenshot run can
-    /// see a sheet that otherwise needs three taps to reach. Alongside -mp_debug_tab.
+    /// -mp_debug_screen "edit" or "detail" opens that screen straight away, so a screenshot
+    /// run can see something that otherwise needs three taps to reach. With -mp_debug_tab.
     #if DEBUG
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
     #endif
@@ -118,6 +118,14 @@ struct RootView: View {
                 set: { if !$0 { debugSheet = nil } }
             )) {
                 EditRecipeView(recipe: SampleData.recipes[0], session: session) { _ in }
+            }
+            .sheet(isPresented: Binding(
+                get: { debugSheet == "detail" },
+                set: { if !$0 { debugSheet = nil } }
+            )) {
+                NavigationStack {
+                    RecipeDetailView(recipe: SampleData.recipes[0], session: session)
+                }
             }
             #endif
         } else {

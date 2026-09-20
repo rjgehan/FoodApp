@@ -227,3 +227,65 @@ extension View {
         #endif
     }
 }
+
+/**
+ Adding a picture to a recipe that already exists, without opening the whole edit form.
+
+ The case this is for: a recipe written down months ago with no photo. Going Edit, scrolling,
+ generating, then Save is four steps too many for something the recipe screen can just offer
+ where the missing picture would be.
+*/
+struct CoverPhotoSheet: View {
+    let recipe: Recipe
+    var session: Session?
+    var onSaved: (Recipe) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var coverImageId: UUID?
+    @State private var busy = false
+    @State private var error: String?
+
+    init(recipe: Recipe, session: Session?, onSaved: @escaping (Recipe) -> Void) {
+        self.recipe = recipe
+        self.session = session
+        self.onSaved = onSaved
+        _coverImageId = State(initialValue: recipe.coverImageId)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                CoverPhotoSection(dishName: recipe.name, session: session, coverImageId: $coverImageId)
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle(recipe.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(busy || coverImageId == recipe.coverImageId)
+                }
+            }
+        }
+    }
+
+    private func save() async {
+        busy = true
+        defer { busy = false }
+        do {
+            // Only the pictures. The rest of the recipe is not this screen's business.
+            let saved = try await APIClient.shared.setImages(
+                recipeId: recipe.id,
+                coverImageId: coverImageId,
+                photoIds: recipe.photoIds ?? []
+            )
+            onSaved(saved)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
