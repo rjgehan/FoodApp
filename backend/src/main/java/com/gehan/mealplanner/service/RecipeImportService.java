@@ -935,20 +935,26 @@ public class RecipeImportService {
         return fetch(uri, Duration.ofSeconds(20));
     }
 
-    /** Most sites serve a stub to anything that does not look like a browser. */
-    private static final String AS_A_BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-
     /**
-     * Instagram is the other way round: it shows a browser the login wall and gives the
-     * caption to anything that says what it is. So it gets the truth.
+     * Who we are, to everybody.
+     *
+     * This used to pretend to be Chrome, on the theory that sites serve a stub to anything
+     * that does not look like a browser. Measured against eight real recipe sites, that
+     * theory is wrong: the outcome was identical for all eight — the ones that answer,
+     * answer either way, and the ones that refuse refuse either way, on something other
+     * than the user-agent. Recipe sites publish schema.org data precisely so machines read
+     * it, so there was nothing to be gained and a misrepresentation to be made on every
+     * request.
+     *
+     * Instagram settles it the other way round anyway: it shows a browser the login wall
+     * and gives the caption to anything that says what it is.
      */
-    private static final String AS_OURSELVES = "MealPlanner/1.0 (+https://meals.gehan.cloud)";
+    private static final String WHO_WE_ARE = "MealPlanner/1.0 (+https://meals.gehan.cloud)";
 
     private String fetch(URI uri, Duration timeout) {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
-                .header("User-Agent", isInstagram(uri) ? AS_OURSELVES : AS_A_BROWSER)
+                .header("User-Agent", WHO_WE_ARE)
                 .header("Accept", "text/html,application/xhtml+xml")
                 .GET()
                 .build();
