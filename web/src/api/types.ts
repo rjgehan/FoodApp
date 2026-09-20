@@ -52,6 +52,8 @@ export interface Household {
   planningHorizonDays: number;
   /** Your role in this household, not a property of the household itself. */
   role: HouseholdRole;
+  /** How many people are in it. One means you, and means leaving is really deleting. */
+  memberCount: number;
 }
 
 /** A household's own grocery aisle — added, renamed, reordered and deleted from Household settings. */

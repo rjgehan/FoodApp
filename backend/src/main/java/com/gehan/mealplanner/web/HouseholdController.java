@@ -67,6 +67,16 @@ public class HouseholdController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Delete the household and everything in it. Owner only, and irreversible — the way out
+     * for the last person in, who is not allowed to simply leave.
+     */
+    @DeleteMapping("/{householdId}")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
+        householdService.delete(householdId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
     /** Owner only — see HouseholdService.rename. */
     @PatchMapping("/{householdId}/name")
     public HouseholdResponse rename(@AuthenticationPrincipal UUID userId,

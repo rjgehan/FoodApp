@@ -89,8 +89,19 @@ export default function HouseholdPage() {
             </SheetRow>
           )}
           {activeHousehold && (
-            <SheetRow label={`Leave “${activeHousehold.name}”`} tone="danger">
-              {() => <LeaveCard householdId={activeHousehold.id} name={activeHousehold.name} />}
+            // Alone in a household, leaving is not a thing you can do — there would be nobody
+            // left to let you back in — so the row offers the only exit that exists.
+            <SheetRow
+              label={`${activeHousehold.memberCount <= 1 ? 'Delete' : 'Leave'} “${activeHousehold.name}”`}
+              tone="danger"
+            >
+              {() => (
+                <LeaveCard
+                  householdId={activeHousehold.id}
+                  name={activeHousehold.name}
+                  alone={activeHousehold.memberCount <= 1}
+                />
+              )}
             </SheetRow>
           )}
         </div>
@@ -341,49 +352,82 @@ function AddSomeone({ householdId, onDone }: { householdId: string; onDone: () =
   );
 }
 
-/** Walking out. Blocked when you are the last one in, because the recipes would go with you. */
-function LeaveCard({ householdId, name }: { householdId: string; name: string }) {
+/**
+ * The way out, which is two different doors depending on who else is here.
+ *
+ * With other people in the house, leaving is small: you lose your access and everything stays
+ * where it is for them. Alone, there is nobody to leave it to — the server refuses the walk-out
+ * for exactly that reason — so the only exit is to delete the household, and that takes
+ * everything in it with no way back. Different enough that it asks you to type the name.
+ */
+function LeaveCard({ householdId, name, alone }: { householdId: string; name: string; alone: boolean }) {
   const { refresh, setActiveHouseholdId, households } = useHousehold();
   const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function leave() {
+  const nameMatches = typed.trim().toLowerCase() === name.trim().toLowerCase();
+
+  async function go() {
     setBusy(true);
     setError(null);
     try {
-      await api('DELETE', `/api/households/${householdId}/members/me`);
+      if (alone) {
+        await api('DELETE', `/api/households/${householdId}`);
+      } else {
+        await api('DELETE', `/api/households/${householdId}/members/me`);
+      }
       const other = households.find((h) => h.id !== householdId);
       if (other) setActiveHouseholdId(other.id);
+      // With nothing left, refresh clears the active household and the app offers to start one.
       await refresh();
     } catch (err) {
       const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
-      setError(message ?? 'Could not leave.');
+      setError(message ?? (alone ? 'Could not delete it.' : 'Could not leave.'));
       setBusy(false);
     }
   }
 
   return (
-    <Card title="Leave this household">
+    <Card title={alone ? 'Delete this household' : 'Leave this household'}>
       {confirming ? (
         <div className="space-y-3">
-          <p className="text-sm text-muted">
-            You'll lose access to “{name}” — its recipes, plan and grocery list stay with everyone
-            else. You can be invited back.
-          </p>
+          {alone ? (
+            <>
+              <p className="text-sm text-muted">
+                You are the only one in “{name}”, so there is nobody to leave it to. Deleting it
+                takes its recipes, plan, grocery list, cupboard and photos with it, for good.
+                Anyone who kept one of its published recipes loses that too.
+              </p>
+              <Field label={`Type ${name} to confirm`}>
+                <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
+              </Field>
+            </>
+          ) : (
+            <p className="text-sm text-muted">
+              You'll lose access to “{name}” — its recipes, plan and grocery list stay with everyone
+              else. You can be invited back.
+            </p>
+          )}
           {error && <ErrorText>{error}</ErrorText>}
           <div className="flex gap-2">
-            <Button variant="danger" className="flex-1" disabled={busy} onClick={leave}>
-              {busy ? 'Leaving…' : 'Leave'}
+            <Button
+              variant="danger"
+              className="flex-1"
+              disabled={busy || (alone && !nameMatches)}
+              onClick={go}
+            >
+              {busy ? (alone ? 'Deleting…' : 'Leaving…') : alone ? 'Delete for good' : 'Leave'}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
+            <Button variant="secondary" disabled={busy} onClick={() => { setConfirming(false); setTyped(''); }}>
               Cancel
             </Button>
           </div>
         </div>
       ) : (
         <Button variant="danger" full onClick={() => setConfirming(true)}>
-          Leave “{name}”
+          {alone ? `Delete “${name}”` : `Leave “${name}”`}
         </Button>
       )}
     </Card>

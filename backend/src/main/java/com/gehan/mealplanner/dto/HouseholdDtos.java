@@ -15,8 +15,14 @@ public class HouseholdDtos {
     }
 
     /** `role` is the *requesting* user's role in this household, not a property of the household. */
+    /**
+     * `memberCount` is here so a screen can tell whether you are the last one in without
+     * fetching the member list first — which is the difference between offering to leave a
+     * household and offering to delete it.
+     */
     public record HouseholdResponse(
-            UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role) {
+            UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role,
+            int memberCount) {
     }
 
     public record RenameHouseholdRequest(@NotBlank @Size(max = 60) String name) {

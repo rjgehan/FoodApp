@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, isoDate, newHousehold, newMember, plan, statusOf, unique } from '../../lib/api';
+import { admin, call, isoDate, newHousehold, newMember, newRecipe, plan, statusOf, unique } from '../../lib/api';
 
 test('household settings: sensible limits', async () => {
   const hh = await newHousehold();
@@ -42,6 +42,57 @@ test('a member can leave when others remain, and then loses access', async () =>
   const m = await newMember(hh.id);
   expect(await statusOf('DELETE', `/api/households/${hh.id}/members/me`, { token: m.token })).toBeLessThan(300);
   expect(await statusOf('GET', `/api/households/${hh.id}/recipes`, { token: m.token })).toBe(403);
+});
+
+test('the last member cannot leave, but can delete the whole household', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const r = await newRecipe(hh.id, 'Doomed Stew', [{ name: 'onion', qty: 2, unit: 'ct' }]);
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'salt' } });
+  await plan(hh.id, isoDate(3), 'DINNER', { recipeId: r.id });
+
+  expect(await statusOf('DELETE', `/api/households/${hh.id}`, { token: owner.token })).toBeLessThan(300);
+  // Gone from the list, and nothing it owned answers any more.
+  const mine = await call('GET', '/api/households', { token: owner.token });
+  expect(mine.some((h: { id: string }) => h.id === hh.id)).toBe(false);
+  expect(await statusOf('GET', `/api/households/${hh.id}/recipes`, { token: owner.token })).toBe(403);
+});
+
+test('deleting a household takes its recipes off other households’ shelves', async () => {
+  const owner = await admin();
+  const mine = await newHousehold();
+  const theirs = await newHousehold();
+  const r = await newRecipe(mine.id, 'Shared Then Gone', [{ name: 'rice', qty: 1, unit: 'cup' }]);
+  await call('PUT', `/api/recipes/${r.id}/published`, { token: owner.token, body: { published: true } });
+  await call('PUT', `/api/households/${theirs.id}/recipes/${r.id}/filing`, {
+    token: owner.token, body: { section: 'DINNER', categories: [] },
+  });
+  await plan(theirs.id, isoDate(4), 'DINNER', { recipeId: r.id });
+
+  await call('DELETE', `/api/households/${mine.id}`, { token: owner.token });
+
+  // The other household survives; the night it had planned with that recipe does not.
+  const left = await call('GET', `/api/households/${theirs.id}/meal-plan?start=${isoDate(4)}&end=${isoDate(4)}`,
+    { token: owner.token });
+  expect(left).toEqual([]);
+  expect(await statusOf('GET', `/api/households/${theirs.id}/recipes`, { token: owner.token })).toBeLessThan(300);
+});
+
+test('someone who is not the owner cannot delete a household', async () => {
+  const hh = await newHousehold();
+  const m = await newMember(hh.id);
+  expect(await statusOf('DELETE', `/api/households/${hh.id}`, { token: m.token })).toBe(403);
+});
+
+test('the household list says how many people are in it', async () => {
+  const owner = await admin();
+  const solo = await newHousehold();
+  const shared = await newHousehold();
+  await newMember(shared.id);
+  const list = await call('GET', '/api/households', { token: owner.token });
+  const count = (id: string) => list.find((h: { id: string }) => h.id === id)?.memberCount;
+  expect(count(solo.id)).toBe(1);
+  expect(count(shared.id)).toBe(2);
 });
 
 test('deleting a place clears the nights planned there', async () => {

@@ -17,6 +17,7 @@ import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.RecipeCategoryRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -33,17 +34,20 @@ public class HouseholdService {
     private final UserRepository userRepository;
     private final RecipeCategoryRepository categoryRepository;
     private final GroceryCategoryService groceryCategoryService;
+    private final JdbcTemplate jdbc;
 
     public HouseholdService(HouseholdRepository householdRepository,
                              HouseholdMemberRepository memberRepository,
                              UserRepository userRepository,
                              RecipeCategoryRepository categoryRepository,
-                             GroceryCategoryService groceryCategoryService) {
+                             GroceryCategoryService groceryCategoryService,
+                             JdbcTemplate jdbc) {
         this.householdRepository = householdRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
         this.groceryCategoryService = groceryCategoryService;
+        this.jdbc = jdbc;
     }
 
 
@@ -98,7 +102,8 @@ public class HouseholdService {
     private HouseholdResponse toResponse(Household household, HouseholdRole role) {
         return new HouseholdResponse(
                 household.getId(), household.getName(), household.getDefaultServings(),
-                household.getPlanningHorizonDays(), role);
+                household.getPlanningHorizonDays(), role,
+                memberRepository.findByHouseholdId(household.getId()).size());
     }
 
     @Transactional(readOnly = true)
@@ -200,6 +205,87 @@ public class HouseholdService {
         }
 
         memberRepository.delete(leaving);
+    }
+
+    /**
+     * Deletes a household outright, with everything in it.
+     *
+     * The way out for the last person in: leaving is refused when nobody would be left, because
+     * an empty household is a thing nobody can sign in to and nobody can delete. This is the
+     * other door, and it is the irreversible one — every recipe, plan, list, photo and cupboard
+     * item goes.
+     *
+     * It reaches past this household where it has to. A recipe published here and kept by
+     * another house is still owned here, so the filings that put it on their shelf go too, and
+     * so do any meals they had planned with it. There is no version of deleting a recipe that
+     * leaves somebody else's plan pointing at it.
+     *
+     * Written as ordered SQL rather than left to JPA: none of the foreign keys cascade, several
+     * of the tables are join tables with no entity of their own, and the ones that reach in from
+     * another household are not mapped from this side at all. The order is the foreign-key graph
+     * read backwards, children first. If a new table ever points at a household and is not added
+     * here, this fails loudly on a constraint rather than quietly leaving debris.
+     */
+    @Transactional
+    public void delete(UUID householdId, UUID requesterId) {
+        HouseholdMember member = memberRepository.findByHouseholdIdAndUserId(householdId, requesterId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this household"));
+
+        // The owner, or whoever is the last one standing — after leave() hands ownership on,
+        // those are normally the same person, but not on a household that predates that rule.
+        boolean lastOneIn = memberRepository.findByHouseholdId(householdId).size() == 1;
+        if (member.getRole() != HouseholdRole.OWNER && !lastOneIn) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the owner can delete a household.");
+        }
+
+        String ours = " = ?";
+        String recipesHere = "(SELECT id FROM recipes WHERE household_id = ?)";
+        String placesHere = "(SELECT id FROM places WHERE household_id = ?)";
+
+        // Meal plans, including other households' plans that named a recipe or place of ours.
+        jdbc.update("DELETE FROM meal_plan_entry_included_optionals WHERE entry_id IN ("
+                + "SELECT id FROM meal_plan_entries WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere + ")",
+                householdId, householdId, householdId);
+        jdbc.update("DELETE FROM meal_plan_entries WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere,
+                householdId, householdId, householdId);
+
+        // Where a recipe of ours sits on anybody's shelf, and the shelves themselves.
+        jdbc.update("DELETE FROM recipe_filing_categories WHERE filing_id IN ("
+                + "SELECT id FROM recipe_filings WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere + ")"
+                + " OR category_id IN (SELECT id FROM recipe_categories WHERE household_id = ?)",
+                householdId, householdId, householdId);
+        jdbc.update("DELETE FROM recipe_filings WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere, householdId, householdId);
+        jdbc.update("DELETE FROM recipe_shares WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere, householdId, householdId);
+
+        // The recipes themselves, innards first.
+        jdbc.update("DELETE FROM recipe_links WHERE recipe_id IN " + recipesHere, householdId);
+        jdbc.update("DELETE FROM recipe_ingredients WHERE recipe_id IN " + recipesHere, householdId);
+        jdbc.update("DELETE FROM recipe_photos WHERE recipe_id IN " + recipesHere, householdId);
+        jdbc.update("DELETE FROM recipes WHERE household_id = ?", householdId);
+        // Self-referencing through parent_id, but every row of the tree belongs to this
+        // household, so one statement takes the parents and the children together.
+        jdbc.update("DELETE FROM recipe_categories WHERE household_id = ?", householdId);
+
+        // The kitchen: what is in it, what is on the list, and where the aisles are.
+        jdbc.update("DELETE FROM cupboard_items WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM grocery_list_items WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM ingredient_sections WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM grocery_categories WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM section_icons WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM blacklisted_ingredients WHERE household_id = ?", householdId);
+
+        // Places hold a picture, so they go before the pictures do.
+        jdbc.update("DELETE FROM places WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM stored_images WHERE household_id = ?", householdId);
+
+        jdbc.update("DELETE FROM household_members WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM households WHERE id = ?", householdId);
     }
 
     /**
