@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
+import com.gehan.mealplanner.ai.RecipeAiDtos.MethodSource;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
@@ -363,6 +364,21 @@ class RecipeImportServiceTest {
                 "and then I add the garlic and stir it for two minutes",
                 "thanks for watching"))).isEqualTo(
                 "Melt the butter in a pan.\nAdd the garlic and stir it for two minutes.");
+    }
+
+    @Test
+    void saysWhetherTheMethodWasWrittenDownOrSpoken() {
+        // The app rewrites spoken steps on device and leaves published ones exactly alone,
+        // so getting this label wrong would put a language model through a publisher's
+        // own instructions.
+        JsonNode published = service.findRecipe(page("""
+            {"@type":"Recipe","name":"Soup","recipeIngredient":["1 onion"],
+             "recipeInstructions":[{"@type":"HowToStep","text":"Chop the onion."}]}
+            """));
+        assertThat(service.toDraft(published, "u").methodSource()).isEqualTo(MethodSource.PUBLISHED);
+
+        assertThat(service.fromCaption("Soup\nIngredients:\n1 onion\nMethod:\nChop it.\n", "u").methodSource())
+                .isEqualTo(MethodSource.PUBLISHED);
     }
 
     @Test

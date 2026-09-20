@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedIngredient;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
+import com.gehan.mealplanner.ai.RecipeAiDtos.MethodSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -121,8 +122,7 @@ public class RecipeImportService {
         // itself and publishes it beside the video, so the spoken method can be read for free.
         String spoken = transcript(item);
         if (spoken == null) return draft;
-        return new GeneratedRecipe(draft.name(), draft.description(), draft.prepTimeMinutes(),
-                draft.cookTimeMinutes(), draft.servings(), draft.ingredients(), spoken);
+        return draft.withMethod(spoken, MethodSource.SPOKEN);
     }
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
@@ -573,7 +573,8 @@ public class RecipeImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "That caption does not list any ingredients — the recipe is probably spoken in the video.");
         }
-        return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients, String.join("\n", steps));
+        return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
+                String.join("\n", steps), MethodSource.PUBLISHED);
     }
 
     /**
@@ -740,7 +741,8 @@ public class RecipeImportService {
                 cook > 0 ? cook : null,
                 Math.max(1, servings(recipe.get("recipeYield"))),
                 ingredients,
-                String.join("\n", steps));
+                String.join("\n", steps),
+                MethodSource.PUBLISHED);
     }
 
     /** Steps arrive as strings, as HowToStep objects, or as HowToSections holding steps. */

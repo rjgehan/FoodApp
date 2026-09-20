@@ -42,6 +42,25 @@ struct ParsedRecipe {
     @Guide(description: "The method, one entry per step, in order.")
     var steps: [String]
 }
+
+/*
+ Rewriting steps that were recovered from a transcript.
+
+ The server pulls the method out of what somebody said over a video, which gets the content
+ right and the wording wrong: "Then we can remove the seeds", a fragment stranded from the
+ sentence it belongs to, a sentence that stops mid-phrase. Rules got most of the way and
+ cannot go further — repairing a broken sentence needs to understand it.
+
+ Only the wording is the model's business. The ingredients and their amounts never pass
+ through here: those are parsed exactly, and a 3B model asked to handle numbers reads
+ "1/3 cup parmesan" as one parmesan.
+*/
+@available(iOS 26.0, *)
+@Generable
+struct TidiedMethod {
+    @Guide(description: "The same steps, each written as an instruction. Same order. Nothing added.")
+    var steps: [String]
+}
 #endif
 
 /// A recipe the page published about itself, in schema.org form. No model involved: these
@@ -68,6 +87,10 @@ struct LabsPasteView: View {
     @State private var error: String?
     @State private var saved: String?
     @State private var fromPage: StructuredRecipe?
+    @State private var tidying = false
+    /// Kept so the model's rewrite can be undone — it is a guess about wording, and the
+    /// steps underneath it are the ones the cook actually said.
+    @State private var spokenSteps: [String]?
 
     #if canImport(FoundationModels)
     @State private var parsedStore: Any?
@@ -127,9 +150,30 @@ struct LabsPasteView: View {
                     }
                 }
                 if !fromPage.steps.isEmpty {
-                    Section("Steps · \(fromPage.steps.count)") {
+                    Section {
                         ForEach(Array(fromPage.steps.enumerated()), id: \.offset) { index, step in
                             Text("\(index + 1). \(step)").font(.callout)
+                        }
+                        if let spokenSteps {
+                            Button("Use the original wording", systemImage: "arrow.uturn.backward") {
+                                self.fromPage?.steps = spokenSteps
+                                self.spokenSteps = nil
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.footnote)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Steps · \(fromPage.steps.count)")
+                            if tidying {
+                                Spacer()
+                                ProgressView().controlSize(.mini)
+                                Text("tidying on the phone…").textCase(nil)
+                            }
+                        }
+                    } footer: {
+                        if spokenSteps != nil {
+                            Text("Rewritten on this phone from what was said out loud. Nothing was sent anywhere.")
                         }
                     }
                 }
@@ -226,10 +270,81 @@ struct LabsPasteView: View {
                 steps: (imported.instructions ?? "").split(separator: "\n").map(String.init)
             )
             note = "Read from the page itself — nothing was guessed."
+
+            // Steps a publisher wrote are exact and stay exactly as they are. Steps pieced
+            // together out of somebody narrating a video are a reconstruction, and reading
+            // like one, so they get rewritten here on the phone.
+            if imported.methodWasSpoken {
+                note = "The recipe was spoken in the video, not written down. Reading it back…"
+                await tidyTheMethod()
+            }
         } catch {
             note = nil
             self.error = error.localizedDescription
         }
+    }
+
+    /// Rewrites transcript steps as instructions, on device. Free, no quota, and nothing
+    /// leaves the phone — but it is a guess about wording, so the original is kept and the
+    /// result is only taken when it still looks like the same recipe.
+    private func tidyTheMethod() async {
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *) else { return }
+        guard let original = fromPage?.steps, original.count > 1 else { return }
+
+        tidying = true
+        defer { tidying = false }
+
+        let numbered = original.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let started = Date()
+        do {
+            let model = LanguageModelSession(
+                instructions: """
+                You rewrite the steps of a recipe so they read as instructions.
+
+                They came from an automatic transcript of somebody talking while they cook, so \
+                they are full of speech: "then we can", "I'll", "you're gonna", a sentence that \
+                stops mid-phrase, a fragment stranded from the step it belongs to.
+
+                Rewrite each one as a plain instruction to whoever is cooking — "Remove the \
+                seeds", "Sweat the onions in a little olive oil". Join a fragment to the step it \
+                belongs with. Drop anything that is not something to do. Keep the original order.
+
+                Never add an ingredient, an amount, a temperature or a time that is not already \
+                there, and never invent a step to fill a gap. Where a step is already a clean \
+                instruction, leave it alone. Say only what the cook said.
+                """
+            )
+            let reply = try await model.respond(to: numbered, generating: TidiedMethod.self)
+            let rewritten = reply.content.steps
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            guard Self.plausible(rewritten, from: original) else {
+                note = "Kept the steps as they were said — the rewrite did not look like the same recipe."
+                return
+            }
+            spokenSteps = original
+            fromPage?.steps = rewritten
+            note = String(
+                format: "The recipe was spoken in the video. Rewritten as %d steps on this phone in %.1f s.",
+                rewritten.count, Date().timeIntervalSince(started)
+            )
+        } catch {
+            // A tidy-up that fails costs nothing: the steps underneath are still the method.
+            note = "The recipe was spoken in the video, so the steps read like speech. (\(Self.explain(error)))"
+        }
+        #endif
+    }
+
+    /// The rewrite is only worth taking if it is still the same method. A model that has
+    /// gone wrong pads, invents, or returns almost nothing, and all three show up in the
+    /// size: merging fragments should make the text shorter, never much longer.
+    private static func plausible(_ rewritten: [String], from original: [String]) -> Bool {
+        guard !rewritten.isEmpty, rewritten.count <= original.count + 2 else { return false }
+        let before = original.joined(separator: " ").count
+        let after = rewritten.joined(separator: " ").count
+        return after >= before / 2 && after <= before * 3 / 2
     }
 
     /// The generic "operation couldn't be completed" hides the one failure that actually

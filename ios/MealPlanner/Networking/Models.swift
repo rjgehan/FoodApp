@@ -194,6 +194,12 @@ struct ImportedRecipe: Codable {
     let servings: Int
     let instructions: String?
     let ingredients: [ImportedIngredient]
+    /// "PUBLISHED" or "SPOKEN". Absent from older servers, which is why it is optional.
+    let methodSource: String?
+
+    /// Steps pieced together from somebody narrating a video, rather than a list anybody
+    /// wrote down. Worth offering to rewrite; a publisher's own steps are not.
+    var methodWasSpoken: Bool { methodSource == "SPOKEN" }
 }
 
 struct ImportedIngredient: Codable {
