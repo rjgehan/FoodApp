@@ -46,6 +46,13 @@ struct ParsedRecipe {
 /*
  Rewriting steps that were recovered from a transcript.
 
+ No example instructions in the prompt below, deliberately. An earlier version illustrated
+ the job with two — "Remove the seeds" and "Sweat the onions in a little olive oil" — and
+ the model pasted them back as steps of their own, in videos that had no seeds and no
+ onions. Measured against the real on-device model: they were the single largest source of
+ invented steps, and deleting them recovered the peeling, the oven temperature and the
+ vinegar in the same run.
+
  The server pulls the method out of what somebody said over a video, which gets the content
  right and the wording wrong: "Then we can remove the seeds", a fragment stranded from the
  sentence it belongs to, a sentence that stops mid-phrase. Rules got most of the way and
@@ -319,9 +326,9 @@ struct LabsPasteView: View {
                 they are full of speech: "then we can", "I'll", "you're gonna", a sentence that \
                 stops mid-phrase, a fragment stranded from the step it belongs to.
 
-                Rewrite each one as a plain instruction to whoever is cooking — "Remove the \
-                seeds", "Sweat the onions in a little olive oil". Join a fragment to the step it \
-                belongs with. Drop anything that is not something to do. Keep the original order.
+                Rewrite each one as a plain instruction to whoever is cooking, using only the \
+                words of the line you were given. Join a fragment to the step it belongs with. \
+                Drop anything that is not something to do. Keep the original order.
 
                 Never add an ingredient, an amount, a temperature or a time that is not already \
                 there, and never invent a step to fill a gap. Where a step is already a clean \

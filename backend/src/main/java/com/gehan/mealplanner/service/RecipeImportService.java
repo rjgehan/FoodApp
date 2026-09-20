@@ -281,7 +281,7 @@ public class RecipeImportService {
     private static final Set<String> ACTIONS = Set.of(
             "add", "arrange", "assemble", "bake", "beat", "blanch", "blend", "boil", "bring",
             "brush", "chop", "coat", "combine", "cook", "crack", "crush", "dip", "drain",
-            "drizzle", "dust", "flip", "fold", "fry", "garnish", "grate", "grease", "halve",
+            "drizzle", "dust", "flip", "fold", "fry", "garnish", "grate", "grease", "halve", "hit",
             "knead", "ladle", "layer", "marinate", "mash", "melt", "microwave", "mince", "mix",
             "pat", "peel", "poach", "pour", "preheat", "reduce", "reheat", "remove", "roast",
             "rub", "sauté", "saute",
@@ -317,7 +317,8 @@ public class RecipeImportService {
      */
     private static final List<String> ASIDES = List.of(
             " i ", " i'", " my ", " me ", "you'll love", "trust me", "link in bio",
-            "recipe is below", "recipe below", "follow for", "follow me", "save this");
+            "recipe is below", "recipe below", "follow for", "follow me", "save this",
+            "like button", "hit follow", "subscribe", "comment below");
 
     /** A sentence ends, and "1.5" and "375." do not. */
     private static final Pattern SENTENCE_END = Pattern.compile("(?<=[.!?])\\s+");
@@ -327,7 +328,7 @@ public class RecipeImportService {
      * order things happen in, so "Then we can remove the seeds" is just "Remove the seeds".
      */
     private static final Pattern LEADING_FILLER =
-            Pattern.compile("(?i)^(?:(?:and|so|then|now|next|ok|okay|alright|basically)\\b[,\\s]+)+");
+            Pattern.compile("(?i)^(?:(?:and|so|then|now|next|ok|okay|alright|basically|because)\\b[,\\s]+)+");
 
     /**
      * Somebody narrating themselves. A recipe step is an instruction to the reader — "sweat

@@ -431,6 +431,34 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void keepsAFinishingStepThatOpensWithBecause() {
+        // Two ingredients and the whole finishing move were being dropped: the sentence
+        // starts "Because then", and its only verb is "hit". A competitor's paid app loses
+        // this step too, so it is worth a test rather than a word.
+        String method = service.methodFrom(List.of(
+                "Turn the heat off and add one can of drained and rinsed cannellini beans. "
+                        + "Then this can hang out just like this. "
+                        + "Because then all you have to do when your squash comes out of the oven is "
+                        + "maybe hit this with a shot of vinegar if you like, a couple handfuls of baby spinach. "
+                        + "Then serve it on a plate."));
+
+        assertThat(method).contains("vinegar").contains("baby spinach");
+    }
+
+    @Test
+    void doesNotMistakeTheSignOffForCooking() {
+        // "hit" earns its place in the verb list, and immediately invites "hit that follow
+        // button" into the method.
+        String method = service.methodFrom(List.of(
+                "Melt the butter in the pan. Add the garlic and stir it through. "
+                        + "Pour in the stock and let it reduce. Serve it up while it is hot. "
+                        + "Hit that like button and hit follow for more."));
+
+        assertThat(method).doesNotContain("like button").doesNotContain("follow");
+        assertThat(method.lines()).hasSize(4);
+    }
+
+    @Test
     void findsNoMethodWhenNobodyDoesAnything() {
         // Better to leave the steps empty than to save the chatter as if it were a recipe.
         assertThat(service.methodFrom(List.of(
