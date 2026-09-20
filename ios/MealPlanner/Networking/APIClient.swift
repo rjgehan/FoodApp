@@ -20,9 +20,42 @@ enum Config {
     static let fallback = "https://meals.gehan.cloud"
     #endif
 
+    /// Normalised on the way out as well as in, so an address stored by an older build — or
+    /// typed before this existed — heals itself instead of failing every call until somebody
+    /// reinstalls the app.
     static var baseURL: String {
-        get { UserDefaults.standard.string(forKey: key) ?? fallback }
+        get { UserDefaults.standard.string(forKey: key).flatMap(address(from:)) ?? fallback }
         set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+
+    /**
+     What somebody typed, turned into an address URLSession will accept. Nil if it cannot be.
+
+     Typing "meals.gehan.cloud" is the obvious thing to do and it used to fail: Foundation
+     happily builds a URL out of it, with no scheme, and the request then dies as "unsupported
+     URL" — which reads like the server is wrong rather than the address.
+
+     The scheme is guessed the way it actually works out. A name is a site on the internet and
+     gets https; a bare IP address or localhost is a machine on somebody's own network, which
+     will not have a certificate, so it gets http.
+    */
+    static func address(from typed: String) -> String? {
+        var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A trailing slash would double up against every path, giving //api/…
+        while text.hasSuffix("/") { text.removeLast() }
+        guard !text.isEmpty, !text.contains(" ") else { return nil }
+        if !text.contains("://") { text = (isAMachineNotASite(text) ? "http://" : "https://") + text }
+        guard let url = URL(string: text), let host = url.host, !host.isEmpty,
+              url.scheme == "http" || url.scheme == "https" else { return nil }
+        return text
+    }
+
+    private static func isAMachineNotASite(_ text: String) -> Bool {
+        let host = text.split(separator: "/").first.map(String.init) ?? text
+        let name = host.split(separator: ":").first.map(String.init) ?? host
+        if name == "localhost" || name.hasSuffix(".local") { return true }
+        let parts = name.split(separator: ".")
+        return parts.count == 4 && parts.allSatisfy { UInt8($0) != nil }
     }
 }
 

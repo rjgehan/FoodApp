@@ -141,6 +141,7 @@ struct HouseholdView: View {
 
     @State private var editingServer = false
     @State private var serverDraft = Config.baseURL
+    @State private var serverProblem: String?
 
     var body: some View {
         NavigationStack {
@@ -204,14 +205,33 @@ struct HouseholdView: View {
             } message: {
                 // The session belongs to the server that issued it, so this signs out. Said
                 // up front rather than leaving somebody wondering why they are back at the PIN.
-                Text("Moving to another server signs you out, because your session belongs to this one.")
+                Text("""
+                Just the address is enough — meals.gehan.cloud. Moving to another server signs \
+                you out, because your session belongs to this one.
+                """)
             }
+        }
+        // On the stack rather than on the List: two .alert modifiers on one view fight over
+        // which gets shown, and the one that loses simply never appears.
+        .alert("That is not an address", isPresented: Binding(
+            get: { serverProblem != nil },
+            set: { shown in if !shown { serverProblem = nil } }
+        )) {
+            Button("OK") { serverProblem = nil }
+        } message: {
+            Text(serverProblem ?? "")
         }
     }
 
     private func switchServer() {
-        let address = serverDraft.trimmingCharacters(in: .whitespaces)
-        guard !address.isEmpty, address != Config.baseURL else { return }
+        // "meals.gehan.cloud" is what anybody would type, and what used to be stored verbatim
+        // and then fail every call. Config fills in the scheme and says no to the rest.
+        guard let address = Config.address(from: serverDraft) else {
+            serverProblem = "\(serverDraft.trimmingCharacters(in: .whitespaces)) is not a server address. "
+                + "Try something like meals.gehan.cloud, or 192.168.1.10:8080."
+            return
+        }
+        guard address != Config.baseURL else { return }
         Config.baseURL = address
         Task { await session.signOut() }
     }

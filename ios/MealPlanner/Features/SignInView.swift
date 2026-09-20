@@ -44,11 +44,9 @@ struct SignInView: View {
             TextField(Config.fallback, text: $serverDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .keyboardType(.URL)
             Button("Cancel", role: .cancel) { serverDraft = Config.baseURL }
-            Button("Use it") {
-                Config.baseURL = serverDraft.trimmingCharacters(in: .whitespaces)
-                Task { await loadHouseholds() }
-            }
+            Button("Use it") { useTypedServer() }
         } message: {
             // Two audiences: whoever is developing this, and whoever in the house just
             // installed it. Only one of them knows what a simulator is.
@@ -178,6 +176,20 @@ struct SignInView: View {
             household = nil
             people = []
         }
+    }
+
+    /// Typing "meals.gehan.cloud" is the obvious thing to do, and storing it as typed left
+    /// every call failing with "unsupported URL" — which reads as the server being broken
+    /// rather than the address being half-written. Config fills in the scheme.
+    private func useTypedServer() {
+        guard let address = Config.address(from: serverDraft) else {
+            error = "\(serverDraft.trimmingCharacters(in: .whitespaces)) is not a server address. "
+                + "Try something like meals.gehan.cloud, or 192.168.1.10:8080."
+            return
+        }
+        Config.baseURL = address
+        serverDraft = address
+        Task { await loadHouseholds() }
     }
 
     private func loadHouseholds() async {
