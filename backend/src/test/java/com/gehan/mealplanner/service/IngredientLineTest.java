@@ -2,6 +2,8 @@ package com.gehan.mealplanner.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -114,5 +116,27 @@ class IngredientLineTest {
     void stripsTheBulletAnIngredientListIsWrittenWith() {
         assertThat(IngredientLine.of("- 3 tbsp butter").name()).isEqualTo("butter");
         assertThat(IngredientLine.of("• 3 tbsp butter").unit()).isEqualTo("tbsp");
+    }
+
+    @Test
+    void readsTheShorthandRealSitesUse() {
+        // Both found by running the importer over real recipe sites and reading the output.
+
+        // American recipes abbreviate cup to a single letter, and it was staying in the name.
+        IngredientLine cup = IngredientLine.of("1 1/2 c. cherry tomatoes");
+        assertThat(cup.quantity()).isEqualByComparingTo(new BigDecimal("1.5"));
+        assertThat(cup.unit()).isEqualTo("cup");
+        assertThat(cup.name()).isEqualTo("cherry tomatoes");
+
+        // "2 x 400g cans": the count, the size of each tin, then what is in them. The name
+        // used to start with the x, and the tin size was the only thing resembling a unit.
+        IngredientLine tins = IngredientLine.of("2 x 400g cans chopped tomatoes");
+        assertThat(tins.quantity()).isEqualByComparingTo(new BigDecimal("2"));
+        assertThat(tins.unit()).isEqualTo("can");
+        assertThat(tins.name()).isEqualTo("chopped tomatoes");
+        assertThat(tins.notes()).contains("400g");
+
+        // The multiplication sign, which is what a tidier site writes.
+        assertThat(IngredientLine.of("2 \u00D7 400g tins tomatoes").unit()).isEqualTo("can");
     }
 }

@@ -17,7 +17,7 @@ import java.util.Set;
 public record IngredientLine(BigDecimal quantity, String unit, String name, String notes, boolean optional) {
 
     private static final Map<String, String> UNITS = Map.ofEntries(
-            Map.entry("cup", "cup"), Map.entry("cups", "cup"),
+            Map.entry("cup", "cup"), Map.entry("cups", "cup"), Map.entry("c", "cup"),
             Map.entry("tbsp", "tbsp"), Map.entry("tbsps", "tbsp"), Map.entry("tbs", "tbsp"),
             Map.entry("tablespoon", "tbsp"), Map.entry("tablespoons", "tbsp"),
             Map.entry("tsp", "tsp"), Map.entry("tsps", "tsp"),
@@ -149,6 +149,22 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
             if (whole != null && index + 1 < words.length
                     && words[index].equalsIgnoreCase("to") && plain(words[index + 1]) != null) {
                 index += 2;
+            }
+            /*
+             * "2 x 400g cans chopped tomatoes": the count, then the size of each tin, then
+             * what they are. Without this the name came out as "x 400g cans chopped
+             * tomatoes" and the tin size was the only thing that looked like a unit.
+             */
+            if (whole != null && index < words.length
+                    && (words[index].equalsIgnoreCase("x") || words[index].equals("\u00D7"))) {
+                index++;
+                if (index < words.length) {
+                    String[] each = splitWelded(words[index]);
+                    if (each != null) {
+                        append(notes, each[0] + each[1] + " each");
+                        index++;
+                    }
+                }
             }
             if (whole != null) {
                 BigDecimal value = BigDecimal.valueOf(whole).setScale(3, RoundingMode.HALF_UP).stripTrailingZeros();
