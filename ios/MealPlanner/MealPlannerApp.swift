@@ -52,6 +52,9 @@ struct MealPlannerApp: App {
                         )
                     }
                 }
+                // Every control in the app, in the app's own colour. Without this they are
+                // all Apple's blue, which is the clearest sign that nobody chose anything.
+                .tint(Palette.accent)
         }
     }
 }

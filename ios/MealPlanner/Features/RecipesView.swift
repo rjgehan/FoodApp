@@ -242,7 +242,7 @@ struct DrawerTile: View {
         .padding(14)
         // A colour per drawer, the way the web has it: you learn where Dinner is by its colour
         // long before you read the word.
-        .background(tint.opacity(0.22), in: RoundedRectangle(cornerRadius: 16))
+        .background(tint, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -261,28 +261,7 @@ struct GroupTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
         .padding(14)
-        .background(tint.opacity(0.22), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-/// A colour per group, picked by hashing its id — the same trick as the web's `coverClass`,
-/// so a group keeps its colour and the grid never looks like a spreadsheet.
-enum Palette {
-    private static let covers: [Color] = [
-        .brown,
-        Color(red: 0.55, green: 0.52, blue: 0.16),
-        .green,
-        Color(red: 0.55, green: 0.24, blue: 0.42),
-        Color(red: 0.16, green: 0.38, blue: 0.55),
-        .orange,
-        .teal,
-        .indigo,
-    ]
-
-    static func cover(for id: String) -> Color {
-        var hash: UInt32 = 0
-        for scalar in id.unicodeScalars { hash = hash &* 31 &+ scalar.value }
-        return covers[Int(hash % UInt32(covers.count))]
+        .background(tint, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -335,16 +314,10 @@ struct RecipeTile: View {
 }
 
 extension RecipeSection {
-    /// The drawer colours, matching the web's tiles.
+    /// The drawer colours. The web tints its tiles by their position in this same list, so
+    /// hashing the position here is what makes Breakfast the same colour in both apps.
     var tint: Color {
-        switch self {
-        case .breakfast: .brown
-        case .lunch: Color(red: 0.55, green: 0.52, blue: 0.16)
-        case .dinner: .green
-        case .snacks: Color(red: 0.55, green: 0.24, blue: 0.42)
-        case .drinks: Color(red: 0.16, green: 0.38, blue: 0.55)
-        case .other: .gray
-        }
+        Palette.cover(for: String(Self.allCases.firstIndex(of: self) ?? 0))
     }
 
     /// The drawer icons, as close to the web's as SF Symbols get.
