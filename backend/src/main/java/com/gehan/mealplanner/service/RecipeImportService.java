@@ -22,6 +22,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -206,9 +207,9 @@ public class RecipeImportService {
         if (best.isMissingNode()) return null;
 
         try {
-            String vtt = fetch(URI.create(best.path("Url").asText()));
-            String text = fromWebVtt(vtt);
-            return soundsLikeCooking(text) ? text : null;
+            List<String> cues = cuesFrom(fetch(URI.create(best.path("Url").asText())));
+            if (!soundsLikeCooking(String.join(" ", cues))) return null;
+            return methodFrom(cues);
         } catch (RuntimeException e) {
             log.info("Could not read the TikTok transcript ({})", e.toString());
             return null;
@@ -217,6 +218,16 @@ public class RecipeImportService {
 
     /** Visible for tests: WebVTT to plain sentences, without the timings or the repeats. */
     String fromWebVtt(String vtt) {
+        return String.join(" ", cuesFrom(vtt)).replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * The spoken lines, in the order they were said.
+     *
+     * They stay separate because the breaks are worth keeping: TikTok cuts a cue at roughly a
+     * clause, which is the only punctuation an auto-generated transcript has.
+     */
+    List<String> cuesFrom(String vtt) {
         record Cue(long at, int written, List<String> lines) {}
 
         List<Cue> cues = new ArrayList<>();
@@ -257,7 +268,124 @@ public class RecipeImportService {
                 previous = line;
             }
         }
-        return String.join(" ", out).replaceAll("\\s+", " ").trim();
+        return out;
+    }
+
+    /**
+     * The verbs a cook uses. Deliberately only the bare forms, so "it is my Creamy Chicken
+     * Bake" is a title and "bake it for forty minutes" is a step — and nouns are left out,
+     * because "a little bit of salt to your taste" is not an instruction.
+     */
+    private static final Set<String> ACTIONS = Set.of(
+            "add", "arrange", "assemble", "bake", "beat", "blanch", "blend", "boil", "bring",
+            "brown", "brush", "chill", "chop", "coat", "combine", "cook", "cool", "cover",
+            "crack", "crush", "cut", "dice", "dip", "drain", "drizzle", "dust", "fill", "flip",
+            "fold", "fry", "garnish", "grate", "grease", "grill", "heat", "knead", "layer",
+            "leave", "let", "line", "marinate", "mash", "melt", "microwave", "mix", "pat",
+            "peel", "place", "poach", "pop", "pour", "preheat", "press", "put", "reduce",
+            "reheat", "remove", "rest", "roast", "roll", "rub", "sauté", "saute", "scatter",
+            "scoop", "seal", "sear", "season", "serve", "set", "shred", "sift", "simmer",
+            "slice", "soak", "spoon", "spread", "sprinkle", "squeeze", "steam", "stir",
+            "strain", "stuff", "toast", "toss", "transfer", "trim", "turn", "whisk", "wrap");
+
+    /** Where a speaker starts the next thing they do. */
+    private static final List<String> STEP_STARTS = List.of(
+            "and then", "then", "after that", "afterwards", "after", "next", "once", "now",
+            "first", "firstly", "secondly", "finally", "lastly", "meanwhile", "start by",
+            "begin by", "when", "while");
+
+    /** Telling you about it rather than telling you to do it. */
+    private static final List<String> ASIDES = List.of(
+            "i ", "i'", "my ", " me ", "we ", "we'", "you'll love", "trust me", "link in bio",
+            "recipe is below", "recipe below", "follow for", "comment ", "save this");
+
+    /**
+     * The method, pulled out of what was said.
+     *
+     * A narrated video is mostly not the recipe. It opens on a hook and a pitch, wanders into
+     * why the creator likes it, and closes asking you to follow — and the cooking sits in the
+     * middle. So the run from the first instruction to the last one is kept and everything
+     * either side is dropped, rather than picking out single cues: the lines between two
+     * instructions are usually the rest of the same sentence ("bake it for forty five" /
+     * "fifty minutes until golden"), and dropping those loses the half that matters.
+     *
+     * Then the run is cut into steps wherever the speaker moves on. This is all guesswork
+     * about English, not understanding, so it aims to be roughly right and never silent: a
+     * transcript it cannot make sense of yields no method at all.
+     */
+    String methodFrom(List<String> cues) {
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < cues.size(); i++) {
+            if (!isInstruction(cues.get(i))) continue;
+            if (first < 0) first = i;
+            last = i;
+        }
+        // Narrated entirely in the first person ("I'm going to add the garlic") — still a
+        // method, just told as a story. Fall back to any cue with an action in it.
+        if (first < 0) {
+            for (int i = 0; i < cues.size(); i++) {
+                if (!hasAction(cues.get(i))) continue;
+                if (first < 0) first = i;
+                last = i;
+            }
+        }
+        if (first < 0) return null;
+
+        List<String> steps = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String cue : cues.subList(first, last + 1)) {
+            if (!current.isEmpty() && startsAStep(cue)) {
+                steps.add(current.toString());
+                current.setLength(0);
+            }
+            if (!current.isEmpty()) current.append(' ');
+            current.append(cue);
+        }
+        steps.add(current.toString());
+
+        List<String> out = new ArrayList<>();
+        for (String step : steps) {
+            // "that is literally it" is not a step, however charming.
+            if (!hasAction(step)) continue;
+            out.add(tidy(step));
+        }
+        return out.isEmpty() ? null : String.join("\n", out);
+    }
+
+    /** Something to do, said as an instruction rather than as a story about one. */
+    private boolean isInstruction(String cue) {
+        String padded = " " + cue.toLowerCase() + " ";
+        for (String aside : ASIDES) {
+            if (padded.contains(aside.startsWith(" ") ? aside : " " + aside)) return false;
+        }
+        return hasAction(cue);
+    }
+
+    private boolean hasAction(String text) {
+        for (String word : text.toLowerCase().split("[^a-zà-ÿ']+")) {
+            if (ACTIONS.contains(word)) return true;
+        }
+        return false;
+    }
+
+    private boolean startsAStep(String cue) {
+        String lowered = cue.toLowerCase().trim();
+        for (String marker : STEP_STARTS) {
+            if (lowered.equals(marker)) return true;
+            if (lowered.startsWith(marker + " ")) return true;
+        }
+        return false;
+    }
+
+    /** A spoken clause, written down: no leading "and", a capital, and a full stop. */
+    private String tidy(String step) {
+        String out = step.trim().replaceAll("\\s+", " ");
+        if (out.toLowerCase().startsWith("and ")) out = out.substring(4);
+        if (out.isEmpty()) return out;
+        out = Character.toUpperCase(out.charAt(0)) + out.substring(1);
+        char end = out.charAt(out.length() - 1);
+        return end == '.' || end == '!' || end == '?' ? out : out + ".";
     }
 
     /** The start of "00:00:44.766 --> 00:00:47.893" in milliseconds, or -1 if it has none. */

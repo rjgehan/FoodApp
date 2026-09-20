@@ -4,6 +4,8 @@ import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -281,6 +283,64 @@ class RecipeImportServiceTest {
 
         // A video with no captions at all, and a page that is not TikTok's.
         assertThat(service.bestSubtitle(service.tikTokItem("<html>nothing</html>")).isMissingNode()).isTrue();
+    }
+
+    @Test
+    void pullsTheMethodOutOfTheNarration() {
+        // The real cues from a narrated video, in the order they were spoken. Most of it is
+        // not the recipe: it opens on a hook and a pitch and closes asking you to follow.
+        List<String> cues = List.of(
+                "stop scrolling",
+                "I've got the most amazing dinner recipe for you tonight",
+                "it is my Creamy Lemon and Garlic Chicken Bake",
+                "it combines just a handful of ingredients on the stove to create a beautiful",
+                "glorious golden silky sauce that is heavily dotted with lots of garlic",
+                "if you're anything like me more is more when it comes to garlic",
+                "I also like to add some spinach for a little bit of veg",
+                "and I just use the frozen blocks because they are so economical",
+                "all you have to do with the chicken is dust it with smoky paprika",
+                "and a little bit of salt to your taste",
+                "and then roll those thighs back up and pour over that sauce",
+                "that is literally it",
+                "after that all you're going to let it do is bake away in the oven for forty five",
+                "fifty minutes until it's beautiful and golden",
+                "and then you gonna serve it with your favourite sides",
+                "the recipe is below",
+                "I hope you enjoy");
+
+        String method = service.methodFrom(cues);
+
+        assertThat(method.lines()).containsExactly(
+                "All you have to do with the chicken is dust it with smoky paprika and a little bit of salt to your taste.",
+                "Then roll those thighs back up and pour over that sauce that is literally it.",
+                "After that all you're going to let it do is bake away in the oven for forty five fifty minutes until it's beautiful and golden.",
+                "Then you gonna serve it with your favourite sides.");
+        // The sell before and the ask after are gone, and so is the title.
+        assertThat(method).doesNotContain("stop scrolling").doesNotContain("Chicken Bake")
+                .doesNotContain("recipe is below").doesNotContain("hope you enjoy");
+        // A cue between two instructions is usually the rest of the sentence, so it is kept:
+        // dropping it would leave "bake for forty five" with no end to it.
+        assertThat(method).contains("forty five fifty minutes");
+    }
+
+    @Test
+    void keepsTheMethodOfSomebodyTalkingAboutThemselves() {
+        // "I'm going to..." is a method told as a story. Skipping every first-person line
+        // would leave nothing at all, so they count when there is nothing else.
+        assertThat(service.methodFrom(List.of(
+                "hey guys welcome back",
+                "I'm going to melt the butter in a pan",
+                "and then I add the garlic and stir it for two minutes",
+                "thanks for watching"))).isEqualTo(
+                "I'm going to melt the butter in a pan.\nThen I add the garlic and stir it for two minutes.");
+    }
+
+    @Test
+    void findsNoMethodWhenNobodyDoesAnything() {
+        // Better to leave the steps empty than to save the chatter as if it were a recipe.
+        assertThat(service.methodFrom(List.of(
+                "stop scrolling", "this is the best thing I have ever eaten", "link in bio"))).isNull();
+        assertThat(service.methodFrom(List.of())).isNull();
     }
 
     @Test
