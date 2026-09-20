@@ -4,6 +4,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedIngredient;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -37,12 +39,16 @@ import java.util.regex.Pattern;
 @Service
 public class RecipeImportService {
 
+    private static final Logger log = LoggerFactory.getLogger(RecipeImportService.class);
+
     private static final Pattern LD_JSON = Pattern.compile(
             "<script[^>]+type\\s*=\\s*[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ISO_DURATION = Pattern.compile("^P(?:\\d+D)?T(?:(\\d+)H)?(?:(\\d+)M)?");
     private static final Pattern TAGS = Pattern.compile("<[^>]+>");
     private static final Pattern HASHTAGS = Pattern.compile("#\\w+");
+    private static final Pattern TIKTOK_DATA = Pattern.compile(
+            "<script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\"[^>]*>(.*?)</script>", Pattern.DOTALL);
     private static final int MAX_BYTES = 4 * 1024 * 1024;
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -53,7 +59,19 @@ public class RecipeImportService {
 
     public GeneratedRecipe fromUrl(String rawUrl) {
         URI uri = safeUri(rawUrl);
-        if (isTikTok(uri)) return fromTikTok(uri);
+        // An import that fails should leave a trace: without one, "the server said 422" is
+        // all anybody has to go on.
+        try {
+            GeneratedRecipe draft = isTikTok(uri) ? fromTikTok(uri) : fromPage(uri);
+            log.info("Imported \"{}\" from {} — {} ingredients", draft.name(), uri, draft.ingredients().size());
+            return draft;
+        } catch (ResponseStatusException e) {
+            log.info("Import of {} refused: {}", uri, e.getReason());
+            throw e;
+        }
+    }
+
+    private GeneratedRecipe fromPage(URI uri) {
         String html = fetch(uri);
         JsonNode recipe = findRecipe(html);
         if (recipe == null) {
@@ -78,19 +96,55 @@ public class RecipeImportService {
      * and there is nothing here to import. That is said plainly rather than guessed at.
      */
     private GeneratedRecipe fromTikTok(URI uri) {
-        URI oembed = URI.create("https://www.tiktok.com/oembed?url="
-                + URLEncoder.encode(uri.toString(), StandardCharsets.UTF_8));
-        JsonNode meta;
-        try {
-            meta = mapper.readTree(fetch(oembed));
-        } catch (RuntimeException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "TikTok did not answer for that video.");
-        }
-        String caption = text(meta, "title");
+        String caption = tikTokCaption(uri);
         if (caption == null || caption.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That video has no caption to read.");
         }
         return fromCaption(caption, uri.toString());
+    }
+
+    /**
+     * The caption, with its line breaks.
+     *
+     * oEmbed is the obvious source and the wrong one: its `title` holds the whole caption —
+     * never truncated, checked against captions up to 1,957 characters — but every newline in
+     * it has been replaced by a single space. A recipe caption arrives as one unbroken line,
+     * and one line can never be split into ingredients.
+     *
+     * The page itself carries `itemStruct.contents`, an array with one entry per original
+     * line, so the structure survives. oEmbed stays as the fallback: a flat caption is worth
+     * more than none, and some captions are a single line anyway.
+     */
+    private String tikTokCaption(URI uri) {
+        try {
+            Matcher matcher = TIKTOK_DATA.matcher(fetch(uri));
+            if (matcher.find()) {
+                JsonNode contents = mapper.readTree(matcher.group(1))
+                        .path("__DEFAULT_SCOPE__").path("webapp.video-detail")
+                        .path("itemInfo").path("itemStruct").path("contents");
+                if (contents.isArray() && !contents.isEmpty()) {
+                    List<String> lines = new ArrayList<>();
+                    for (JsonNode entry : contents) lines.add(entry.path("desc").asText(""));
+                    String joined = String.join("\n", lines).trim();
+                    if (!joined.isBlank()) return joined;
+                }
+            }
+        } catch (RuntimeException e) {
+            // Includes ResponseStatusException from fetch(): a page that will not load is a
+            // reason to try oEmbed, not to give up.
+            log.info("Could not read the TikTok page for {} ({}), falling back to oEmbed", uri, e.toString());
+        }
+        return oembedCaption(uri);
+    }
+
+    private String oembedCaption(URI uri) {
+        URI oembed = URI.create("https://www.tiktok.com/oembed?url="
+                + URLEncoder.encode(uri.toString(), StandardCharsets.UTF_8));
+        try {
+            return text(mapper.readTree(fetch(oembed)), "title");
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "TikTok did not answer for that video.");
+        }
     }
 
     /** Visible for tests: a caption, split into a recipe. */
@@ -118,16 +172,29 @@ public class RecipeImportService {
             for (String line : lines.subList(ingredientsAt + 1, end)) add(ingredients, line);
             if (stepsAt >= 0) steps.addAll(lines.subList(stepsAt + 1, lines.size()));
         } else {
-            // No headings: a line carrying an amount is an ingredient, and the prose after
-            // the last of them is the method.
-            int last = -1;
-            for (int i = 1; i < lines.size(); i++) {
-                if (IngredientLine.of(lines.get(i)).quantity() != null) {
-                    add(ingredients, lines.get(i));
-                    last = i;
-                }
+            /*
+             No headings. An ingredient list is a contiguous run of short lines, so find where
+             it starts — the first line with an amount — and take everything short after it,
+             amount or not, until the prose begins.
+             *
+             Picking out only the lines with amounts, which is the obvious thing to do, quietly
+             loses the ones without: "Sea salt to taste", "Juice of one lemon", and — measured
+             on a real caption — "1kg-1.2kg chicken thighs", the main ingredient. A recipe
+             missing its chicken is worse than no recipe at all.
+            */
+            int start = -1;
+            for (int i = 1; i < lines.size() && start < 0; i++) {
+                if (IngredientLine.of(lines.get(i)).quantity() != null) start = i;
             }
-            if (last >= 0 && last + 1 < lines.size()) steps.addAll(lines.subList(last + 1, lines.size()));
+            int end = start;
+            if (start >= 0) {
+                for (int i = start; i < lines.size(); i++) {
+                    if (!looksLikeAnIngredient(lines.get(i))) break;
+                    add(ingredients, lines.get(i));
+                    end = i;
+                }
+                if (end + 1 < lines.size()) steps.addAll(lines.subList(end + 1, lines.size()));
+            }
         }
 
         if (ingredients.isEmpty()) {
@@ -137,7 +204,22 @@ public class RecipeImportService {
         return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients, String.join("\n", steps));
     }
 
+    /**
+     * Short, and not a sentence. An ingredient is "2 tbsp butter" or "Sea salt to taste";
+     * a step is a sentence that ends in a full stop. The length cap is what keeps a long
+     * unpunctuated instruction out of the shopping list.
+     */
+    private boolean looksLikeAnIngredient(String line) {
+        String trimmed = line.trim();
+        if (trimmed.length() > 80) return false;
+        if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) return false;
+        return true;
+    }
+
     private void add(List<GeneratedIngredient> out, String line) {
+        // "For the salmon:" and "Sauce:" divide an ingredient list; they are not in it. A
+        // heading has no amount and ends in a colon, which "salt and pepper" does not.
+        if (line.trim().endsWith(":")) return;
         IngredientLine parsed = IngredientLine.of(line);
         if (parsed.name().isBlank()) return;
         out.add(new GeneratedIngredient(parsed.name(), parsed.quantity(), parsed.unit()));

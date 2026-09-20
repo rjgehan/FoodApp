@@ -26,8 +26,20 @@ export function getToken(): string | null {
 
 export class ApiError extends Error {
   constructor(public status: number, public body: unknown) {
-    super(`${status}: ${JSON.stringify(body)}`);
+    // Every API error arrives as {status, message} from ApiExceptionHandler, and that message
+    // is written for a person. Using it as the Error's message means anything that renders
+    // err.message — which is most things — says the useful thing instead of dumping JSON.
+    super(messageIn(body) ?? `${status}: ${JSON.stringify(body)}`);
   }
+}
+
+/** The server's own sentence, when it sent one. */
+function messageIn(body: unknown): string | null {
+  if (body && typeof body === 'object' && 'message' in body) {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return null;
 }
 
 /**

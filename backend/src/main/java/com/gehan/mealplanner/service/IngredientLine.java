@@ -123,6 +123,12 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
                     index = 1;
                 }
             }
+            // "1 to 2 garlic cloves": the same range, written out. Drop the upper bound so
+            // it does not end up in the name.
+            if (whole != null && index + 1 < words.length
+                    && words[index].equalsIgnoreCase("to") && plain(words[index + 1]) != null) {
+                index += 2;
+            }
             if (whole != null) {
                 BigDecimal value = BigDecimal.valueOf(whole).setScale(3, RoundingMode.HALF_UP).stripTrailingZeros();
                 // stripTrailingZeros turns 400 into 4E+2, which is not what anyone wants to
@@ -153,6 +159,8 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
 
     /** "400g" to {"400", "g"}; null when the word is not a number welded to a known unit. */
     private static String[] splitWelded(String word) {
+        int dash = indexOfRangeDash(word);
+        if (dash > 0) word = word.substring(0, dash);
         int at = -1;
         for (int i = 0; i < word.length(); i++) {
             if (Character.isLetter(word.charAt(i))) {
@@ -168,6 +176,10 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
     }
 
     private static Double value(String raw) {
+        // "6-8 cloves" and "1kg-1.2kg chicken": a range is how a cook writes "about". Take
+        // the lower bound — under-buying is recoverable, and dropping the line is not.
+        int dash = indexOfRangeDash(raw);
+        if (dash > 0) return value(raw.substring(0, dash));
         Double fraction = fraction(raw);
         if (fraction != null) return fraction;
         if (raw.length() > 1) {
@@ -178,6 +190,21 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
         }
         if (raw.length() == 1 && GLYPHS.containsKey(raw.charAt(0))) return GLYPHS.get(raw.charAt(0));
         return plain(raw);
+    }
+
+    /**
+     * The dash in "6-8" or "1kg-1.2kg", and not the one in "extra-virgin".
+     *
+     * What marks a range is a digit after the dash and a number before it — before it, not
+     * immediately before it, because "1kg-1.2kg" has the unit in between.
+     */
+    private static int indexOfRangeDash(String raw) {
+        for (int i = 1; i < raw.length() - 1; i++) {
+            char c = raw.charAt(i);
+            if (c != '-' && c != '–' && c != '—') continue;
+            if (Character.isDigit(raw.charAt(i + 1)) && Character.isDigit(raw.charAt(0))) return i;
+        }
+        return -1;
     }
 
     private static Double fraction(String raw) {

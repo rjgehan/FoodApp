@@ -17,9 +17,28 @@ struct APIError: LocalizedError {
     let status: Int
     let body: String
 
+    /// Every error from the API arrives as {"status":…,"message":…}, and that message is
+    /// written for a person to act on. The old guard here rejected any body starting with
+    /// "{" — which is all of them — so every explanation the server wrote was thrown away
+    /// and replaced with "The server said 422."
+    private var serverMessage: String? {
+        struct Envelope: Decodable { let message: String? }
+        guard let data = body.data(using: .utf8),
+              let message = (try? JSONDecoder().decode(Envelope.self, from: data))?.message?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty,
+              // A ResponseStatusException thrown with no reason is filled in with the bare
+              // HTTP reason phrase — "Unauthorized" — which is worse than the app's own words.
+              message.caseInsensitiveCompare(HTTPURLResponse.localizedString(forStatusCode: status)) != .orderedSame
+        else { return nil }
+        return message
+    }
+
     var errorDescription: String? {
-        // The backend sends a plain message for the cases a person can act on.
-        if !body.isEmpty, body.count < 200, !body.hasPrefix("{") { return body }
+        if let serverMessage { return serverMessage }
+        // Anything not JSON at this point is a string this client wrote itself, with status 0
+        // — including the local-network explanation, which is longer than any cap worth having.
+        if status == 0, !body.isEmpty { return body }
         switch status {
         case 401: return "That PIN did not work."
         case 403: return "Not allowed."

@@ -89,6 +89,28 @@ class IngredientLineTest {
     }
 
     @Test
+    void takesTheLowerBoundOfARange() {
+        // Real captions say "6-8 garlic cloves". Dropping the line lost the main ingredient.
+        IngredientLine cloves = IngredientLine.of("6-8 garlic cloves, roughly chopped");
+        assertThat(cloves.quantity()).hasToString("6");
+        assertThat(cloves.name()).isEqualTo("garlic cloves");
+
+        IngredientLine chicken = IngredientLine.of("1kg-1.2kg chicken thighs");
+        assertThat(chicken.quantity()).hasToString("1");
+        assertThat(chicken.unit()).isEqualTo("kg");
+        assertThat(chicken.name()).isEqualTo("chicken thighs");
+    }
+
+    @Test
+    void readsARangeWrittenOutInWords() {
+        IngredientLine line = IngredientLine.of("1 to 2 garlic cloves");
+        assertThat(line.quantity()).hasToString("1");
+        assertThat(line.name()).isEqualTo("garlic cloves");
+        // "2 to 3 tbsp oil" keeps its unit.
+        assertThat(IngredientLine.of("2 to 3 tbsp olive oil").unit()).isEqualTo("tbsp");
+    }
+
+    @Test
     void stripsTheBulletAnIngredientListIsWrittenWith() {
         assertThat(IngredientLine.of("- 3 tbsp butter").name()).isEqualTo("butter");
         assertThat(IngredientLine.of("• 3 tbsp butter").unit()).isEqualTo("tbsp");

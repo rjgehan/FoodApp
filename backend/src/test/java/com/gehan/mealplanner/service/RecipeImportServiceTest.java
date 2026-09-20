@@ -152,6 +152,62 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void skipsTheHeadingsThatDivideAnIngredientList() {
+        // Real caption shape: "For the Salmon:" is a divider, not something to buy.
+        GeneratedRecipe draft = service.fromCaption("""
+            Hot Honey Garlic Salmon 🍯
+            For the Salmon:
+            0.8 lb fresh salmon
+            2 tbsp soy sauce
+            For the Sauce:
+            2 tbsp honey
+            """, "u");
+
+        assertThat(draft.ingredients()).hasSize(3);
+        assertThat(draft.ingredients()).noneMatch(i -> i.ingredientName().toLowerCase().contains("for the"));
+        // Under a heading, a line with no amount is still an ingredient.
+        assertThat(service.fromCaption("Soup\nIngredients:\n2 onions\nsalt and pepper\n", "u").ingredients())
+                .anyMatch(i -> i.ingredientName().equals("salt and pepper"));
+    }
+
+    @Test
+    void keepsTheUnquantifiedIngredientsInsideTheBlock() {
+        // Measured on a real caption: picking only the lines with amounts dropped the
+        // chicken, the lemon and the salt, and pushed the salt into the method.
+        GeneratedRecipe draft = service.fromCaption("""
+            A winner every. single. time.
+            40g butter
+            6-8 garlic cloves, roughly chopped
+            1kg-1.2kg chicken thighs
+            Juice and zest of one lemon
+            Sea salt to taste
+            Melt the butter and brown the chicken on both sides.
+            Add the garlic and cook it through.
+            """, "u");
+
+        assertThat(draft.ingredients()).hasSize(5);
+        assertThat(draft.ingredients()).anyMatch(i -> i.ingredientName().contains("chicken thighs"));
+        assertThat(draft.ingredients()).anyMatch(i -> i.ingredientName().contains("lemon"));
+        assertThat(draft.instructions()).startsWith("Melt the butter");
+        assertThat(draft.instructions()).doesNotContain("Sea salt");
+    }
+
+    @Test
+    void withoutHeadingsAnAmountlessLineIsTreatedAsMethod() {
+        // Nothing distinguishes "salt and pepper" from "Cook the pasta" except an amount, so
+        // in an unlabelled caption the amount-less lines are the method. Erring the other way
+        // would turn every step into an ingredient.
+        GeneratedRecipe draft = service.fromCaption("""
+            Garlic pasta
+            200 g spaghetti
+            Cook the pasta and toss it through the butter.
+            """, "u");
+        // The step ends in a full stop, so it stays out of the shopping list.
+        assertThat(draft.ingredients()).hasSize(1);
+        assertThat(draft.instructions()).isEqualTo("Cook the pasta and toss it through the butter.");
+    }
+
+    @Test
     void saysSoWhenTheCaptionIsOnlyAHook() {
         // The common case: the recipe is spoken in the video and the caption sells it.
         assertThatThrownBy(() -> service.fromCaption(
