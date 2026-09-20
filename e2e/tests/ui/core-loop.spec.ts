@@ -183,7 +183,7 @@ test('sign out lives under Household → You, not in the header', async ({ page 
   await expect(page.getByText('Who’s cooking?')).toBeVisible();
 });
 
-test('the avatar opens your account, the same sheet as Household → You', async ({ page }) => {
+test('the avatar opens Settings: your account, and the way into the household', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
@@ -191,5 +191,8 @@ test('the avatar opens your account, the same sheet as Household → You', async
   await expect(sheet(page).getByText('Username')).toBeVisible();
   await expect(sheet(page).getByRole('button', { name: 'Sign out' })).toBeVisible();
   // The sheet names itself once: the card inside drops its own title.
-  await expect(sheet(page).getByText('You', { exact: true })).toHaveCount(1);
+  await expect(sheet(page).getByText('Settings', { exact: true })).toHaveCount(1);
+  // Household lost its tab and lives in here now.
+  await sheet(page).getByRole('link', { name: 'Household settings' }).click();
+  await expect(page).toHaveURL(/\/household$/);
 });

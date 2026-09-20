@@ -212,8 +212,9 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
   // Find it from the other household.
   await signIn(page, theirs.owner, theirs.id);
   await page.goto('/recipes');
-  await page.getByText('Explore', { exact: true }).click();
-  await expect(page).toHaveURL(/\/recipes\/explore$/);
+  // Explore is a tab of its own now, not a tile inside Recipes.
+  await page.getByRole('link', { name: 'Explore' }).last().click();
+  await expect(page).toHaveURL(/\/explore$/);
   await expect(page.getByText(name)).toBeVisible();
   await expect(page.getByText(`from ${mine.name}`).first()).toBeVisible();
 

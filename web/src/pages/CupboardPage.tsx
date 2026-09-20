@@ -6,10 +6,11 @@ import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { groupByCategory } from '../utils/storeSections';
 import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, NumberInput, Select, Sheet } from '../components/ui';
-import { PlusIcon } from '../components/icons';
+import { BarcodeIcon, PlusIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
 import UnitInput from '../components/UnitInput';
+import ScanToCupboard from '../components/ScanToCupboard';
 
 function byName(a: CupboardItem, b: CupboardItem) {
   return a.name.localeCompare(b.name);
@@ -28,6 +29,7 @@ export default function CupboardPage() {
   const [items, setItems] = useState<CupboardItem[] | null>(null);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CupboardItem | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -124,15 +126,28 @@ export default function CupboardPage() {
         }
       />
 
-      {/* One box: type to check whether you have something, and if you don't, add it. */}
+      {/* One box: type to check whether you have something, and if you don't, add it. The
+          camera answers the same question without the typing, which is the one that matters
+          when you are standing in a shop holding the tin. */}
       <form onSubmit={add} className="space-y-2">
-        <Input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Do we have… ?"
-          aria-label="Search the cupboard, or add something"
-        />
+        <div className="flex gap-2">
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Do we have… ?"
+            aria-label="Search the cupboard, or add something"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-11 shrink-0 px-0"
+            aria-label="Scan a barcode"
+            onClick={() => setScanning(true)}
+          >
+            <BarcodeIcon className="h-5 w-5" />
+          </Button>
+        </div>
         {/* Loud only when nothing matched — a partial match ("gar" → garlic) is usually the answer. */}
         {q && !exact && (
           <Button type="submit" full variant={shown.length ? 'ghost' : 'secondary'} disabled={busy}>
@@ -214,6 +229,15 @@ export default function CupboardPage() {
         <p className="px-1 text-[0.8125rem] text-subtle">
           Swipe an item left to buy it again or remove it. Tap it to edit.
         </p>
+      )}
+
+      {scanning && activeHouseholdId && (
+        <ScanToCupboard
+          householdId={activeHouseholdId}
+          items={all}
+          onAdded={replace}
+          onClose={() => setScanning(false)}
+        />
       )}
 
       {editing && (

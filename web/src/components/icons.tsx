@@ -59,6 +59,14 @@ export const CompassIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+/** Bars of a barcode inside a viewfinder's corners — the scan control, not a barcode itself. */
+export const BarcodeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 8V6a3 3 0 0 1 3-3h2M16 3h2a3 3 0 0 1 3 3v2M21 16v2a3 3 0 0 1-3 3h-2M8 21H6a3 3 0 0 1-3-3v-2" />
+    <path d="M7.5 8v8M11 8v8M14 8v8M17 8v8" />
+  </Icon>
+);
+
 export const HouseholdIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="9" cy="8" r="3" />
