@@ -63,6 +63,18 @@ public class RecipeImportService {
             "<script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\"[^>]*>(.*?)</script>", Pattern.DOTALL);
     private static final int MAX_BYTES = 4 * 1024 * 1024;
 
+    private final ImportLog journal;
+
+    /** Tests build one of these directly, and nothing they do is worth writing down. */
+    RecipeImportService() {
+        this(new ImportLog("off"));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    RecipeImportService(ImportLog journal) {
+        this.journal = journal;
+    }
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -73,19 +85,24 @@ public class RecipeImportService {
         URI uri = safeUri(rawUrl);
         // An import that fails should leave a trace: without one, "the server said 422" is
         // all anybody has to go on.
+        ImportLog.Entry entry = journal.begin(uri);
         try {
-            GeneratedRecipe draft = isTikTok(uri) ? fromTikTok(uri) : fromPage(uri);
+            GeneratedRecipe draft = isTikTok(uri) ? fromTikTok(uri, entry) : fromPage(uri, entry);
             log.info("Imported \"{}\" from {} — {} ingredients", draft.name(), uri, draft.ingredients().size());
+            journal.finish(entry, draft, null);
             return draft;
         } catch (ResponseStatusException e) {
             log.info("Import of {} refused: {}", uri, e.getReason());
+            // The refusals are the ones worth reading later: a format that beat us.
+            journal.finish(entry, null, e.getReason());
             throw e;
         }
     }
 
-    private GeneratedRecipe fromPage(URI uri) {
+    private GeneratedRecipe fromPage(URI uri, ImportLog.Entry entry) {
         String html = fetch(uri);
         JsonNode recipe = findRecipe(html);
+        if (recipe != null) entry.published(recipe.toString());
         if (recipe == null) {
             throw new ResponseStatusException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
@@ -107,10 +124,11 @@ public class RecipeImportService {
      * When the caption is only a title and hashtags, the recipe is being spoken in the video
      * and there is nothing here to import. That is said plainly rather than guessed at.
      */
-    private GeneratedRecipe fromTikTok(URI uri) {
+    private GeneratedRecipe fromTikTok(URI uri, ImportLog.Entry entry) {
         JsonNode item = tikTokItem(uri);
         String caption = caption(item);
         if (caption == null || caption.isBlank()) caption = oembedCaption(uri);
+        entry.caption(caption);
         if (caption == null || caption.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That video has no caption to read.");
         }
@@ -124,7 +142,7 @@ public class RecipeImportService {
          * and publishes it beside the video, so whatever is missing — the method, the
          * shopping list, or both — can be read for free out of what the cook said.
          */
-        Spoken spoken = transcript(item);
+        Spoken spoken = transcript(item, entry);
         if (spoken == null) {
             if (draft.ingredients().isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -229,7 +247,7 @@ public class RecipeImportService {
     record Spoken(String method, List<String> lines) {
     }
 
-    private Spoken transcript(JsonNode item) {
+    private Spoken transcript(JsonNode item, ImportLog.Entry entry) {
         JsonNode best = bestSubtitle(item);
         if (best.isMissingNode()) return null;
 
@@ -237,6 +255,7 @@ public class RecipeImportService {
             // The page fetch has already happened, and the import must not hang waiting on a
             // bonus. A transcript that is slow to arrive is one the recipe does without.
             List<String> cues = cuesFrom(fetch(URI.create(best.path("Url").asText()), Duration.ofSeconds(6)));
+            entry.spoken(cues);
             if (!soundsLikeCooking(String.join(" ", cues))) return null;
             Method method = methodOf(cues);
             return method.written() == null ? null : new Spoken(method.written(), method.spoken());
