@@ -323,6 +323,33 @@ public class RecipeImportService {
     private static final Pattern SENTENCE_END = Pattern.compile("(?<=[.!?])\\s+");
 
     /**
+     * The words people say to join one thought to the next. A numbered list already says what
+     * order things happen in, so "Then we can remove the seeds" is just "Remove the seeds".
+     */
+    private static final Pattern LEADING_FILLER =
+            Pattern.compile("(?i)^(?:(?:and|so|then|now|next|ok|okay|alright|basically)\\b[,\\s]+)+");
+
+    /**
+     * Somebody narrating themselves. A recipe step is an instruction to the reader — "sweat
+     * the onions" — but out loud it is always "then we can sweat our onions", "I'll add the
+     * stock", "you're gonna turn the heat off". Taking the speaker out of the sentence is
+     * most of the distance between a transcript and a method.
+     */
+    private static final Pattern SPEAKER = Pattern.compile("(?i)\\b(?:"
+            // The longest way of saying it has to come first: alternation takes the first
+            // branch that matches, and the generic "you're going to" sits inside several of
+            // these — matching it alone leaves the wreck "all let it do is bake away".
+            + "what (?:i|we) (?:like to do|do|want to do)(?: here)? is"
+            + "|all (?:you|we)(?:'re| are) (?:going to|gonna) (?:let it |just )?do is"
+            + "|all you (?:have|need) to do(?: with [a-z' ]{1,30})? is"
+            + "|(?:i|we|you)(?:'m|'re| am| are) (?:going to|gonna)"
+            + "|(?:i|we|you) (?:gonna|can|wanna|want to)"
+            + "|(?:i|we|you)'ll"
+            + "|(?:i|we) (?:like to|just)"
+            + "|let's"
+            + ")\\s+");
+
+    /**
      * The method, pulled out of what was said.
      *
      * A narrated video is mostly not the recipe. It opens on a hook and a pitch, wanders into
@@ -423,14 +450,37 @@ public class RecipeImportService {
         return false;
     }
 
-    /** A spoken clause, written down: no leading "and", a capital, and a full stop. */
+    /** A spoken clause, rewritten as an instruction to whoever is cooking. */
     private String tidy(String step) {
         String out = step.trim().replaceAll("\\s+", " ");
-        if (out.toLowerCase().startsWith("and ")) out = out.substring(4);
+        out = LEADING_FILLER.matcher(out).replaceFirst("");
+        out = SPEAKER.matcher(out).replaceAll("");
+        out = LEADING_FILLER.matcher(out).replaceFirst("");
+        // "sweat our onions" is the speaker's; the reader's are just "the onions".
+        out = out.replaceAll("(?i)\\bour\\b", "the");
+        out = dropTheSubject(out);
+        // Taking words out leaves gaps in front of the punctuation they were next to.
+        out = out.replaceAll("\\s+", " ").replaceAll("\\s+([,.;!?])", "$1").trim();
+
         if (out.isEmpty()) return out;
         out = Character.toUpperCase(out.charAt(0)) + out.substring(1);
         char end = out.charAt(out.length() - 1);
         return end == '.' || end == '!' || end == '?' ? out : out + ".";
+    }
+
+    /**
+     * "I add the garlic" is "Add the garlic". Only when the very next word is something to do,
+     * so "I like it spicy" keeps its subject and stays a remark rather than becoming an order.
+     */
+    private String dropTheSubject(String step) {
+        String[] words = step.split("\\s+", 3);
+        if (words.length < 2) return step;
+        boolean subject = words[0].equalsIgnoreCase("i") || words[0].equalsIgnoreCase("we")
+                || words[0].equalsIgnoreCase("you");
+        if (!subject) return step;
+        String next = words[1].toLowerCase().replaceAll("[^a-zà-ÿ']", "");
+        if (!ACTIONS.contains(next) && !SOMETIMES_ACTIONS.contains(next)) return step;
+        return step.substring(words[0].length()).trim();
     }
 
     /** The start of "00:00:44.766 --> 00:00:47.893" in milliseconds, or -1 if it has none. */

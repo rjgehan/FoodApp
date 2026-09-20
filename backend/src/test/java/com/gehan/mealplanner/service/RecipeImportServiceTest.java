@@ -311,10 +311,10 @@ class RecipeImportServiceTest {
         String method = service.methodFrom(cues);
 
         assertThat(method.lines()).containsExactly(
-                "All you have to do with the chicken is dust it with smoky paprika and a little bit of salt to your taste.",
-                "Then roll those thighs back up and pour over that sauce that is literally it.",
-                "After that all you're going to let it do is bake away in the oven for forty five fifty minutes until it's beautiful and golden.",
-                "Then you gonna serve it with your favourite sides.");
+                "Dust it with smoky paprika and a little bit of salt to your taste.",
+                "Roll those thighs back up and pour over that sauce that is literally it.",
+                "After that bake away in the oven for forty five fifty minutes until it's beautiful and golden.",
+                "Serve it with your favourite sides.");
         // The sell before and the ask after are gone, and so is the title.
         assertThat(method).doesNotContain("stop scrolling").doesNotContain("Chicken Bake")
                 .doesNotContain("recipe is below").doesNotContain("hope you enjoy");
@@ -344,10 +344,10 @@ class RecipeImportServiceTest {
 
         assertThat(method.lines()).containsExactly(
                 "Take off the top and the bottom.",
-                "We're gonna cut it directly in half.",
-                "Then we can remove the seeds.",
-                "While those are in the oven, I can small dice, 1/2 a Spanish onion, mince 4 garlic cloves.",
-                "Then serve it on a plate or in a bowl.");
+                "Cut it directly in half.",
+                "Remove the seeds.",
+                "While those are in the oven, small dice, 1/2 a Spanish onion, mince 4 garlic cloves.",
+                "Serve it on a plate or in a bowl.");
         // The sell before, the sign-off after, and the asides in between are all gone.
         assertThat(method).doesNotContain("squash season").doesNotContain("band aids")
                 .doesNotContain("sap").doesNotContain("two clean halves").doesNotContain("plating tip");
@@ -362,7 +362,32 @@ class RecipeImportServiceTest {
                 "I'm going to melt the butter in a pan",
                 "and then I add the garlic and stir it for two minutes",
                 "thanks for watching"))).isEqualTo(
-                "I'm going to melt the butter in a pan.\nThen I add the garlic and stir it for two minutes.");
+                "Melt the butter in a pan.\nAdd the garlic and stir it for two minutes.");
+    }
+
+    @Test
+    void rewritesWhatWasSaidAsAnInstruction() {
+        // A step tells the reader what to do. Out loud nobody talks that way — it is always
+        // "then we can", "I'll", "you're gonna" — and taking the speaker out of the sentence
+        // is most of the distance between a transcript and a method.
+        assertThat(service.methodFrom(List.of(
+                "Then we can remove the seeds.",
+                "And I'll add a cup of chicken stock.",
+                "So you're gonna turn the heat off.",
+                "Now we're gonna sweat our onions in a little oil.",
+                "All you have to do with the chicken is dust it with paprika.",
+                "All you're going to let it do is bake for forty minutes."))).isEqualTo("""
+                Remove the seeds.
+                Add a cup of chicken stock.
+                Turn the heat off.
+                Sweat the onions in a little oil.
+                Dust it with paprika.
+                Bake for forty minutes.""");
+
+        // Not every "I" is a step waiting to be ordered about: only drop the speaker when
+        // what follows is something to do.
+        assertThat(service.methodFrom(List.of("I like it spicy, so I add chilli to the pan.")))
+                .isEqualTo("I like it spicy, so I add chilli to the pan.");
     }
 
     @Test
