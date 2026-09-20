@@ -19,7 +19,7 @@ struct Amount {
     let optional: Bool
 
     private static let units: [String: String] = [
-        "cup": "cup", "cups": "cup",
+        "cup": "cup", "cups": "cup", "c": "cup",
         "tbsp": "tbsp", "tbsps": "tbsp", "tbs": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
         "tsp": "tsp", "tsps": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
         "oz": "oz", "ounce": "oz", "ounces": "oz",
@@ -33,8 +33,18 @@ struct Amount {
         "stick": "stick", "sticks": "stick", "bunch": "bunch", "bunches": "bunch",
         "head": "head", "heads": "head", "slice": "slice", "slices": "slice",
         "package": "package", "packages": "package", "pkg": "package",
-        "pinch": "pinch", "pinches": "pinch", "dash": "dash",
-        "sprig": "sprig", "sprigs": "sprig", "handful": "handful",
+        "pinch": "pinch", "pinches": "pinch", "dash": "dash", "dashes": "dash",
+        "gallon": "gallon", "gallons": "gallon", "ct": "ct",
+        "sprig": "sprig", "sprigs": "sprig",
+        // How a cook measures out loud. These arrive from recipes read off a video
+        // transcript, and the three parsers — here, IngredientLine.java and amount.ts —
+        // have to agree.
+        "handful": "handful", "handfuls": "handful", "knob": "knob", "knobs": "knob",
+        "wedge": "wedge", "wedges": "wedge", "block": "block", "blocks": "block",
+        "packet": "packet", "packets": "packet", "jar": "jar", "jars": "jar",
+        "bottle": "bottle", "bottles": "bottle", "shot": "shot", "shots": "shot",
+        "glug": "glug", "glugs": "glug", "spoonful": "spoonful", "spoonfuls": "spoonful",
+        "sprinkling": "sprinkling", "drizzle": "drizzle", "splash": "splash",
     ]
 
     /// "½ cup" and "1½ cups" both turn up in recipes written for people.
