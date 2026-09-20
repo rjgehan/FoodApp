@@ -384,6 +384,23 @@ class RecipeImportServiceTest {
                 0.8 lb salmon
                 """, "u").name()).isEqualTo("Hot Honey Garlic Salmon");
 
+        // The shape that actually turned up: a hook, then the name with a colon announcing
+        // the shopping list. A trailing colon is only a heading when the word before it is
+        // one, and "Butternut squash and white beans" is not.
+        assertThat(service.fromCaption("""
+                is it time?
+                Butternut squash and white beans:
+                1 butternut squash
+                2 tbsp olive oil
+                """, "u").name()).isEqualTo("Butternut squash and white beans");
+
+        // And the same caption written on one line, which is just as common.
+        assertThat(service.fromCaption("""
+                is it time? Butternut squash and white beans:
+                1 butternut squash
+                2 tbsp olive oil
+                """, "u").name()).isEqualTo("Butternut squash and white beans");
+
         // When the hook runs straight into the shopping list there is no better line to
         // take, and a name you can edit beats no name at all.
         assertThat(service.fromCaption("is it time?\n1 butternut squash\n2 tbsp olive oil\n", "u").name())

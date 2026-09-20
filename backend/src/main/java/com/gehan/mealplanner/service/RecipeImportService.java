@@ -657,23 +657,51 @@ public class RecipeImportService {
      */
     private String nameFrom(List<String> lines) {
         for (String raw : lines) {
-            if (couldBeADishName(raw)) return trimTitle(raw);
+            String title = titleIn(raw);
+            if (title != null) return title;
         }
-        return trimTitle(lines.get(0));
+        return trimTitle(withoutTheHook(lines.get(0)));
     }
 
     private static String trimTitle(String line) {
         return line.replaceAll("[:\\-–—]+$", "").trim();
     }
 
-    private boolean couldBeADishName(String raw) {
-        String line = raw.trim();
-        if (line.endsWith(":")) return false;                       // "Ingredients:"
-        if (line.endsWith("?") || line.endsWith(".")) return false; // a hook, or a step
+    /**
+     * The dish name in this line, or null when the line cannot be one.
+     *
+     * A caption really does say "is it time? Butternut squash and white beans:" and then the
+     * shopping list. So the hook in front of a title is dropped rather than read as one, and
+     * a trailing colon is only a heading when the word before it is one — otherwise it is a
+     * title announcing the list that follows.
+     */
+    private String titleIn(String raw) {
+        String line = withoutTheHook(raw.trim());
+        if (line.endsWith(":") && isSectionHeading(line)) return null;
+        if (line.endsWith("?") || line.endsWith(".")) return null;  // still a hook, or a step
         String title = trimTitle(line);
-        if (title.length() < 3 || title.length() > 60) return false;
-        if (!title.matches(".*\\p{L}.*")) return false;             // emoji on their own
-        return IngredientLine.of(title).quantity() == null;         // "400g butter"
+        if (title.length() < 3 || title.length() > 60) return null;
+        if (!title.matches(".*\\p{L}.*")) return null;              // emoji on their own
+        return IngredientLine.of(title).quantity() == null ? title : null;  // "400g butter"
+    }
+
+    /** "is it time? Butternut squash" is a hook and then the name. Keep the name. */
+    private static String withoutTheHook(String line) {
+        int asked = line.lastIndexOf('?');
+        if (asked < 0 || asked == line.length() - 1) return line;
+        String after = line.substring(asked + 1).trim();
+        return after.length() >= 3 ? after : line;
+    }
+
+    /** "Ingredients:" divides a caption. "Creamy tomato soup:" is what the dish is called. */
+    private boolean isSectionHeading(String line) {
+        String word = line.substring(0, line.length() - 1).toLowerCase().replaceAll("[^a-z]", "");
+        for (String heading : List.of("ingredient", "method", "instruction", "direction", "step",
+                "note", "tip", "equipment", "youwillneed", "whatyouneed", "shoppinglist",
+                "tomake", "forthesauce", "sauce", "topping", "filling", "garnish")) {
+            if (word.equals(heading) || word.equals(heading + "s") || word.equals(heading + "list")) return true;
+        }
+        return word.isEmpty();
     }
 
     /**
