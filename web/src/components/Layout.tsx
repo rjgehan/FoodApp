@@ -9,17 +9,24 @@ import {
   BookIcon,
   CalendarIcon,
   CartIcon,
+  ChevronRightIcon,
+  CompassIcon,
   CupboardIcon,
-  HouseholdIcon,
 } from './icons';
 
-/* Named for what is behind each tab. Five, the most a phone tab bar should hold. */
+/*
+ Named for what is behind each tab. Five, the most a phone tab bar should hold.
+
+ Household used to have the last one and does not any more: it is where you go once, to set
+ the place up, and it was spending a fifth of the app's navigation on that. It lives behind
+ your own face in the corner now, with the rest of the settings.
+*/
 const navItems = [
   { to: '/meal-plan', label: 'Plan', Icon: CalendarIcon },
   { to: '/recipes', label: 'Recipes', Icon: BookIcon },
   { to: '/grocery-list', label: 'Groceries', Icon: CartIcon },
   { to: '/cupboard', label: 'Cupboard', Icon: CupboardIcon },
-  { to: '/household', label: 'Household', Icon: HouseholdIcon },
+  { to: '/explore', label: 'Explore', Icon: CompassIcon },
 ];
 
 /**
@@ -128,8 +135,20 @@ export default function Layout({ children }: { children: ReactNode }) {
         </header>
 
         {showProfile && (
-          <Sheet title="You" onClose={() => setShowProfile(false)}>
+          <Sheet title="Settings" onClose={() => setShowProfile(false)}>
             <CardInSheetProvider value={true}>
+              {/* Above the account card, because that card ends in Sign out and nothing
+                  should sit under the way out. Everything about the house itself — aisles,
+                  places, who is here — is a page rather than a sheet: there is a lot of it. */}
+              <NavLink
+                to="/household"
+                onClick={() => setShowProfile(false)}
+                className="press mb-3 flex min-h-touch items-center justify-between gap-3 rounded-xl
+                           bg-elevated px-4 py-3 text-ink"
+              >
+                <span className="font-medium">Household settings</span>
+                <ChevronRightIcon className="h-5 w-5 shrink-0 text-subtle" />
+              </NavLink>
               <ProfileCard />
             </CardInSheetProvider>
           </Sheet>

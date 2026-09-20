@@ -51,6 +51,14 @@ export const CupboardIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+/** A compass: the conventional mark for a place you go to find things you do not have yet. */
+export const CompassIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1z" />
+  </Icon>
+);
+
 export const HouseholdIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="9" cy="8" r="3" />

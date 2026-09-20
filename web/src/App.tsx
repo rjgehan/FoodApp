@@ -49,13 +49,15 @@ export default function App() {
           <Route path="/household" element={<HouseholdPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
-          <Route path="/recipes/explore" element={<ExplorePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />
           <Route path="/recipes/:recipeId" element={<RecipeDetailPage />} />
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="/cupboard" element={<CupboardPage />} />
+          <Route path="/explore" element={<ExplorePage />} />
+          {/* Explore used to live under Recipes. Links and bookmarks still work. */}
+          <Route path="/recipes/explore" element={<Navigate to="/explore" replace />} />
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

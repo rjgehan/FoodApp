@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, EmptyState, Input } from '../components/ui';
-import { ChevronLeftIcon } from '../components/icons';
+import { Card, EmptyState, Input } from '../components/ui';
 import RecipeGrid from '../components/RecipeGrid';
 import { PageTitle } from '../components/PageTitle';
 
@@ -12,9 +11,12 @@ import { PageTitle } from '../components/PageTitle';
  * Everything every household here has published — the one place recipes travel between houses
  * without anyone sending a link. Opening one is the ordinary recipe page; keeping one is the
  * same "Move to my recipes" that a recipe shared with you uses, so nothing new to learn.
+ *
+ * A tab of its own rather than a room inside Recipes, because Recipes is what this house
+ * cooks and this is what everybody else does — and because what is planned next for this
+ * tab, nutrition and meal plans built around it, is not a recipe list at all.
  */
 export default function ExplorePage() {
-  const navigate = useNavigate();
   const { activeHouseholdId } = useHousehold();
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [query, setQuery] = useState('');
@@ -55,13 +57,7 @@ export default function ExplorePage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <Button variant="ghost" size="sm" className="-ml-3" onClick={() => navigate('/recipes')}>
-          <ChevronLeftIcon className="h-5 w-5" />
-          Recipes
-        </Button>
-        <PageTitle title="Explore" subtitle="Recipes other households here have published." />
-      </div>
+      <PageTitle title="Explore" subtitle="Recipes other households here have published." />
 
       <Input
         type="search"
