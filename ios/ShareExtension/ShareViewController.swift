@@ -60,13 +60,12 @@ final class ShareViewController: UIViewController {
         let note = report.isEmpty ? "" : "&diag=\(encode(report))"
         if let recipe = found.recipe, !recipe.isEmpty,
            let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))\(note)"),
-           url.absoluteString.count < 120_000 {
+           url.absoluteString.count < Self.longestURL {
             label.text = "Found the recipe."
             open(url)
             return
         }
-        guard let text = found.text,
-              let url = URL(string: "mealplanner://paste?text=\(encode(text))\(note)") else {
+        guard let text = found.text else {
             // Even with nothing to read, the note is worth sending: a share that produced
             // nothing is exactly the one worth knowing the shape of.
             if !report.isEmpty, let url = URL(string: "mealplanner://paste?diag=\(encode(report))") {
@@ -76,8 +75,45 @@ final class ShareViewController: UIViewController {
             }
             return
         }
+        guard let url = textURL(text, link: found.link, note: note) else {
+            finish(with: "That page is too big to hand over.")
+            return
+        }
         open(url)
     }
+
+    /**
+     A URL short enough that iOS will actually open it.
+
+     Everything after `text=` is percent-encoded against the unreserved set, which turns every
+     space and newline into three characters — so a long article arrives here as a URL several
+     hundred kilobytes wide, and `extensionContext.open` answers that by quietly returning
+     false. The recipe path has always had a ceiling; the text path did not, which is why a
+     big page failed with nothing but "Could not open Meal Planner".
+
+     Too big to send is not the same as nothing to send. A link goes instead, because the
+     server can fetch the page and read the recipe data out of it properly — better than a
+     model reading the prose. Truncating is the last resort, and it keeps the end of the page:
+     a food blog puts its story first and its recipe last.
+    */
+    private func textURL(_ text: String, link: String?, note: String) -> URL? {
+        if let url = URL(string: "mealplanner://paste?text=\(encode(text))\(note)"),
+           url.absoluteString.count < Self.longestURL {
+            return url
+        }
+        if let link, let url = URL(string: "mealplanner://paste?text=\(encode("\u{1F517}" + link))\(note)") {
+            return url
+        }
+        // No link to fall back on: send as much of the tail as fits, and none of the note.
+        let room = Self.longestURL / 3 - 64
+        let tail = String(text.suffix(max(0, room)))
+        return tail.isEmpty ? nil : URL(string: "mealplanner://paste?text=\(encode(tail))")
+    }
+
+    /// Measured against nothing — Apple documents no limit. It is set low enough that the
+    /// URLs this sends stay far under anything anybody has reported failing, and high enough
+    /// that a whole recipe, with its method, still fits.
+    private static let longestURL = 60_000
 
     /// What was shared: the page's own recipe data if it publishes any, and its words either way.
     ///
@@ -85,7 +121,7 @@ final class ShareViewController: UIViewController {
     /// they chose; a URL is neither, and passing one to a language model produces an invented
     /// recipe built out of the slug. A URL is only ever sent as a last resort, marked so the
     /// app knows to fetch it rather than read it.
-    private func shared() async -> (recipe: String?, text: String?) {
+    private func shared() async -> (recipe: String?, text: String?, link: String?) {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         var recipe: String?
         var pageText: String?
@@ -134,7 +170,7 @@ final class ShareViewController: UIViewController {
         } else {
             text = selection ?? pageText
         }
-        return (recipe, text)
+        return (recipe, text, link)
     }
 
     /**

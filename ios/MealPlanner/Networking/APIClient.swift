@@ -125,6 +125,17 @@ actor APIClient {
     // MARK: - The app
 
     /// The households this person belongs to, for the switcher in the header.
+    /// Walking out. The server refuses with 409 when you are the only one left, because an
+    /// empty household is one nobody can sign in to and nobody can delete.
+    func leaveHousehold(_ id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(id.uuidString)/members/me")
+    }
+
+    /// The other door, for the last person in: the household and everything in it, gone.
+    func deleteHousehold(_ id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(id.uuidString)")
+    }
+
     func myHouseholds() async throws -> [HouseholdSummary] {
         try await get("/api/households")
     }

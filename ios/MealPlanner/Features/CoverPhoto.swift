@@ -14,17 +14,44 @@ import ImagePlayground
 
  Nothing here blocks saving. A recipe with no picture is a perfectly good recipe.
 */
+/**
+ Everything the cover-photo rows need that has to outlive them.
+
+ It lives on the screen, not in the Section, and that is the whole point. A Section is a row in
+ a Form, and a Form is free to tear its rows down and build them again — while you type the
+ dish name, every keystroke rebuilds them. A `.sheet` attached there goes with them, which is
+ why Image Playground opened and vanished: the thing presenting it had stopped existing. The
+ camera got away with it because it opens in a single frame; the generator takes longer.
+
+ The dish name is copied in at the moment you tap Generate, too. Reading it live meant the
+ concept changed under an open sheet.
+*/
+@Observable
+final class CoverPhotoFlow {
+    enum Ask: Identifiable, Equatable {
+        case generate(String)
+        case camera
+        var id: String {
+            switch self {
+            case .generate(let concept): "generate:\(concept)"
+            case .camera: "camera"
+            }
+        }
+    }
+
+    var ask: Ask?
+    var uploading = false
+    var error: String?
+}
+
 struct CoverPhotoSection: View {
     /// What the dish is called. The generator has nothing to work from until this is typed.
     let dishName: String
     var session: Session?
     @Binding var coverImageId: UUID?
+    var flow: CoverPhotoFlow
 
-    @State private var generating = false
-    @State private var uploading = false
     @State private var picked: PhotosPickerItem?
-    @State private var takingPhoto = false
-    @State private var error: String?
 
     private var named: String { dishName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -55,7 +82,7 @@ struct CoverPhotoSection: View {
                 }
             }
 
-            if uploading {
+            if flow.uploading {
                 HStack(spacing: 10) {
                     ProgressView()
                     Text("Saving the photo…").foregroundStyle(.secondary)
@@ -64,27 +91,27 @@ struct CoverPhotoSection: View {
 
             if canGenerate {
                 Button {
-                    generating = true
+                    flow.ask = .generate(named)
                 } label: {
                     Label(coverImageId == nil ? "Generate a photo" : "Generate a different one",
                           systemImage: "apple.intelligence")
                 }
-                .disabled(named.isEmpty || uploading)
+                .disabled(named.isEmpty || flow.uploading)
             }
 
             Button {
-                takingPhoto = true
+                flow.ask = .camera
             } label: {
                 Label("Take my own photo", systemImage: "camera")
             }
-            .disabled(uploading)
+            .disabled(flow.uploading)
 
             PhotosPicker(selection: $picked, matching: .images, photoLibrary: .shared()) {
                 Label("Choose from my photos", systemImage: "photo.on.rectangle")
             }
-            .disabled(uploading)
+            .disabled(flow.uploading)
 
-            if let error {
+            if let error = flow.error {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
         } header: {
@@ -96,24 +123,16 @@ struct CoverPhotoSection: View {
                 Text("Made on your phone from the name. Nothing is sent anywhere, and there is no daily limit.")
             }
         }
-        .coverPlaygroundSheet(isPresented: $generating, concept: named) { url in
-            Task { await upload(pngFrom: url) }
-        }
-        .sheet(isPresented: $takingPhoto) {
-            CameraPicker { image in
-                Task { await upload(image) }
-            }
-        }
         .onChange(of: picked) { _, item in
             guard let item else { return }
             Task {
                 defer { picked = nil }
                 guard let data = try? await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else {
-                    error = "Could not read that photo."
+                    flow.error = "Could not read that photo."
                     return
                 }
-                await upload(image)
+                await upload(image, into: $coverImageId, session: session, flow: flow)
             }
         }
     }
@@ -127,33 +146,67 @@ struct CoverPhotoSection: View {
         return false
     }
 
-    private func upload(pngFrom url: URL) async {
-        guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
-            error = "Could not read the picture that was made."
-            return
-        }
-        await upload(image)
-    }
+}
 
-    private func upload(_ image: UIImage) async {
-        guard let household = session?.household?.id else {
-            error = "No household to save it to."
-            return
-        }
-        // Full-bleed at the top of a recipe, so a 12-megapixel camera photo is many times
-        // more than is ever shown, and all of it would cross the network twice.
-        guard let png = image.scaled(toFit: 1400).pngData() else {
-            error = "Could not prepare that photo."
-            return
-        }
-        uploading = true
-        error = nil
-        defer { uploading = false }
-        do {
-            coverImageId = try await APIClient.shared.uploadImage(household: household, png: png)
-        } catch {
-            self.error = error.localizedDescription
-        }
+/// Shared by the rows and by the screen that presents the camera and the generator, because
+/// both end with the same picture going to the same place.
+@MainActor
+func upload(_ image: UIImage, into coverImageId: Binding<UUID?>, session: Session?, flow: CoverPhotoFlow) async {
+    guard let household = session?.household?.id else {
+        flow.error = "No household to save it to."
+        return
+    }
+    // Full-bleed at the top of a recipe, so a 12-megapixel camera photo is many times more
+    // than is ever shown, and all of it would cross the network twice.
+    guard let png = image.scaled(toFit: 1400).pngData() else {
+        flow.error = "Could not prepare that photo."
+        return
+    }
+    flow.uploading = true
+    flow.error = nil
+    defer { flow.uploading = false }
+    do {
+        coverImageId.wrappedValue = try await APIClient.shared.uploadImage(household: household, png: png)
+    } catch {
+        flow.error = error.localizedDescription
+    }
+}
+
+@MainActor
+func upload(pngFrom url: URL, into coverImageId: Binding<UUID?>, session: Session?, flow: CoverPhotoFlow) async {
+    guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
+        flow.error = "Could not read the picture that was made."
+        return
+    }
+    await upload(image, into: coverImageId, session: session, flow: flow)
+}
+
+/**
+ The camera and the generator, presented by the screen rather than by a row inside it.
+
+ Both hang off the Form, which stays alive for as long as the screen does. That is the fix for
+ a generator sheet that opened and immediately closed again.
+*/
+extension View {
+    func coverPhotoFlow(_ flow: CoverPhotoFlow, session: Session?, coverImageId: Binding<UUID?>) -> some View {
+        self
+            .sheet(isPresented: Binding(
+                get: { flow.ask == .camera },
+                set: { if !$0 { flow.ask = nil } }
+            )) {
+                CameraPicker { image in
+                    Task { await upload(image, into: coverImageId, session: session, flow: flow) }
+                }
+            }
+            .coverPlaygroundSheet(
+                isPresented: Binding(
+                    get: { if case .generate = flow.ask { true } else { false } },
+                    set: { if !$0 { flow.ask = nil } }
+                ),
+                concept: { if case .generate(let concept) = flow.ask { concept } else { "" } }()
+            ) { url in
+                Task { await upload(pngFrom: url, into: coverImageId, session: session, flow: flow) }
+            }
     }
 }
 
@@ -242,6 +295,7 @@ struct CoverPhotoSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var coverImageId: UUID?
+    @State private var cover = CoverPhotoFlow()
     @State private var busy = false
     @State private var error: String?
 
@@ -255,11 +309,12 @@ struct CoverPhotoSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                CoverPhotoSection(dishName: recipe.name, session: session, coverImageId: $coverImageId)
+                CoverPhotoSection(dishName: recipe.name, session: session, coverImageId: $coverImageId, flow: cover)
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
+            .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
             .navigationTitle(recipe.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

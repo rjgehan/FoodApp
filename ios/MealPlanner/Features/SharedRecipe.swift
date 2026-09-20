@@ -94,7 +94,7 @@ struct StructuredRecipe: Codable {
     var steps: [String]
 }
 
-struct LabsPasteView: View {
+struct SharedRecipeView: View {
     var session: Session
     /// Handed in by the share extension; typed by hand otherwise.
     var incoming: String?
@@ -707,5 +707,5 @@ struct LabsPasteView: View {
 }
 
 #Preview("Paste") {
-    NavigationStack { LabsPasteView(session: .preview) }
+    NavigationStack { SharedRecipeView(session: .preview) }
 }

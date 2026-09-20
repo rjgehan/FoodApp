@@ -20,6 +20,7 @@ struct EditRecipeView: View {
     @State private var instructions: String
     @State private var ingredients: [Draft]
     @State private var coverImageId: UUID?
+    @State private var cover = CoverPhotoFlow()
     @State private var busy = false
     @State private var error: String?
 
@@ -64,7 +65,7 @@ struct EditRecipeView: View {
                 }
 
                 // Straight after the name, because the name is what it has to work from.
-                CoverPhotoSection(dishName: name, session: session, coverImageId: $coverImageId)
+                CoverPhotoSection(dishName: name, session: session, coverImageId: $coverImageId, flow: cover)
 
                 Section("Time") {
                     Stepper("Prep \(prep) min", value: $prep, in: 0...600, step: 5)
@@ -98,6 +99,7 @@ struct EditRecipeView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
+            .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
             .navigationTitle(recipe == nil ? "New recipe" : "Edit recipe")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

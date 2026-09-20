@@ -44,7 +44,7 @@ struct MealPlannerApp: App {
                 }
                 .sheet(item: Binding(get: { shared.map(SharedText.init) }, set: { shared = $0?.text })) { incoming in
                     NavigationStack {
-                        LabsPasteView(
+                        SharedRecipeView(
                             session: session,
                             incoming: sharedRecipe == nil ? incoming.text : nil,
                             structured: sharedRecipe,
@@ -105,12 +105,6 @@ struct RootView: View {
                 ExploreView(session: session)
                     .tabItem { Label("Explore", systemImage: "safari") }
                     .tag("explore")
-                #if DEBUG
-                // Temporary: Apple Intelligence experiments. Delete this and LabsView.swift.
-                LabsView(session: session)
-                    .tabItem { Label("Labs", systemImage: "flask") }
-                    .tag("labs")
-                #endif
             }
             #if DEBUG
             .sheet(isPresented: Binding(
@@ -156,7 +150,6 @@ struct SettingsView: View {
             List {
                 Section("You") {
                     LabeledContent("Signed in as", value: session.displayName ?? "—")
-                    LabeledContent("Household", value: session.household?.name ?? "—")
                 }
                 /*
                  Changeable from here, not only from the sign-in screen.
@@ -165,6 +158,24 @@ struct SettingsView: View {
                  could point the app somewhere else was the one moment you were signed out —
                  and once signed in the address was shown and could not be touched.
                 */
+                // Everything about the house itself. A page rather than rows here, because
+                // it is where leaving and deleting live and those want room.
+                Section {
+                    NavigationLink {
+                        HouseholdScreen(session: session)
+                    } label: {
+                        LabeledContent("Household settings", value: session.household?.name ?? "—")
+                    }
+                }
+
+                Section {
+                    AppleIntelligenceStatus()
+                } header: {
+                    Text("Apple Intelligence")
+                } footer: {
+                    Text("What the phone says it can do. Generating a cover photo needs the first one.")
+                }
+
                 Section("Server") {
                     Button {
                         serverDraft = Config.baseURL

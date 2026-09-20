@@ -61,10 +61,15 @@ struct CupboardView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { editing = item }
                                 .swipeActions(edge: .trailing) {
+                                    // Destructive first in the code, so it lands furthest out
+                                    // under the thumb — the same order as the web's tray.
+                                    Button("Remove", systemImage: "trash", role: .destructive) {
+                                        Task { await remove(item) }
+                                    }
                                     Button("Buy again", systemImage: "cart.badge.plus") {
                                         Task { await buyAgain(item) }
                                     }
-                                    .tint(.accentColor)
+                                    .tint(Palette.accent)
                                 }
                         }
                     }
@@ -123,16 +128,7 @@ struct CupboardView: View {
                 .background(Color(.tertiarySystemFill), in: Capsule())
             } else {
                 // Everything else: the one-tap answer to "are we out?"
-                Picker("Have or low", selection: Binding(
-                    get: { item.runningLow },
-                    set: { wanted in Task { await setLow(item, wanted) } }
-                )) {
-                    Text("Have").tag(false)
-                    Text("Low").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 128)
+                HaveOrLow(low: item.runningLow) { wanted in Task { await setLow(item, wanted) } }
             }
         }
     }
@@ -187,8 +183,64 @@ struct CupboardView: View {
         }
     }
 
+    private func remove(_ item: CupboardItem) async {
+        guard let household = session.household?.id else { return }
+        // Off the screen first: a swipe that leaves the row sitting there reads as a miss.
+        items.removeAll { $0.id == item.id }
+        do {
+            try await APIClient.shared.removeFromCupboard(household: household, item: item.id)
+        } catch {
+            self.error = error.localizedDescription
+            await load()
+        }
+    }
+
     private func replace(_ item: CupboardItem) {
         if let i = items.firstIndex(where: { $0.id == item.id }) { items[i] = item }
+    }
+}
+
+/**
+ Have or Low, in the app's own two colours.
+
+ A plain segmented picker paints the chosen half grey, which says "this one" and nothing else.
+ The whole point of this control is read at a glance from across the kitchen: green means
+ there is some, orange means buy more. The web has said that in colour from the start.
+*/
+struct HaveOrLow: View {
+    let low: Bool
+    var onChange: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            half(isLow: false, title: "Have", tint: Palette.success)
+            half(isLow: true, title: "Low", tint: Palette.accent)
+        }
+        .padding(2)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("How much is left")
+    }
+
+    private func half(isLow: Bool, title: String, tint: Color) -> some View {
+        let chosen = low == isLow
+        return Button {
+            if !chosen { onChange(isLow) }
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(chosen ? tint : Color.secondary)
+                .frame(width: 58, height: 28)
+                .background {
+                    if chosen {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(chosen ? [.isSelected] : [])
     }
 }
 
@@ -200,6 +252,7 @@ struct CupboardItemSheet: View {
     var onChanged: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var name: String
     @State private var staple: Bool
     @State private var tracks: Bool
     @State private var amount: Double
@@ -212,6 +265,7 @@ struct CupboardItemSheet: View {
         self.session = session
         self.onChanged = onChanged
         _staple = State(initialValue: item.staple)
+        _name = State(initialValue: item.name)
         _tracks = State(initialValue: item.tracksQuantity)
         _amount = State(initialValue: item.quantity ?? 1)
         _unit = State(initialValue: item.unit ?? "")
@@ -220,6 +274,14 @@ struct CupboardItemSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("Name", text: $name)
+                } header: {
+                    Text("Name")
+                } footer: {
+                    Text("Renaming it to something already in the cupboard merges the two.")
+                }
+
                 Section {
                     LabeledContent("Status", value: item.runningLow ? "Running low" : "Have some")
                     LabeledContent("On the grocery list", value: item.onList ? "Yes" : "No")
@@ -273,6 +335,12 @@ struct CupboardItemSheet: View {
         .presentationDetents([.large])
     }
 
+    /// Blank means "leave it alone", not "call it nothing".
+    private var named: String {
+        let typed = name.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? item.name : typed
+    }
+
     private func save() async {
         guard let household = session.household?.id else { return }
         busy = true
@@ -281,6 +349,7 @@ struct CupboardItemSheet: View {
             _ = try await APIClient.shared.editCupboard(
                 household: household,
                 item: item.id,
+                name: named == item.name ? nil : named,
                 staple: staple,
                 trackQuantity: tracks,
                 quantity: tracks ? amount : nil,

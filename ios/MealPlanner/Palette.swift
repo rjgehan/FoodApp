@@ -24,6 +24,11 @@ enum Palette {
     /// which is the single clearest sign that nobody chose anything.
     static let accent = dynamic(light: 0xEA580C, dark: 0xFF9F40)
 
+    /// "You have this" — the only other colour that carries meaning. Green in both schemes,
+    /// the web's --success, which is darker than Apple's green in light mode so it reads as
+    /// text rather than as a tick.
+    static let success = dynamic(light: 0x248A3D, dark: 0x30D158)
+
     /// The accent at a whisper — behind an avatar, or under a selected day. The web's
     /// --accent-soft, which is a warm tint in light and a dark ember in dark, not the accent
     /// at low opacity.
