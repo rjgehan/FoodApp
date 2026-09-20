@@ -14,6 +14,10 @@ import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
+import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
+import com.gehan.mealplanner.dto.RecipeDtos.ImportRecipeRequest;
+import com.gehan.mealplanner.service.HouseholdService;
+import com.gehan.mealplanner.service.RecipeImportService;
 import com.gehan.mealplanner.service.RecipeLinkService;
 import com.gehan.mealplanner.service.RecipeService;
 import jakarta.validation.Valid;
@@ -33,9 +37,18 @@ public class RecipeController {
 
     private final RecipeLinkService linkService;
 
-    public RecipeController(RecipeService recipeService, RecipeLinkService linkService) {
+    private final RecipeImportService importService;
+
+    private final HouseholdService householdService;
+
+    public RecipeController(RecipeService recipeService,
+                            RecipeLinkService linkService,
+                            RecipeImportService importService,
+                            HouseholdService householdService) {
         this.linkService = linkService;
         this.recipeService = recipeService;
+        this.importService = importService;
+        this.householdService = householdService;
     }
 
     @PostMapping("/api/households/{householdId}/recipes")
@@ -140,6 +153,18 @@ public class RecipeController {
                                        @PathVariable UUID recipeId,
                                        @Valid @RequestBody UpdateVideoRequest request) {
         return recipeService.updateVideo(recipeId, userId, request);
+    }
+
+    /**
+     * Reads a recipe off a link, using the page's own structured data. A draft comes back for
+     * checking; nothing is saved until the form is submitted.
+     */
+    @PostMapping("/api/households/{householdId}/recipes/import")
+    public GeneratedRecipe importFromUrl(@AuthenticationPrincipal UUID userId,
+                                          @PathVariable UUID householdId,
+                                          @Valid @RequestBody ImportRecipeRequest request) {
+        householdService.assertMember(householdId, userId);
+        return importService.fromUrl(request.url());
     }
 
     @PutMapping("/api/recipes/{recipeId}/images")

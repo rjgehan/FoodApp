@@ -49,6 +49,10 @@ public class RecipeDtos {
             @NotNull @Valid List<RecipeIngredientRequest> ingredients) {
     }
 
+    /** A link to a recipe on the web, to be read from the page's own structured data. */
+    public record ImportRecipeRequest(@NotBlank String url) {
+    }
+
     /** A blank or null url clears the video. */
     public record UpdateVideoRequest(String videoUrl) {
     }

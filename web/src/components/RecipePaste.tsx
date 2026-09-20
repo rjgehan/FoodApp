@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { api, ApiError } from '../api/client';
 import type { Recipe, RecipeSection } from '../api/types';
 import RecipeForm, { type RecipeDraft } from './RecipeForm';
 import { Button, Card, ErrorText, Field, Input, NumberInput, Textarea } from './ui';
@@ -32,6 +33,8 @@ export function PasteFromChatGpt({
   const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
+  const [link, setLink] = useState('');
+  const [importing, setImporting] = useState(false);
 
   const prompt = buildRecipePrompt(dish.trim(), servings ?? 4);
 
@@ -43,6 +46,27 @@ export function PasteFromChatGpt({
       window.setTimeout(() => setCopied(null), 2000);
     } catch {
       setCopied('failed');
+    }
+  }
+
+  /**
+   * A link needs no reading at all. Nearly every recipe site publishes its own ingredient and
+   * step lists as structured data, and the server reads that — instantly, exactly, and without
+   * spending one of the twenty AI requests a day.
+   */
+  async function importLink(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setImporting(true);
+    try {
+      const imported = await api<RecipeDraft>('POST', `/api/households/${householdId}/recipes/import`, {
+        url: link.trim(),
+      });
+      setDraft({ ...imported, servings: imported.servings || servings || 4 });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Couldn’t read that page.');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -75,7 +99,29 @@ export function PasteFromChatGpt({
 
   return (
     <div className="space-y-4">
-      <Card title="1. Ask ChatGPT">
+      <form onSubmit={importLink}>
+        <Card title="From a link">
+          <div className="space-y-3">
+            <Input
+              type="url"
+              inputMode="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="https://…"
+              aria-label="A link to a recipe"
+            />
+            <Button type="submit" full disabled={!link.trim() || importing}>
+              {importing ? 'Reading the page…' : 'Get the recipe'}
+            </Button>
+            <p className="text-sm text-muted">
+              Reads the recipe the site publishes about itself, so the amounts are exactly theirs. Costs
+              none of the day’s AI requests.
+            </p>
+          </div>
+        </Card>
+      </form>
+
+      <Card title="Or ask ChatGPT">
         <div className="space-y-3">
           <Field label="What do you want to make?" hint="Optional — leave it blank and name it in ChatGPT.">
             <Input value={dish} onChange={(e) => setDish(e.target.value)} placeholder="Chicken parmesan" />
@@ -103,7 +149,7 @@ export function PasteFromChatGpt({
       </Card>
 
       <form onSubmit={read}>
-        <Card title="2. Paste the answer">
+        <Card title="Or paste a recipe">
           <div className="space-y-3">
             <Textarea
               rows={10}
