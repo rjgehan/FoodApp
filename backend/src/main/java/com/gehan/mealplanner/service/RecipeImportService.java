@@ -124,7 +124,7 @@ public class RecipeImportService {
          * and publishes it beside the video, so whatever is missing — the method, the
          * shopping list, or both — can be read for free out of what the cook said.
          */
-        String spoken = transcript(item);
+        Spoken spoken = transcript(item);
         if (spoken == null) {
             if (draft.ingredients().isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -135,7 +135,7 @@ public class RecipeImportService {
         }
 
         List<GeneratedIngredient> ingredients = draft.ingredients().isEmpty()
-                ? SpokenIngredients.from(spoken)
+                ? SpokenIngredients.from(spoken.method())
                 : draft.ingredients();
         if (ingredients.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -143,8 +143,9 @@ public class RecipeImportService {
         }
         return new GeneratedRecipe(draft.name(), draft.description(), draft.prepTimeMinutes(),
                 draft.cookTimeMinutes(), draft.servings(), ingredients,
-                hasSteps ? draft.instructions() : spoken,
-                hasSteps ? MethodSource.PUBLISHED : MethodSource.SPOKEN);
+                hasSteps ? draft.instructions() : spoken.method(),
+                hasSteps ? MethodSource.PUBLISHED : MethodSource.SPOKEN,
+                hasSteps ? List.of() : spoken.lines());
     }
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
@@ -224,7 +225,11 @@ public class RecipeImportService {
         return best;
     }
 
-    private String transcript(JsonNode item) {
+    /** What was said: the method as steps, and the sentences it was made from. */
+    record Spoken(String method, List<String> lines) {
+    }
+
+    private Spoken transcript(JsonNode item) {
         JsonNode best = bestSubtitle(item);
         if (best.isMissingNode()) return null;
 
@@ -233,7 +238,8 @@ public class RecipeImportService {
             // bonus. A transcript that is slow to arrive is one the recipe does without.
             List<String> cues = cuesFrom(fetch(URI.create(best.path("Url").asText()), Duration.ofSeconds(6)));
             if (!soundsLikeCooking(String.join(" ", cues))) return null;
-            return methodFrom(cues);
+            Method method = methodOf(cues);
+            return method.written() == null ? null : new Spoken(method.written(), method.spoken());
         } catch (RuntimeException e) {
             log.info("Could not read the TikTok transcript ({})", e.toString());
             return null;
@@ -293,6 +299,22 @@ public class RecipeImportService {
             }
         }
         return out;
+    }
+
+    /**
+     * The transcript cut into the pieces a step could be made of.
+     *
+     * Some transcripts are punctuated and some are not, and it changes what a piece is. When
+     * there are sentences, use them: they are complete thoughts, and one of them is one step.
+     * Without them the cue breaks are the only punctuation there is, and a cue is half a
+     * thought, so they stay as they came and get joined up later.
+     *
+     * Returns the cues themselves, unchanged and identical, when there was nothing to split.
+     */
+    List<String> unitsOf(List<String> cues) {
+        String joined = String.join(" ", cues).replaceAll("\\s+", " ").trim();
+        if (joined.split("[.!?]").length < 4) return cues;
+        return List.of(SENTENCE_END.split(joined));
     }
 
     /**
@@ -387,6 +409,18 @@ public class RecipeImportService {
      * transcript it cannot make sense of yields no method at all.
      */
     String methodFrom(List<String> cues) {
+        return methodOf(cues).written();
+    }
+
+    /**
+     * The method, and the speech each step was made from.
+     *
+     * Both, because they are good for different things. The written steps are what a reader
+     * sees and what the web has. The raw sentences are what a language model needs: a step
+     * that has already been tidied has had the evidence tidied out of it, and rewriting those
+     * was measured to change one step in sixteen.
+     */
+    Method methodOf(List<String> cues) {
         /*
          * Some transcripts are punctuated and some are not, and it changes what a step is.
          * When there are sentences, use them: they are complete thoughts, and one of them is
@@ -394,9 +428,8 @@ public class RecipeImportService {
          * is half a thought, so the run has to be kept whole and cut at the words a speaker
          * uses to move on.
          */
-        String joined = String.join(" ", cues).replaceAll("\\s+", " ").trim();
-        boolean punctuated = joined.split("[.!?]").length >= 4;
-        List<String> units = punctuated ? List.of(SENTENCE_END.split(joined)) : cues;
+        List<String> units = unitsOf(cues);
+        boolean punctuated = units != cues;
 
         int first = -1;
         int last = -1;
@@ -414,7 +447,7 @@ public class RecipeImportService {
                 last = i;
             }
         }
-        if (first < 0) return null;
+        if (first < 0) return new Method(null, List.of());
 
         List<String> kept = units.subList(first, last + 1);
         List<String> steps = new ArrayList<>();
@@ -434,13 +467,20 @@ public class RecipeImportService {
         }
 
         List<String> out = new ArrayList<>();
+        List<String> raw = new ArrayList<>();
         for (String step : steps) {
             // "This will give us two clean halves" is the result, not something to do. And
             // "that is literally it" is not a step, however charming.
             if (!hasAction(step)) continue;
             out.add(tidy(step));
+            raw.add(step.trim().replaceAll("\\s+", " "));
         }
-        return out.isEmpty() ? null : String.join("\n", out);
+        return out.isEmpty() ? new Method(null, List.of())
+                : new Method(String.join("\n", out), List.copyOf(raw));
+    }
+
+    /** What a reader sees, and the speech it came from, one entry each and in step order. */
+    record Method(String written, List<String> spoken) {
     }
 
     /** Something to do, said as an instruction rather than as a story about one. */

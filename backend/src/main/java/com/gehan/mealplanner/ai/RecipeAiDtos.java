@@ -34,19 +34,36 @@ public class RecipeAiDtos {
              * recovered from somebody talking over a video are a reconstruction, and worth
              * offering to tidy up. Null when nothing said.
              */
-            MethodSource methodSource) {
+            MethodSource methodSource,
+            /**
+             * What was said in the video, one sentence per entry, before anything was thrown
+             * away — hook and sign-off included.
+             *
+             * Only for a SPOKEN method, and only so a client with a language model on it can
+             * do better than the rules did. Half of what a rule drops is the other half of a
+             * sentence the transcriber cut in two, and nothing downstream can repair damage
+             * it cannot see. Empty everywhere else.
+             */
+            List<String> spokenLines) {
 
         /** Most callers know exactly where their steps came from and say so; this is the rest. */
         public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
                 Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
                 String instructions) {
             this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
-                    instructions, null);
+                    instructions, null, List.of());
+        }
+
+        public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
+                Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
+                String instructions, MethodSource methodSource) {
+            this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
+                    instructions, methodSource, List.of());
         }
 
         public GeneratedRecipe withMethod(String newInstructions, MethodSource source) {
             return new GeneratedRecipe(name, description, prepTimeMinutes, cookTimeMinutes,
-                    servings, ingredients, newInstructions, source);
+                    servings, ingredients, newInstructions, source, spokenLines);
         }
     }
 

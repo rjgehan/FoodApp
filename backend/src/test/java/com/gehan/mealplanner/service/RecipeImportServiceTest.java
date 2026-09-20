@@ -391,6 +391,31 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void handsBackEveryStepBesideTheSentenceItCameFrom() {
+        // The phone rewrites the raw sentence and falls back to the written step when the
+        // rewrite cannot be trusted. That pairing is by position, so if these two ever came
+        // back different lengths or in a different order, a rewrite of one step would be
+        // swapped for the text of another and nothing would look wrong.
+        RecipeImportService.Method method = service.methodOf(List.of(
+                "Hey, apparently it is Butternut squash season. Take off the top and the bottom. "
+                        + "Then we can remove the seeds. And I'll add a cup of chicken stock. "
+                        + "So you're gonna turn the heat off. And follow me for more."));
+
+        assertThat(method.spoken()).hasSameSizeAs(method.written().lines().toList());
+        assertThat(method.written().lines()).containsExactly(
+                "Take off the top and the bottom.",
+                "Remove the seeds.",
+                "Add a cup of chicken stock.",
+                "Turn the heat off.");
+        // The raw side is what was actually said, speaker and all — that is the point of it.
+        assertThat(method.spoken()).containsExactly(
+                "Take off the top and the bottom.",
+                "Then we can remove the seeds.",
+                "And I'll add a cup of chicken stock.",
+                "So you're gonna turn the heat off.");
+    }
+
+    @Test
     void saysWhetherTheMethodWasWrittenDownOrSpoken() {
         // The app rewrites spoken steps on device and leaves published ones exactly alone,
         // so getting this label wrong would put a language model through a publisher's

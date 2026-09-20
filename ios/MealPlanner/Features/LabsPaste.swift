@@ -44,31 +44,41 @@ struct ParsedRecipe {
 }
 
 /*
- Rewriting steps that were recovered from a transcript.
+ What to call a dish whose caption never said.
 
- No example instructions in the prompt below, deliberately. An earlier version illustrated
- the job with two — "Remove the seeds" and "Sweat the onions in a little olive oil" — and
- the model pasted them back as steps of their own, in videos that had no seeds and no
- onions. Measured against the real on-device model: they were the single largest source of
- invented steps, and deleting them recovered the peeling, the oven temperature and the
- vinegar in the same run.
-
- The server pulls the method out of what somebody said over a video, which gets the content
- right and the wording wrong: "Then we can remove the seeds", a fragment stranded from the
- sentence it belongs to, a sentence that stops mid-phrase. Rules got most of the way and
- cannot go further — repairing a broken sentence needs to understand it.
-
- Only the wording is the model's business. The ingredients and their amounts never pass
- through here: those are parsed exactly, and a 3B model asked to handle numbers reads
- "1/3 cup parmesan" as one parmesan.
+ A caption that opens on a hook — "is it time?" — names the recipe after the hook. The video
+ never states a title, but the steps show what it makes.
 */
 @available(iOS 26.0, *)
 @Generable
-struct TidiedMethod {
-    @Guide(description: "What the dish is called, from what these steps make. A few words, no the word recipe.")
+struct DishName {
+    @Guide(description: "What these steps make, as you would write it at the top of a recipe. A few words. Not the word recipe.")
     var name: String
+}
 
-    @Guide(description: "The same steps, each written as an instruction. Same order. Nothing added.")
+/*
+ One sentence of the transcript, judged on its own.
+
+ Asked to pick the cooking out of a whole transcript in one go, the model partitions the
+ input instead of selecting from it — measured: it returned every line in contiguous pairs,
+ hook and sign-off included. Asked about one sentence at a time it is reliable, because
+ "is this an instruction" is a judgement and "which of these thirty lines" is a search.
+ Thirty small calls cost about fifteen seconds, and a wrong answer costs one line.
+*/
+@available(iOS 26.0, *)
+@Generable
+struct LineVerdict {
+    @Guide(description: "True when this sentence tells the cook to do something. False when it is chat, a hook, an aside, or asking you to follow.")
+    var isAStep: Bool
+}
+
+/// A handful of lines rewritten together. Small chunks and a fresh session each time:
+/// measured, a long run truncates its own head, and carrying context between chunks makes
+/// the model repeat the previous step verbatim instead of writing the next one.
+@available(iOS 26.0, *)
+@Generable
+struct RewrittenLines {
+    @Guide(description: "One instruction per line you were given, in the same order, using only that line's own words.")
     var steps: [String]
 }
 #endif
@@ -98,6 +108,8 @@ struct LabsPasteView: View {
     @State private var saved: String?
     @State private var fromPage: StructuredRecipe?
     @State private var tidying = false
+    /// Which line is being read, so a slow pass looks like progress and not a hang.
+    @State private var tidyProgress: String?
     /// The server said the method came off a transcript rather than out of a recipe.
     @State private var methodWasSpoken = false
     /// Kept so the model's rewrite can be undone — it is a guess about wording, and the
@@ -181,7 +193,7 @@ struct LabsPasteView: View {
                             // scrolled past: the steps themselves look much the same either way.
                             if tidying {
                                 ProgressView().controlSize(.mini)
-                                Text("· rewriting on the phone…").textCase(nil)
+                                Text("· \(tidyProgress ?? "reading the video")…").textCase(nil)
                             } else if spokenSteps != nil {
                                 Text("· rewritten here").textCase(nil)
                             } else if methodWasSpoken {
@@ -296,7 +308,7 @@ struct LabsPasteView: View {
             methodWasSpoken = imported.methodWasSpoken
             if imported.methodWasSpoken {
                 note = "The recipe was spoken in the video, not written down. Reading it back…"
-                await tidyTheMethod()
+                await tidyTheMethod(said: imported.spokenLines ?? [])
             }
         } catch {
             note = nil
@@ -304,71 +316,165 @@ struct LabsPasteView: View {
         }
     }
 
-    /// Rewrites transcript steps as instructions, on device. Free, no quota, and nothing
-    /// leaves the phone — but it is a guess about wording, so the original is kept and the
-    /// result is only taken when it still looks like the same recipe.
-    private func tidyTheMethod() async {
+    /**
+     Turns what was said in the video into a method, on device.
+
+     The server sends two lists of the same length: the step as its rules wrote it, and the
+     raw sentence the cook actually said. The model rewrites the raw sentence, because a step
+     that has already been tidied has had the evidence tidied out of it — rewriting those was
+     measured to change one step in sixteen, and rewriting the speech changes half of them.
+
+     Each rewrite is then checked against its own sentence, and a rewrite that fails falls
+     back to the rules' version of that same step. So the worst this can do is nothing.
+
+     Free, unlimited and private, so the only cost is about ten seconds.
+    */
+    private func tidyTheMethod(said: [String]) async {
         #if canImport(FoundationModels)
         guard #available(iOS 26.0, *) else { return }
-        guard let original = fromPage?.steps, original.count > 1 else { return }
+        let floor = fromPage?.steps ?? []
+        // One raw sentence per step, in step order. Without that pairing there is no floor
+        // to fall back to, and a rewrite could only be taken on trust.
+        guard said.count == floor.count, floor.count > 1 else { return }
 
         tidying = true
-        defer { tidying = false }
-
-        let numbered = original.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        defer { tidying = false; tidyProgress = nil }
         let started = Date()
-        do {
-            let model = LanguageModelSession(
-                instructions: """
-                You rewrite the steps of a recipe so they read as instructions.
+        let shopping = (fromPage?.ingredients ?? []).map { Amount($0).name.lowercased() }
+            .filter { !$0.isEmpty }
 
-                They came from an automatic transcript of somebody talking while they cook, so \
-                they are full of speech: "then we can", "I'll", "you're gonna", a sentence that \
-                stops mid-phrase, a fragment stranded from the step it belongs to.
-
-                Rewrite each one as a plain instruction to whoever is cooking, using only the \
-                words of the line you were given. Join a fragment to the step it belongs with. \
-                Drop anything that is not something to do. Keep the original order.
-
-                Never add an ingredient, an amount, a temperature or a time that is not already \
-                there, and never invent a step to fill a gap. Where a step is already a clean \
-                instruction, leave it alone. Say only what the cook said.
-                """
-            )
-            let reply = try await model.respond(to: numbered, generating: TidiedMethod.self)
-            let rewritten = reply.content.steps
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-
-            guard Self.plausible(rewritten, from: original) else {
-                note = "Kept the steps as they were said — the rewrite did not look like the same recipe."
-                return
+        var steps: [String] = []
+        var rewrote = 0
+        for start in stride(from: 0, to: said.count, by: Self.chunk) {
+            let chunk = Array(said[start ..< min(start + Self.chunk, said.count)])
+            tidyProgress = "step \(start + 1) of \(said.count)"
+            let out = await rewrite(chunk)
+            for (offset, sentence) in chunk.enumerated() {
+                let candidate = offset < out.count ? out[offset] : nil
+                if let candidate,
+                   Self.saysOnlyWhatItsSourceSaid(candidate, source: sentence, shopping: shopping) {
+                    steps.append(candidate)
+                    if candidate != floor[start + offset] { rewrote += 1 }
+                } else {
+                    steps.append(floor[start + offset])
+                }
             }
-            spokenSteps = original
-            fromPage?.steps = rewritten
-
-            // A caption that opens on a hook — "is it time?" — names the recipe after the
-            // hook. The video never says what the dish is called, but the steps show what it
-            // makes, so the name is only taken when the one from the caption is unusable.
-            let suggested = reply.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let current = fromPage?.name, Self.isAHook(current), Self.couldBeADishName(suggested) {
-                fromPage?.name = suggested
-            }
-
-            note = String(
-                format: "The recipe was spoken in the video. Rewritten as %d steps on this phone in %.1f s.",
-                rewritten.count, Date().timeIntervalSince(started)
-            )
-        } catch {
-            // A tidy-up that fails costs nothing: the steps underneath are still the method.
-            note = "The recipe was spoken in the video, so the steps read like speech. (\(Self.explain(error)))"
         }
+
+        guard steps.count == floor.count else { return }
+        spokenSteps = floor
+        fromPage?.steps = steps
+        if let current = fromPage?.name, Self.isAHook(current) {
+            if let named = await dishName(from: steps) { fromPage?.name = named }
+        }
+        note = String(
+            format: "Spoken in the video. %d of %d steps rewritten on this phone in %.0f s; the rest kept as they were said.",
+            rewrote, steps.count, Date().timeIntervalSince(started)
+        )
         #endif
     }
 
-    /// The rewrite is only worth taking if it is still the same method. A model that has
-    /// gone wrong pads, invents, or returns almost nothing, and all three show up in the
-    /// size: merging fragments should make the text shorter, never much longer.
+    #if canImport(FoundationModels)
+    /// Only asked when the caption's own name is unusable, because a creator's title beats
+    /// a good guess every time.
+    @available(iOS 26.0, *)
+    private func dishName(from steps: [String]) async -> String? {
+        do {
+            let model = LanguageModelSession(instructions: """
+                You are given the steps of a recipe. Say what the finished dish is called, \
+                naming only things the steps actually mention.
+                """)
+            let out = try await model.respond(to: steps.joined(separator: "\n"), generating: DishName.self)
+            let name = out.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Self.couldBeADishName(name) ? name : nil
+        } catch {
+            return nil
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func rewrite(_ lines: [String]) async -> [String] {
+        let numbered = lines.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        do {
+            let model = LanguageModelSession(instructions: Self.rewriting)
+            return try await model.respond(to: numbered, generating: RewrittenLines.self).content.steps
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        } catch {
+            return []
+        }
+    }
+
+    /// Five at a time. Measured: a long run truncates its own head, and carrying a line of
+    /// context between chunks makes the model repeat it instead of writing the next step.
+    private static let chunk = 5
+
+    private static let rewriting = """
+        You rewrite what a cook said into the steps of a recipe.
+
+        Each numbered line is one sentence of an automatic transcript, so it is full of \
+        speech — "then we can", "I'll", "you're gonna" — and the transcriber may have cut a \
+        sentence in half or misheard a word.
+
+        Return one instruction for each line you are given, in the same order, using only the \
+        words of that line. Address the cook directly and drop the speaker. Keep every number, \
+        weight, temperature and time exactly as it appears.
+
+        Never add an ingredient, an amount, a temperature or a time that is not in the line, \
+        and never write a step for something the line does not mention. If a line cannot be \
+        made into an instruction, return it unchanged.
+        """
+
+    /**
+     Is this rewrite worth having instead of the one the rules wrote?
+
+     Four ways it can fail, all of them measured on real output from this model. It can invent
+     — a competitor reading this same video produced "crown sugar" and "2 tbsp" from nothing.
+     It can quietly drop half the step, turning a bowl of oil, salt and sugar into "cut into
+     wedges". It can lose an ingredient, which is how the same competitor served beans it
+     never told anybody to add. And it can put the speaker back in, undoing what the rules
+     already did.
+
+     Anything that fails keeps the rules' version, so being strict here is cheap.
+    */
+    private static func saysOnlyWhatItsSourceSaid(
+        _ step: String, source: String, shopping: [String]
+    ) -> Bool {
+        if step.isEmpty || step.count > source.count * 2 + 40 { return false }
+
+        // Every number in the step was said, and every number said is still in the step.
+        let digits = { (text: String) in
+            Set(text.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty })
+        }
+        if digits(step) != digits(source) { return false }
+
+        let padded = " " + step.lowercased() + " "
+        for speaker in [" i ", " i'", " we ", " we'", " my ", " our ", " gonna ", " let's ", " you're "] {
+            if padded.contains(speaker) { return false }
+        }
+
+        let words = { (text: String) in
+            Set(text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 3 })
+        }
+        let sourceWords = words(source)
+        let stepWords = words(step)
+        if stepWords.isEmpty { return false }
+        // Made of the cook's own words, and still carrying most of what was said.
+        if Double(stepWords.intersection(sourceWords).count) / Double(stepWords.count) < 0.6 { return false }
+        if Double(stepWords.intersection(sourceWords).count) / Double(sourceWords.count) < 0.5 { return false }
+
+        // Whatever you have to buy has to survive the rewrite.
+        for item in shopping {
+            let parts = item.split(separator: " ").map(String.init)
+            let named = parts.allSatisfy { source.lowercased().contains($0) }
+            let kept = parts.contains { step.lowercased().contains($0) }
+            if named && !kept { return false }
+        }
+        return true
+    }
+    #endif
+
     /// The caption's first line, when the caption opened on a hook rather than a title.
     private static func isAHook(_ name: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -196,6 +196,10 @@ struct ImportedRecipe: Codable {
     let ingredients: [ImportedIngredient]
     /// "PUBLISHED" or "SPOKEN". Absent from older servers, which is why it is optional.
     let methodSource: String?
+    /// Everything said in the video, one sentence each, before the server threw any of it
+    /// away. Only sent for a spoken method, and only so the phone can do better than the
+    /// rules did — half of what a rule drops is the other half of a broken sentence.
+    let spokenLines: [String]?
 
     /// Steps pieced together from somebody narrating a video, rather than a list anybody
     /// wrote down. Worth offering to rewrite; a publisher's own steps are not.
