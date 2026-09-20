@@ -43,8 +43,17 @@ public class RecipeImportService {
 
     private static final Logger log = LoggerFactory.getLogger(RecipeImportService.class);
 
+    /**
+     * The page's own recipe data.
+     *
+     * The quotes around the attribute value are optional, and a minified page leaves them
+     * out: Yoast, which is on a very large share of food blogs, emits
+     * {@code <script type=application/ld+json class=yoast-schema-graph>}. Requiring quotes
+     * meant those sites silently had "no recipe" and fell through to the paste flow.
+     */
     private static final Pattern LD_JSON = Pattern.compile(
-            "<script[^>]+type\\s*=\\s*[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>",
+            "<script[^>]+type\\s*=\\s*(?:\"application/ld\\+json\"|'application/ld\\+json'"
+                    + "|application/ld\\+json(?=[\\s>]))[^>]*>(.*?)</script>",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ISO_DURATION = Pattern.compile("^P(?:\\d+D)?T(?:(\\d+)H)?(?:(\\d+)M)?");
     private static final Pattern TAGS = Pattern.compile("<[^>]+>");

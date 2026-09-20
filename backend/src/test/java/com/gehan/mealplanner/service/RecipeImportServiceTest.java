@@ -98,6 +98,30 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void findsTheRecipeWhenTheAttributeHasNoQuotes() {
+        // Quotes around an attribute value are optional in HTML, and a minified page leaves
+        // them out. Yoast — which is on a very large share of food blogs — emits exactly
+        // this, so every one of those sites silently had "no recipe this can read".
+        String html = "<html><head><script type=application/ld+json class=yoast-schema-graph>"
+                + "{\"@type\":\"Recipe\",\"name\":\"Hummus\",\"recipeIngredient\":[\"1 cup chickpeas\"]}"
+                + "</script></head></html>";
+
+        JsonNode found = service.findRecipe(html);
+        assertThat(found).isNotNull();
+        assertThat(service.toDraft(found, "u").name()).isEqualTo("Hummus");
+
+        // Single quotes too, and a type that merely starts the same way must not match.
+        assertThat(service.findRecipe(
+                "<html><script type='application/ld+json'>"
+                        + "{\"@type\":\"Recipe\",\"name\":\"Soup\",\"recipeIngredient\":[\"1 onion\"]}"
+                        + "</script></html>")).isNotNull();
+        assertThat(service.findRecipe(
+                "<html><script type=application/ld+jsonx>"
+                        + "{\"@type\":\"Recipe\",\"name\":\"No\",\"recipeIngredient\":[\"1 egg\"]}"
+                        + "</script></html>")).isNull();
+    }
+
+    @Test
     void skipsMalformedJsonAndKeepsLooking() {
         String html = "<html><script type=\"application/ld+json\">{not json,,}</script>"
                 + "<script type=\"application/ld+json\">"
