@@ -1,11 +1,24 @@
 import Foundation
 
-/// Where the backend lives. The default is the dev server on this Mac, which the simulator
-/// reaches at localhost; a phone on the house wifi needs the LAN address or the public host,
-/// so it is editable from the sign-in screen and remembered.
+/**
+ Where the backend lives.
+
+ A debug build defaults to the dev server on this Mac, which the simulator reaches at
+ localhost. Anything built for distribution defaults to the house server, because a phone
+ that is not this Mac cannot reach localhost and the first screen would be an error — which
+ is exactly what a family member installing from TestFlight would see.
+
+ Either way it stays editable from the sign-in screen and is remembered, so a phone on the
+ house wifi can still be pointed at the LAN address.
+*/
 enum Config {
     private static let key = "mp_base_url"
+
+    #if DEBUG
     static let fallback = "http://localhost:8080"
+    #else
+    static let fallback = "https://meals.gehan.cloud"
+    #endif
 
     static var baseURL: String {
         get { UserDefaults.standard.string(forKey: key) ?? fallback }

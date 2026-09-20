@@ -41,7 +41,7 @@ struct SignInView: View {
         }
         .task { await loadHouseholds() }
         .alert("Kitchen server", isPresented: $editingServer) {
-            TextField("http://localhost:8080", text: $serverDraft)
+            TextField(Config.fallback, text: $serverDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             Button("Cancel", role: .cancel) { serverDraft = Config.baseURL }
@@ -50,7 +50,13 @@ struct SignInView: View {
                 Task { await loadHouseholds() }
             }
         } message: {
+            // Two audiences: whoever is developing this, and whoever in the house just
+            // installed it. Only one of them knows what a simulator is.
+            #if DEBUG
             Text("Where the app looks for your household. The simulator reaches this Mac at localhost.")
+            #else
+            Text("Where the app looks for your household. Leave this alone unless you have been given a different address.")
+            #endif
         }
     }
 
