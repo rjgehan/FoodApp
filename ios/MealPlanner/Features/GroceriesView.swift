@@ -10,12 +10,18 @@ struct GroceriesView: View {
 
     @State private var items: [GroceryItem] = []
     @State private var categories: [GroceryCategory] = []
+
+    /// Things nobody — no keyword list, no model — has put in an aisle yet.
+    private var unplaced: Int {
+        items.filter { $0.categoryId == nil && $0.ingredientId != nil }.count
+    }
     @State private var error: String?
     @State private var copied = false
     @State private var draft = ""
     @State private var puttingAway = false
     @State private var switchingHousehold = false
     @State private var showingAccount = false
+    @State private var sorting = false
 
     private var toBuy: [GroceryItem] { items.filter { !$0.checked } }
     private var inCart: [GroceryItem] { items.filter(\.checked) }
@@ -102,11 +108,19 @@ struct GroceriesView: View {
                 }
             }
             .navigationTitle("Groceries")
+            .sheet(isPresented: $sorting) {
+                SortIntoAislesSheet(session: session, items: items, aisles: categories) { _ in
+                    await load()
+                }
+            }
             .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu("List options", systemImage: "ellipsis.circle") {
                         Button("Copy for Notes", systemImage: "doc.on.doc", action: copyForNotes)
+                        if unplaced > 0 {
+                            Button("Sort \(unplaced) into aisles", systemImage: "sparkles") { sorting = true }
+                        }
                     }
                 }
             }
@@ -202,7 +216,8 @@ struct GroceriesView: View {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         let wanted = !item.checked
         items[index] = GroceryItem(
-            id: item.id, name: item.name, quantity: item.quantity, unit: item.unit,
+            id: item.id, ingredientId: item.ingredientId, sorted: item.sorted,
+            name: item.name, quantity: item.quantity, unit: item.unit,
             checked: wanted, checkedByName: session.displayName, categoryId: item.categoryId,
             inCupboard: item.inCupboard
         )

@@ -148,6 +148,12 @@ actor APIClient {
         try await get("/api/households/\(household.uuidString)/grocery-list")
     }
 
+    /// Puts an ingredient in an aisle, for this household, on the list and in the cupboard.
+    func placeIngredient(household: UUID, ingredient: UUID, category: UUID) async throws {
+        _ = try await sendNoContent("PUT", "/api/households/\(household.uuidString)/ingredients/\(ingredient.uuidString)/category",
+                                    body: ["categoryId": category.uuidString])
+    }
+
     func categories(household: UUID) async throws -> [GroceryCategory] {
         try await get("/api/households/\(household.uuidString)/categories")
     }
@@ -194,6 +200,25 @@ actor APIClient {
     }
 
     /// Everything every household on this server has published.
+    @discardableResult
+    func createRecipeCategory(household: UUID, name: String, section: RecipeSection?) async throws -> RecipeCategory {
+        var body: [String: Any] = ["name": name]
+        if let section { body["section"] = section.rawValue }
+        return try await send("POST", "/api/households/\(household.uuidString)/recipe-categories", body: body)
+    }
+
+    @discardableResult
+    func renameRecipeCategory(household: UUID, category: UUID, name: String) async throws -> RecipeCategory {
+        try await send("PATCH", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)",
+                       body: ["name": name])
+    }
+
+    /// Whatever was filed in it moves up a level rather than going with it.
+    func deleteRecipeCategory(household: UUID, category: UUID) async throws {
+        _ = try await sendNoContent(
+            "DELETE", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)")
+    }
+
     func explore(household: UUID) async throws -> [Recipe] {
         try await get("/api/households/\(household.uuidString)/explore")
     }

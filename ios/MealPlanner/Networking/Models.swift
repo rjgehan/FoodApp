@@ -74,6 +74,11 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
 
 struct GroceryItem: Codable, Identifiable, Hashable {
     let id: UUID
+    /// The ingredient behind the row. Aisles are set on the ingredient, not on the line, so
+    /// placing "onion" once places it on every future list.
+    let ingredientId: UUID?
+    /// False means neither the keyword list nor a model has placed it yet.
+    let sorted: Bool?
     let name: String
     let quantity: Double?
     let unit: String?
@@ -81,6 +86,23 @@ struct GroceryItem: Codable, Identifiable, Hashable {
     let checkedByName: String?
     let categoryId: UUID?
     let inCupboard: Bool
+
+    /// The two newest fields carry defaults so the sample data, and anywhere else building
+    /// one of these by hand, does not have to care about them.
+    init(id: UUID, ingredientId: UUID? = nil, sorted: Bool? = nil, name: String,
+         quantity: Double?, unit: String?, checked: Bool, checkedByName: String?,
+         categoryId: UUID?, inCupboard: Bool) {
+        self.id = id
+        self.ingredientId = ingredientId
+        self.sorted = sorted
+        self.name = name
+        self.quantity = quantity
+        self.unit = unit
+        self.checked = checked
+        self.checkedByName = checkedByName
+        self.categoryId = categoryId
+        self.inCupboard = inCupboard
+    }
 
     /** "450 g", "2 cloves", or nothing at all. */
     var amount: String? {

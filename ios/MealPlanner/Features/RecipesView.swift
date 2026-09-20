@@ -53,7 +53,8 @@ struct RecipesView: View {
                                     parent: nil,
                                     recipes: recipes,
                                     categories: categories,
-                                    session: session
+                                    session: session,
+                                    onChanged: { await load() }
                                 )
                             } label: {
                                 DrawerTile(
@@ -121,6 +122,10 @@ struct DrawerView: View {
     let recipes: [Recipe]
     let categories: [RecipeCategory]
     var session: Session?
+    /// Reload the catalog after the groups change under it.
+    var onChanged: () async -> Void = {}
+
+    @State private var editingGroups = false
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -190,6 +195,17 @@ struct DrawerView: View {
         }
         .navigationTitle(parent?.name ?? section.title)
         .navigationBarTitleDisplayMode(.large)
+        // Only at the top of a drawer: groups belong to the drawer, not to each other.
+        .toolbar {
+            if parent == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit groups", systemImage: "folder.badge.gearshape") { editingGroups = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editingGroups) {
+            EditGroupsView(section: section, groups: children, session: session, onChanged: onChanged)
+        }
     }
 }
 

@@ -21,6 +21,10 @@ struct EditRecipeView: View {
     @State private var ingredients: [Draft]
     @State private var coverImageId: UUID?
     @State private var cover = CoverPhotoFlow()
+    @State private var section: RecipeSection
+    @State private var groups: Set<String>
+    @State private var allGroups: [RecipeCategory] = []
+    @State private var newGroup = ""
     @State private var busy = false
     @State private var error: String?
 
@@ -37,6 +41,9 @@ struct EditRecipeView: View {
         self.recipe = recipe
         self.session = session
         self.onSaved = onSaved
+        // Dinner is what the web defaults a new recipe to.
+        _section = State(initialValue: recipe?.section ?? .dinner)
+        _groups = State(initialValue: Set(recipe?.categories ?? []))
         _name = State(initialValue: recipe?.name ?? "")
         _summary = State(initialValue: recipe?.description ?? "")
         _servings = State(initialValue: recipe?.servings ?? 4)
@@ -66,6 +73,46 @@ struct EditRecipeView: View {
 
                 // Straight after the name, because the name is what it has to work from.
                 CoverPhotoSection(dishName: name, session: session, coverImageId: $coverImageId, flow: cover)
+
+                /*
+                 Where it goes in the catalog. Until now the phone sent whatever filing the
+                 recipe already had straight back, which meant a recipe written here always
+                 landed in Dinner with no groups and there was no way to move it.
+                */
+                Section {
+                    Picker("Drawer", selection: $section) {
+                        ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    ForEach(groupsHere) { group in
+                        Button {
+                            if groups.contains(group.name) { groups.remove(group.name) }
+                            else { groups.insert(group.name) }
+                        } label: {
+                            HStack {
+                                Text(group.name).foregroundStyle(.primary)
+                                Spacer()
+                                if groups.contains(group.name) {
+                                    Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        // Without this the button tints the whole row, and a list of groups
+                        // reads as a list of links.
+                        .buttonStyle(.plain)
+                    }
+                    HStack {
+                        TextField("New group", text: $newGroup)
+                        Button("Add") { Task { await addGroup() } }
+                            .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Filed under")
+                } footer: {
+                    Text(groupsHere.isEmpty
+                         ? "Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in this drawer yet."
+                         : "Tap a group to file it there. A recipe can be on more than one shelf.")
+                }
 
                 Section("Time") {
                     Stepper("Prep \(prep) min", value: $prep, in: 0...600, step: 5)
@@ -100,6 +147,7 @@ struct EditRecipeView: View {
                 }
             }
             .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
+            .task { await loadGroups() }
             .navigationTitle(recipe == nil ? "New recipe" : "Edit recipe")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -109,6 +157,32 @@ struct EditRecipeView: View {
                         .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+        }
+    }
+
+    /// The groups that belong in the chosen drawer, plus the ones that belong everywhere.
+    private var groupsHere: [RecipeCategory] {
+        allGroups
+            .filter { $0.section == nil || $0.section == section }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func loadGroups() async {
+        guard let household = session?.household?.id else { return }
+        allGroups = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
+    }
+
+    private func addGroup() async {
+        let wanted = newGroup.trimmingCharacters(in: .whitespaces)
+        guard !wanted.isEmpty, let household = session?.household?.id else { return }
+        do {
+            let made = try await APIClient.shared.createRecipeCategory(
+                household: household, name: wanted, section: section)
+            allGroups.append(made)
+            groups.insert(made.name)
+            newGroup = ""
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
@@ -134,11 +208,10 @@ struct EditRecipeView: View {
         var body: [String: Any] = [
             "name": name.trimmingCharacters(in: .whitespaces),
             "servings": servings,
-            "categories": recipe?.categories ?? [],
+            "categories": Array(groups),
             "ingredients": rows,
         ]
-        // A new recipe has to be filed somewhere, and dinner is what the web defaults to.
-        body["section"] = (recipe?.section ?? .dinner).rawValue
+        body["section"] = section.rawValue
         let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSummary.isEmpty { body["description"] = trimmedSummary }
         let trimmedSteps = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
