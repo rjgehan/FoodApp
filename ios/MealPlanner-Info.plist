@@ -29,6 +29,14 @@
 	-->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!--
+	  Required before the camera or the photo library can be opened at all: without these
+	  the app does not ask, it crashes on the tap.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>To take a photo of a dish for its recipe.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>To use one of your photos as a recipe's picture.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Meal Planner talks to the kitchen server on your home network.</string>
 </dict>

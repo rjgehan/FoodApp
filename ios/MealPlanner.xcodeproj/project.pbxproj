@@ -324,10 +324,10 @@
 		AA0000000000000000000150 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				INFOPLIST_FILE = "ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -348,10 +348,10 @@
 		AA0000000000000000000151 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				INFOPLIST_FILE = "ShareExtension-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
 				LD_RUNPATH_SEARCH_PATHS = (

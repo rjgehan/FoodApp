@@ -120,6 +120,9 @@ struct Recipe: Codable, Identifiable, Hashable {
     let shared: Bool
     let ownerName: String?
     let coverImageId: UUID?
+    /// The other photos. Decoded and sent back untouched on save — the server replaces the
+    /// whole list with whatever it is given, so not sending them deletes them.
+    let photoIds: [UUID]?
     let ingredients: [RecipeIngredient]
 
     /** "Serves 4 · 45 min", the same facts line the web shows. */

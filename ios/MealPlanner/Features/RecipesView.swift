@@ -14,6 +14,7 @@ struct RecipesView: View {
     @State private var query = ""
     @State private var error: String?
     @State private var switchingHousehold = false
+    @State private var writingOne = false
     #if DEBUG
     /// `-mp_debug_drawer dinner` opens that drawer on launch, for screenshot runs.
     @State private var debugDrawer: RecipeSection? = UserDefaults.standard.string(forKey: "mp_debug_drawer")
@@ -92,6 +93,18 @@ struct RecipesView: View {
             .searchable(text: $query, prompt: "Search recipes and ingredients")
             .refreshable { await load() }
             .householdHeader(session, switching: $switchingHousehold)
+            // Until now a recipe could only arrive on the phone by being pasted or shared
+            // in. Some of them are just written down.
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Write one down", systemImage: "plus") { writingOne = true }
+                }
+            }
+            .sheet(isPresented: $writingOne) {
+                EditRecipeView(recipe: nil, session: session) { saved in
+                    recipes.insert(saved, at: 0)
+                }
+            }
             #if DEBUG
             .navigationDestination(item: $debugDrawer) { section in
                 DrawerView(section: section, parent: nil, recipes: recipes, categories: categories, session: session)

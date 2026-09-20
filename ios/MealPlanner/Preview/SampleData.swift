@@ -67,6 +67,7 @@ enum SampleData {
             shared: false,
             ownerName: nil,
             coverImageId: nil,
+            photoIds: nil,
             ingredients: [
                 RecipeIngredient(id: UUID(), ingredientName: "potatoes", quantity: 1.5, unit: "kg", notes: nil, optional: false),
                 RecipeIngredient(id: UUID(), ingredientName: "butter", quantity: 30, unit: "g", notes: nil, optional: false),
@@ -88,6 +89,7 @@ enum SampleData {
             shared: false,
             ownerName: nil,
             coverImageId: nil,
+            photoIds: nil,
             ingredients: [
                 RecipeIngredient(id: UUID(), ingredientName: "lasagne sheets", quantity: 250, unit: "g", notes: nil, optional: false),
                 RecipeIngredient(id: UUID(), ingredientName: "beef mince", quantity: 500, unit: "g", notes: nil, optional: false),
@@ -106,6 +108,7 @@ enum SampleData {
             shared: true,
             ownerName: "The Wilsons",
             coverImageId: nil,
+            photoIds: nil,
             ingredients: []
         ),
     ]
