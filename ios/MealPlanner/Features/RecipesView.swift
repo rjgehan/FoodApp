@@ -10,10 +10,10 @@ struct RecipesView: View {
 
     @State private var recipes: [Recipe] = []
     @State private var categories: [RecipeCategory] = []
-    @State private var explore: [Recipe] = []
     @State private var query = ""
     @State private var error: String?
     @State private var switchingHousehold = false
+    @State private var showingAccount = false
     @State private var writingOne = false
     #if DEBUG
     /// `-mp_debug_drawer dinner` opens that drawer on launch, for screenshot runs.
@@ -68,31 +68,12 @@ struct RecipesView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-
-                    // Everything every household here has published — the one place recipes
-                    // travel between houses without anyone sending a link.
-                    NavigationLink {
-                        ExploreView(recipes: explore, session: session)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Explore").font(.headline)
-                            Text("\(explore.count) published here")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                            Text("What every household on this server has published")
-                                .font(.footnote).foregroundStyle(.tertiary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(16)
                 }
             }
             .navigationTitle("Recipes")
             .searchable(text: $query, prompt: "Search recipes and ingredients")
             .refreshable { await load() }
-            .householdHeader(session, switching: $switchingHousehold)
+            .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
             // Until now a recipe could only arrive on the phone by being pasted or shared
             // in. Some of them are just written down.
             .toolbar {
@@ -118,7 +99,6 @@ struct RecipesView: View {
         if let sample {
             recipes = sample
             categories = sampleCategories ?? []
-            explore = []
             return
         }
         guard let household = session.household?.id else { return }
@@ -126,8 +106,7 @@ struct RecipesView: View {
             error = nil
             async let all = APIClient.shared.recipes(household: household)
             async let groups = APIClient.shared.recipeCategories(household: household)
-            async let published = APIClient.shared.explore(household: household)
-            (recipes, categories, explore) = try await (all, groups, published)
+            (recipes, categories) = try await (all, groups)
         } catch {
             self.error = error.localizedDescription
         }
@@ -214,7 +193,8 @@ struct DrawerView: View {
     }
 }
 
-struct ExploreView: View {
+/// The published recipes themselves, shown both from inside Recipes and from the Explore tab.
+struct PublishedRecipeGrid: View {
     let recipes: [Recipe]
     var session: Session?
 
@@ -231,7 +211,6 @@ struct ExploreView: View {
                 RecipeGrid(recipes: recipes, session: session).padding(16)
             }
         }
-        .navigationTitle("Explore")
     }
 }
 

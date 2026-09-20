@@ -192,6 +192,19 @@ actor APIClient {
     }
 
     @discardableResult
+    func addToCupboard(household: UUID, name: String) async throws -> CupboardItem {
+        try await send("POST", "/api/households/\(household.uuidString)/cupboard", body: ["name": name])
+    }
+
+    /// What a barcode names. The server asks Open Food Facts and caches the answer for a month,
+    /// so the phone never talks to the catalogue itself. Throws a 404 for one nobody has
+    /// published — which is an answer, not a failure.
+    func product(barcode: String) async throws -> Product {
+        let escaped = barcode.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? barcode
+        return try await get("/api/barcodes/\(escaped)")
+    }
+
+    @discardableResult
     func updateCupboard(
         household: UUID,
         item: UUID,

@@ -24,6 +24,11 @@ enum Palette {
     /// which is the single clearest sign that nobody chose anything.
     static let accent = dynamic(light: 0xEA580C, dark: 0xFF9F40)
 
+    /// The accent at a whisper — behind an avatar, or under a selected day. The web's
+    /// --accent-soft, which is a warm tint in light and a dark ember in dark, not the accent
+    /// at low opacity.
+    static let accentSoft = dynamic(light: 0xFFEDD5, dark: 0x402008)
+
     /**
      Recipe tints, in the web's order so the same recipe is the same colour in both places.
 
@@ -39,6 +44,10 @@ enum Palette {
         dynamic(light: 0xDDE8F1, dark: 0x27404F),
         dynamic(light: 0xEEE4D9, dark: 0x473A2F),
     ]
+
+    /// One of the six by position, for the handful of places that choose a tint deliberately
+    /// rather than deriving it from a name.
+    static func cover(index: Int) -> Color { covers[index % covers.count] }
 
     /// The same hash the web's `coverClass` uses, over the same six colours, so a group keeps
     /// its colour across both — and keeps it between launches, which is what makes it useful.

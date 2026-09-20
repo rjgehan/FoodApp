@@ -15,6 +15,7 @@ struct PlanView: View {
     @State private var addingToGroceries = false
     @State private var added = false
     @State private var switchingHousehold = false
+    @State private var showingAccount = false
 
     private var byDate: [String: [MealPlanEntry]] {
         Dictionary(grouping: entries, by: \.date)
@@ -86,7 +87,7 @@ struct PlanView: View {
             }
             .navigationTitle("Plan")
             .refreshable { await load() }
-            .householdHeader(session, switching: $switchingHousehold)
+            .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
         }
         .task(id: monthCursor) { await load() }
         .sheet(item: Binding(get: { openDay.map(DayKey.init) }, set: { openDay = $0?.value })) { key in

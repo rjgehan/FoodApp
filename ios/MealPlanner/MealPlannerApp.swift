@@ -81,7 +81,7 @@ struct RootView: View {
         #endif
     }()
 
-    /// -mp_debug_screen "edit" or "detail" opens that screen straight away, so a screenshot
+    /// -mp_debug_screen "edit", "detail" or "settings" opens that screen straight away, so a screenshot
     /// run can see something that otherwise needs three taps to reach. With -mp_debug_tab.
     #if DEBUG
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
@@ -102,9 +102,9 @@ struct RootView: View {
                 CupboardView(session: session)
                     .tabItem { Label("Cupboard", systemImage: "cabinet") }
                     .tag("cupboard")
-                HouseholdView(session: session)
-                    .tabItem { Label("Household", systemImage: "person.2") }
-                    .tag("household")
+                ExploreView(session: session)
+                    .tabItem { Label("Explore", systemImage: "safari") }
+                    .tag("explore")
                 #if DEBUG
                 // Temporary: Apple Intelligence experiments. Delete this and LabsView.swift.
                 LabsView(session: session)
@@ -127,6 +127,13 @@ struct RootView: View {
                     RecipeDetailView(recipe: SampleData.recipes[0], session: session)
                 }
             }
+            // Settings is behind the avatar now, which a screenshot run cannot tap.
+            .sheet(isPresented: Binding(
+                get: { debugSheet == "settings" },
+                set: { if !$0 { debugSheet = nil } }
+            )) {
+                SettingsView(session: session)
+            }
             #endif
         } else {
             SignInView(session: session)
@@ -136,9 +143,10 @@ struct RootView: View {
 
 /// Who is signed in, which house, and the way back out. The web has more here; this is the
 /// part a phone actually needs.
-struct HouseholdView: View {
+struct SettingsView: View {
     var session: Session
 
+    @Environment(\.dismiss) private var dismiss
     @State private var editingServer = false
     @State private var serverDraft = Config.baseURL
     @State private var serverProblem: String?
@@ -194,7 +202,12 @@ struct HouseholdView: View {
                     }
                 }
             }
-            .navigationTitle("Household")
+            .navigationTitle("Settings")
+            // It arrives as a sheet from the avatar, and a sheet needs a way out that is not
+            // a swipe — swiping is a shortcut, not the control.
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+            }
             .alert("Kitchen server", isPresented: $editingServer) {
                 TextField(Config.fallback, text: $serverDraft)
                     .textInputAutocapitalization(.never)
@@ -241,6 +254,6 @@ struct HouseholdView: View {
     RootView(session: .preview)
 }
 
-#Preview("Household") {
-    HouseholdView(session: .preview)
+#Preview("Settings") {
+    SettingsView(session: .preview)
 }

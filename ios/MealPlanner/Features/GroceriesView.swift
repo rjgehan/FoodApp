@@ -15,6 +15,7 @@ struct GroceriesView: View {
     @State private var draft = ""
     @State private var puttingAway = false
     @State private var switchingHousehold = false
+    @State private var showingAccount = false
 
     private var toBuy: [GroceryItem] { items.filter { !$0.checked } }
     private var inCart: [GroceryItem] { items.filter(\.checked) }
@@ -101,7 +102,7 @@ struct GroceriesView: View {
                 }
             }
             .navigationTitle("Groceries")
-            .householdHeader(session, switching: $switchingHousehold)
+            .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu("List options", systemImage: "ellipsis.circle") {

@@ -14,6 +14,8 @@ struct CupboardView: View {
     @State private var error: String?
     @State private var editing: CupboardItem?
     @State private var switchingHousehold = false
+    @State private var showingAccount = false
+    @State private var scanning = false
 
     private var shown: [CupboardItem] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -71,7 +73,20 @@ struct CupboardView: View {
             .navigationTitle("Cupboard")
             .searchable(text: $query, prompt: "Do we have… ?")
             .refreshable { await load() }
-            .householdHeader(session, switching: $switchingHousehold)
+            .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
+            // The camera answers "do we have this already" without the typing, which is the
+            // question that matters when you are standing in a shop holding the tin.
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Scan a barcode", systemImage: "barcode.viewfinder") { scanning = true }
+                }
+            }
+            .sheet(isPresented: $scanning) {
+                ScanBarcodeSheet(session: session, items: items) { added in
+                    items.append(added)
+                    Task { await load() }
+                }
+            }
         }
         .task { await load() }
         .sheet(item: $editing) { item in

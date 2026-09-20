@@ -149,6 +149,14 @@ struct RecipeIngredient: Codable, Identifiable, Hashable {
     }
 }
 
+/// What the catalogue knows about a barcode. Mirrors BarcodeLookup.Product on the server.
+struct Product: Codable, Hashable {
+    let barcode: String
+    let name: String
+    let brand: String
+    let size: String
+}
+
 struct CupboardItem: Codable, Identifiable, Hashable {
     let id: UUID
     let name: String
