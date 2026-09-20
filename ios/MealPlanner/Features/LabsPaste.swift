@@ -515,7 +515,11 @@ struct LabsPasteView: View {
     */
     private static func isAHook(_ name: String, ingredients: [String]) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.hasSuffix("?") || trimmed.count < 3 { return true }
+        // "This oven baked chicken parm is one of my favorite weeknight dinners! Full list
+        // of ingredients below…" is a description. A title is short.
+        if trimmed.isEmpty || trimmed.hasSuffix("?") || trimmed.count < 3 || trimmed.count > 60 {
+            return true
+        }
 
         let words = { (text: String) in
             Set(text.lowercased()

@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.service;
 
+import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedIngredient;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
 import com.gehan.mealplanner.ai.RecipeAiDtos.MethodSource;
 import org.junit.jupiter.api.Test;
@@ -430,6 +431,45 @@ class RecipeImportServiceTest {
                 "Then we can remove the seeds.",
                 "And I'll add a cup of chicken stock.",
                 "So you're gonna turn the heat off.");
+    }
+
+    @Test
+    void readsACaptionPaddedWithBulletsAndPaidFor() {
+        // A real Instagram caption, verbatim but for the hashtags. No headings, rows of "•"
+        // used as spacing, a sponsor's plug in the middle, and the only title-shaped line in
+        // the whole thing is the word "Mozzarella" — the ninth thing to buy.
+        GeneratedRecipe draft = service.fromCaption("""
+                This oven baked chicken parm is one of my favorite weeknight dinners! Full list of ingredients below with info on how to air fry too 😊
+                •
+                •
+                2 chicken breast
+                ½ tsp paprika
+                ½ cup grated parmesan (1/3 cup for bread crumbs rest for topping)
+                Mozzarella
+                Your favorite red sauce!
+
+                Tip: Use @mccormickspice for the best flavor and quality! On rollback now at Walmart♥️
+
+                BAKE 425 FOR 15 MINUTES THEN AGAIN FOR 5 MIN. BROIL ON HIGH FOR 2
+                •
+                •
+                """, "u");
+
+        // The things with no amount are still things to buy, and the bullets are spacing.
+        assertThat(draft.ingredients()).extracting(GeneratedIngredient::ingredientName)
+                .containsExactly("chicken breast", "paprika", "grated parmesan", "Mozzarella",
+                        "Your favorite red sauce!");
+
+        assertThat(draft.instructions().lines()).containsExactly(
+                "BAKE 425 FOR 15 MINUTES THEN AGAIN FOR 5 MIN.",
+                "BROIL ON HIGH FOR 2");
+        // Somebody is being paid, and it is not a step.
+        assertThat(draft.instructions()).doesNotContain("mccormick").doesNotContain("rollback");
+        assertThat(draft.instructions()).doesNotContain("•");
+
+        // Named after the dish rather than after the cheese. It is too long to keep, which
+        // is the signal the phone uses to name it from the steps instead.
+        assertThat(draft.name()).startsWith("This oven baked chicken parm");
     }
 
     @Test

@@ -685,13 +685,14 @@ public class RecipeImportService {
         List<String> lines = new ArrayList<>();
         for (String raw : caption.replace("\\n", "\n").split("\r?\n")) {
             String line = HASHTAGS.matcher(raw).replaceAll(" ").replaceAll("\\s+", " ").trim();
-            if (!line.isBlank()) lines.add(line);
+            // Captions are padded with rows of "•" to push the text under the fold. They are
+            // spacing, and they were coming out as steps 8, 9 and 10.
+            if (line.isBlank() || line.matches("[\\p{Punct}•·‧∙◦●▪️\\s]+")) continue;
+            lines.add(line);
         }
         if (lines.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That caption is only hashtags.");
         }
-
-        String name = nameFrom(lines);
 
         // A caption that labels its own sections is far more reliable than any guess.
         int ingredientsAt = indexOfHeading(lines, "ingredient");
@@ -700,6 +701,7 @@ public class RecipeImportService {
         List<GeneratedIngredient> ingredients = new ArrayList<>();
         List<String> steps = new ArrayList<>();
 
+        int shoppingStartsAt = ingredientsAt;
         if (ingredientsAt >= 0) {
             int end = stepsAt > ingredientsAt ? stepsAt : lines.size();
             for (String line : lines.subList(ingredientsAt + 1, end)) add(ingredients, line);
@@ -719,6 +721,7 @@ public class RecipeImportService {
             for (int i = 1; i < lines.size() && start < 0; i++) {
                 if (IngredientLine.of(lines.get(i)).quantity() != null) start = i;
             }
+            shoppingStartsAt = start;
             int end = start;
             if (start >= 0) {
                 for (int i = start; i < lines.size(); i++) {
@@ -729,6 +732,13 @@ public class RecipeImportService {
                 if (end + 1 < lines.size()) addSteps(steps, lines.subList(end + 1, lines.size()));
             }
         }
+
+        /*
+         * The name comes from above the shopping list, never out of it. Looking at every
+         * line found a caption whose only title-shaped line was the word "Mozzarella", and
+         * called the recipe that — it was the ninth thing to buy.
+         */
+        String name = nameFrom(shoppingStartsAt > 0 ? lines.subList(0, shoppingStartsAt) : lines, lines);
 
         return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
                 String.join("\n", steps), MethodSource.PUBLISHED);
@@ -751,9 +761,24 @@ public class RecipeImportService {
             if (text.isBlank()) continue;
             for (String sentence : SENTENCE_END.split(text)) {
                 String step = sentence.trim();
-                if (!step.isBlank() && !isASignOff(step)) into.add(step);
+                if (!step.isBlank() && !isASignOff(step) && !isAnAdvert(step)) into.add(step);
             }
         }
+    }
+
+    /**
+     * Somebody is being paid. A real caption read "Tip: Use @mccormickspice for the best
+     * flavor and quality! On rollback now at Walmart", and both halves became steps.
+     */
+    private boolean isAnAdvert(String step) {
+        if (step.contains("@")) return true;
+        String lowered = step.toLowerCase();
+        for (String phrase : List.of("on rollback", "use code", "discount code", "sponsored",
+                "link in bio", "link in my bio", "available at", "shop now", "swipe up",
+                "check out my", "full recipe on my", "ad)", "#ad", "gifted")) {
+            if (lowered.contains(phrase)) return true;
+        }
+        return false;
     }
 
     /** "Enjoy!" is a kind wish, not a thing to do. Neither is being asked to tag anybody. */
@@ -777,12 +802,24 @@ public class RecipeImportService {
      * first line that could be a name is taken instead. When none of them could be, the first
      * line stands: a bad name beats no name, and it is editable before anything is saved.
      */
-    private String nameFrom(List<String> lines) {
-        for (String raw : lines) {
+    private String nameFrom(List<String> above, List<String> all) {
+        for (String raw : above) {
             String title = titleIn(raw);
             if (title != null) return title;
         }
-        return trimTitle(withoutTheHook(lines.get(0)));
+        // Nothing above the shopping list was title-shaped. The opening line is still the
+        // best answer when it says anything at all — it is usually the dish described at
+        // length, which a phone with a language model on it can shorten.
+        String opening = trimTitle(withoutTheHook(above.isEmpty() ? all.get(0) : above.get(0)));
+        if (opening.matches(".*\\p{L}.*")) return opening;
+
+        // A caption that opens on nothing but emoji. Take a title from anywhere rather than
+        // calling the recipe "🍂🍂🍂".
+        for (String raw : all) {
+            String title = titleIn(raw);
+            if (title != null) return title;
+        }
+        return opening;
     }
 
     private static String trimTitle(String line) {
@@ -834,8 +871,13 @@ public class RecipeImportService {
     private boolean looksLikeAnIngredient(String line) {
         String trimmed = line.trim();
         if (trimmed.length() > 80) return false;
-        if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) return false;
-        return true;
+        // A full stop ends a sentence, and a sentence is a step. An exclamation mark does
+        // not: "Your favorite red sauce!" is enthusiasm about something to buy, and it sat
+        // in the middle of a real shopping list.
+        //
+        // Cooking verbs deliberately do not decide this. Trying that broke the run at
+        // "Juice and zest of one lemon", because zesting is also something you do.
+        return !trimmed.endsWith(".") && !trimmed.endsWith("?");
     }
 
     private void add(List<GeneratedIngredient> out, String line) {
