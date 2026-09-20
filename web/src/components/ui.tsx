@@ -59,7 +59,7 @@ export function Card({
 
 /** A quiet heading inside a section or sheet — the aisle names on the grocery list, say. */
 export function SubHeading({ children, className }: { children: ReactNode; className?: string }) {
-  return <h3 className={cx('pb-1 pt-4 text-[0.8125rem] font-semibold text-muted first:pt-0', className)}>{children}</h3>;
+  return <h3 className={cx('group-label px-4 pb-1.5 pt-5 first:pt-0', className)}>{children}</h3>;
 }
 
 /*

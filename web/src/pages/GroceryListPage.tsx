@@ -234,7 +234,7 @@ export default function GroceryListPage() {
           {groups.map(({ category, items: rows }) => (
             <section key={category?.id ?? 'unsorted'}>
               <SubHeading>{category?.name ?? 'Unsorted'}</SubHeading>
-              <ul className="inset-rows" style={ROW_INSET}>
+              <ul className="card inset-rows px-4" style={ROW_INSET}>
                 {rows.map((item) => (
                   <li key={item.id}>
                     <ItemRow
@@ -363,15 +363,20 @@ function ItemRow({
         className="flex min-h-touch min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
       >
         <CheckCircle checked={item.checked} />
+        {/*
+         * The name on the left, the amount on the right. Stacking them made every row two
+         * lines tall for the sake of "2 tbs", which is the smaller half of the information
+         * and the one you only read once you have found the thing.
+         */}
         <span className="min-w-0 flex-1">
           <span className={cx('block truncate transition-colors', item.checked && 'text-muted line-through')}>{item.name}</span>
-          {(detail || have) && (
-            <span className="block truncate text-[0.9375rem] text-muted">
-              {detail}
-              {have && <span className="text-success">{detail ? ' · ' : ''}In the cupboard</span>}
-            </span>
-          )}
+          {have && <span className="block truncate text-[0.8125rem] text-success">In the cupboard</span>}
         </span>
+        {detail && (
+          <span className={cx('shrink-0 text-[0.9375rem] tabular-nums text-muted', item.checked && 'line-through')}>
+            {detail}
+          </span>
+        )}
       </button>
       {moving && item.ingredientId ? (
         <Select

@@ -302,8 +302,9 @@ function MonthCalendar({
   const days: Date[] = [];
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
 
+  // The month sits on a card like everything else, so it reads as one thing.
   return (
-    <div className="flex flex-1 flex-col pt-1">
+    <div className="card flex flex-1 flex-col p-2 pt-1">
       <div className="flex items-center gap-1 pb-1">
         <IconButton label="Previous month" onClick={() => onMonth(-1)}>
           <ChevronLeftIcon className="h-5 w-5" />

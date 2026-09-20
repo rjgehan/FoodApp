@@ -11,9 +11,14 @@
    * in dark mode — with the app's own orange kept as the one colour that means "you can act".
    */
   :root {
-    --bg: 255 255 255;
+    /*
+     * The page is the well and the cards sit on it. Both were white, so every card was
+     * invisible and the app read as unstyled text with rules between it — the grouped-list
+     * look depends entirely on the card being lighter than the page behind it.
+     */
+    --bg: 242 242 247;
     --surface: 255 255 255;
-    --elevated: 242 242 247;
+    --elevated: 233 233 238;
     --line: 216 216 220;
     --ink: 29 29 31;
     --muted: 110 110 115;
@@ -185,6 +190,34 @@
   .cover-3 { background-color: #f2dee6; }
   .cover-4 { background-color: #dde8f1; }
   .cover-5 { background-color: #eee4d9; }
+
+  /*
+   * A card. One shadow, borrowed from the way iOS groups a list: barely visible on its own,
+   * and the only reason a screen full of them looks made rather than typed.
+   */
+  .card {
+    background-color: rgb(var(--surface));
+    border-radius: 0.875rem;
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 1px 0.5px rgb(0 0 0 / 0.03);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    /* Shadows do not read on black; a hairline is what separates a card from the page. */
+    .card {
+      box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+    }
+  }
+
+  /* The label above a group of rows: small, spaced out, and quiet. */
+  .group-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: rgb(var(--muted));
+  }
 
   @media (prefers-color-scheme: dark) {
     .cover-0 { background-color: #5a3620; }

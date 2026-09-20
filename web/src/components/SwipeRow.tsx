@@ -186,7 +186,13 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
       </div>
       <div
         ref={content}
-        className="relative bg-bg"
+        /*
+         * Opaque, because it slides over the delete button behind it — and the colour of
+         * whatever it is sitting on, which is a card. It used to be the page colour, which
+         * was the same white; now that the page is the well behind the cards, that would
+         * paint a grey stripe across every row.
+         */
+        className="relative bg-surface"
         style={{ touchAction: 'pan-y' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
