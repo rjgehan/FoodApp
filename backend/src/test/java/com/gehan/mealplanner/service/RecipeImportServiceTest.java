@@ -324,6 +324,36 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void cutsAPunctuatedTranscriptIntoOneStepPerSentence() {
+        // A real one, and it arrived as a single unbroken cue — so without splitting on the
+        // sentences it already has, the whole video comes out as "step 1".
+        //
+        // The two mentions of "squash season" are why SOMETIMES_ACTIONS exists: reading that
+        // noun as the verb made the first and last sentences look like instructions, which
+        // kept the hook and the sign-off and defeated the trimming at both ends at once.
+        String spoken = "Hey, apparently it is Butternut squash season. So let's make a beautiful side dish. "
+                + "And I'll show you how to keep the band aids in the pantry. Take off the top and the bottom. "
+                + "I don't know if you can see it, but Butternut squash has this sort of sap that comes out of it. "
+                + "We're gonna cut it directly in half. Then we can remove the seeds. "
+                + "This will give us two clean halves of Butternut squash. "
+                + "While those are in the oven, I can small dice, 1/2 a Spanish onion, mince 4 garlic cloves. "
+                + "Then serve it on a plate or in a bowl. Another plating tip. "
+                + "And follow me, because please keep all your fingers intact this squash season.";
+
+        String method = service.methodFrom(List.of(spoken));
+
+        assertThat(method.lines()).containsExactly(
+                "Take off the top and the bottom.",
+                "We're gonna cut it directly in half.",
+                "Then we can remove the seeds.",
+                "While those are in the oven, I can small dice, 1/2 a Spanish onion, mince 4 garlic cloves.",
+                "Then serve it on a plate or in a bowl.");
+        // The sell before, the sign-off after, and the asides in between are all gone.
+        assertThat(method).doesNotContain("squash season").doesNotContain("band aids")
+                .doesNotContain("sap").doesNotContain("two clean halves").doesNotContain("plating tip");
+    }
+
+    @Test
     void keepsTheMethodOfSomebodyTalkingAboutThemselves() {
         // "I'm going to..." is a method told as a story. Skipping every first-person line
         // would leave nothing at all, so they count when there is nothing else.

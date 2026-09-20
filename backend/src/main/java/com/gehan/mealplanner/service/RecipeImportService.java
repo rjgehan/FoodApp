@@ -207,7 +207,9 @@ public class RecipeImportService {
         if (best.isMissingNode()) return null;
 
         try {
-            List<String> cues = cuesFrom(fetch(URI.create(best.path("Url").asText())));
+            // The page fetch has already happened, and the import must not hang waiting on a
+            // bonus. A transcript that is slow to arrive is one the recipe does without.
+            List<String> cues = cuesFrom(fetch(URI.create(best.path("Url").asText()), Duration.ofSeconds(6)));
             if (!soundsLikeCooking(String.join(" ", cues))) return null;
             return methodFrom(cues);
         } catch (RuntimeException e) {
@@ -278,15 +280,30 @@ public class RecipeImportService {
      */
     private static final Set<String> ACTIONS = Set.of(
             "add", "arrange", "assemble", "bake", "beat", "blanch", "blend", "boil", "bring",
-            "brown", "brush", "chill", "chop", "coat", "combine", "cook", "cool", "cover",
-            "crack", "crush", "cut", "dice", "dip", "drain", "drizzle", "dust", "fill", "flip",
-            "fold", "fry", "garnish", "grate", "grease", "grill", "heat", "knead", "layer",
-            "leave", "let", "line", "marinate", "mash", "melt", "microwave", "mix", "pat",
-            "peel", "place", "poach", "pop", "pour", "preheat", "press", "put", "reduce",
-            "reheat", "remove", "rest", "roast", "roll", "rub", "sauté", "saute", "scatter",
-            "scoop", "seal", "sear", "season", "serve", "set", "shred", "sift", "simmer",
-            "slice", "soak", "spoon", "spread", "sprinkle", "squeeze", "steam", "stir",
-            "strain", "stuff", "toast", "toss", "transfer", "trim", "turn", "whisk", "wrap");
+            "brush", "chop", "coat", "combine", "cook", "crack", "crush", "dip", "drain",
+            "drizzle", "dust", "flip", "fold", "fry", "garnish", "grate", "grease", "halve",
+            "knead", "ladle", "layer", "marinate", "mash", "melt", "microwave", "mince", "mix",
+            "pat", "peel", "poach", "pour", "preheat", "reduce", "reheat", "remove", "roast",
+            "rub", "sauté", "saute",
+            "scatter", "scoop", "seal", "sear", "serve", "shred", "sift", "simmer", "soak",
+            "spoon", "spread", "sprinkle", "squeeze", "stir", "strain", "stuff", "sweat",
+            "thicken", "toss", "transfer", "whip", "whisk", "wrap", "zest");
+
+    /**
+     * Verbs that are also perfectly good nouns, so they only count at the front of a clause.
+     *
+     * This is not fussiness: a real video opened on "apparently it is Butternut squash season"
+     * and closed on "keep your fingers intact this squash season", and reading those two as
+     * instructions kept the hook and the sign-off in the method. "Season the chicken" is the
+     * real thing and it starts its sentence.
+     */
+    private static final Set<String> SOMETIMES_ACTIONS = Set.of(
+            "brown", "chill", "cool", "cover", "cut", "dice", "fill", "finish", "grill", "lay",
+            "leave", "let", "line", "place", "pop", "press", "put", "rest", "roll", "season",
+            "set", "slice", "stand", "steam", "take", "toast", "top", "trim", "turn");
+
+    /** How far into a clause one of those can still be the instruction. */
+    private static final int IMPERATIVE_WINDOW = 4;
 
     /** Where a speaker starts the next thing they do. */
     private static final List<String> STEP_STARTS = List.of(
@@ -294,10 +311,16 @@ public class RecipeImportService {
             "first", "firstly", "secondly", "finally", "lastly", "meanwhile", "start by",
             "begin by", "when", "while");
 
-    /** Telling you about it rather than telling you to do it. */
+    /**
+     * Telling you about it rather than telling you to do it. "We" is deliberately not here:
+     * "we can remove the seeds" is how half of them narrate the actual cooking.
+     */
     private static final List<String> ASIDES = List.of(
-            "i ", "i'", "my ", " me ", "we ", "we'", "you'll love", "trust me", "link in bio",
-            "recipe is below", "recipe below", "follow for", "comment ", "save this");
+            " i ", " i'", " my ", " me ", "you'll love", "trust me", "link in bio",
+            "recipe is below", "recipe below", "follow for", "follow me", "save this");
+
+    /** A sentence ends, and "1.5" and "375." do not. */
+    private static final Pattern SENTENCE_END = Pattern.compile("(?<=[.!?])\\s+");
 
     /**
      * The method, pulled out of what was said.
@@ -314,38 +337,55 @@ public class RecipeImportService {
      * transcript it cannot make sense of yields no method at all.
      */
     String methodFrom(List<String> cues) {
+        /*
+         * Some transcripts are punctuated and some are not, and it changes what a step is.
+         * When there are sentences, use them: they are complete thoughts, and one of them is
+         * one step. Without them the cue breaks are the only punctuation there is, and a cue
+         * is half a thought, so the run has to be kept whole and cut at the words a speaker
+         * uses to move on.
+         */
+        String joined = String.join(" ", cues).replaceAll("\\s+", " ").trim();
+        boolean punctuated = joined.split("[.!?]").length >= 4;
+        List<String> units = punctuated ? List.of(SENTENCE_END.split(joined)) : cues;
+
         int first = -1;
         int last = -1;
-        for (int i = 0; i < cues.size(); i++) {
-            if (!isInstruction(cues.get(i))) continue;
+        for (int i = 0; i < units.size(); i++) {
+            if (!isInstruction(units.get(i))) continue;
             if (first < 0) first = i;
             last = i;
         }
         // Narrated entirely in the first person ("I'm going to add the garlic") — still a
-        // method, just told as a story. Fall back to any cue with an action in it.
+        // method, just told as a story. Fall back to anything with an action in it.
         if (first < 0) {
-            for (int i = 0; i < cues.size(); i++) {
-                if (!hasAction(cues.get(i))) continue;
+            for (int i = 0; i < units.size(); i++) {
+                if (!hasAction(units.get(i))) continue;
                 if (first < 0) first = i;
                 last = i;
             }
         }
         if (first < 0) return null;
 
+        List<String> kept = units.subList(first, last + 1);
         List<String> steps = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        for (String cue : cues.subList(first, last + 1)) {
-            if (!current.isEmpty() && startsAStep(cue)) {
-                steps.add(current.toString());
-                current.setLength(0);
+        if (punctuated) {
+            steps.addAll(kept);
+        } else {
+            StringBuilder current = new StringBuilder();
+            for (String cue : kept) {
+                if (!current.isEmpty() && startsAStep(cue)) {
+                    steps.add(current.toString());
+                    current.setLength(0);
+                }
+                if (!current.isEmpty()) current.append(' ');
+                current.append(cue);
             }
-            if (!current.isEmpty()) current.append(' ');
-            current.append(cue);
+            steps.add(current.toString());
         }
-        steps.add(current.toString());
 
         List<String> out = new ArrayList<>();
         for (String step : steps) {
+            // "This will give us two clean halves" is the result, not something to do. And
             // "that is literally it" is not a step, however charming.
             if (!hasAction(step)) continue;
             out.add(tidy(step));
@@ -363,8 +403,13 @@ public class RecipeImportService {
     }
 
     private boolean hasAction(String text) {
+        int at = 0;
         for (String word : text.toLowerCase().split("[^a-zà-ÿ']+")) {
+            // A leading "1." or a stray space splits to an empty first token; it is not a word.
+            if (word.isEmpty()) continue;
             if (ACTIONS.contains(word)) return true;
+            if (at < IMPERATIVE_WINDOW && SOMETIMES_ACTIONS.contains(word)) return true;
+            at++;
         }
         return false;
     }
@@ -545,8 +590,12 @@ public class RecipeImportService {
     }
 
     private String fetch(URI uri) {
+        return fetch(uri, Duration.ofSeconds(20));
+    }
+
+    private String fetch(URI uri, Duration timeout) {
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(20))
+                .timeout(timeout)
                 // Some recipe sites serve a stub to anything that does not look like a browser.
                 .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                         + "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
