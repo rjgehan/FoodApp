@@ -215,6 +215,93 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void turnsAWebVttTrackIntoSentences() {
+        // The cues are deliberately out of order, because that is how TikTok sends them: in a
+        // real track the opening line arrived eleventh. Read in file order this says "bake it,
+        // then dust it", which is wrong and reads perfectly well.
+        String vtt = """
+            WEBVTT
+
+            2
+            00:00:07.900 --> 00:00:11.000
+            <v Narrator>Bake it for forty five minutes until golden.</v>
+
+            1
+            00:00:00.120 --> 00:00:03.400
+            Dust the chicken thighs with smoky paprika and a little salt.
+
+            3
+            00:00:03.400 --> 00:00:07.900
+            Dust the chicken thighs with smoky paprika and a little salt.
+            Roll them back up and pour over the sauce.
+            """;
+
+        String text = service.fromWebVtt(vtt);
+
+        assertThat(text).isEqualTo(
+                "Dust the chicken thighs with smoky paprika and a little salt. "
+                        + "Roll them back up and pour over the sauce. "
+                        + "Bake it for forty five minutes until golden.");
+        // No timings, no cue numbers, and the rolling repeat appears once.
+        assertThat(text).doesNotContain("-->").doesNotContain("WEBVTT");
+    }
+
+    @Test
+    void readsATrackWithNoHourAndNoCueNumbers() {
+        // Both are legal WebVTT and both turn up.
+        assertThat(service.fromWebVtt("""
+            WEBVTT
+
+            00:12.906 --> 00:19.113
+            Second.
+
+            00:01.092 --> 00:04.033
+            First.
+            """)).isEqualTo("First. Second.");
+    }
+
+    @Test
+    void picksTheEnglishSubtitleTrackOutOfTheVideosOwnData() {
+        // The shape a real TikTok page ships: the blob its client rehydrates from, with the
+        // tracks in a deliberately unhelpful order.
+        String html = "<html><script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\" type=\"application/json\">"
+                + """
+                {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{
+                  "video":{"subtitleInfos":[
+                    {"Format":"creator_caption","Source":"LC","LanguageCodeName":"eng-US","Url":"https://x/a"},
+                    {"Format":"webvtt","Source":"ASR","LanguageCodeName":"por-PT","Url":"https://x/b"},
+                    {"Format":"webvtt","Source":"MT","LanguageCodeName":"eng-US","Url":"https://x/c"}]}}}}}}
+                """
+                + "</script></html>";
+
+        JsonNode item = service.tikTokItem(html);
+        // creator_caption is JSON of another shape, and Portuguese is no use to the importer,
+        // so the machine-translated English WebVTT is the one left standing.
+        assertThat(service.bestSubtitle(item).path("Url").asText()).isEqualTo("https://x/c");
+
+        // A video with no captions at all, and a page that is not TikTok's.
+        assertThat(service.bestSubtitle(service.tikTokItem("<html>nothing</html>")).isMissingNode()).isTrue();
+    }
+
+    @Test
+    void keepsATranscriptOnlyWhenSomebodyIsCooking() {
+        // Half the sampled recipe videos play a licensed song instead of a voiceover, and the
+        // transcript comes back as fluent, confident prose with nothing to mark it as wrong.
+        // Anything that is not cooking is dropped rather than saved as a method.
+        assertThat(service.soundsLikeCooking(
+                "Heat the oil in a pan, add the onion and garlic, and stir for two minutes "
+                        + "before you pour in the stock.")).isTrue();
+
+        assertThat(service.soundsLikeCooking(
+                "I wrote this one on a long drive home and it still makes me think of that "
+                        + "summer, so I hope you like it as much as I do.")).isFalse();
+
+        // Too short to judge, so not trusted.
+        assertThat(service.soundsLikeCooking("Stir it.")).isFalse();
+        assertThat(service.soundsLikeCooking(null)).isFalse();
+    }
+
+    @Test
     void refusesToFetchInsideTheHomeNetwork() {
         // The server sits on a home LAN; a link is not automatically safe to follow.
         assertThatThrownBy(() -> service.fromUrl("http://localhost:8080/actuator"));

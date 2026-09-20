@@ -46,6 +46,16 @@ public class RecipeImportService {
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ISO_DURATION = Pattern.compile("^P(?:\\d+D)?T(?:(\\d+)H)?(?:(\\d+)M)?");
     private static final Pattern TAGS = Pattern.compile("<[^>]+>");
+
+    /** "00:00:44.766", and the hour is optional. */
+    private static final Pattern TIMING = Pattern.compile("(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{1,3})");
+    /** Enough of them, close together, and somebody is cooking rather than singing. */
+    private static final List<String> COOKING_WORDS = List.of(
+            "add", "bake", "boil", "chop", "cook", "cool", "cover", "cut", "dice", "drain",
+            "fry", "grill", "heat", "melt", "mix", "oven", "pan", "pour", "roast", "season",
+            "serve", "simmer", "slice", "stir", "whisk", "minutes", "oil", "salt", "pepper",
+            "garlic", "onion", "butter", "sauce", "dough", "degrees", "preheat");
+
     private static final Pattern HASHTAGS = Pattern.compile("#\\w+");
     private static final Pattern TIKTOK_DATA = Pattern.compile(
             "<script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\"[^>]*>(.*?)</script>", Pattern.DOTALL);
@@ -96,11 +106,43 @@ public class RecipeImportService {
      * and there is nothing here to import. That is said plainly rather than guessed at.
      */
     private GeneratedRecipe fromTikTok(URI uri) {
-        String caption = tikTokCaption(uri);
+        JsonNode item = tikTokItem(uri);
+        String caption = caption(item);
+        if (caption == null || caption.isBlank()) caption = oembedCaption(uri);
         if (caption == null || caption.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That video has no caption to read.");
         }
-        return fromCaption(caption, uri.toString());
+
+        GeneratedRecipe draft = fromCaption(caption, uri.toString());
+        if (draft.instructions() != null && !draft.instructions().isBlank()) return draft;
+
+        // The caption listed what to buy but not what to do. TikTok transcribes the narration
+        // itself and publishes it beside the video, so the spoken method can be read for free.
+        String spoken = transcript(item);
+        if (spoken == null) return draft;
+        return new GeneratedRecipe(draft.name(), draft.description(), draft.prepTimeMinutes(),
+                draft.cookTimeMinutes(), draft.servings(), draft.ingredients(), spoken);
+    }
+
+    /** The video's own record in the page, or a missing node. One fetch serves everything. */
+    private JsonNode tikTokItem(URI uri) {
+        try {
+            return tikTokItem(fetch(uri));
+        } catch (RuntimeException e) {
+            // Includes ResponseStatusException from fetch(): a page that will not load is a
+            // reason to fall back to oEmbed, not to give up.
+            log.info("Could not read the TikTok page for {} ({})", uri, e.toString());
+        }
+        return mapper.missingNode();
+    }
+
+    /** The video's own data, out of the blob the page ships for its client to rehydrate from. */
+    JsonNode tikTokItem(String html) {
+        Matcher matcher = TIKTOK_DATA.matcher(html);
+        if (!matcher.find()) return mapper.missingNode();
+        return mapper.readTree(matcher.group(1))
+                .path("__DEFAULT_SCOPE__").path("webapp.video-detail")
+                .path("itemInfo").path("itemStruct");
     }
 
     /**
@@ -109,32 +151,139 @@ public class RecipeImportService {
      * oEmbed is the obvious source and the wrong one: its `title` holds the whole caption —
      * never truncated, checked against captions up to 1,957 characters — but every newline in
      * it has been replaced by a single space. A recipe caption arrives as one unbroken line,
-     * and one line can never be split into ingredients.
-     *
-     * The page itself carries `itemStruct.contents`, an array with one entry per original
-     * line, so the structure survives. oEmbed stays as the fallback: a flat caption is worth
-     * more than none, and some captions are a single line anyway.
+     * and one line can never be split into ingredients. `contents` keeps one entry per
+     * original line, so the structure survives.
      */
-    private String tikTokCaption(URI uri) {
-        try {
-            Matcher matcher = TIKTOK_DATA.matcher(fetch(uri));
-            if (matcher.find()) {
-                JsonNode contents = mapper.readTree(matcher.group(1))
-                        .path("__DEFAULT_SCOPE__").path("webapp.video-detail")
-                        .path("itemInfo").path("itemStruct").path("contents");
-                if (contents.isArray() && !contents.isEmpty()) {
-                    List<String> lines = new ArrayList<>();
-                    for (JsonNode entry : contents) lines.add(entry.path("desc").asText(""));
-                    String joined = String.join("\n", lines).trim();
-                    if (!joined.isBlank()) return joined;
-                }
+    private String caption(JsonNode item) {
+        JsonNode contents = item.path("contents");
+        if (!contents.isArray() || contents.isEmpty()) return null;
+        List<String> lines = new ArrayList<>();
+        for (JsonNode entry : contents) lines.add(entry.path("desc").asText(""));
+        String joined = String.join("\n", lines).trim();
+        return joined.isBlank() ? null : joined;
+    }
+
+    /**
+     * What is said out loud, as TikTok already transcribed it.
+     *
+     * A creator-written caption file beats speech recognition, and English beats a machine
+     * translation of it, so the tracks are ranked rather than taken in order. The URLs are
+     * signed and expire in about two days, which is why the text is pulled now and the link
+     * never stored.
+     *
+     * Returns null when there is nothing usable — including when the audio turns out to be a
+     * song rather than a person cooking, which is half of the recipe videos sampled and which
+     * transcribes into confident, fluent nonsense.
+     */
+    /**
+     * The subtitle track worth reading, or a missing node.
+     *
+     * Only WebVTT: the other format TikTok offers is {@code creator_caption}, which is JSON of
+     * a different shape. English wins over a better-sourced track in another language, because
+     * the rest of the import cannot do anything with Portuguese.
+     */
+    JsonNode bestSubtitle(JsonNode item) {
+        JsonNode best = mapper.missingNode();
+        int bestScore = Integer.MIN_VALUE;
+        for (JsonNode track : item.path("video").path("subtitleInfos")) {
+            if (!"webvtt".equalsIgnoreCase(track.path("Format").asText(""))) continue;
+            int score = switch (track.path("Source").asText("")) {
+                case "LC" -> 3;   // the creator wrote it
+                case "ASR" -> 2;  // TikTok listened to it
+                default -> 1;     // machine translation of one of the above
+            };
+            if (track.path("LanguageCodeName").asText("").startsWith("eng")) score += 4;
+            if (score > bestScore) {
+                bestScore = score;
+                best = track;
             }
-        } catch (RuntimeException e) {
-            // Includes ResponseStatusException from fetch(): a page that will not load is a
-            // reason to try oEmbed, not to give up.
-            log.info("Could not read the TikTok page for {} ({}), falling back to oEmbed", uri, e.toString());
         }
-        return oembedCaption(uri);
+        return best;
+    }
+
+    private String transcript(JsonNode item) {
+        JsonNode best = bestSubtitle(item);
+        if (best.isMissingNode()) return null;
+
+        try {
+            String vtt = fetch(URI.create(best.path("Url").asText()));
+            String text = fromWebVtt(vtt);
+            return soundsLikeCooking(text) ? text : null;
+        } catch (RuntimeException e) {
+            log.info("Could not read the TikTok transcript ({})", e.toString());
+            return null;
+        }
+    }
+
+    /** Visible for tests: WebVTT to plain sentences, without the timings or the repeats. */
+    String fromWebVtt(String vtt) {
+        record Cue(long at, int written, List<String> lines) {}
+
+        List<Cue> cues = new ArrayList<>();
+        List<String> pending = new ArrayList<>();
+        long at = -1;
+
+        for (String raw : (vtt + "\n\n").split("\r?\n")) {
+            String line = raw.trim();
+            if (line.contains("-->")) {
+                if (at >= 0 && !pending.isEmpty()) cues.add(new Cue(at, cues.size(), List.copyOf(pending)));
+                pending.clear();
+                long start = startOf(line);
+                at = start < 0 ? Math.max(at, 0) : start;
+                continue;
+            }
+            if (line.isEmpty() || line.startsWith("WEBVTT") || line.startsWith("NOTE")) continue;
+            if (line.matches("\\d+")) continue;
+            line = TAGS.matcher(line).replaceAll("").trim();
+            if (!line.isEmpty()) pending.add(line);
+        }
+        if (at >= 0 && !pending.isEmpty()) cues.add(new Cue(at, cues.size(), List.copyOf(pending)));
+
+        /*
+         * TikTok does not write the cues in the order they are spoken. In a real track the
+         * opening line ("stop scrolling", at 0.2s) was the eleventh cue in the file. Joining
+         * the file as it arrives reads almost plausibly, which is the worst kind of wrong, so
+         * the start times decide the order and the file order only breaks ties.
+         */
+        cues.sort(java.util.Comparator.comparingLong(Cue::at).thenComparingInt(Cue::written));
+
+        List<String> out = new ArrayList<>();
+        String previous = null;
+        for (Cue cue : cues) {
+            for (String line : cue.lines()) {
+                // Rolling captions repeat the previous line as the next one scrolls in.
+                if (line.equalsIgnoreCase(previous)) continue;
+                out.add(line);
+                previous = line;
+            }
+        }
+        return String.join(" ", out).replaceAll("\\s+", " ").trim();
+    }
+
+    /** The start of "00:00:44.766 --> 00:00:47.893" in milliseconds, or -1 if it has none. */
+    private static long startOf(String timing) {
+        Matcher m = TIMING.matcher(timing.substring(0, timing.indexOf("-->")));
+        if (!m.find()) return -1;
+        long hours = m.group(1) == null ? 0 : Long.parseLong(m.group(1));
+        long minutes = Long.parseLong(m.group(2));
+        long seconds = Long.parseLong(m.group(3));
+        long millis = Long.parseLong((m.group(4) + "00").substring(0, 3));
+        return ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis;
+    }
+
+    /**
+     * Visible for tests. A transcript is only worth keeping if somebody is cooking in it: half
+     * the sampled videos play a licensed song instead, and the transcript comes back as fluent,
+     * confident song lyrics with nothing to mark them as wrong.
+     */
+    boolean soundsLikeCooking(String text) {
+        if (text == null || text.length() < 40) return false;
+        String lowered = text.toLowerCase();
+        int hits = 0;
+        for (String verb : COOKING_WORDS) {
+            if (lowered.contains(verb)) hits++;
+        }
+        return hits >= 3;
     }
 
     private String oembedCaption(URI uri) {
