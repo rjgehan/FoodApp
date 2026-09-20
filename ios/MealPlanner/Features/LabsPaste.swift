@@ -58,6 +58,9 @@ struct ParsedRecipe {
 @available(iOS 26.0, *)
 @Generable
 struct TidiedMethod {
+    @Guide(description: "What the dish is called, from what these steps make. A few words, no the word recipe.")
+    var name: String
+
     @Guide(description: "The same steps, each written as an instruction. Same order. Nothing added.")
     var steps: [String]
 }
@@ -88,6 +91,8 @@ struct LabsPasteView: View {
     @State private var saved: String?
     @State private var fromPage: StructuredRecipe?
     @State private var tidying = false
+    /// The server said the method came off a transcript rather than out of a recipe.
+    @State private var methodWasSpoken = false
     /// Kept so the model's rewrite can be undone — it is a guess about wording, and the
     /// steps underneath it are the ones the cook actually said.
     @State private var spokenSteps: [String]?
@@ -163,17 +168,24 @@ struct LabsPasteView: View {
                             .font(.footnote)
                         }
                     } header: {
-                        HStack {
+                        HStack(spacing: 6) {
                             Text("Steps · \(fromPage.steps.count)")
+                            // Which of the two you are looking at, said where it cannot be
+                            // scrolled past: the steps themselves look much the same either way.
                             if tidying {
-                                Spacer()
                                 ProgressView().controlSize(.mini)
-                                Text("tidying on the phone…").textCase(nil)
+                                Text("· rewriting on the phone…").textCase(nil)
+                            } else if spokenSteps != nil {
+                                Text("· rewritten here").textCase(nil)
+                            } else if methodWasSpoken {
+                                Text("· as spoken").textCase(nil)
                             }
                         }
                     } footer: {
                         if spokenSteps != nil {
                             Text("Rewritten on this phone from what was said out loud. Nothing was sent anywhere.")
+                        } else if methodWasSpoken {
+                            Text("Transcribed from the video and tidied by rule. Apple Intelligence did not rewrite these.")
                         }
                     }
                 }
@@ -274,6 +286,7 @@ struct LabsPasteView: View {
             // Steps a publisher wrote are exact and stay exactly as they are. Steps pieced
             // together out of somebody narrating a video are a reconstruction, and reading
             // like one, so they get rewritten here on the phone.
+            methodWasSpoken = imported.methodWasSpoken
             if imported.methodWasSpoken {
                 note = "The recipe was spoken in the video, not written down. Reading it back…"
                 await tidyTheMethod()
@@ -326,6 +339,15 @@ struct LabsPasteView: View {
             }
             spokenSteps = original
             fromPage?.steps = rewritten
+
+            // A caption that opens on a hook — "is it time?" — names the recipe after the
+            // hook. The video never says what the dish is called, but the steps show what it
+            // makes, so the name is only taken when the one from the caption is unusable.
+            let suggested = reply.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let current = fromPage?.name, Self.isAHook(current), Self.couldBeADishName(suggested) {
+                fromPage?.name = suggested
+            }
+
             note = String(
                 format: "The recipe was spoken in the video. Rewritten as %d steps on this phone in %.1f s.",
                 rewritten.count, Date().timeIntervalSince(started)
@@ -340,6 +362,17 @@ struct LabsPasteView: View {
     /// The rewrite is only worth taking if it is still the same method. A model that has
     /// gone wrong pads, invents, or returns almost nothing, and all three show up in the
     /// size: merging fragments should make the text shorter, never much longer.
+    /// The caption's first line, when the caption opened on a hook rather than a title.
+    private static func isAHook(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.hasSuffix("?") || trimmed.count < 3
+    }
+
+    private static func couldBeADishName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 60 && !name.hasSuffix("?")
+            && name.rangeOfCharacter(from: .letters) != nil
+    }
+
     private static func plausible(_ rewritten: [String], from original: [String]) -> Bool {
         guard !rewritten.isEmpty, rewritten.count <= original.count + 2 else { return false }
         let before = original.joined(separator: " ").count

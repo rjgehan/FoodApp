@@ -367,6 +367,30 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void doesNotNameARecipeAfterTheHookThatOpensTheCaption() {
+        // A real caption opened "is it time?", and the recipe went into the app under that
+        // name. A title is not a question, not a heading and not something you buy.
+        assertThat(service.fromCaption("""
+                is it time?
+                Roasted Butternut Squash
+                1 butternut squash
+                2 tbsp olive oil
+                """, "u").name()).isEqualTo("Roasted Butternut Squash");
+
+        assertThat(service.fromCaption("""
+                🍂🍂🍂
+                Ingredients:
+                Hot Honey Garlic Salmon
+                0.8 lb salmon
+                """, "u").name()).isEqualTo("Hot Honey Garlic Salmon");
+
+        // When the hook runs straight into the shopping list there is no better line to
+        // take, and a name you can edit beats no name at all.
+        assertThat(service.fromCaption("is it time?\n1 butternut squash\n2 tbsp olive oil\n", "u").name())
+                .isEqualTo("is it time?");
+    }
+
+    @Test
     void saysWhetherTheMethodWasWrittenDownOrSpoken() {
         // The app rewrites spoken steps on device and leaves published ones exactly alone,
         // so getting this label wrong would put a language model through a publisher's

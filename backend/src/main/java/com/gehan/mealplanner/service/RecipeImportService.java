@@ -530,7 +530,7 @@ public class RecipeImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "That caption is only hashtags.");
         }
 
-        String name = lines.get(0).replaceAll("[:\\-–—]+$", "").trim();
+        String name = nameFrom(lines);
 
         // A caption that labels its own sections is far more reliable than any guess.
         int ingredientsAt = indexOfHeading(lines, "ingredient");
@@ -575,6 +575,36 @@ public class RecipeImportService {
         }
         return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
                 String.join("\n", steps), MethodSource.PUBLISHED);
+    }
+
+    /**
+     * What the dish is called.
+     *
+     * The first line of a caption is usually the title and sometimes the hook — one real one
+     * opens "is it time?", which is how a recipe ended up in the app under that name. A title
+     * is not a question, not a heading, not a sentence, and not something you buy, so the
+     * first line that could be a name is taken instead. When none of them could be, the first
+     * line stands: a bad name beats no name, and it is editable before anything is saved.
+     */
+    private String nameFrom(List<String> lines) {
+        for (String raw : lines) {
+            if (couldBeADishName(raw)) return trimTitle(raw);
+        }
+        return trimTitle(lines.get(0));
+    }
+
+    private static String trimTitle(String line) {
+        return line.replaceAll("[:\\-–—]+$", "").trim();
+    }
+
+    private boolean couldBeADishName(String raw) {
+        String line = raw.trim();
+        if (line.endsWith(":")) return false;                       // "Ingredients:"
+        if (line.endsWith("?") || line.endsWith(".")) return false; // a hook, or a step
+        String title = trimTitle(line);
+        if (title.length() < 3 || title.length() > 60) return false;
+        if (!title.matches(".*\\p{L}.*")) return false;             // emoji on their own
+        return IngredientLine.of(title).quantity() == null;         // "400g butter"
     }
 
     /**
