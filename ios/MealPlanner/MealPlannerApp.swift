@@ -117,6 +117,9 @@ struct RootView: View {
 struct HouseholdView: View {
     var session: Session
 
+    @State private var editingServer = false
+    @State private var serverDraft = Config.baseURL
+
     var body: some View {
         NavigationStack {
             List {
@@ -124,8 +127,35 @@ struct HouseholdView: View {
                     LabeledContent("Signed in as", value: session.displayName ?? "—")
                     LabeledContent("Household", value: session.household?.name ?? "—")
                 }
+                /*
+                 Changeable from here, not only from the sign-in screen.
+                 
+                 It used to be a toolbar button on SignInView, which meant the one moment you
+                 could point the app somewhere else was the one moment you were signed out —
+                 and once signed in the address was shown and could not be touched.
+                */
                 Section("Server") {
-                    LabeledContent("Address", value: Config.baseURL)
+                    Button {
+                        serverDraft = Config.baseURL
+                        editingServer = true
+                    } label: {
+                        // Looks like a row you can open, because otherwise it reads exactly
+                        // like the two lines above it, which you cannot.
+                        HStack {
+                            Text("Address").foregroundStyle(.primary)
+                            Spacer(minLength: 12)
+                            Text(Config.baseURL)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    // Without this the button tints the whole row, and it stops looking
+                    // like the drill-in row below it and starts looking like a link.
+                    .buttonStyle(.plain)
                 }
                 #if DEBUG
                 // The whole interface on sample data. A debug tool, so it lives here rather
@@ -142,7 +172,26 @@ struct HouseholdView: View {
                 }
             }
             .navigationTitle("Household")
+            .alert("Kitchen server", isPresented: $editingServer) {
+                TextField(Config.fallback, text: $serverDraft)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                Button("Cancel", role: .cancel) { serverDraft = Config.baseURL }
+                Button("Switch") { switchServer() }
+            } message: {
+                // The session belongs to the server that issued it, so this signs out. Said
+                // up front rather than leaving somebody wondering why they are back at the PIN.
+                Text("Moving to another server signs you out, because your session belongs to this one.")
+            }
         }
+    }
+
+    private func switchServer() {
+        let address = serverDraft.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty, address != Config.baseURL else { return }
+        Config.baseURL = address
+        Task { await session.signOut() }
     }
 }
 
