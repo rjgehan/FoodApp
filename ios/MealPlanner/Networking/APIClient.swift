@@ -113,6 +113,20 @@ actor APIClient {
         try await send("POST", "/api/households/\(household.uuidString)/recipes/import", body: ["url": url])
     }
 
+    /// Writes what a share sheet handed over into the server's import log. Plain text
+    /// rather than JSON, because the report is a transcript and not a structure.
+    func noteShare(household: UUID, report: String) async throws {
+        var req = request(method: "POST", path: "/api/households/\(household.uuidString)/shares/diagnostic",
+                          authorized: true)
+        req.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        req.httpBody = report.data(using: .utf8)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
     @discardableResult
     func createRecipe(household: UUID, body: [String: Any]) async throws -> Recipe {
         try await send("POST", "/api/households/\(household.uuidString)/recipes", body: body)

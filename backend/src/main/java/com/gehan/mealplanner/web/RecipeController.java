@@ -41,14 +41,18 @@ public class RecipeController {
 
     private final HouseholdService householdService;
 
+    private final com.gehan.mealplanner.service.ImportLog importLog;
+
     public RecipeController(RecipeService recipeService,
                             RecipeLinkService linkService,
                             RecipeImportService importService,
-                            HouseholdService householdService) {
+                            HouseholdService householdService,
+                            com.gehan.mealplanner.service.ImportLog importLog) {
         this.linkService = linkService;
         this.recipeService = recipeService;
         this.importService = importService;
         this.householdService = householdService;
+        this.importLog = importLog;
     }
 
     @PostMapping("/api/households/{householdId}/recipes")
@@ -165,6 +169,21 @@ public class RecipeController {
                                           @Valid @RequestBody ImportRecipeRequest request) {
         householdService.assertMember(householdId, userId);
         return importService.fromUrl(request.url());
+    }
+
+    /**
+     * What a share sheet actually handed over, written down so it can be read later.
+     *
+     * Whether a link can be imported depends entirely on what the sharing app offers — a
+     * bare URL, the caption as text, or something of its own — and that cannot be worked
+     * out from a desk. The phone reports it once and the design follows from the note.
+     */
+    @PostMapping(value = "/api/households/{householdId}/shares/diagnostic", consumes = "text/plain")
+    public void noteShare(@AuthenticationPrincipal UUID userId,
+                          @PathVariable UUID householdId,
+                          @RequestBody String report) {
+        householdService.assertMember(householdId, userId);
+        importLog.note("share", report);
     }
 
     @PutMapping("/api/recipes/{recipeId}/images")

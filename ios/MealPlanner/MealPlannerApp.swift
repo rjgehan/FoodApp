@@ -22,6 +22,12 @@ struct MealPlannerApp: App {
                 .onOpenURL { url in
                     guard url.scheme == "mealplanner", url.host == "paste" else { return }
                     let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                    // What the share sheet handed over, on its way to the import log. An
+                    // app that offers nothing useful looks the same as one that offers
+                    // nothing at all, and only the note tells them apart.
+                    if let report = items?.first(where: { $0.name == "diag" })?.value {
+                        Task { await session.noteShare(report) }
+                    }
                     if let json = items?.first(where: { $0.name == "recipe" })?.value,
                        let data = json.data(using: .utf8),
                        let decoded = try? JSONDecoder().decode(StructuredRecipe.self, from: data) {
@@ -29,7 +35,12 @@ struct MealPlannerApp: App {
                         shared = decoded.name
                         return
                     }
-                    shared = items?.first(where: { $0.name == "text" })?.value
+                    let text = items?.first(where: { $0.name == "text" })?.value
+                    // A share that produced nothing still deserves an answer on screen —
+                    // and it is the case most worth knowing about.
+                    shared = text ?? (items?.contains { $0.name == "diag" } == true
+                        ? "That app gave us nothing we can read yet. What it did hand over has been noted."
+                        : nil)
                 }
                 .sheet(item: Binding(get: { shared.map(SharedText.init) }, set: { shared = $0?.text })) { incoming in
                     NavigationStack {

@@ -56,6 +56,13 @@ final class Session {
     var isSignedIn: Bool { token != nil && household != nil }
 
     /// Loaded after signing in, and again on resume: someone may have been added to a house.
+    /// Sends what a share sheet handed over to the server's import log, where it can be
+    /// read later. Best effort: a note that does not arrive costs nothing.
+    func noteShare(_ report: String) async {
+        guard let household = household?.id else { return }
+        try? await APIClient.shared.noteShare(household: household, report: report)
+    }
+
     func loadHouseholds() async {
         households = (try? await APIClient.shared.myHouseholds()) ?? []
     }

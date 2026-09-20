@@ -43,19 +43,27 @@ final class ShareViewController: UIViewController {
     }
 
     private func handle() async {
+        let report = await describeWhatArrived()
         let found = await shared()
 
         // The page's own recipe data beats anything read off the screen, so it goes first
         // and the app can use it without a model at all.
         if let recipe = found.recipe, !recipe.isEmpty,
-           let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))"),
-           url.absoluteString.count < 60_000 {
+           let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))&diag=\(encode(report))"),
+           url.absoluteString.count < 120_000 {
             label.text = "Found the recipe."
             open(url)
             return
         }
-        guard let text = found.text, let url = URL(string: "mealplanner://paste?text=\(encode(text))") else {
-            finish(with: "Nothing to read in that.")
+        guard let text = found.text,
+              let url = URL(string: "mealplanner://paste?text=\(encode(text))&diag=\(encode(report))") else {
+            // Even with nothing to read, the note is worth sending: a share that produced
+            // nothing is exactly the one worth knowing the shape of.
+            if let url = URL(string: "mealplanner://paste?diag=\(encode(report))") {
+                open(url)
+            } else {
+                finish(with: "Nothing to read in that.")
+            }
             return
         }
         open(url)
@@ -117,6 +125,79 @@ final class ShareViewController: UIViewController {
             text = selection ?? pageText
         }
         return (recipe, text)
+    }
+
+    /**
+     Everything the share sheet handed over, written down.
+
+     The three type identifiers below are the ones this extension knows how to use, and an
+     app that offers none of them looks from in here exactly like an app that offered
+     nothing. So before any of that, every attachment is described as it arrived: what types
+     it claims, and what each one loads as. One share from an unfamiliar app then says
+     precisely what there was to work with, instead of leaving it to guesswork.
+
+     It never fails and never blocks the share: the worst case is a shorter note.
+    */
+    private func describeWhatArrived() async -> String {
+        let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
+        var lines: [String] = ["items=\(items.count)"]
+
+        for (index, item) in items.enumerated() {
+            if let text = item.attributedContentText?.string, !text.isEmpty {
+                lines.append("item[\(index)].attributedContentText = \(preview(text))")
+            }
+            if let title = item.attributedTitle?.string, !title.isEmpty {
+                lines.append("item[\(index)].attributedTitle = \(preview(title))")
+            }
+            if let info = item.userInfo, !info.isEmpty {
+                let keys = info.keys.compactMap { $0 as? String }.sorted()
+                lines.append("item[\(index)].userInfo keys = \(keys.joined(separator: ", "))")
+            }
+
+            let providers = item.attachments ?? []
+            lines.append("item[\(index)] attachments=\(providers.count)")
+            for (slot, provider) in providers.enumerated() {
+                let types = provider.registeredTypeIdentifiers
+                lines.append("  [\(slot)] types = \(types.joined(separator: ", "))")
+                for type in types {
+                    lines.append("    \(type) -> \(await describe(provider, type))")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// What one type identifier actually loads as. Anything that throws or hangs is reported
+    /// as such rather than losing the whole note.
+    private func describe(_ provider: NSItemProvider, _ type: String) async -> String {
+        do {
+            let loaded = try await provider.loadItem(forTypeIdentifier: type)
+            switch loaded {
+            case let url as URL:
+                return "URL \(url.absoluteString)"
+            case let text as String:
+                return "String(\(text.count)) \(preview(text))"
+            case let data as Data:
+                let asText = String(data: data, encoding: .utf8)
+                return "Data(\(data.count))" + (asText.map { " utf8 " + preview($0) } ?? " not utf8")
+            case let dictionary as [String: Any]:
+                return "Dictionary keys = \(dictionary.keys.sorted().joined(separator: ", "))"
+            case let attributed as NSAttributedString:
+                return "AttributedString \(preview(attributed.string))"
+            case let image as UIImage:
+                return "UIImage \(Int(image.size.width))x\(Int(image.size.height))"
+            default:
+                return "\(Swift.type(of: loaded))"
+            }
+        } catch {
+            return "failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Enough to recognise the shape, not so much that the URL will not carry it.
+    private func preview(_ text: String) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: "⏎")
+        return flat.count <= 700 ? flat : String(flat.prefix(700)) + "…"
     }
 
     private func encode(_ text: String) -> String {

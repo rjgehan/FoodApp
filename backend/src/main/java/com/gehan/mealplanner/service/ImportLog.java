@@ -106,6 +106,31 @@ public class ImportLog {
         }
     }
 
+    /**
+     * Something worth writing down that is not an import.
+     *
+     * Used for what a share sheet actually handed over. An app that offers only a bare link
+     * and one that offers the caption need completely different handling, and there is no
+     * way to know which from a desk: it has to be observed on the phone, once, and then the
+     * design follows from the note.
+     */
+    public void note(String kind, String text) {
+        if (directory == null || text == null || text.isBlank()) return;
+        try {
+            ObjectNode row = mapper.createObjectNode();
+            row.put("at", Instant.now().toString());
+            row.put("outcome", "note");
+            row.put("kind", kind);
+            row.put("text", cut(text));
+            Path file = directory.resolve("imports-" + LocalDate.now() + ".jsonl");
+            Files.writeString(file, mapper.writeValueAsString(row) + "\n", StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            log.info("Noted a {} of {} characters", kind, text.length());
+        } catch (RuntimeException | IOException e) {
+            log.debug("Could not write a {} note ({})", kind, e.toString());
+        }
+    }
+
     void finish(Entry entry, GeneratedRecipe made, String refused) {
         if (directory == null || entry == null) return;
         try {
