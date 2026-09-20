@@ -1,3 +1,11 @@
+/*
+ The Apple Intelligence experiments, and the only thing in the app that touches
+ ImagePlayground. The tab is already debug-only in MealPlannerApp, so the whole file is —
+ which keeps an iOS 26 framework out of anything that gets archived and uploaded.
+
+ Temporary by design: delete this file and the tab together.
+*/
+#if DEBUG
 import SwiftUI
 import ImagePlayground
 #if canImport(FoundationModels)
@@ -352,3 +360,5 @@ extension View {
 #Preview("Labs") {
     LabsView(session: .preview)
 }
+
+#endif

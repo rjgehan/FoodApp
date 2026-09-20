@@ -23,6 +23,12 @@
 			</array>
 		</dict>
 	</array>
+	<!--
+	  Answers App Store Connect's export-compliance question at upload instead of by hand
+	  every time. False is correct here: the app uses nothing but HTTPS, which is exempt.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Meal Planner talks to the kitchen server on your home network.</string>
 </dict>
