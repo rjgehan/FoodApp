@@ -105,6 +105,60 @@ class RecipeImportServiceTest {
     }
 
     @Test
+    void readsARecipeOutOfATikTokCaptionWithHeadings() {
+        GeneratedRecipe draft = service.fromCaption("""
+            Creamy Tomato Soup 🍅
+            Ingredients:
+            4 tbsp butter
+            2 yellow onions
+            1/3 cup parmesan cheese
+            Method:
+            Melt the butter and soften the onions.
+            Add the tomatoes and simmer.
+            #soup #recipe #fyp
+            """, "https://www.tiktok.com/@a/video/1");
+
+        assertThat(draft.name()).isEqualTo("Creamy Tomato Soup 🍅");
+        assertThat(draft.ingredients()).hasSize(3);
+        assertThat(draft.ingredients().get(0).ingredientName()).isEqualTo("butter");
+        assertThat(draft.ingredients().get(2).unit()).isEqualTo("cup");
+        assertThat(draft.instructions()).contains("Melt the butter").contains("simmer");
+    }
+
+    @Test
+    void readsACaptionWithNoHeadingsByFindingTheAmounts() {
+        GeneratedRecipe draft = service.fromCaption("""
+            garlic butter pasta
+            200g spaghetti
+            4 tbsp butter
+            3 cloves garlic
+            Cook the pasta, then toss it through the garlic butter.
+            """, "u");
+
+        assertThat(draft.ingredients()).hasSize(3);
+        assertThat(draft.ingredients().get(0).ingredientName()).isEqualTo("spaghetti");
+        assertThat(draft.instructions()).isEqualTo("Cook the pasta, then toss it through the garlic butter.");
+    }
+
+    @Test
+    void stripsHashtagsRatherThanTreatingThemAsIngredients() {
+        GeneratedRecipe draft = service.fromCaption("""
+            Lemon pasta #pasta #easyrecipe
+            2 lemons
+            500 g pasta
+            """, "u");
+        assertThat(draft.name()).isEqualTo("Lemon pasta");
+        assertThat(draft.ingredients()).hasSize(2);
+    }
+
+    @Test
+    void saysSoWhenTheCaptionIsOnlyAHook() {
+        // The common case: the recipe is spoken in the video and the caption sells it.
+        assertThatThrownBy(() -> service.fromCaption(
+                "the BEST lasagna you will ever make 🍝 #fyp #cooking", "u"));
+    }
+
+    @Test
     void refusesToFetchInsideTheHomeNetwork() {
         // The server sits on a home LAN; a link is not automatically safe to follow.
         assertThatThrownBy(() -> service.fromUrl("http://localhost:8080/actuator"));

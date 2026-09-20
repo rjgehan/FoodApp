@@ -14,15 +14,20 @@
 			<key>NSExtensionJavaScriptPreprocessingFile</key>
 			<string>GetPageText</string>
 			<!--
-			  WebPage only, deliberately. Listing NSExtensionActivationSupportsWebURLWithMaxCount
-			  alongside it makes Safari hand over the address and skip the JavaScript
-			  preprocessor, which is how a shared page arrived as nothing but its title and URL.
+			  Both, and the order costs something. With WebURL listed, Safari hands over the
+			  address instead of running the preprocessor above — so a shared page arrives as
+			  a link rather than as its text. That is worth it now the server can read a link
+			  properly: structured data for a recipe site, oEmbed for TikTok. And a link is
+			  the only thing apps like TikTok ever offer, so without this the extension never
+			  appears in their share sheet at all.
 			-->
 			<key>NSExtensionActivationRule</key>
 			<dict>
 				<key>NSExtensionActivationSupportsText</key>
 				<true/>
 				<key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
 				<integer>1</integer>
 			</dict>
 		</dict>

@@ -89,6 +89,11 @@ actor APIClient {
         try await get("/api/households/\(household.uuidString)/recipes")
     }
 
+    /// Reads a recipe off a link: the page's own structured data, or TikTok's caption.
+    func importRecipe(household: UUID, url: String) async throws -> ImportedRecipe {
+        try await send("POST", "/api/households/\(household.uuidString)/recipes/import", body: ["url": url])
+    }
+
     @discardableResult
     func createRecipe(household: UUID, body: [String: Any]) async throws -> Recipe {
         try await send("POST", "/api/households/\(household.uuidString)/recipes", body: body)

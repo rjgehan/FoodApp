@@ -206,37 +206,30 @@ struct LabsPasteView: View {
         #endif
     }
 
-    /// Fetches a page and reduces it to its words. Crude on purpose: enough for a recipe
-    /// site, and the alternative — sending the model a URL — is what produced an invented
-    /// recipe in the first place.
-    private static func readable(_ link: String) async -> String? {
-        guard let url = URL(string: link) else { return nil }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 20
-        // Some recipe sites serve a stub to anything that does not look like a browser.
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-            forHTTPHeaderField: "User-Agent"
-        )
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              var html = String(data: data, encoding: .utf8) else { return nil }
-
-        for block in ["script", "style", "noscript", "svg", "head"] {
-            html = html.replacingOccurrences(
-                of: "<\(block)[^>]*>.*?</\(block)>",
-                with: " ",
-                options: [.regularExpression, .caseInsensitive]
+    /// Asks the server to read a link. It knows about structured data and about TikTok, and
+    /// being one implementation means the phone and the web agree on what a page says.
+    private func importLink(_ link: String) async {
+        guard let household = session.household?.id else { return }
+        note = "Reading \(link)…"
+        do {
+            let imported = try await APIClient.shared.importRecipe(household: household, url: link)
+            fromPage = StructuredRecipe(
+                name: imported.name,
+                servings: imported.servings,
+                prep: imported.prepTimeMinutes ?? 0,
+                cook: imported.cookTimeMinutes ?? 0,
+                ingredients: imported.ingredients.map { row in
+                    [row.quantity.map { $0 == $0.rounded() ? String(Int($0)) : String($0) }, row.unit, row.ingredientName]
+                        .compactMap { $0 }
+                        .joined(separator: " ")
+                },
+                steps: (imported.instructions ?? "").split(separator: "\n").map(String.init)
             )
+            note = "Read from the page itself — nothing was guessed."
+        } catch {
+            note = nil
+            self.error = error.localizedDescription
         }
-        html = html.replacingOccurrences(of: "<[^>]+>", with: "\n", options: .regularExpression)
-        html = html.replacingOccurrences(of: "&nbsp;", with: " ")
-        html = html.replacingOccurrences(of: "&amp;", with: "&")
-        let lines = html
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        let text = lines.joined(separator: "\n")
-        return text.count > 200 ? text : nil
     }
 
     /// The generic "operation couldn't be completed" hides the one failure that actually
@@ -283,21 +276,13 @@ struct LabsPasteView: View {
         var input = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var trimmed = false
 
-        // The share extension marks "all I got was a link" with a 🔗. Fetching it here beats
-        // handing the model an address, which it will answer by inventing a plausible recipe.
+        // The share extension marks "all I got was a link" with a 🔗. The server reads those:
+        // a recipe site's own structured data, or TikTok's caption through oEmbed. Both are
+        // exact and neither needs a model, so nothing below runs.
         if input.hasPrefix("\u{1F517}") {
             let link = String(input.dropFirst()).trimmingCharacters(in: .whitespaces)
-            note = "Fetching \(link)…"
-            guard let fetched = await Self.readable(link) else {
-                error = "Could not read that page. Open it, select the recipe, and share the selection."
-                return
-            }
-            input = fetched
-            text = fetched
-        }
-        if input.count > Self.limit {
-            input = String(input.prefix(Self.limit))
-            trimmed = true
+            await importLink(link)
+            return
         }
 
         let started = Date()

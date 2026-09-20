@@ -184,3 +184,20 @@ struct RecipeCategory: Codable, Identifiable, Hashable {
     let parentId: UUID?
     let section: RecipeSection?
 }
+
+/// A draft read off a link by the server — the same shape "write it for me" returns.
+struct ImportedRecipe: Codable {
+    let name: String
+    let description: String?
+    let prepTimeMinutes: Int?
+    let cookTimeMinutes: Int?
+    let servings: Int
+    let instructions: String?
+    let ingredients: [ImportedIngredient]
+}
+
+struct ImportedIngredient: Codable {
+    let ingredientName: String
+    let quantity: Double?
+    let unit: String?
+}
