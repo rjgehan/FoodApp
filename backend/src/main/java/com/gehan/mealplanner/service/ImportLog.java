@@ -52,7 +52,7 @@ public class ImportLog {
     private final ObjectMapper mapper = new ObjectMapper();
     private final Path directory;
 
-    ImportLog(@Value("${mealplanner.import-log:}") String configured) {
+    ImportLog(@Value("${app.import-log:}") String configured) {
         this.directory = directoryFrom(configured);
         if (directory != null) log.info("Keeping a note of every import in {}", directory);
     }

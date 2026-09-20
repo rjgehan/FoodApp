@@ -51,6 +51,12 @@ app:
   integration:
     # Read-only API for a home dashboard. Unset means off; the endpoints answer 503.
     api-key: ${INTEGRATION_API_KEY:}
+  # What each import was given, kept so the caption parsers can be re-run over real ones
+  # later. On here, because this is the machine the parsing gets worked on. Off in
+  # production: it would otherwise accumulate other people's captions verbatim on a server
+  # that is reachable from the internet, which is a different thing entirely from reading
+  # one recipe somebody asked for.
+  import-log: ${MEALPLANNER_IMPORT_LOG:}
   auth:
     # Small trusted app: a username plus a 4-digit PIN, throttled instead of made complex.
     max-pin-attempts: ${AUTH_MAX_PIN_ATTEMPTS:5}
