@@ -59,6 +59,31 @@ export const CompassIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+/** Somebody else's kitchen, somewhere else. */
+export const GlobeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18" />
+  </Icon>
+);
+
+/** What is actually in the food, rather than what it is called. */
+export const LeafIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 20c0-8 5-13 16-13 0 9-5 13-11 13H4z" />
+    <path d="M9 15c2-3 4.5-5 8-6.5" />
+  </Icon>
+);
+
+/** A week of meals aimed at something — the vitamins you are short of. */
+export const TargetIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4.5" />
+    <circle cx="12" cy="12" r="1" />
+  </Icon>
+);
+
 /** Bars of a barcode inside a viewfinder's corners — the scan control, not a barcode itself. */
 export const BarcodeIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>

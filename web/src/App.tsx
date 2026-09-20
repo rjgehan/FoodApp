@@ -8,6 +8,8 @@ import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeSectionPage from './pages/RecipeSectionPage';
 import ExplorePage from './pages/ExplorePage';
+import ExploreRecipesPage from './pages/ExploreRecipesPage';
+import ExploreSoonPage from './pages/ExploreSoonPage';
 import NewRecipePage from './pages/NewRecipePage';
 import EditRecipePage from './pages/EditRecipePage';
 import MealPlanPage from './pages/MealPlanPage';
@@ -56,8 +58,13 @@ export default function App() {
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="/cupboard" element={<CupboardPage />} />
           <Route path="/explore" element={<ExplorePage />} />
-          {/* Explore used to live under Recipes. Links and bookmarks still work. */}
-          <Route path="/recipes/explore" element={<Navigate to="/explore" replace />} />
+          <Route path="/explore/recipes" element={<ExploreRecipesPage />} />
+          {/* Named rather than wildcarded, so a typo lands on the catch-all instead of a
+              page explaining a feature that does not exist. */}
+          <Route path="/explore/nutrition" element={<ExploreSoonPage />} />
+          <Route path="/explore/meal-plans" element={<ExploreSoonPage />} />
+          {/* Explore used to be a room inside Recipes. Links and bookmarks still work. */}
+          <Route path="/recipes/explore" element={<Navigate to="/explore/recipes" replace />} />
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

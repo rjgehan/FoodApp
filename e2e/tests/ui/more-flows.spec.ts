@@ -211,10 +211,13 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
 
   // Find it from the other household.
   await signIn(page, theirs.owner, theirs.id);
-  await page.goto('/recipes');
-  // Explore is a tab of its own now, not a tile inside Recipes.
-  await page.getByRole('link', { name: 'Explore' }).last().click();
+  // Explore is a tab of its own now, and it opens on a choice of what to explore.
+  // The reload matters: signIn swaps the stored session, and the app reads which household
+  // it is looking at when it starts.
+  await page.goto('/explore');
   await expect(page).toHaveURL(/\/explore$/);
+  await page.getByText('Global recipes').first().click();
+  await expect(page).toHaveURL(/\/explore\/recipes$/);
   await expect(page.getByText(name)).toBeVisible();
   await expect(page.getByText(`from ${mine.name}`).first()).toBeVisible();
 

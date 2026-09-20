@@ -172,7 +172,7 @@ export default function CupboardPage() {
       ) : (
         groups.map(({ category, items: rows }) => (
           <Card key={category?.id ?? 'unsorted'} title={category?.name ?? 'Unsorted'}>
-            <ul className="inset-rows">
+            <ul className="card inset-rows px-4">
               {rows.map((item) => {
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
                 return (
@@ -203,18 +203,6 @@ export default function CupboardPage() {
                           // "Always have" means it is never low, so there is nothing to toggle.
                           !item.staple && <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
                         )}
-                        {/*
-                          * Swiping needs a finger, so a wide screen with a mouse gets the actions as buttons too.
-                          * (A narrow window can still drag a row with the mouse; there is no room for both.)
-                          */}
-                        <span className="hidden items-center sm:[@media(hover:hover)]:flex">
-                          <Button size="sm" variant="ghost" onClick={() => buyAgain(item)}>
-                            Buy again
-                          </Button>
-                          <Button size="sm" variant="ghost" className="text-danger" onClick={() => remove(item)}>
-                            Remove
-                          </Button>
-                        </span>
                       </div>
                     </SwipeRow>
                   </li>

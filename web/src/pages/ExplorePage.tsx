@@ -1,106 +1,89 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api/client';
-import type { Recipe } from '../api/types';
-import { useHousehold } from '../household/HouseholdContext';
-import { Card, EmptyState, Input } from '../components/ui';
-import RecipeGrid from '../components/RecipeGrid';
+import { GlobeIcon, LeafIcon, TargetIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
+import type { SVGProps } from 'react';
 
 /**
- * Everything every household here has published — the one place recipes travel between houses
- * without anyone sending a link. Opening one is the ordinary recipe page; keeping one is the
- * same "Move to my recipes" that a recipe shared with you uses, so nothing new to learn.
+ * The front door of Explore: pick what you want to look into.
  *
- * A tab of its own rather than a room inside Recipes, because Recipes is what this house
- * cooks and this is what everybody else does — and because what is planned next for this
- * tab, nutrition and meal plans built around it, is not a recipe list at all.
+ * The other four tabs each hold one thing this household owns — its plan, its recipes, its
+ * list, its cupboard. Explore is the opposite: everything here is bigger than the house, and
+ * there is more than one kind of it. So the tab opens on a choice rather than on a list,
+ * which also means a new kind can arrive without anything having to move.
+ *
+ * Two of the three are not built yet, and they say so rather than pretending. A door marked
+ * with what is behind it is worth more than no door, because it is where the work will land.
  */
+
+export interface Destination {
+  to: string;
+  title: string;
+  blurb: string;
+  Icon: (props: SVGProps<SVGSVGElement>) => JSX.Element;
+  tint: string;
+  ready: boolean;
+  /** What it will do, for the page behind a door that is not open yet. */
+  plan?: string;
+}
+
+export const DESTINATIONS: Destination[] = [
+  {
+    to: '/explore/recipes',
+    title: 'Global recipes',
+    blurb: 'What every other household on this server has published.',
+    Icon: GlobeIcon,
+    tint: 'cover-0',
+    ready: true,
+  },
+  {
+    to: '/explore/nutrition',
+    title: 'Nutrition facts',
+    blurb: 'What is actually in the food you cook and keep.',
+    plan: 'Look up any ingredient or scanned product and see what is in it — calories, protein, '
+        + 'and the vitamins and minerals a label does not bother printing.',
+    Icon: LeafIcon,
+    tint: 'cover-2',
+    ready: false,
+  },
+  {
+    to: '/explore/meal-plans',
+    title: 'Custom meal plans',
+    blurb: 'A week built around what you are short of.',
+    plan: 'Say what you want more of — iron, fibre, whatever a doctor mentioned — and get a '
+        + 'week of real meals from recipes this house already cooks that adds up to it.',
+    Icon: TargetIcon,
+    tint: 'cover-4',
+    ready: false,
+  },
+];
+
 export default function ExplorePage() {
-  const { activeHouseholdId } = useHousehold();
-  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [query, setQuery] = useState('');
-
-  const load = useCallback(async () => {
-    if (!activeHouseholdId) return;
-    setRecipes(await api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/explore`).catch(() => []));
-  }, [activeHouseholdId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Searching here is over what is already loaded: a family server's Explore is small, and
-  // filtering as you type beats a round trip per keystroke.
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return recipes ?? [];
-    return (recipes ?? []).filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        (r.description ?? '').toLowerCase().includes(q) ||
-        (r.ownerName ?? '').toLowerCase().includes(q) ||
-        r.ingredients.some((i) => i.ingredientName.toLowerCase().includes(q)),
-    );
-  }, [recipes, query]);
-
-  if (!activeHouseholdId) {
-    return (
-      <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
-      </Card>
-    );
-  }
-
-  const mine = shown.filter((r) => !r.shared);
-  const theirs = shown.filter((r) => r.shared);
-
   return (
     <div className="space-y-4">
-      <PageTitle title="Explore" subtitle="Recipes other households here have published." />
+      <PageTitle title="Explore" subtitle="Beyond this kitchen." />
 
-      <Input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search Explore"
-        aria-label="Search published recipes"
-      />
-
-      {recipes === null ? (
-        <p className="py-8 text-center text-sm text-muted">Loading…</p>
-      ) : shown.length === 0 ? (
-        <Card>
-          <EmptyState>
-            {query.trim() ? (
-              'Nothing matches that.'
-            ) : (
-              <>
-                Nothing published yet. Open one of your recipes and choose ••• → Share →{' '}
-                <span className="font-medium text-ink">Publish to Explore</span> to put the first one here.
-              </>
-            )}
-          </EmptyState>
-        </Card>
-      ) : (
-        <>
-          {theirs.length > 0 && <RecipeGrid recipes={theirs} />}
-          {mine.length > 0 && (
-            <section className="space-y-3 pt-2">
-              <h2 className="font-semibold">Published by you</h2>
-              <RecipeGrid recipes={mine} />
-            </section>
-          )}
-        </>
-      )}
-
-      <p className="pt-2 text-[0.8125rem] text-subtle">
-        Anyone signed in here can read a published recipe and keep it. Take one back out any time from{' '}
-        <Link to="/recipes" className="font-medium text-accent">
-          your recipes
-        </Link>
-        .
-      </p>
+      <div className="space-y-3">
+        {DESTINATIONS.map(({ to, title, blurb, Icon, tint, ready }) => (
+          <Link
+            key={to}
+            to={to}
+            className={`press block rounded-2xl p-4 transition-transform active:scale-[0.98] ${tint}`}
+          >
+            <div className="flex items-start gap-4">
+              <Icon className="mt-0.5 h-8 w-8 shrink-0 text-ink/55" />
+              <div className="min-w-0">
+                <p className="text-lg font-semibold leading-tight">{title}</p>
+                <p className="mt-0.5 text-sm text-ink/70">{blurb}</p>
+                {!ready && (
+                  <p className="mt-2 inline-block rounded-full bg-ink/10 px-2 py-0.5 text-xs font-medium text-ink/60">
+                    Being built
+                  </p>
+                )}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
