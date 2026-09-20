@@ -43,23 +43,33 @@ final class ShareViewController: UIViewController {
     }
 
     private func handle() async {
+        /*
+         Only in a debug build. It carries a preview of whatever the share sheet handed over,
+         which is the user's content, and a released app that quietly uploaded that would be
+         doing something the screen it lands on promises it does not.
+        */
+        #if DEBUG
         let report = await describeWhatArrived()
+        #else
+        let report = ""
+        #endif
         let found = await shared()
 
         // The page's own recipe data beats anything read off the screen, so it goes first
         // and the app can use it without a model at all.
+        let note = report.isEmpty ? "" : "&diag=\(encode(report))"
         if let recipe = found.recipe, !recipe.isEmpty,
-           let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))&diag=\(encode(report))"),
+           let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))\(note)"),
            url.absoluteString.count < 120_000 {
             label.text = "Found the recipe."
             open(url)
             return
         }
         guard let text = found.text,
-              let url = URL(string: "mealplanner://paste?text=\(encode(text))&diag=\(encode(report))") else {
+              let url = URL(string: "mealplanner://paste?text=\(encode(text))\(note)") else {
             // Even with nothing to read, the note is worth sending: a share that produced
             // nothing is exactly the one worth knowing the shape of.
-            if let url = URL(string: "mealplanner://paste?diag=\(encode(report))") {
+            if !report.isEmpty, let url = URL(string: "mealplanner://paste?diag=\(encode(report))") {
                 open(url)
             } else {
                 finish(with: "Nothing to read in that.")
@@ -206,30 +216,22 @@ final class ShareViewController: UIViewController {
         text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
     }
 
-    /// `extensionContext.open` is the documented way and works on current iOS; the responder
-    /// walk is the old fallback for when it refuses.
+    /**
+     `extensionContext.open` is the documented way, and now the only way.
+
+     There used to be a fallback that walked the responder chain looking for a UIApplication
+     and called `open` on it. That method is unavailable to app extensions — Swift does not
+     catch it here because the object arrives through a dynamic cast, but the appex is
+     scanned for exactly that at upload, and finding it is a rejection.
+    */
     private func open(_ url: URL) {
         extensionContext?.open(url) { [weak self] opened in
             if opened {
                 self?.done()
             } else {
-                self?.openByResponderChain(url)
+                self?.finish(with: "Could not open Meal Planner.")
             }
         }
-    }
-
-    private func openByResponderChain(_ url: URL) {
-        var responder: UIResponder? = self
-        while let next = responder {
-            if let application = next as? UIApplication {
-                application.open(url, options: [:]) { [weak self] opened in
-                    opened ? self?.done() : self?.finish(with: "Could not open Meal Planner.")
-                }
-                return
-            }
-            responder = next.next
-        }
-        finish(with: "Could not open Meal Planner.")
     }
 
     private func done() {

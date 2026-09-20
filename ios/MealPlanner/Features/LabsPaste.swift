@@ -151,7 +151,7 @@ struct LabsPasteView: View {
             } header: {
                 Text("Paste")
             } footer: {
-                Text("Runs on the phone. Nothing is sent anywhere, and there is no daily limit.")
+                Text("Pasted text is read on this phone and never leaves it. A shared link is read by your server.")
             }
 
             if let note {
@@ -265,7 +265,9 @@ struct LabsPasteView: View {
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            #if DEBUG
             if let diagnostic { await session.noteShare(diagnostic) }
+            #endif
             if let structured, fromPage == nil {
                 fromPage = structured
                 note = "Read straight from the page's own recipe data — nothing was guessed."
