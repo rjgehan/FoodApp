@@ -157,19 +157,24 @@ public class RecipeDtos {
 
     /** `parentId` is the group this one sits inside; null at the top of a drawer. */
     /** `section` is the drawer the group belongs to; null means it shows in every drawer. */
-    public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId, RecipeSection section) {
+    /** `iconKey` is the food drawing its tile wears (FoodIcons); null for a plain tile. */
+    public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId, RecipeSection section,
+                                         String iconKey) {
     }
 
     /** A new group, optionally inside another. Names are unique within a household. */
     /** `section` is ignored when `parentId` is given — a nested group joins its parent's drawer. */
-    public record CreateCategoryRequest(@NotBlank String name, UUID parentId, RecipeSection section) {
+    /** `iconKey` is optional; a key that is not one of FoodIcons is refused. */
+    public record CreateCategoryRequest(@NotBlank String name, UUID parentId, RecipeSection section, String iconKey) {
     }
 
     /**
-     * Rename, move, or both. A null parentId leaves it where it is — JSON cannot tell "no
-     * change" from "no parent" — so moving a group out to the top level is `toTop: true`.
+     * Rename, move, re-icon, or any of them. A null parentId leaves it where it is — JSON cannot
+     * tell "no change" from "no parent" — so moving a group out to the top level is `toTop: true`.
+     * The icon follows the same rule: null leaves it, which is what an app from before icons
+     * sends, and an empty string takes it off.
      */
-    public record UpdateCategoryRequest(String name, UUID parentId, Boolean toTop) {
+    public record UpdateCategoryRequest(String name, UUID parentId, Boolean toTop, String iconKey) {
     }
 
     /** Files these recipes into a group, taking them out of `fromCategoryId` if they were in it. */

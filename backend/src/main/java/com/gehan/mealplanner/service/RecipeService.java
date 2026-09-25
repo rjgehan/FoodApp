@@ -537,11 +537,12 @@ public class RecipeService {
         // A group inside another belongs to the same drawer as the one it sits in.
         RecipeSection section = parent != null ? parent.getSection() : request.section();
         String name = requireFreeName(householdId, request.name(), null, section);
-        return toCategoryResponse(categoryRepository.save(
-                RecipeCategory.builder().household(household).name(name).section(section).parent(parent).build()), 0);
+        String iconKey = FoodIcons.requireKnownOrBlank(request.iconKey());
+        return toCategoryResponse(categoryRepository.save(RecipeCategory.builder()
+                .household(household).name(name).section(section).parent(parent).iconKey(iconKey).build()), 0);
     }
 
-    /** Rename a group, or move it inside another — never inside itself. */
+    /** Rename a group, change its icon, or move it inside another — never inside itself. */
     @Transactional
     public RecipeCategoryResponse updateCategory(UUID householdId, UUID categoryId, UUID requesterId,
                                                  UpdateCategoryRequest request) {
@@ -550,6 +551,10 @@ public class RecipeService {
 
         if (request.name() != null) {
             category.setName(requireFreeName(householdId, request.name(), categoryId, category.getSection()));
+        }
+        // Null says nothing about the icon; "" is how the apps take one off.
+        if (request.iconKey() != null) {
+            category.setIconKey(FoodIcons.requireKnownOrBlank(request.iconKey()));
         }
         if (Boolean.TRUE.equals(request.toTop())) {
             category.setParent(null);
@@ -661,7 +666,8 @@ public class RecipeService {
 
     private static RecipeCategoryResponse toCategoryResponse(RecipeCategory category, int recipeCount) {
         return new RecipeCategoryResponse(category.getId(), category.getName(), recipeCount,
-                category.getParent() == null ? null : category.getParent().getId(), category.getSection());
+                category.getParent() == null ? null : category.getParent().getId(), category.getSection(),
+                category.getIconKey());
     }
 
     @Transactional(readOnly = true)
@@ -673,17 +679,21 @@ public class RecipeService {
         return icons;
     }
 
-    /** A blank key clears the choice and the drawer falls back to its built-in default. */
+    /**
+     * A blank key clears the choice and the drawer falls back to its built-in default. Checked
+     * against the same list as a group's icon, so a drawer can never be given one no app can draw.
+     */
     @Transactional
     public Map<RecipeSection, String> setSectionIcon(UUID householdId, UUID requesterId,
-                                                      RecipeSection section, String iconKey) {
+                                                      RecipeSection section, String requestedKey) {
         householdService.assertMember(householdId, requesterId);
+        String iconKey = FoodIcons.requireKnownOrBlank(requestedKey);
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
         sectionIconRepository.findByHouseholdIdAndSection(householdId, section).ifPresentOrElse(
                 existing -> {
-                    if (iconKey == null || iconKey.isBlank()) {
+                    if (iconKey == null) {
                         sectionIconRepository.delete(existing);
                     } else {
                         existing.setIconKey(iconKey);
@@ -691,7 +701,7 @@ public class RecipeService {
                     }
                 },
                 () -> {
-                    if (iconKey != null && !iconKey.isBlank()) {
+                    if (iconKey != null) {
                         sectionIconRepository.save(SectionIcon.builder()
                                 .household(household).section(section).iconKey(iconKey).build());
                     }
@@ -710,11 +720,13 @@ public class RecipeService {
     public static void seedDefaultGroups(Household household, RecipeCategoryRepository categories) {
         DEFAULT_GROUPS.forEach((section, groups) -> {
             for (DefaultGroup group : groups) {
-                RecipeCategory parent = categories.save(
-                        RecipeCategory.builder().household(household).name(group.name()).section(section).build());
+                RecipeCategory parent = categories.save(RecipeCategory.builder()
+                        .household(household).name(group.name()).section(section)
+                        .iconKey(FoodIcons.DEFAULT_GROUP_ICONS.get(group.name())).build());
                 for (String child : group.children()) {
                     categories.save(RecipeCategory.builder()
-                            .household(household).name(child).section(section).parent(parent).build());
+                            .household(household).name(child).section(section).parent(parent)
+                            .iconKey(FoodIcons.DEFAULT_GROUP_ICONS.get(child)).build());
                 }
             }
         });

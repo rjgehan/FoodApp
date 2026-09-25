@@ -54,6 +54,13 @@ public class RecipeCategory {
     @JoinColumn(name = "parent_id")
     private RecipeCategory parent;
 
+    /**
+     * Which of the built-in food drawings its tile wears (see FoodIcons). Null is a plain colour
+     * tile — what every group made before groups had icons is.
+     */
+    @Column(length = 40)
+    private String iconKey;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
