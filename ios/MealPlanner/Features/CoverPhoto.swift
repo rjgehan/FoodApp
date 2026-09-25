@@ -156,17 +156,18 @@ func upload(_ image: UIImage, into coverImageId: Binding<UUID?>, session: Sessio
         flow.error = "No household to save it to."
         return
     }
-    // Full-bleed at the top of a recipe, so a 12-megapixel camera photo is many times more
-    // than is ever shown, and all of it would cross the network twice.
-    guard let png = image.scaled(toFit: 1400).pngData() else {
-        flow.error = "Could not prepare that photo."
-        return
-    }
     flow.uploading = true
     flow.error = nil
     defer { flow.uploading = false }
+    // Drawing and compressing a big picture takes long enough to stutter the screen, and
+    // none of it needs the main thread.
+    let jpeg = await Task.detached(priority: .userInitiated) { image.jpegForUpload() }.value
+    guard let jpeg else {
+        flow.error = "Could not prepare that photo."
+        return
+    }
     do {
-        coverImageId.wrappedValue = try await APIClient.shared.uploadImage(household: household, png: png)
+        coverImageId.wrappedValue = try await APIClient.shared.uploadImage(household: household, jpeg: jpeg)
     } catch {
         flow.error = error.localizedDescription
     }
@@ -210,14 +211,29 @@ extension View {
     }
 }
 
-private extension UIImage {
-    /// Down to a sensible size, keeping the shape. Never scales up.
-    func scaled(toFit longest: CGFloat) -> UIImage {
-        let side = max(size.width, size.height)
-        guard side > longest else { return self }
-        let factor = longest / side
-        let target = CGSize(width: size.width * factor, height: size.height * factor)
-        return UIGraphicsImageRenderer(size: target).image { _ in
+extension UIImage {
+    /**
+     The picture as the server should get it: a JPEG no wider than 1400 pixels on its long
+     edge, the same as `web/src/utils/imageResize.ts` makes in the browser.
+
+     This used to be a PNG drawn at the screen's scale, so "1400" meant 1400 points — 4200
+     pixels on a 3x phone — and a generated picture went up as several megabytes of PNG.
+     That is what timed out. Scale 1 makes the number mean pixels, and JPEG at 0.82 puts a
+     full cover photo at a couple of hundred kilobytes.
+
+     Drawing it again also bakes in the orientation, so a camera photo never arrives sideways.
+    */
+    func jpegForUpload(longestEdge: CGFloat = 1400, quality: CGFloat = 0.82) -> Data? {
+        let pixels = CGSize(width: size.width * scale, height: size.height * scale)
+        let side = max(pixels.width, pixels.height)
+        guard side > 0 else { return nil }
+        let factor = min(1, longestEdge / side)
+        let target = CGSize(width: (pixels.width * factor).rounded(), height: (pixels.height * factor).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        // A cover photo has no transparency worth keeping, and JPEG would flatten it anyway.
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: target, format: format).jpegData(withCompressionQuality: quality) { _ in
             draw(in: CGRect(origin: .zero, size: target))
         }
     }

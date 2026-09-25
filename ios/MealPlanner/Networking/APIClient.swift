@@ -400,27 +400,28 @@ actor APIClient {
         )
     }
 
-    /// Uploads a PNG and returns its id. Multipart by hand: one field, no dependencies.
-    func uploadImage(household: UUID, png: Data) async throws -> UUID {
+    /// Uploads a JPEG and returns its id. Multipart by hand: one field, no dependencies.
+    func uploadImage(household: UUID, jpeg: Data) async throws -> UUID {
         let boundary = "mp-\(UUID().uuidString)"
         var req = request(method: "POST", path: "/api/households/\(household.uuidString)/images", authorized: true)
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // A photo going up over a phone connection is the one request that can honestly take
+        // longer than the fifteen seconds everything else gets.
+        req.timeoutInterval = 60
 
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"generated.png\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
-        body.append(png)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpeg)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
-            throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
-        }
+        // Through `perform`, like every other call, so a timeout or a dropped connection reads
+        // as a sentence about the server rather than NSURLErrorDomain -1001.
         struct Uploaded: Decodable { let id: UUID }
-        return try decoder.decode(Uploaded.self, from: data).id
+        let uploaded: Uploaded = try await perform(req)
+        return uploaded.id
     }
 
     /// Sets a recipe's pictures without touching anything else about it. The whole-recipe
