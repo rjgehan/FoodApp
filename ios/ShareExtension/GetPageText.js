@@ -100,6 +100,8 @@ var ExtensionPreprocessingJS = new (function () {
         cook: minutes(recipe.cookTime) || minutes(recipe.totalTime),
         ingredients: ingredients,
         steps: steps(recipe.recipeInstructions),
+        // Where it was read from, so the recipe keeps a link back to the page.
+        url: document.URL || "",
       };
     }
     return null;

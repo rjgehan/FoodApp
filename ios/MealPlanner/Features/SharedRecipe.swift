@@ -92,6 +92,9 @@ struct StructuredRecipe: Codable {
     var cook: Int
     var ingredients: [String]
     var steps: [String]
+    /// The page it came from, kept as the recipe's first link. Absent from a share extension
+    /// built before it sent one.
+    var url: String? = nil
 }
 
 struct SharedRecipeView: View {
@@ -103,6 +106,8 @@ struct SharedRecipeView: View {
     /// What the share sheet handed over, for the import log. Sent from here rather than
     /// from the URL handler, because that runs before the session has been restored.
     var diagnostic: String?
+    /// The page the shared text was on, when the share sheet said. Saved as the recipe's link.
+    var link: String?
 
     @State private var text = ""
     @State private var busy = false
@@ -306,7 +311,10 @@ struct SharedRecipeView: View {
                         .compactMap { $0 }
                         .joined(separator: " ")
                 },
-                steps: (imported.instructions ?? "").split(separator: "\n").map(String.init)
+                steps: (imported.instructions ?? "").split(separator: "\n").map(String.init),
+                // The server hands the page back as a link; an older one did not, and the
+                // link that was shared is the same page.
+                url: imported.links?.first?.url ?? link
             )
             note = "Read from the page itself — nothing was guessed."
 
@@ -642,7 +650,7 @@ struct SharedRecipeView: View {
 
     private func savePage(_ recipe: StructuredRecipe) async {
         guard let household = session.household?.id else { return }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
             "section": "DINNER",
@@ -663,6 +671,10 @@ struct SharedRecipeView: View {
                 return out
             },
         ]
+        // Read off a page, so the recipe keeps a way back to it.
+        if let url = recipe.url, !url.isEmpty {
+            body["links"] = [["url": url, "label": NSNull()]]
+        }
         do {
             let created = try await APIClient.shared.createRecipe(household: household, body: body)
             saved = "Saved as \(created.name)"
@@ -675,7 +687,7 @@ struct SharedRecipeView: View {
     @available(iOS 26.0, *)
     private func save(_ recipe: ParsedRecipe) async {
         guard let household = session.household?.id else { return }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
             "section": "DINNER",
@@ -696,6 +708,12 @@ struct SharedRecipeView: View {
                 return out
             },
         ]
+        // Shared from a page, so the recipe keeps a way back to it, as one read off the
+        // page's own data does. Only a web page: the server refuses anything else, and would
+        // refuse the whole recipe with it.
+        if let link, link.lowercased().hasPrefix("http") {
+            body["links"] = [["url": link, "label": NSNull()]]
+        }
         do {
             let created = try await APIClient.shared.createRecipe(household: household, body: body)
             saved = "Saved as \(created.name)"

@@ -19,6 +19,7 @@ struct EditRecipeView: View {
     @State private var cook: Int
     @State private var instructions: String
     @State private var ingredients: [Draft]
+    @State private var links: [LinkDraft]
     @State private var coverImageId: UUID?
     @State private var cover = CoverPhotoFlow()
     @State private var section: RecipeSection
@@ -51,6 +52,7 @@ struct EditRecipeView: View {
         _cook = State(initialValue: recipe?.cookTimeMinutes ?? 0)
         _instructions = State(initialValue: recipe?.instructions ?? "")
         _coverImageId = State(initialValue: recipe?.coverImageId)
+        _links = State(initialValue: (recipe?.allLinks ?? []).map { LinkDraft($0) })
         // One empty row when there are none — a new recipe, or one planned as just a name and
         // opened from "Add ingredients" — so there is somewhere to start typing. Blank rows
         // are dropped on save.
@@ -69,96 +71,109 @@ struct EditRecipeView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Recipe") {
-                    TextField("Name", text: $name)
-                    TextField("Description", text: $summary, axis: .vertical)
-                    Stepper("Serves \(servings)", value: $servings, in: 1...40)
-                }
-
-                // Straight after the name, because the name is what it has to work from.
-                CoverPhotoSection(dishName: name, session: session, coverImageId: $coverImageId, flow: cover)
-
-                /*
-                 Where it goes in the catalog. Until now the phone sent whatever filing the
-                 recipe already had straight back, which meant a recipe written here always
-                 landed in Dinner with no groups and there was no way to move it.
-                */
-                Section {
-                    Picker("Drawer", selection: $section) {
-                        ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
+            ScrollViewReader { scroller in
+                Form {
+                    Section("Recipe") {
+                        TextField("Name", text: $name)
+                        TextField("Description", text: $summary, axis: .vertical)
+                        Stepper("Serves \(servings)", value: $servings, in: 1...40)
                     }
-                    ForEach(groupsHere) { group in
-                        Button {
-                            if groups.contains(group.name) { groups.remove(group.name) }
-                            else { groups.insert(group.name) }
-                        } label: {
-                            HStack {
-                                Text(group.name).foregroundStyle(.primary)
-                                Spacer()
-                                if groups.contains(group.name) {
-                                    Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+
+                    // Straight after the name, because the name is what it has to work from.
+                    CoverPhotoSection(dishName: name, session: session, coverImageId: $coverImageId, flow: cover)
+
+                    /*
+                     Where it goes in the catalog. Until now the phone sent whatever filing the
+                     recipe already had straight back, which meant a recipe written here always
+                     landed in Dinner with no groups and there was no way to move it.
+                    */
+                    Section {
+                        Picker("Drawer", selection: $section) {
+                            ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        ForEach(groupsHere) { group in
+                            Button {
+                                if groups.contains(group.name) { groups.remove(group.name) }
+                                else { groups.insert(group.name) }
+                            } label: {
+                                HStack {
+                                    Text(group.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    if groups.contains(group.name) {
+                                        Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                                    }
                                 }
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
+                            // Without this the button tints the whole row, and a list of groups
+                            // reads as a list of links.
+                            .buttonStyle(.plain)
                         }
-                        // Without this the button tints the whole row, and a list of groups
-                        // reads as a list of links.
-                        .buttonStyle(.plain)
-                    }
-                    HStack {
-                        TextField("New group", text: $newGroup)
-                        Button("Add") { Task { await addGroup() } }
-                            .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                } header: {
-                    Text("Filed under")
-                } footer: {
-                    Text(groupsHere.isEmpty
-                         ? "Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in this drawer yet."
-                         : "Tap a group to file it there. A recipe can be on more than one shelf.")
-                }
-
-                Section("Time") {
-                    Stepper("Prep \(prep) min", value: $prep, in: 0...600, step: 5)
-                    Stepper("Cook \(cook) min", value: $cook, in: 0...600, step: 5)
-                }
-
-                Section {
-                    ForEach($ingredients) { $row in
-                        HStack(spacing: 8) {
-                            TextField("1", text: $row.amount)
-                                .keyboardType(.decimalPad)
-                                .frame(width: 48)
-                            TextField("unit", text: $row.unit)
-                                .frame(width: 60)
-                            TextField("ingredient", text: $row.name)
-                            OptionalTag(isOn: $row.optional)
+                        HStack {
+                            TextField("New group", text: $newGroup)
+                            Button("Add") { Task { await addGroup() } }
+                                .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        // The list lines up its separator with the first text in the row, which
-                        // the Opt pill's label had become — leaving a stub under the pill.
-                        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    } header: {
+                        Text("Filed under")
+                    } footer: {
+                        Text(groupsHere.isEmpty
+                             ? "Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in this drawer yet."
+                             : "Tap a group to file it there. A recipe can be on more than one shelf.")
                     }
-                    .onDelete { ingredients.remove(atOffsets: $0) }
-                    Button("Add an ingredient", systemImage: "plus") {
-                        ingredients.append(Draft(amount: "", unit: "", name: "", optional: false))
+
+                    Section("Time") {
+                        Stepper("Prep \(prep) min", value: $prep, in: 0...600, step: 5)
+                        Stepper("Cook \(cook) min", value: $cook, in: 0...600, step: 5)
                     }
-                    .buttonStyle(.borderless)
-                } header: {
-                    Text("Ingredients")
-                } footer: {
-                    // The web's hint, minus the part about typing a whole line.
-                    Text("Opt marks an optional extra — the plan asks whether you are buying it each time the meal goes on.")
-                }
 
-                Section("Method") {
-                    TextField("One step per line", text: $instructions, axis: .vertical)
-                        .lineLimit(6...20)
-                }
+                    Section {
+                        ForEach($ingredients) { $row in
+                            HStack(spacing: 8) {
+                                TextField("1", text: $row.amount)
+                                    .keyboardType(.decimalPad)
+                                    .frame(width: 48)
+                                TextField("unit", text: $row.unit)
+                                    .frame(width: 60)
+                                TextField("ingredient", text: $row.name)
+                                OptionalTag(isOn: $row.optional)
+                            }
+                            // The list lines up its separator with the first text in the row, which
+                            // the Opt pill's label had become — leaving a stub under the pill.
+                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                        }
+                        .onDelete { ingredients.remove(atOffsets: $0) }
+                        Button("Add an ingredient", systemImage: "plus") {
+                            ingredients.append(Draft(amount: "", unit: "", name: "", optional: false))
+                        }
+                        .buttonStyle(.borderless)
+                    } header: {
+                        Text("Ingredients")
+                    } footer: {
+                        // The web's hint, minus the part about typing a whole line.
+                        Text("Opt marks an optional extra — the plan asks whether you are buying it each time the meal goes on.")
+                    }
 
-                if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    Section("Method") {
+                        TextField("One step per line", text: $instructions, axis: .vertical)
+                            .lineLimit(6...20)
+                    }
+
+                    LinksSection(links: $links)
+
+                    if let error {
+                        Section { Text(error).foregroundStyle(.red) }
+                    }
                 }
+                #if DEBUG
+                // -mp_debug_scroll links (with -mp_debug_screen edit) scrolls down to the links, so a
+                // screenshot run can see them without a finger to scroll with.
+                .task {
+                    guard UserDefaults.standard.string(forKey: "mp_debug_scroll") == "links" else { return }
+                    try? await Task.sleep(for: .milliseconds(600))
+                    scroller.scrollTo(LinksSection.anchor, anchor: .center)
+                }
+                #endif
             }
             .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
             .task { await loadGroups() }
@@ -238,6 +253,13 @@ struct EditRecipeView: View {
         // The server replaces the photo list with whatever arrives, so the ones this screen
         // does not show still have to be sent. Leaving them out deleted them on every edit.
         body["photoIds"] = (recipe?.photoIds ?? []).map(\.uuidString)
+        // The whole list, every time. Before the phone knew about links it sent none, and the
+        // server took that as "none" — every save from here wiped the recipe's links.
+        body["links"] = LinkDraft.body(links)
+        // Ignored by a server that knows about links; kept by one that does not yet.
+        let legacy = LinkDraft.legacyFields(links)
+        body["sourceUrl"] = legacy.sourceUrl ?? NSNull()
+        body["videoUrl"] = legacy.videoUrl ?? NSNull()
 
         do {
             let saved: Recipe

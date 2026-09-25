@@ -10,6 +10,8 @@ struct MealPlannerApp: App {
     @State private var sharedRecipe: StructuredRecipe?
     /// What the share sheet handed over, sent once the session is up.
     @State private var sharedDiagnostic: String?
+    /// The page the shared text came from, kept as the saved recipe's link.
+    @State private var sharedLink: String?
 
     var body: some Scene {
         WindowGroup {
@@ -28,6 +30,7 @@ struct MealPlannerApp: App {
                     // app that offers nothing useful looks the same as one that offers
                     // nothing at all, and only the note tells them apart.
                     sharedDiagnostic = items?.first(where: { $0.name == "diag" })?.value
+                    sharedLink = items?.first(where: { $0.name == "link" })?.value
                     if let json = items?.first(where: { $0.name == "recipe" })?.value,
                        let data = json.data(using: .utf8),
                        let decoded = try? JSONDecoder().decode(StructuredRecipe.self, from: data) {
@@ -48,7 +51,8 @@ struct MealPlannerApp: App {
                             session: session,
                             incoming: sharedRecipe == nil ? incoming.text : nil,
                             structured: sharedRecipe,
-                            diagnostic: sharedDiagnostic
+                            diagnostic: sharedDiagnostic,
+                            link: sharedLink
                         )
                     }
                 }

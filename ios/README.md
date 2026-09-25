@@ -48,7 +48,8 @@ xcrun simctl launch <udid> cloud.gehan.mealplanner \
 
 `-mp_debug_screen edit|detail|settings|household` opens that sheet on top, and `-mp_debug_screen
 day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to show the
-first dish's actions.
+first dish's actions. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
+down to its Links section.
 
 Both hooks are inside `#if DEBUG`, so a release build has neither.
 

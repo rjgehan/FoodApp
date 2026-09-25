@@ -74,6 +74,11 @@ enum SampleData {
                 RecipeIngredient(id: UUID(), ingredientName: "double cream", quantity: 5, unit: "tbsp", notes: nil, optional: false),
                 RecipeIngredient(id: UUID(), ingredientName: "chicken", quantity: 600, unit: "g", notes: nil, optional: false),
                 RecipeIngredient(id: UUID(), ingredientName: "parsley", quantity: 2, unit: "tbsp", notes: nil, optional: true),
+            ],
+            links: [
+                SourceLink(url: "https://www.tiktok.com/@cook/video/7300000000000000000", label: nil),
+                SourceLink(url: "https://www.bbcgoodfood.com/recipes/chicken-parmentier", label: "The original"),
+                SourceLink(url: "https://www.instagram.com/reel/C0ffee/", label: nil),
             ]
         ),
         Recipe(

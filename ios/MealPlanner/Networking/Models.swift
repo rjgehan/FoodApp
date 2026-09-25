@@ -195,6 +195,18 @@ struct Recipe: Codable, Identifiable, Hashable {
     /// whole list with whatever it is given, so not sending them deletes them.
     let photoIds: [UUID]?
     let ingredients: [RecipeIngredient]
+    /// Every link, in order — where it came from, videos of it. Absent from servers older than
+    /// the list, which is why it is optional and why the two single links are kept below.
+    var links: [SourceLink]? = nil
+    /// The first link that is not a video, and the first that is: all an older server knows.
+    var sourceUrl: String? = nil
+    var videoUrl: String? = nil
+
+    /// The links to show and to edit, from the list when the server sends one.
+    var allLinks: [SourceLink] {
+        if let links { return links }
+        return [sourceUrl, videoUrl].compactMap { $0 }.map { SourceLink(url: $0, label: nil) }
+    }
 
     /** "Serves 4 · 45 min", the same facts line the web shows. */
     var facts: String {
@@ -203,6 +215,13 @@ struct Recipe: Codable, Identifiable, Hashable {
         if total > 0 { parts.append("\(total) min") }
         return parts.joined(separator: " · ")
     }
+}
+
+/// Somewhere a recipe lives on the web. Always http(s) once the server has it; a nil label
+/// means "call it after the site" — see `SourceLink.name`.
+struct SourceLink: Codable, Hashable {
+    let url: String
+    let label: String?
 }
 
 struct RecipeIngredient: Codable, Identifiable, Hashable {
@@ -278,6 +297,8 @@ struct ImportedRecipe: Codable {
     let ingredients: [ImportedIngredient]
     /// "PUBLISHED" or "SPOKEN". Absent from older servers, which is why it is optional.
     let methodSource: String?
+    /// The page it was read from, as its first link. Older servers put it in `description`.
+    let links: [SourceLink]?
     /// Everything said in the video, one sentence each, before the server threw any of it
     /// away. Only sent for a spoken method, and only so the phone can do better than the
     /// rules did — half of what a rule drops is the other half of a broken sentence.

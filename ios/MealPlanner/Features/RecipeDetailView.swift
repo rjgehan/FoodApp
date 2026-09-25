@@ -92,6 +92,9 @@ struct RecipeDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
+                // Where it came from and the videos of it — every link, not just the first.
+                RecipeLinksList(links: recipe.allLinks)
+
                 if !recipe.ingredients.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Ingredients · \(recipe.ingredients.count)").font(.headline)

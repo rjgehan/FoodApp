@@ -97,7 +97,10 @@ final class ShareViewController: UIViewController {
      a food blog puts its story first and its recipe last.
     */
     private func textURL(_ text: String, link: String?, note: String) -> URL? {
-        if let url = URL(string: "mealplanner://paste?text=\(encode(text))\(note)"),
+        // The page it came from rides along, so the recipe read out of its words keeps a
+        // link back to it — the web's import always has.
+        let page = link.map { "&link=\(encode($0))" } ?? ""
+        if let url = URL(string: "mealplanner://paste?text=\(encode(text))\(page)\(note)"),
            url.absoluteString.count < Self.longestURL {
             return url
         }
