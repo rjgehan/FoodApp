@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.ai;
 
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -44,26 +45,31 @@ public class RecipeAiDtos {
              * sentence the transcriber cut in two, and nothing downstream can repair damage
              * it cannot see. Empty everywhere else.
              */
-            List<String> spokenLines) {
+            List<String> spokenLines,
+            /**
+             * Where it was read from, as the recipe's first link — so the form saves it with
+             * the recipe. It used to be put in the description, where it was only text.
+             */
+            List<SourceLink> links) {
 
         /** Most callers know exactly where their steps came from and say so; this is the rest. */
         public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
                 Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
                 String instructions) {
             this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
-                    instructions, null, List.of());
+                    instructions, null, List.of(), List.of());
         }
 
         public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
                 Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
                 String instructions, MethodSource methodSource) {
             this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
-                    instructions, methodSource, List.of());
+                    instructions, methodSource, List.of(), List.of());
         }
 
         public GeneratedRecipe withMethod(String newInstructions, MethodSource source) {
             return new GeneratedRecipe(name, description, prepTimeMinutes, cookTimeMinutes,
-                    servings, ingredients, newInstructions, source, spokenLines);
+                    servings, ingredients, newInstructions, source, spokenLines, links);
         }
     }
 

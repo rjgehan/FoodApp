@@ -5,6 +5,7 @@ import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.service.CupboardService;
 import com.gehan.mealplanner.service.GroceryCategoryService;
 import com.gehan.mealplanner.service.IngredientService;
+import com.gehan.mealplanner.service.RecipeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -53,6 +54,29 @@ public class StartupBackfills {
                 }
             } catch (Exception e) {
                 log.warn("Could not move ingredients into Baking and Spices: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * A recipe used to hold one source link and one video link, in columns of its own. Now it
+     * keeps a list; copy the old pair across for every recipe that has not got one yet, and turn
+     * an imported recipe's bare-address description into a link. The old columns stay where they
+     * are, kept in step with the list, for older phones and a rollback.
+     *
+     * Requests are already being served while this runs, and it may fail; neither loses a link,
+     * because a recipe with an empty list is shown — and saved — from its old columns until then.
+     */
+    @Bean
+    public ApplicationRunner moveRecipeLinksIntoList(RecipeService recipeService) {
+        return args -> {
+            try {
+                int filled = recipeService.backfillSourceLinks();
+                if (filled > 0) {
+                    log.info("Moved the links of {} recipes into their link lists", filled);
+                }
+            } catch (Exception e) {
+                log.warn("Could not move recipe links into their link lists: {}", e.getMessage());
             }
         };
     }

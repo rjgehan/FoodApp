@@ -4,7 +4,9 @@ import com.gehan.mealplanner.domain.*;
 import com.gehan.mealplanner.integration.IntegrationDtos.*;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.repository.*;
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import com.gehan.mealplanner.service.GroceryListService;
+import com.gehan.mealplanner.service.SourceLinks;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -142,13 +144,17 @@ public class IntegrationService {
             return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), i.isOptional(), text);
         }).toList();
 
+        List<SourceLink> links = SourceLinks.of(recipe);
+
         return new RecipeDetail(
                 recipe.getId(), recipe.getName(), recipe.getDescription(),
                 filing == null ? null : filing.getSection(), categories(filing),
                 recipe.getServings(), recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(),
                 totalMinutes(recipe), imageUrl(recipe.getCoverImage()),
                 recipe.getPhotos().stream().map(this::imageUrl).toList(),
-                recipe.getSourceUrl(), recipe.getVideoUrl(), ingredients, steps(recipe.getInstructions()));
+                SourceLinks.firstSource(links), SourceLinks.firstVideo(links),
+                links.stream().map(l -> new Link(l.url(), l.label())).toList(),
+                ingredients, steps(recipe.getInstructions()));
     }
 
     @Transactional(readOnly = true)

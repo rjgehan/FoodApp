@@ -13,6 +13,7 @@ import com.gehan.mealplanner.dto.RecipeDtos.UpdateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateLinksRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
 import com.gehan.mealplanner.dto.RecipeDtos.ImportRecipeRequest;
@@ -157,6 +158,14 @@ public class RecipeController {
                                        @PathVariable UUID recipeId,
                                        @Valid @RequestBody UpdateVideoRequest request) {
         return recipeService.updateVideo(recipeId, userId, request);
+    }
+
+    /** Every link on the recipe, in order — the whole list, so removing one is sending the rest. */
+    @PutMapping("/api/recipes/{recipeId}/links")
+    public RecipeResponse updateLinks(@AuthenticationPrincipal UUID userId,
+                                       @PathVariable UUID recipeId,
+                                       @Valid @RequestBody UpdateLinksRequest request) {
+        return recipeService.updateLinks(recipeId, userId, request);
     }
 
     /**

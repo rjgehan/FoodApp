@@ -73,11 +73,19 @@ public class IntegrationDtos {
             Integer totalTimeMinutes,
             String imageUrl,
             List<String> photoUrls,
+            /** The first link that is not a video — kept for dashboards written before `links`. */
             String sourceUrl,
+            /** The first video link, likewise. */
             String videoUrl,
+            /** Every link the recipe keeps, in order. */
+            List<Link> links,
             List<IngredientLine> ingredients,
             /** Instructions split one step per line, numbering already stripped. */
             List<String> steps) {
+    }
+
+    /** `label` is what the household called it, or null — name it after the site. */
+    public record Link(String url, String label) {
     }
 
     /**

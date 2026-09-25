@@ -2,6 +2,7 @@ package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedIngredient;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import com.gehan.mealplanner.ai.RecipeAiDtos.MethodSource;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -44,6 +45,9 @@ class RecipeImportServiceTest {
         assertThat(draft.ingredients().get(0).ingredientName()).isEqualTo("unsalted butter");
         assertThat(draft.ingredients().get(0).unit()).isEqualTo("tbsp");
         assertThat(draft.ingredients().get(1).ingredientName()).isEqualTo("parmesan cheese");
+        // The page goes in as the recipe's link, not as its description.
+        assertThat(draft.description()).isNull();
+        assertThat(draft.links()).containsExactly(new SourceLink("https://example.com/soup", null));
     }
 
     @Test
@@ -186,6 +190,8 @@ class RecipeImportServiceTest {
         assertThat(draft.ingredients().get(0).ingredientName()).isEqualTo("butter");
         assertThat(draft.ingredients().get(2).unit()).isEqualTo("cup");
         assertThat(draft.instructions()).contains("Melt the butter").contains("simmer");
+        assertThat(draft.description()).isNull();
+        assertThat(draft.links()).containsExactly(new SourceLink("https://www.tiktok.com/@a/video/1", null));
     }
 
     @Test

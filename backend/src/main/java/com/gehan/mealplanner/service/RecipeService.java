@@ -19,6 +19,8 @@ import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateImagesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.ShareTargetResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
+import com.gehan.mealplanner.dto.RecipeDtos.UpdateLinksRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateSharesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
 import com.gehan.mealplanner.repository.HouseholdRepository;
@@ -124,10 +126,9 @@ public class RecipeService {
                 .prepTimeMinutes(request.prepTimeMinutes())
                 .cookTimeMinutes(request.cookTimeMinutes())
                 .servings(request.servings())
-                .sourceUrl(request.sourceUrl())
-                .videoUrl(normalizeLink(request.videoUrl()))
                 .build();
 
+        applyLinks(recipe, request);
         applyImages(recipe, householdId, request.coverImageId(), request.photoIds());
 
         request.ingredients().forEach(i -> recipe.getIngredients().add(
@@ -168,8 +169,7 @@ public class RecipeService {
         recipe.setPrepTimeMinutes(request.prepTimeMinutes());
         recipe.setCookTimeMinutes(request.cookTimeMinutes());
         recipe.setServings(request.servings());
-        recipe.setSourceUrl(request.sourceUrl());
-        recipe.setVideoUrl(normalizeLink(request.videoUrl()));
+        applyLinks(recipe, request);
 
         recipe.setCoverImage(request.coverImageId() == null ? null
                 : requireOwnImage(request.coverImageId(), ownerId));
@@ -250,7 +250,10 @@ public class RecipeService {
         return toResponse(recipe, upsertFiling(household, recipe, request.section(), request.categories()), householdId);
     }
 
-    /** Sets or clears the video link. Owner household only, same as the pictures. */
+    /**
+     * Sets or clears the video link — the first link that is a video, as the old single field
+     * was. From before a recipe had many links; the other links are left where they are.
+     */
     @Transactional
     public RecipeResponse updateVideo(UUID recipeId, UUID requesterId, UpdateVideoRequest request) {
         Recipe recipe = recipeRepository.findById(recipeId)
@@ -258,14 +261,118 @@ public class RecipeService {
         UUID ownerId = recipe.getHousehold().getId();
         householdService.assertMember(ownerId, requesterId);
 
-        recipe.setVideoUrl(normalizeLink(request.videoUrl()));
+        String url = WebLinks.normalize(request.videoUrl());
+        List<SourceLink> links = new ArrayList<>(SourceLinks.of(recipe));
+        int video = -1;
+        for (int i = 0; i < links.size() && video < 0; i++) {
+            if (SourceLinks.isVideo(links.get(i).url())) video = i;
+        }
+        if (url == null) {
+            if (video >= 0) links.remove(video);
+        } else if (SourceLinks.isVideo(url) && video >= 0) {
+            // A different video in the same place; the old one's name would be wrong for it.
+            links.set(video, new SourceLink(url, null));
+        } else {
+            /*
+             * The old box said "a TikTok (or any) video link". One on a site the app does not
+             * know as a video site is added beside the video there is rather than swapped for
+             * it — replacing a real TikTok with a page nobody can tell is a video lost both —
+             * and named so it still reads as one.
+             */
+            links.add(new SourceLink(url, SourceLinks.isVideo(url) ? null : SourceLinks.VIDEO_LABEL));
+        }
+        SourceLinks.replace(recipe, SourceLinks.clean(links));
         Recipe saved = recipeRepository.save(recipe);
         return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
     }
 
-    /** See {@link WebLinks}. */
-    private static String normalizeLink(String raw) {
-        return WebLinks.normalize(raw);
+    /** Replaces every link on a recipe at once — the recipe page's own link editor. Owner only. */
+    @Transactional
+    public RecipeResponse updateLinks(UUID recipeId, UUID requesterId, UpdateLinksRequest request) {
+        Recipe recipe = recipeRepository.findById(recipeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+        UUID ownerId = recipe.getHousehold().getId();
+        householdService.assertMember(ownerId, requesterId);
+
+        SourceLinks.replace(recipe, SourceLinks.clean(request.links()));
+        Recipe saved = recipeRepository.save(recipe);
+        return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
+    }
+
+    /**
+     * A client that sends `links` is saying what the whole list is. One that does not — every
+     * phone from before there were many — keeps what the recipe has, plus any single sourceUrl
+     * or videoUrl it did send. Until this, a save from the phone quietly wiped both.
+     */
+    private static void applyLinks(Recipe recipe, RecipeRequest request) {
+        List<SourceLink> links = request.links() != null
+                ? SourceLinks.clean(request.links())
+                : SourceLinks.withLegacy(SourceLinks.of(recipe), request.sourceUrl(), request.videoUrl());
+        SourceLinks.replace(recipe, links);
+    }
+
+    /**
+     * Recipes from before there were many links still have theirs in the old sourceUrl and
+     * videoUrl columns. Each one with nothing in the new list gets them copied across, source
+     * first. Text in those columns that was never a link — the paste flow once filled sourceUrl
+     * with whatever followed "Source URL:", like "Adapted from Serious Eats" — cannot be a link,
+     * so it goes on the end of the description, where the old page used to show it.
+     *
+     * And the importer used to put the page it read into the description, which left a bare
+     * address where the line about the recipe goes. A description that is nothing but one
+     * address becomes a link.
+     *
+     * Everything it moves is gone from where it was, so a second start finds nothing to do.
+     * Returns how many recipes it changed.
+     */
+    @Transactional
+    public int backfillSourceLinks() {
+        int changed = 0;
+        for (Recipe recipe : recipeRepository.findWithLinksToMove()) {
+            boolean touched = false;
+            String source = recipe.getSourceUrl();
+            String video = recipe.getVideoUrl();
+            if (source != null && !SourceLinks.isLink(source)) {
+                recipe.setDescription(withNote(recipe.getDescription(), "Source", source));
+                recipe.setSourceUrl(null);
+                touched = true;
+            }
+            if (video != null && !SourceLinks.isLink(video)) {
+                recipe.setDescription(withNote(recipe.getDescription(), "Video", video));
+                recipe.setVideoUrl(null);
+                touched = true;
+            }
+            if (recipe.getLinks().isEmpty()) {
+                List<SourceLink> links = SourceLinks.fromLegacy(source, video);
+                if (!links.isEmpty()) {
+                    SourceLinks.replace(recipe, links);
+                    touched = true;
+                }
+            }
+            if (touched) {
+                recipeRepository.save(recipe);
+                changed++;
+            }
+        }
+        for (Recipe recipe : recipeRepository.findWithDescriptionStartingHttp()) {
+            String address = recipe.getDescription().trim();
+            List<SourceLink> links = SourceLinks.of(recipe);
+            if (address.chars().anyMatch(Character::isWhitespace) || !SourceLinks.isLink(address)
+                    || links.size() >= SourceLinks.MAX_LINKS) {
+                continue;
+            }
+            SourceLinks.replace(recipe, SourceLinks.withLegacy(links, address, null));
+            recipe.setDescription(null);
+            recipeRepository.save(recipe);
+            changed++;
+        }
+        return changed;
+    }
+
+    /** "A line about it · Source: Adapted from Serious Eats". */
+    private static String withNote(String description, String what, String note) {
+        String line = what + ": " + note.trim();
+        return description == null || description.isBlank() ? line : description.trim() + " · " + line;
     }
 
     /** Attaches a cover and photo strip. Only the owning household can change a recipe's pictures. */
@@ -663,10 +770,12 @@ public class RecipeService {
                         .sorted(String.CASE_INSENSITIVE_ORDER)
                         .toList();
 
+        List<SourceLink> links = SourceLinks.of(recipe);
+
         return new RecipeResponse(
                 recipe.getId(), recipe.getHousehold().getId(), recipe.getName(), recipe.getDescription(),
                 recipe.getInstructions(), recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(),
-                recipe.getServings(), recipe.getSourceUrl(), recipe.getVideoUrl(),
+                recipe.getServings(), SourceLinks.firstSource(links), SourceLinks.firstVideo(links), links,
                 filing == null ? null : filing.getSection(), categories,
                 !recipe.getHousehold().getId().equals(viewingHouseholdId),
                 recipe.getHousehold().getName(),

@@ -45,6 +45,11 @@ public class Recipe {
     @Column(nullable = false)
     private int servings;
 
+    /**
+     * The first link that is not a video, kept in step with {@link #links} for anything that
+     * still reads the old single-link shape — older phones, and a rollback. Links are the truth.
+     */
+    @Column(length = RecipeSourceLink.MAX_URL)
     private String sourceUrl;
 
     /**
@@ -61,8 +66,15 @@ public class Recipe {
     /** When it was last published, so Explore can lead with what is new. */
     private Instant publishedAt;
 
-    /** Link to a video of the recipe being made — usually TikTok. Always http(s); see RecipeService. */
+    /** The first video link, kept in step with {@link #links} the same way as sourceUrl. */
+    @Column(length = RecipeSourceLink.MAX_URL)
     private String videoUrl;
+
+    /** Every link worth keeping — where it came from, videos of it, variations. In order. */
+    @OneToMany(mappedBy = "recipe", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("position ASC")
+    @Builder.Default
+    private List<RecipeSourceLink> links = new ArrayList<>();
 
     /** The one picture shown at the top of the recipe. Optional. */
     @ManyToOne(fetch = FetchType.LAZY)

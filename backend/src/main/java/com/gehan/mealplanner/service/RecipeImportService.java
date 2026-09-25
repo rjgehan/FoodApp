@@ -5,6 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedIngredient;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
 import com.gehan.mealplanner.ai.RecipeAiDtos.MethodSource;
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -241,7 +242,8 @@ public class RecipeImportService {
                 draft.cookTimeMinutes(), draft.servings(), ingredients,
                 hasSteps ? draft.instructions() : spoken.method(),
                 hasSteps ? MethodSource.PUBLISHED : MethodSource.SPOKEN,
-                hasSteps ? List.of() : spoken.lines());
+                hasSteps ? List.of() : spoken.lines(),
+                draft.links());
     }
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
@@ -749,8 +751,8 @@ public class RecipeImportService {
          */
         String name = nameFrom(shoppingStartsAt > 0 ? lines.subList(0, shoppingStartsAt) : lines, lines);
 
-        return new GeneratedRecipe(name, sourceUrl, null, null, 4, ingredients,
-                String.join("\n", steps), MethodSource.PUBLISHED);
+        return new GeneratedRecipe(name, null, null, null, 4, ingredients,
+                String.join("\n", steps), MethodSource.PUBLISHED, List.of(), linkTo(sourceUrl));
     }
 
     /** A caption numbers its own steps: "1. ", "2)", "Step 3:". The app numbers them too. */
@@ -1050,13 +1052,20 @@ public class RecipeImportService {
 
         return new GeneratedRecipe(
                 text(recipe, "name"),
-                sourceUrl,
+                null,
                 prep > 0 ? prep : null,
                 cook > 0 ? cook : null,
                 Math.max(1, servings(recipe.get("recipeYield"))),
                 ingredients,
                 String.join("\n", steps),
-                MethodSource.PUBLISHED);
+                MethodSource.PUBLISHED,
+                List.of(),
+                linkTo(sourceUrl));
+    }
+
+    /** The page a draft was read from, as its first link. */
+    private static List<SourceLink> linkTo(String url) {
+        return url == null || url.isBlank() ? List.of() : List.of(new SourceLink(url, null));
     }
 
     /** Steps arrive as strings, as HowToStep objects, or as HowToSections holding steps. */

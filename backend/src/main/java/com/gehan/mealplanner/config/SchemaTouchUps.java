@@ -173,6 +173,25 @@ public class SchemaTouchUps {
     }
 
     /**
+     * recipes.source_url and video_url were Hibernate's default varchar(255). They now mirror the
+     * recipe's first links, which may be up to 2048 characters, and ddl-auto never widens a
+     * column it already made. Widening a varchar is a catalogue change in Postgres — no rewrite —
+     * and asking for the width it already has does nothing, so this is safe on every start.
+     */
+    @Bean
+    @Order(0)
+    public ApplicationRunner widenRecipeLinkColumns(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.execute("ALTER TABLE recipes ALTER COLUMN source_url TYPE varchar(2048),"
+                        + " ALTER COLUMN video_url TYPE varchar(2048)");
+            } catch (Exception e) {
+                log.warn("Could not widen the recipe link columns: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
      * The unit box used to send "" for no unit, and planned items send nothing at all — so the
      * same "eggs" could sit on the list twice, once per spelling of empty. Empty is null now.
      */

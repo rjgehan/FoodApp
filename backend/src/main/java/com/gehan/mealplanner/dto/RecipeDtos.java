@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.RecipeSection;
+import com.gehan.mealplanner.service.SourceLinks;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -28,6 +29,18 @@ public class RecipeDtos {
             Boolean optional) {
     }
 
+    /**
+     * One of a recipe's links, both ways: what the form sends and what comes back. A null label
+     * means the app names it after the site — "TikTok", "bbcgoodfood.com". A blank url is an
+     * empty row somebody left in the form, and is dropped rather than refused.
+     *
+     * No size checks here: they would run before the label is trimmed and blank rows dropped,
+     * and answer "size must be between 0 and 60". SourceLinks.clean checks the cleaned values
+     * and says so in a sentence.
+     */
+    public record SourceLink(String url, String label) {
+    }
+
     /** Ingredient quantities are for the given servings count, as written — not normalized to 1 person. */
     public record RecipeRequest(
             @NotBlank @Size(max = 200) String name,
@@ -36,8 +49,17 @@ public class RecipeDtos {
             Integer prepTimeMinutes,
             Integer cookTimeMinutes,
             @NotNull @Min(1) Integer servings,
+            /**
+             * The old single links, from phones that predate `links`. Only ever added to the
+             * list — leaving them out, as every client always has, changes nothing.
+             */
             String sourceUrl,
             String videoUrl,
+            /**
+             * Every link, in order, replacing what the recipe had. Null — a client that has never
+             * heard of links — leaves them exactly as they are.
+             */
+            @Size(max = SourceLinks.MAX_ROWS_SENT) List<SourceLink> links,
             RecipeSection section,
             List<String> categories,
             UUID coverImageId,
@@ -53,8 +75,12 @@ public class RecipeDtos {
     public record ImportRecipeRequest(@NotBlank String url) {
     }
 
-    /** A blank or null url clears the video. */
+    /** A blank or null url removes the video link; anything else takes its place, or is added. */
     public record UpdateVideoRequest(String videoUrl) {
+    }
+
+    /** The whole list of links, in order. An empty list removes them all. */
+    public record UpdateLinksRequest(@NotNull @Size(max = SourceLinks.MAX_ROWS_SENT) List<SourceLink> links) {
     }
 
     /** Sets the cover picture and the photo strip on a recipe the household owns. */
@@ -81,6 +107,7 @@ public class RecipeDtos {
             int servings,
             String sourceUrl,
             String videoUrl,
+            List<SourceLink> links,
             UUID coverImageId,
             List<UUID> photoIds,
             List<PublicIngredientResponse> ingredients) {
@@ -107,8 +134,11 @@ public class RecipeDtos {
             Integer prepTimeMinutes,
             Integer cookTimeMinutes,
             int servings,
+            /** The first link that is not a video. For clients that predate `links`. */
             String sourceUrl,
+            /** The first video link. For clients that predate `links`. */
             String videoUrl,
+            List<SourceLink> links,
             /** Where this household filed it. Null means unfiled, which the UI shows as "Shared". */
             RecipeSection section,
             List<String> categories,

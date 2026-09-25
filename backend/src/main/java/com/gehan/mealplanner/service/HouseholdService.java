@@ -265,6 +265,7 @@ public class HouseholdService {
 
         // The recipes themselves, innards first.
         jdbc.update("DELETE FROM recipe_links WHERE recipe_id IN " + recipesHere, householdId);
+        jdbc.update("DELETE FROM recipe_source_links WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipe_ingredients WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipe_photos WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipes WHERE household_id = ?", householdId);

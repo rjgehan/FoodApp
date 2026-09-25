@@ -186,6 +186,9 @@ files it; without it both come back empty.
   "photoUrls": [],
   "sourceUrl": null,
   "videoUrl": "https://www.tiktok.com/…",
+  "links": [
+    { "url": "https://www.tiktok.com/…", "label": null }
+  ],
   "ingredients": [
     { "name": "sweetened condensed milk", "quantity": "⅓", "unit": "cup",
       "notes": null, "optional": false, "text": "⅓ cup sweetened condensed milk" }
@@ -197,12 +200,17 @@ files it; without it both come back empty.
 }
 ```
 
-Two things done for you, so you don't reimplement them and drift out of step with the app:
+A few things done for you, so you don't reimplement them and drift out of step with the app:
 
 - **`ingredients[].text`** is the whole line pre-rendered — `"⅓ cup sweetened condensed milk"`.
   `quantity` is already a fraction glyph, not `0.333`. The separate fields are there if you want
   to lay out columns instead. An ingredient a cook can skip has `"optional": true`, and its `text`
   ends in `(optional)`.
+- **`links`** is every link the recipe keeps, in the order the household put them — where it came
+  from, videos of it being made, variations. `label` is what they called it, or `null`: name it
+  after the site. `sourceUrl` and `videoUrl` are still there for dashboards written before a
+  recipe could have more than one: the first link that isn't a video, and the first that is
+  (TikTok, YouTube, Instagram, Vimeo).
 - **`steps`** is the instructions split one per line with any numbering the writer typed
   (`1.`, `-`, `•`) already stripped. Render them in an `<ol>`.
 

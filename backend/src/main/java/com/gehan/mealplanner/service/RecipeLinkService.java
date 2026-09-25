@@ -5,6 +5,7 @@ import com.gehan.mealplanner.domain.RecipeLink;
 import com.gehan.mealplanner.domain.StoredImage;
 import com.gehan.mealplanner.dto.RecipeDtos.PublicIngredientResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.PublicRecipeResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import com.gehan.mealplanner.repository.RecipeLinkRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
 import org.springframework.http.HttpStatus;
@@ -89,11 +90,12 @@ public class RecipeLinkService {
                         i.getIngredient().getName(), i.getQuantity(), i.getUnit(), i.getNotes(), i.isOptional()))
                 .toList();
         List<UUID> photoIds = recipe.getPhotos().stream().map(StoredImage::getId).toList();
+        List<SourceLink> links = SourceLinks.of(recipe);
 
         return new PublicRecipeResponse(
                 recipe.getName(), recipe.getDescription(), recipe.getInstructions(),
                 recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(), recipe.getServings(),
-                recipe.getSourceUrl(), recipe.getVideoUrl(),
+                SourceLinks.firstSource(links), SourceLinks.firstVideo(links), links,
                 recipe.getCoverImage() == null ? null : recipe.getCoverImage().getId(),
                 photoIds, ingredients);
     }
