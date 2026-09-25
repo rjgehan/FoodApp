@@ -77,10 +77,9 @@ export default function GroceryListPage() {
       },
       reconnectDelay: 3000,
       onConnect: () => {
-        setConnected(true);
         // Nothing is replayed after a drop, so whatever changed while the socket was down —
-        // a phone asleep in a pocket — has to be fetched.
-        refreshItems().catch(() => {});
+        // a phone asleep in a pocket — has to be fetched. Subscribe first, then fetch: fetching
+        // first left a gap where a tick from another phone was in neither.
         client.subscribe(`/topic/households/${activeHouseholdId}/grocery-list`, (message) => {
           const event = JSON.parse(message.body) as GroceryListEvent;
           if (event.type === 'REMOVED') {
@@ -92,6 +91,8 @@ export default function GroceryListPage() {
             });
           }
         });
+        refreshItems().catch(() => {});
+        setConnected(true);
       },
       onDisconnect: () => setConnected(false),
       onWebSocketClose: () => setConnected(false),

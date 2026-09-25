@@ -114,6 +114,8 @@ test('a second phone sees ticks without refreshing', async ({ page, browser }) =
   await signIn(phone2, hh.owner, hh.id);
   await phone2.goto('/grocery-list');
   await expect(phone2.getByText('lemons')).toBeVisible();
+  // The list loads before the live socket is up; a tick sent before then is not an event it can see.
+  await expect(phone2.getByText(/offline/)).toHaveCount(0);
 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/grocery-list');
