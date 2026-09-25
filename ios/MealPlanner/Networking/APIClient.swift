@@ -271,10 +271,39 @@ actor APIClient {
 
     /// Everything every household on this server has published.
     @discardableResult
-    func createRecipeCategory(household: UUID, name: String, section: RecipeSection?) async throws -> RecipeCategory {
+    /// `parent` puts the new group inside another; it then joins that group's drawer.
+    func createRecipeCategory(household: UUID, name: String, section: RecipeSection?,
+                              parent: UUID? = nil, iconKey: String? = nil) async throws -> RecipeCategory {
         var body: [String: Any] = ["name": name]
         if let section { body["section"] = section.rawValue }
+        if let parent { body["parentId"] = parent.uuidString }
+        if let iconKey { body["iconKey"] = iconKey }
         return try await send("POST", "/api/households/\(household.uuidString)/recipe-categories", body: body)
+    }
+
+    /// Nil takes the icon off — sent as "", because a missing or null key means "leave it".
+    @discardableResult
+    func setRecipeCategoryIcon(household: UUID, category: UUID, iconKey: String?) async throws -> RecipeCategory {
+        try await send("PATCH", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)",
+                       body: ["iconKey": iconKey ?? ""])
+    }
+
+    /// The icon each drawer wears, for the drawers somebody has chosen one for. The rest use
+    /// `RecipeSection.defaultIcon`.
+    func sectionIcons(household: UUID) async throws -> [RecipeSection: String] {
+        let raw: [String: String] = try await get("/api/households/\(household.uuidString)/section-icons")
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+            RecipeSection(rawValue: key).map { ($0, value) }
+        })
+    }
+
+    @discardableResult
+    func setSectionIcon(household: UUID, section: RecipeSection, iconKey: String) async throws -> [RecipeSection: String] {
+        let raw: [String: String] = try await send(
+            "PUT", "/api/households/\(household.uuidString)/section-icons/\(section.rawValue)", body: ["iconKey": iconKey])
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+            RecipeSection(rawValue: key).map { ($0, value) }
+        })
     }
 
     @discardableResult

@@ -8,9 +8,8 @@ import SwiftUI
  touched, which is why it is a page rather than a tab — but "rarely" is not "never", and
  leaving it out of the phone meant reaching for a laptop to add a person or fix an aisle.
 
- Recipe icons are the one thing the web has that is not here. The phone draws its drawers with
- its own symbols and never asks the server which icon you chose, so a picker would change
- nothing you could see.
+ Recipe icons are here too: the phone draws its drawers with the same food drawings as the web
+ and reads which one the household chose, so a pick here shows on both.
 */
 struct HouseholdScreen: View {
     var session: Session
@@ -21,6 +20,12 @@ struct HouseholdScreen: View {
     @State private var typedName = ""
     @State private var busy = false
     @State private var error: String?
+
+    #if DEBUG
+    /// -mp_debug_scroll icons (with -mp_debug_screen household) opens Recipe icons, and
+    /// -mp_debug_expand 1 its picker for Dinner, for screenshot runs.
+    @State private var debugIcons = UserDefaults.standard.string(forKey: "mp_debug_scroll") == "icons"
+    #endif
 
     private var alone: Bool { people.count <= 1 }
     private var name: String { session.household?.name ?? "this household" }
@@ -40,6 +45,7 @@ struct HouseholdScreen: View {
                 }
                 NavigationLink("Places we eat") { PlacesScreen(session: session) }
                 NavigationLink("Store aisles") { AislesScreen(session: session) }
+                NavigationLink("Recipe icons") { RecipeIconsScreen(session: session) }
             }
 
             Section {
@@ -64,6 +70,9 @@ struct HouseholdScreen: View {
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        #if DEBUG
+        .navigationDestination(isPresented: $debugIcons) { RecipeIconsScreen(session: session) }
+        #endif
         .alert(alone ? "Delete this household" : "Leave this household", isPresented: $leaving) {
             if alone {
                 // Irreversible, and it takes years of recipes with it. Typing the name is the
@@ -255,6 +264,87 @@ struct PeopleScreen: View {
             self.error = error.localizedDescription
         }
     }
+}
+
+// MARK: - Recipe icons
+
+/// Which drawing each catalog drawer wears — the web's "Recipe icons" card. A drawer always
+/// wears one; until somebody picks, it is the drawer's default.
+struct RecipeIconsScreen: View {
+    var session: Session
+    var sample: [RecipeSection: String]?
+
+    @State private var icons: [RecipeSection: String] = [:]
+    @State private var choosing: RecipeSection?
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(RecipeSection.allCases, id: \.self) { section in
+                    let current = icons[section] ?? section.defaultIcon
+                    Button {
+                        choosing = section
+                    } label: {
+                        HStack(spacing: 12) {
+                            FoodIcon.named(current)?.image
+                                .resizable().scaledToFit()
+                                .frame(width: 30, height: 30)
+                                .foregroundStyle(Palette.accent)
+                            Text(section.title).foregroundStyle(.primary)
+                            Spacer()
+                            Text(FoodIcon.named(current)?.label ?? "").foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } footer: {
+                Text("The picture on each drawer in Recipes, for everyone in the house.")
+            }
+
+            if let error {
+                Section { Text(error).foregroundStyle(.red) }
+            }
+        }
+        .navigationTitle("Recipe icons")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await load()
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "mp_debug_expand") { choosing = .dinner }
+            #endif
+        }
+        .sheet(item: $choosing) { section in
+            IconChooser(title: section.title, selected: icons[section] ?? section.defaultIcon, allowNone: false) { key in
+                choosing = nil
+                if let key { Task { await choose(key, for: section) } }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func load() async {
+        if let sample { icons = sample; return }
+        guard let household = session.household?.id else { return }
+        icons = (try? await APIClient.shared.sectionIcons(household: household)) ?? [:]
+    }
+
+    private func choose(_ key: String, for section: RecipeSection) async {
+        guard let household = session.household?.id else { return }
+        let before = icons
+        icons[section] = key
+        do {
+            icons = try await APIClient.shared.setSectionIcon(household: household, section: section, iconKey: key)
+        } catch {
+            icons = before
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+extension RecipeSection: Identifiable {
+    var id: String { rawValue }
 }
 
 // MARK: - Places we eat

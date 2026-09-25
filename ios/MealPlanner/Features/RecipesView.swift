@@ -10,6 +10,8 @@ struct RecipesView: View {
 
     @State private var recipes: [Recipe] = []
     @State private var categories: [RecipeCategory] = []
+    /// The drawers somebody picked an icon for; the rest wear `RecipeSection.defaultIcon`.
+    @State private var sectionIcons: [RecipeSection: String] = [:]
     @State private var query = ""
     @State private var error: String?
     @State private var switchingHousehold = false
@@ -47,6 +49,7 @@ struct RecipesView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(RecipeSection.allCases, id: \.self) { section in
+                            let count = recipes.filter { $0.section == section }.count
                             NavigationLink {
                                 DrawerView(
                                     section: section,
@@ -57,11 +60,13 @@ struct RecipesView: View {
                                     onChanged: { await load() }
                                 )
                             } label: {
-                                DrawerTile(
-                                    title: section.title,
-                                    symbol: section.symbol,
+                                // A colour per drawer, the way the web has it: you learn where
+                                // Dinner is by its colour and its picture long before the word.
+                                CatalogTile(
+                                    name: section.title,
+                                    detail: "\(count) \(count == 1 ? "recipe" : "recipes")",
                                     tint: section.tint,
-                                    count: recipes.filter { $0.section == section }.count
+                                    iconKey: sectionIcons[section] ?? section.defaultIcon
                                 )
                             }
                             .buttonStyle(.plain)
@@ -75,6 +80,11 @@ struct RecipesView: View {
             .searchable(text: $query, prompt: "Search recipes and ingredients")
             .refreshable { await load() }
             .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
+            // Household › Recipe icons lives in that sheet, over this tab, so closing it is when a
+            // drawer's new picture has to show — not on the next pull to refresh.
+            .onChange(of: showingAccount) { _, open in
+                if !open { Task { await loadIcons() } }
+            }
             // Until now a recipe could only arrive on the phone by being pasted or shared
             // in. Some of them are just written down.
             .toolbar {
@@ -89,7 +99,8 @@ struct RecipesView: View {
             }
             #if DEBUG
             .navigationDestination(item: $debugDrawer) { section in
-                DrawerView(section: section, parent: nil, recipes: recipes, categories: categories, session: session)
+                DrawerView(section: section, parent: nil, recipes: recipes, categories: categories, session: session,
+                           onChanged: { await load() })
             }
             #endif
         }
@@ -107,10 +118,20 @@ struct RecipesView: View {
             error = nil
             async let all = APIClient.shared.recipes(household: household)
             async let groups = APIClient.shared.recipeCategories(household: household)
+            // A drawer with no choice on record just wears its default, so a failure here is
+            // not worth an error over the whole catalog.
+            async let icons = try? APIClient.shared.sectionIcons(household: household)
             (recipes, categories) = try await (all, groups)
+            sectionIcons = await icons ?? [:]
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func loadIcons() async {
+        guard sample == nil, let household = session.household?.id,
+              let icons = try? await APIClient.shared.sectionIcons(household: household) else { return }
+        sectionIcons = icons
     }
 }
 
@@ -126,6 +147,7 @@ struct DrawerView: View {
     var onChanged: () async -> Void = {}
 
     @State private var editingGroups = false
+    @State private var addingRecipe = false
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -154,6 +176,23 @@ struct DrawerView: View {
         return kids + kids.flatMap { descendants(of: $0) }
     }
 
+    /// No group to start in, outside a debug screenshot run.
+    private var debugGroups: [String] {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "mp_debug_group").map { [$0] } ?? []
+        #else
+        []
+        #endif
+    }
+
+    /// What is inside, in the order you care: the recipes, then whether it opens further.
+    private func detail(_ group: RecipeCategory) -> String {
+        let recipes = count(group)
+        let groups = categories.filter { $0.parentId == group.id }.count
+        return "\(recipes) \(recipes == 1 ? "recipe" : "recipes")"
+            + (groups > 0 ? " · \(groups) \(groups == 1 ? "group" : "groups")" : "")
+    }
+
     private func count(_ group: RecipeCategory) -> Int {
         let names = Set([group.name] + descendants(of: group).map(\.name))
         return recipes.filter { $0.section == section && !$0.categories.filter { names.contains($0) }.isEmpty }.count
@@ -165,13 +204,14 @@ struct DrawerView: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(children) { group in
                         NavigationLink {
-                            DrawerView(section: section, parent: group, recipes: recipes, categories: categories, session: session)
+                            DrawerView(section: section, parent: group, recipes: recipes, categories: categories,
+                                       session: session, onChanged: onChanged)
                         } label: {
-                            GroupTile(
+                            CatalogTile(
                                 name: group.name,
+                                detail: detail(group),
                                 tint: Palette.cover(for: group.id.uuidString),
-                                recipes: count(group),
-                                groups: categories.filter { $0.parentId == group.id }.count
+                                iconKey: group.iconKey
                             )
                         }
                         .buttonStyle(.plain)
@@ -185,27 +225,57 @@ struct DrawerView: View {
             }
 
             if children.isEmpty && here.isEmpty {
-                ContentUnavailableView(
-                    "Nothing in here yet",
-                    systemImage: "tray",
-                    description: Text("Recipes filed under \(parent?.name ?? section.title) will show up here.")
-                )
+                ContentUnavailableView {
+                    Label("Nothing in here yet", systemImage: "tray")
+                } description: {
+                    Text("Recipes filed under \(parent?.name ?? section.title) will show up here.")
+                } actions: {
+                    Button("Add a recipe") { addingRecipe = true }
+                        .buttonStyle(.borderedProminent)
+                }
                 .padding(.top, 48)
             }
         }
         .navigationTitle(parent?.name ?? section.title)
         .navigationBarTitleDisplayMode(.large)
-        // Only at the top of a drawer: groups belong to the drawer, not to each other.
+        // At every level, for the groups on this screen: inside Main is where Chicken and Beef
+        // are drawn, so it is where you give them a picture or add another next to them.
         .toolbar {
-            if parent == nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Edit groups", systemImage: "folder.badge.gearshape") { editingGroups = true }
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit groups", systemImage: "folder.badge.gearshape") { editingGroups = true }
+            }
+            // At every level: a recipe started in here starts filed in here.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Add a recipe here", systemImage: "plus") { addingRecipe = true }
             }
         }
         .sheet(isPresented: $editingGroups) {
-            EditGroupsView(section: section, groups: children, session: session, onChanged: onChanged)
+            EditGroupsView(section: section, parent: parent, groups: children, session: session, onChanged: onChanged)
         }
+        .sheet(isPresented: $addingRecipe) {
+            // The drawer picked and the group ticked, both still changeable in the form.
+            EditRecipeView(
+                recipe: nil,
+                session: session,
+                initialSection: section,
+                initialGroups: parent.map { [$0.name] } ?? debugGroups
+            ) { _ in
+                Task { await onChanged() }
+            }
+        }
+        #if DEBUG
+        // -mp_debug_screen add (with -mp_debug_drawer) opens the new-recipe form from the
+        // drawer — as if from inside the group named by -mp_debug_group, when there is one —
+        // and "groups" its group editor, for screenshot runs.
+        .task {
+            guard parent == nil else { return }
+            switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
+            case "add": addingRecipe = true
+            case "groups": editingGroups = true
+            default: break
+            }
+        }
+        #endif
     }
 }
 
@@ -231,47 +301,6 @@ struct PublishedRecipeGrid: View {
 }
 
 // MARK: - Pieces
-
-struct DrawerTile: View {
-    let title: String
-    let symbol: String
-    let tint: Color
-    let count: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Image(systemName: symbol).font(.title3).foregroundStyle(.secondary)
-            Spacer(minLength: 10)
-            Text(title).font(.title3.weight(.semibold))
-            Text("\(count) \(count == 1 ? "recipe" : "recipes")")
-                .font(.subheadline).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
-        .padding(14)
-        // A colour per drawer, the way the web has it: you learn where Dinner is by its colour
-        // long before you read the word.
-        .background(tint, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-struct GroupTile: View {
-    let name: String
-    let tint: Color
-    let recipes: Int
-    let groups: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Spacer(minLength: 8)
-            Text(name).font(.title3.weight(.semibold))
-            Text("\(recipes) \(recipes == 1 ? "recipe" : "recipes")" + (groups > 0 ? " · \(groups) \(groups == 1 ? "group" : "groups")" : ""))
-                .font(.subheadline).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
-        .padding(14)
-        .background(tint, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
 
 struct RecipeGrid: View {
     let recipes: [Recipe]
@@ -326,18 +355,6 @@ extension RecipeSection {
     /// hashing the position here is what makes Breakfast the same colour in both apps.
     var tint: Color {
         Palette.cover(for: String(Self.allCases.firstIndex(of: self) ?? 0))
-    }
-
-    /// The drawer icons, as close to the web's as SF Symbols get.
-    var symbol: String {
-        switch self {
-        case .breakfast: "sun.horizon"
-        case .lunch: "takeoutbag.and.cup.and.straw"
-        case .dinner: "fork.knife"
-        case .snacks: "carrot"
-        case .drinks: "cup.and.saucer"
-        case .other: "square.grid.2x2"
-        }
     }
 }
 

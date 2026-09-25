@@ -24,6 +24,8 @@ struct EditRecipeView: View {
     @State private var cover = CoverPhotoFlow()
     @State private var section: RecipeSection
     @State private var groups: Set<String>
+    /// Ticked groups set aside when the drawer changed — see `moveToDrawer`.
+    @State private var parked: Set<String> = []
     @State private var allGroups: [RecipeCategory] = []
     @State private var newGroup = ""
     @State private var busy = false
@@ -38,13 +40,16 @@ struct EditRecipeView: View {
         var optional: Bool
     }
 
-    init(recipe: Recipe?, session: Session?, onSaved: @escaping (Recipe) -> Void) {
+    /// `initialSection` and `initialGroups` file a new recipe where it was started from — the
+    /// drawer, and the group you were in — the way the web's `?section=&group=` does.
+    init(recipe: Recipe?, session: Session?, initialSection: RecipeSection? = nil, initialGroups: [String] = [],
+         onSaved: @escaping (Recipe) -> Void) {
         self.recipe = recipe
         self.session = session
         self.onSaved = onSaved
         // Dinner is what the web defaults a new recipe to.
-        _section = State(initialValue: recipe?.section ?? .dinner)
-        _groups = State(initialValue: Set(recipe?.categories ?? []))
+        _section = State(initialValue: recipe?.section ?? initialSection ?? .dinner)
+        _groups = State(initialValue: Set(recipe?.categories ?? initialGroups))
         _name = State(initialValue: recipe?.name ?? "")
         _summary = State(initialValue: recipe?.description ?? "")
         _servings = State(initialValue: recipe?.servings ?? 4)
@@ -91,6 +96,7 @@ struct EditRecipeView: View {
                         Picker("Drawer", selection: $section) {
                             ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
                         }
+                        .id("filing")
                         ForEach(groupsHere) { group in
                             Button {
                                 if groups.contains(group.name) { groups.remove(group.name) }
@@ -166,17 +172,22 @@ struct EditRecipeView: View {
                     }
                 }
                 #if DEBUG
-                // -mp_debug_scroll links (with -mp_debug_screen edit) scrolls down to the links, so a
-                // screenshot run can see them without a finger to scroll with.
+                // -mp_debug_scroll links (with -mp_debug_screen edit) scrolls down to the links, and
+                // "filing" to the drawer and groups, so a screenshot run can see them without a
+                // finger to scroll with.
                 .task {
-                    guard UserDefaults.standard.string(forKey: "mp_debug_scroll") == "links" else { return }
-                    try? await Task.sleep(for: .milliseconds(600))
-                    scroller.scrollTo(LinksSection.anchor, anchor: .center)
+                    let target = UserDefaults.standard.string(forKey: "mp_debug_scroll")
+                    guard target == "links" || target == "filing" else { return }
+                    try? await Task.sleep(for: .milliseconds(900))
+                    withAnimation {
+                        scroller.scrollTo(target == "links" ? LinksSection.anchor : "filing", anchor: .top)
+                    }
                 }
                 #endif
             }
             .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
             .task { await loadGroups() }
+            .onChange(of: section) { _, next in moveToDrawer(next) }
             .navigationTitle(recipe == nil ? "New recipe" : "Edit recipe")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -194,6 +205,29 @@ struct EditRecipeView: View {
         allGroups
             .filter { $0.section == nil || $0.section == section }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /**
+     Groups belong to a drawer, and the server files a recipe by group name, making any it cannot
+     find. So a group ticked in the old drawer — Veggie, when the recipe was started from inside
+     Dinner › Veggie and then moved to Lunch — would drop out of sight here and come back as a
+     new, empty Veggie in Lunch. It is set aside instead, and ticked again if the recipe moves
+     back to a drawer that has it: the same as the web's form. A name the household has no group
+     for anywhere goes wherever the recipe goes.
+    */
+    private func moveToDrawer(_ next: RecipeSection) {
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
+        func inDrawer(_ name: String) -> Bool {
+            allGroups.contains { same($0.name, name) && ($0.section == nil || $0.section == next) }
+        }
+        func isKnown(_ name: String) -> Bool { allGroups.contains { same($0.name, name) } }
+
+        let setAside = groups.filter { isKnown($0) && !inDrawer($0) }
+        let back = parked.filter { name in inDrawer(name) && !groups.contains { same($0, name) } }
+        groups.subtract(setAside)
+        groups.formUnion(back)
+        parked.subtract(back)
+        parked.formUnion(setAside)
     }
 
     private func loadGroups() async {
@@ -312,4 +346,8 @@ private struct OptionalTag: View {
 
 #Preview("New") {
     EditRecipeView(recipe: nil, session: .preview) { _ in }
+}
+
+#Preview("New, from a group") {
+    EditRecipeView(recipe: nil, session: .preview, initialSection: .dinner, initialGroups: ["Veggie"]) { _ in }
 }

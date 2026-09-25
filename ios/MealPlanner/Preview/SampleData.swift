@@ -130,13 +130,13 @@ enum SampleData {
         let main = RecipeCategory(id: UUID(), name: "Main", recipeCount: 4, parentId: nil, section: .dinner)
         return [
             main,
-            RecipeCategory(id: UUID(), name: "Full meal", recipeCount: 1, parentId: nil, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Side", recipeCount: 0, parentId: nil, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Veggie", recipeCount: 1, parentId: nil, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Beef", recipeCount: 1, parentId: main.id, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Chicken", recipeCount: 1, parentId: main.id, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Pork", recipeCount: 1, parentId: main.id, section: .dinner),
-            RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: main.id, section: .dinner),
+            RecipeCategory(id: UUID(), name: "Full meal", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "full-meal"),
+            RecipeCategory(id: UUID(), name: "Side", recipeCount: 0, parentId: nil, section: .dinner, iconKey: "side"),
+            RecipeCategory(id: UUID(), name: "Veggie", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "veggie"),
+            RecipeCategory(id: UUID(), name: "Beef", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "meat"),
+            RecipeCategory(id: UUID(), name: "Chicken", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "drumstick"),
+            RecipeCategory(id: UUID(), name: "Pork", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "meat"),
+            RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "fish"),
         ]
     }()
 }

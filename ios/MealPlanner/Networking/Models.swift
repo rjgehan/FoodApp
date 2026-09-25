@@ -284,6 +284,9 @@ struct RecipeCategory: Codable, Identifiable, Hashable {
     let recipeCount: Int
     let parentId: UUID?
     let section: RecipeSection?
+    /// Which of the food drawings (`FoodIcon`) its tile wears. Nil for a plain tile, and from a
+    /// server older than group icons.
+    var iconKey: String? = nil
 }
 
 /// A draft read off a link by the server — the same shape "write it for me" returns.

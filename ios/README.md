@@ -51,7 +51,21 @@ day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 
 first dish's actions. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
 down to its Links section.
 
+`-mp_debug_drawer dinner` opens that drawer on the Recipes tab; with it, `-mp_debug_screen add`
+opens the new-recipe form from the drawer (add `-mp_debug_group Veggie` to start it in that
+group, and `-mp_debug_scroll filing` to scroll to the drawer and groups), and `-mp_debug_screen
+groups` its group editor. `-mp_debug_screen household -mp_debug_scroll icons` opens Recipe icons,
+and `-mp_debug_expand 1` its picker for Dinner.
+
 Both hooks are inside `#if DEBUG`, so a release build has neither.
+
+## Food icons
+
+The drawer and group pictures are the web's hand-drawn set (`web/src/components/FoodIcons.tsx`),
+copied into `Assets.xcassets/FoodIcons` as template SVGs so they tint and scale like SF Symbols.
+Don't edit them here: change or add one on the web, run `node web/scripts/export-food-icons.mjs`
+from the repo root, add the key to `FoodIcon.all` and to the backend's `FoodIcons.KEYS`. The e2e
+suite fails if the web and the asset catalog disagree.
 
 ## Where the server is
 
