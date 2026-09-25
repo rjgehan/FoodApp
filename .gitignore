@@ -27,5 +27,4 @@ xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 DerivedData/
-.DS_Store
-.build-device/
+ios/.build-device/

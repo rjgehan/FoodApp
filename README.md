@@ -28,6 +28,8 @@ household and account.
 | --- | --- |
 | `backend/` | Spring Boot 3 / Java 21 API — JWT auth, JPA, WebSocket grocery sync |
 | `web/` | React + Vite + Tailwind, mobile-first |
+| `ios/` | Native SwiftUI app and share extension (built locally in Xcode, not by CI) |
+| `e2e/` | Playwright API and UI tests |
 | `docker-compose.dev.yml` | Postgres + Redis for local development |
 | `docker-compose.prod.yml` | The production stack, from prebuilt GHCR images |
 | `deploy.sh` | Pull and restart on the server |
