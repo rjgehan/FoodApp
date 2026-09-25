@@ -253,21 +253,54 @@ final class ShareViewController: UIViewController {
     }
 
     /**
-     `extensionContext.open` is the documented way, and now the only way.
+     Hands the URL to the app, then gets out of the way.
 
-     There used to be a fallback that walked the responder chain looking for a UIApplication
-     and called `open` on it. That method is unavailable to app extensions — Swift does not
-     catch it here because the object arrives through a dynamic cast, but the appex is
-     scanned for exactly that at upload, and finding it is a rejection.
+     `extensionContext.open` is the documented call, but iOS only honours it for a Today
+     widget: from a share extension it answers false every time, which is exactly the "Could
+     not open Meal Planner" people were seeing. What does work is asking the host's
+     UIApplication, found by walking up the responder chain.
+
+     It is reached by selector rather than by name, for two reasons. The extension is built
+     with APPLICATION_EXTENSION_API_ONLY, so calling UIApplication's `open` directly does not
+     compile here — and the old `openURL:` that a plain `perform` could reach is a no-op from
+     iOS 18 on. `openURL:options:completionHandler:` takes three arguments, one more than
+     `perform` can pass, so the method is looked up and called through its C signature.
+
+     `extensionContext.open` stays as the last resort for a host with no application in the
+     chain: it costs nothing, and if some future iOS starts honouring it, it just works.
     */
     private func open(_ url: URL) {
+        if openThroughApplication(url) { return }
         extensionContext?.open(url) { [weak self] opened in
-            if opened {
-                self?.done()
-            } else {
-                self?.finish(with: "Could not open Meal Planner.")
+            DispatchQueue.main.async {
+                opened ? self?.done() : self?.finish(with: "Could not open Meal Planner.")
             }
         }
+    }
+
+    /// True when an application was found and asked; the answer arrives later.
+    private func openThroughApplication(_ url: URL) -> Bool {
+        let selector = NSSelectorFromString("openURL:options:completionHandler:")
+        var responder: UIResponder? = self
+        while let current = responder {
+            // UIWindowScene answers the same selector with a different options type, so the
+            // class is checked rather than just `responds(to:)`.
+            if current is UIApplication, current.responds(to: selector) {
+                typealias Open = @convention(c) (
+                    AnyObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?
+                ) -> Void
+                let call = unsafeBitCast(current.method(for: selector), to: Open.self)
+                let completion: @convention(block) (Bool) -> Void = { [weak self] opened in
+                    DispatchQueue.main.async {
+                        opened ? self?.done() : self?.finish(with: "Could not open Meal Planner.")
+                    }
+                }
+                call(current, selector, url as NSURL, NSDictionary(), completion)
+                return true
+            }
+            responder = current.next
+        }
+        return false
     }
 
     private func done() {
