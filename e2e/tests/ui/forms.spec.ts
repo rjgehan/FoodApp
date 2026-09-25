@@ -57,19 +57,94 @@ test('the unit list is not cut off at the bottom of a sheet', async ({ page }) =
   expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 });
 
-test('a video link typed without https:// is accepted or explained, never a dead page', async ({ page }) => {
+test('a link typed without https:// is saved with it, never a dead page', async ({ page }) => {
   const hh = await newHousehold();
   const r = await newRecipe(hh.id, 'Dumplings', [{ name: 'flour', qty: 2, unit: 'cup' }]);
   await signIn(page, hh.owner, hh.id);
   await page.goto(`/recipes/${r.id}`);
-  await fromMenu(page, 'Recipe options', 'Photos & video');
-  await page.getByPlaceholder(/tiktok/i).fill('tiktok.com/@cook/video/1');
+  await fromMenu(page, 'Recipe options', 'Photos & links');
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByLabel('Link 1', { exact: true }).fill('tiktok.com/@cook/video/1');
+  // One button, which says what it will do: close, or save the links and close.
+  await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0);
   await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith('/video')),
-    page.getByRole('button', { name: 'Save', exact: true }).first().click(),
+    page.waitForResponse((r) => r.url().endsWith('/links')),
+    page.getByRole('button', { name: 'Save links' }).click(),
   ]);
-  await page.waitForTimeout(500);
+  // Back as the server keeps it, so what is on screen is what was saved.
+  await expect(page.getByRole('link', { name: 'Watch on TikTok' })).toHaveAttribute('href', 'https://tiktok.com/@cook/video/1');
   await expect(page.getByText('Ingredients')).toBeVisible({ timeout: 1000 });
+});
+
+test('a video somebody named keeps its name, and a recipe with no links can be given one', async ({ page }) => {
+  const hh = await newHousehold();
+  const r = await newRecipe(hh.id, 'Dumplings', [{ name: 'flour', qty: 2, unit: 'cup' }]);
+  await signIn(page, hh.owner, hh.id);
+  await page.goto(`/recipes/${r.id}`);
+  // Not only behind •••: the page itself offers it when there are none.
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByLabel('Link 1', { exact: true }).fill('https://www.tiktok.com/@nonna/video/2');
+  await page.getByLabel('Link 1 name').fill("Nonna's version");
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/links')),
+    page.getByRole('button', { name: 'Save links' }).click(),
+  ]);
+  await expect(page.getByRole('link', { name: "Nonna's version · TikTok" }))
+    .toHaveAttribute('href', 'https://www.tiktok.com/@nonna/video/2');
+
+  // The public page names it the same way.
+  const { token } = await call('POST', `/api/recipes/${r.id}/link`, { token: hh.owner.token });
+  await page.goto(`/r/${token}`);
+  await expect(page.getByRole('link', { name: "Nonna's version · TikTok" })).toBeVisible();
+});
+
+test('a recipe keeps as many links as you give it, and the page lists them', async ({ page }) => {
+  const hh = await newHousehold();
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/new');
+  await page.getByPlaceholder('Recipe name').fill('Ragu');
+  await page.getByPlaceholder('ingredient').first().fill('mince');
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByLabel('Link 1', { exact: true }).fill('tiktok.com/@cook/video/9');
+  // Named after the site until somebody names it.
+  await expect(page.getByLabel('Link 1 name')).toHaveAttribute('placeholder', /TikTok/);
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByLabel('Link 2', { exact: true }).fill('https://www.seriouseats.com/ragu');
+  await page.getByLabel('Link 2 name').fill('Serious Eats version');
+  await page.getByRole('button', { name: 'Save recipe' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Ragu' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Watch on TikTok' })).toHaveAttribute('href', 'https://tiktok.com/@cook/video/9');
+  await expect(page.getByRole('link', { name: /Serious Eats version/ })).toHaveAttribute('href', 'https://www.seriouseats.com/ragu');
+
+  const [saved] = await call('GET', `/api/households/${hh.id}/recipes`, { token: hh.owner.token });
+  expect(saved.links).toEqual([
+    { url: 'https://tiktok.com/@cook/video/9', label: null },
+    { url: 'https://www.seriouseats.com/ragu', label: 'Serious Eats version' },
+  ]);
+
+  // Editing starts from them, and taking one out takes it out.
+  await page.goto(`/recipes/${saved.id}/edit`);
+  await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('https://tiktok.com/@cook/video/9');
+  await page.getByRole('button', { name: 'Remove link 1' }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('heading', { name: 'Ragu' })).toBeVisible();
+  const after = await call('GET', `/api/recipes/${saved.id}`, { token: hh.owner.token });
+  expect(after.links).toEqual([{ url: 'https://www.seriouseats.com/ragu', label: 'Serious Eats version' }]);
+});
+
+test('a link the server will not keep is said on the form, not lost', async ({ page }) => {
+  const hh = await newHousehold();
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/new');
+  await page.getByPlaceholder('Recipe name').fill('Ragu');
+  await page.getByRole('button', { name: 'Add link' }).click();
+  await page.getByLabel('Link 1', { exact: true }).fill('not a link');
+  await page.getByRole('button', { name: 'Save recipe' }).click();
+  // Named, so with several links on the form it is clear which one.
+  await expect(page.getByText('"not a link" isn\'t a web address')).toBeVisible();
+  await expect(page.getByLabel('Link 1', { exact: true })).toHaveValue('not a link');
 });
 
 test('a place menu link typed without https:// is accepted or explained', async ({ page }) => {

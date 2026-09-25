@@ -168,7 +168,7 @@ test('the recipe page has one filled button, and the rest behind •••', asy
     await expect(page.getByRole('button', { name: hidden, exact: true })).toHaveCount(0);
   }
   await page.getByRole('button', { name: 'Recipe options' }).click();
-  for (const shown of ['Edit', 'Share', 'Organize', 'Photos & video', 'Index card']) {
+  for (const shown of ['Edit', 'Share', 'Organize', 'Photos & links', 'Index card']) {
     await expect(sheet(page).getByRole('button', { name: shown, exact: true })).toBeVisible();
   }
 });

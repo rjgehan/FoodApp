@@ -109,6 +109,15 @@ export interface RecipeIngredient {
   optional: boolean;
 }
 
+/**
+ * Somewhere a recipe lives on the web — the page it came from, a video of it being made. Always
+ * http(s). A null label means "name it after the site" (see utils/videoLink.ts).
+ */
+export interface SourceLink {
+  url: string;
+  label: string | null;
+}
+
 /** Ingredient quantities are written for `servings` people, as the recipe actually makes them. */
 export interface Recipe {
   id: string;
@@ -119,9 +128,12 @@ export interface Recipe {
   prepTimeMinutes: number | null;
   cookTimeMinutes: number | null;
   servings: number;
+  /** The first link that isn't a video. Kept for older clients; read `links`. */
   sourceUrl: string | null;
-  /** Link to a video of it being made, usually TikTok. Guaranteed http(s) by the server. */
+  /** The first video link. Kept for older clients; read `links`. */
   videoUrl: string | null;
+  /** Every link, in the order the household put them. */
+  links: SourceLink[];
   /** Where this household filed it. null means unfiled, which shows up under "Shared". */
   section: RecipeSection | null;
   /** This household's sub-categories for it, by name. */
@@ -151,6 +163,7 @@ export interface PublicRecipe {
   servings: number;
   sourceUrl: string | null;
   videoUrl: string | null;
+  links: SourceLink[];
   coverImageId: string | null;
   photoIds: string[];
   ingredients: PublicIngredient[];

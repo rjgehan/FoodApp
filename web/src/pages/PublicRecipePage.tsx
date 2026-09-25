@@ -5,7 +5,8 @@ import type { PublicRecipe } from '../api/types';
 import { Badge, Card, EmptyState } from '../components/ui';
 import { PlayIcon } from '../components/icons';
 import { formatMinutes, formatQuantity, instructionSteps, totalMinutes } from '../utils/recipeFormat';
-import { isSafeLink, videoHostLabel } from '../utils/videoLink';
+import { isSafeLink, isVideoLink } from '../utils/videoLink';
+import LinkList, { FeaturedVideoName } from '../components/LinkList';
 
 /**
  * A recipe opened from a share link by someone with no account.
@@ -45,6 +46,10 @@ export default function PublicRecipePage() {
 
   const total = totalMinutes(recipe);
   const steps = instructionSteps(recipe.instructions);
+  // The first video gets the big button, as in the app; the rest are listed at the end.
+  const links = (recipe.links ?? []).filter((l) => isSafeLink(l.url));
+  const featuredVideo = links.find((l) => isVideoLink(l.url)) ?? null;
+  const otherLinks = links.filter((l) => l !== featuredVideo);
 
   return (
     <Shell>
@@ -67,15 +72,15 @@ export default function PublicRecipePage() {
           {total ? <Badge tone="success">{formatMinutes(total)} total</Badge> : null}
         </div>
 
-        {isSafeLink(recipe.videoUrl) && (
+        {featuredVideo && (
           <a
-            href={recipe.videoUrl!}
+            href={featuredVideo.url}
             target="_blank"
             rel="noreferrer noopener"
             className="mt-4 flex min-h-touch items-center gap-2 rounded-xl bg-accent-soft px-4 font-medium text-accent"
           >
             <PlayIcon className="h-5 w-5" />
-            Watch on {videoHostLabel(recipe.videoUrl!)}
+            <FeaturedVideoName link={featuredVideo} />
           </a>
         )}
       </Card>
@@ -127,12 +132,10 @@ export default function PublicRecipePage() {
         </Card>
       )}
 
-      {isSafeLink(recipe.sourceUrl) && (
-        <p className="pb-2 text-center text-sm">
-          <a href={recipe.sourceUrl!} target="_blank" rel="noreferrer noopener" className="text-muted underline">
-            Original recipe
-          </a>
-        </p>
+      {otherLinks.length > 0 && (
+        <Card title="Links">
+          <LinkList links={otherLinks} />
+        </Card>
       )}
     </Shell>
   );

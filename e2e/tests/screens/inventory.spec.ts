@@ -96,7 +96,8 @@ test('capture every screen', async ({ page }) => {
     { name: 'parmesan', qty: 0.5, unit: 'cup' }, { name: 'marinara sauce', qty: 1.5, unit: 'cup' },
     { name: 'mozzarella', qty: 8, unit: 'oz' }, { name: 'spaghetti', qty: 1, unit: 'lb' },
     { name: 'basil', qty: 1, unit: 'bunch', optional: true },
-  ], { videoUrl: 'https://www.tiktok.com/@cook/video/7300000000000000000', prepTimeMinutes: 20, cookTimeMinutes: 30,
+  ], { links: [{ url: 'https://www.tiktok.com/@cook/video/7300000000000000000', label: null }, { url: 'https://www.seriouseats.com/chicken-parmesan', label: 'Serious Eats version' }],
+       prepTimeMinutes: 20, cookTimeMinutes: 30,
        description: 'Crispy, saucy, better than the restaurant.',
        instructions: 'Pound the chicken thin.\nDredge in egg, then breadcrumbs and parmesan.\nFry until golden.\nTop with sauce and mozzarella; bake 15 minutes at 425°F.\nServe over spaghetti.' });
   const frites = await R('Steak Frites', 'DINNER', ['Main dish'], 2, [
@@ -253,8 +254,8 @@ test('capture every screen', async ({ page }) => {
   });
   await step('photos', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await fromMenu(page, 'Recipe options', 'Photos & video');
-    await shot(page, 'Photos & video', '', { full: true });
+    await fromMenu(page, 'Recipe options', 'Photos & links');
+    await shot(page, 'Photos & links', '', { full: true });
   });
   await step('index card', async () => {
     await page.goto(`/recipes/${parm.id}`);

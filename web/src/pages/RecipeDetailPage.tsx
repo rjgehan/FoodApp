@@ -3,16 +3,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { ActionMenu, Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlayIcon, TrashIcon } from '../components/icons';
+import { ActionMenu, Button, Card, CheckCircle, cx, EmptyState, ErrorText, IconButton, Input, Sheet } from '../components/ui';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlayIcon, PlusIcon, TrashIcon } from '../components/icons';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
 import RecipeIndexCard from '../components/RecipeIndexCard';
 import { PageTitle } from '../components/PageTitle';
 import RecipeClassifier from '../components/RecipeClassifier';
 import ImagePicker from '../components/ImagePicker';
+import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from '../components/LinksEditor';
 import { formatMinutes, formatQuantity, instructionSteps, totalMinutes } from '../utils/recipeFormat';
 import { sectionLabel, type Filing } from '../utils/recipeMeta';
-import { isSafeLink, videoHostLabel } from '../utils/videoLink';
+import { isSafeLink, isVideoLink } from '../utils/videoLink';
+import LinkList, { FeaturedVideoName } from '../components/LinkList';
 
 export default function RecipeDetailPage() {
   const { recipeId } = useParams<{ recipeId: string }>();
@@ -31,8 +33,8 @@ export default function RecipeDetailPage() {
   const [copied, setCopied] = useState(false);
   const [draft, setDraft] = useState<Filing | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
-  const [videoDraft, setVideoDraft] = useState('');
-  const [videoError, setVideoError] = useState<string | null>(null);
+  const [linkDrafts, setLinkDrafts] = useState<DraftLink[]>([]);
+  const [linksError, setLinksError] = useState<string | null>(null);
   const [editingMedia, setEditingMedia] = useState(false);
   const [planning, setPlanning] = useState(false);
   // "Tue · Dinner" once this recipe has just been planned, so the page can say so.
@@ -148,17 +150,29 @@ export default function RecipeDetailPage() {
     }
   }
 
-  async function saveVideo(url: string) {
+  /** Opens photos and links for editing, starting from the links the recipe has now. */
+  function startEditingMedia() {
     if (!recipe) return;
+    setLinkDrafts(toDraftLinks(recipe.links));
+    setLinksError(null);
+    setEditingMedia(true);
+  }
+
+  /** True when they are saved, so Done knows it can close. */
+  async function saveLinks(): Promise<boolean> {
+    if (!recipe) return false;
     setPhotosBusy(true);
-    setVideoError(null);
+    setLinksError(null);
     try {
-      setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/video`, { videoUrl: url }));
-      setVideoDraft('');
+      const saved = await api<Recipe>('PUT', `/api/recipes/${recipe.id}/links`, { links: fromDraftLinks(linkDrafts) });
+      setRecipe(saved);
+      // Back as the server keeps them — https:// added, repeats gone — so what is on screen is what was saved.
+      setLinkDrafts(toDraftLinks(saved.links));
+      return true;
     } catch (err) {
       // Said next to the field. Setting the page error here replaced the whole recipe with it.
-      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
-      setVideoError(message ?? 'Could not save that link.');
+      setLinksError(err instanceof Error ? err.message : 'Could not save those links.');
+      return false;
     } finally {
       setPhotosBusy(false);
     }
@@ -206,8 +220,14 @@ export default function RecipeDetailPage() {
   const total = totalMinutes(recipe);
   const steps = instructionSteps(recipe.instructions);
 
+  // The first video gets the big "Watch on …" button; every other link is listed underneath.
+  const featuredVideo = recipe.links.find((l) => isVideoLink(l.url) && isSafeLink(l.url)) ?? null;
+  const otherLinks = recipe.links.filter((l) => l !== featuredVideo && isSafeLink(l.url));
+  const linksChanged =
+    JSON.stringify(fromDraftLinks(linkDrafts)) !== JSON.stringify(recipe.links.map((l) => ({ url: l.url, label: l.label })));
+
   const photoManager = mine && (
-    <Card title="Photos & video">
+    <Card title="Photos & links">
       {recipe.photoIds.length === 0 ? (
         <p className="mb-3 text-sm text-muted">No photos yet.</p>
       ) : (
@@ -252,40 +272,24 @@ export default function RecipeDetailPage() {
       </ImagePicker>
 
       <div className="mt-4 border-t border-line pt-3">
-        <Field label="Video link" hint="Paste a TikTok (or any) video link.">
-          <div className="flex gap-2">
-            <Input
-              type="url"
-              inputMode="url"
-              placeholder="https://www.tiktok.com/..."
-              value={videoDraft || recipe.videoUrl || ''}
-              onChange={(e) => setVideoDraft(e.target.value)}
-              aria-label="Video link"
-            />
-            <Button variant="secondary" disabled={photosBusy} onClick={() => saveVideo(videoDraft.trim())}>
-              Save
-            </Button>
-          </div>
-        </Field>
-        {videoError && <ErrorText>{videoError}</ErrorText>}
-        {recipe.videoUrl && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-1 text-danger"
-            disabled={photosBusy}
-            onClick={() => {
-              setVideoDraft('');
-              saveVideo('');
-            }}
-          >
-            Remove video
-          </Button>
-        )}
+        <h3 className="font-semibold">Links</h3>
+        <p className="text-sm text-muted">Where it came from, a video of it being made — as many as you like.</p>
+        <LinksEditor value={linkDrafts} onChange={setLinkDrafts} />
+        {linksError && <ErrorText>{linksError}</ErrorText>}
       </div>
 
-      <Button full variant="secondary" className="mt-4" onClick={() => setEditingMedia(false)}>
-        Done
+      {/* One button: with links changed it saves them and closes, so there is never a "Done"
+          beside a "Save" leaving people to wonder whether Done throws their edits away. */}
+      <Button
+        full
+        variant={linksChanged ? 'primary' : 'secondary'}
+        className="mt-4"
+        disabled={photosBusy}
+        onClick={async () => {
+          if (!linksChanged || (await saveLinks())) setEditingMedia(false);
+        }}
+      >
+        {linksChanged ? 'Save links' : 'Done'}
       </Button>
     </Card>
   );
@@ -329,7 +333,7 @@ export default function RecipeDetailPage() {
                     onSelect: openSharing,
                   },
                   { label: recipe.section ? 'Organize' : 'Save to my recipes', onSelect: startOrganizing },
-                  mine && { label: 'Photos & video', onSelect: () => setEditingMedia(true) },
+                  mine && { label: 'Photos & links', onSelect: startEditingMedia },
                   { label: 'Index card', onSelect: () => setAsCard(true) },
                 ]}
               />
@@ -374,16 +378,6 @@ export default function RecipeDetailPage() {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            {recipe.sourceUrl && (
-              <a
-                href={recipe.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-block break-all text-sm font-medium text-accent underline"
-              >
-                {recipe.sourceUrl}
-              </a>
-            )}
           </div>
 
           {planned && (
@@ -407,19 +401,42 @@ export default function RecipeDetailPage() {
                   Save to my recipes
                 </Button>
               )}
-              {isSafeLink(recipe.videoUrl) && (
+              {featuredVideo && (
                 <a
-                  href={recipe.videoUrl!}
+                  href={featuredVideo.url}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="press flex min-h-touch items-center justify-center gap-2 rounded-xl bg-elevated px-4
                              font-semibold text-ink"
                 >
                   <PlayIcon className="h-5 w-5" />
-                  Watch on {videoHostLabel(recipe.videoUrl!)}
+                  <FeaturedVideoName link={featuredVideo} />
                 </a>
               )}
             </div>
+          )}
+
+          {!editingMedia && otherLinks.length > 0 && (
+            <Card
+              title="Links"
+              actions={
+                mine && (
+                  <Button size="sm" variant="ghost" onClick={startEditingMedia}>
+                    Edit
+                  </Button>
+                )
+              }
+            >
+              <LinkList links={otherLinks} />
+            </Card>
+          )}
+
+          {/* With no list to put an Edit on, the way in to adding one would be behind •••. */}
+          {!editingMedia && mine && otherLinks.length === 0 && (
+            <Button size="sm" variant="ghost" className="-ml-3" onClick={startEditingMedia}>
+              <PlusIcon className="h-4 w-4" />
+              Add link
+            </Button>
           )}
 
           {organizing && draft && activeHouseholdId && (

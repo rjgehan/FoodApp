@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { api, imageUrl } from '../api/client';
-import type { Recipe, RecipeSection } from '../api/types';
+import type { Recipe, RecipeSection, SourceLink } from '../api/types';
 import UnitInput from './UnitInput';
-import { Button, Chip, Field, IconButton, Input, NumberInput, Textarea } from './ui';
+import { Button, Chip, ErrorText, Field, IconButton, Input, NumberInput, Textarea } from './ui';
 import { PlusIcon, TrashIcon } from './icons';
 import ImagePicker from './ImagePicker';
 import RecipeClassifier from './RecipeClassifier';
+import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from './LinksEditor';
 import { SECTION_OPTIONS, DEFAULT_FILING, type Filing } from '../utils/recipeMeta';
 import { splitAmount } from '../utils/amount';
 
@@ -28,6 +29,8 @@ export interface RecipeDraft {
   cookTimeMinutes: number | null;
   servings: number;
   ingredients: { ingredientName: string; quantity: number | null; unit: string }[];
+  /** Where it was read from, when it came off a link. */
+  links?: SourceLink[] | null;
 }
 
 /**
@@ -83,16 +86,16 @@ export default function RecipeForm({
   // Opened by default when editing: if any of it is already filled in, hiding it would look
   // like the edit form had quietly dropped the values.
   const [showExtras, setShowExtras] = useState(
-    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes
-      || recipe?.coverImageId || recipe?.videoUrl),
+    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes || recipe?.coverImageId),
   );
   const [description, setDescription] = useState(seed?.description ?? '');
   const [prep, setPrep] = useState<number | null>(seed?.prepTimeMinutes ?? null);
   const [cook, setCook] = useState<number | null>(seed?.cookTimeMinutes ?? null);
   const [coverImageId, setCoverImageId] = useState<string | null>(recipe?.coverImageId ?? null);
-  const [videoUrl, setVideoUrl] = useState(recipe?.videoUrl ?? '');
+  const [links, setLinks] = useState<DraftLink[]>(() => toDraftLinks(seed?.links));
 
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function updateIngredient(index: number, patch: Partial<DraftIngredient>) {
     setIngredients((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -120,6 +123,7 @@ export default function RecipeForm({
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       const payload = {
         name: name.trim(),
@@ -129,7 +133,9 @@ export default function RecipeForm({
         cookTimeMinutes: cook,
         servings: servings ?? 1,
         coverImageId,
-        videoUrl: videoUrl.trim() || null,
+        // The whole list, every time: sending it is what tells the server this form knows
+        // about links, so leaving one out removes it rather than being taken as "unchanged".
+        links: fromDraftLinks(links),
         ...filing,
         ingredients: ingredients
           .filter((i) => i.ingredientName.trim())
@@ -140,6 +146,9 @@ export default function RecipeForm({
           ? await api<Recipe>('PUT', `/api/recipes/${recipe.id}`, payload)
           : await api<Recipe>('POST', `/api/households/${householdId}/recipes`, payload),
       );
+    } catch (err) {
+      // A link the server will not keep is the likeliest reason, and it says which in a sentence.
+      setError(err instanceof Error ? err.message : 'Could not save the recipe.');
     } finally {
       setSaving(false);
     }
@@ -239,6 +248,12 @@ export default function RecipeForm({
       </section>
 
       <section>
+        <h2 className="text-lg font-semibold">Links</h2>
+        <p className="mb-1 text-sm text-muted">Where it came from, a video of it being made — as many as you like.</p>
+        <LinksEditor value={links} onChange={setLinks} />
+      </section>
+
+      <section>
         <h2 className="mb-2 text-lg font-semibold">Filed under</h2>
         <div className="flex flex-wrap gap-2">
           {SECTION_OPTIONS.map((s) => (
@@ -253,7 +268,7 @@ export default function RecipeForm({
         {!showExtras ? (
           <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setShowExtras(true)}>
             <PlusIcon className="h-4 w-4" />
-            Photo, times, video, groups
+            Photo, times, groups
           </Button>
         ) : (
           <div className="space-y-4">
@@ -271,15 +286,6 @@ export default function RecipeForm({
 
             <Field label="A line about it">
               <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-            </Field>
-            <Field label="Video link" hint="A TikTok of it being made, say.">
-              <Input
-                type="url"
-                inputMode="url"
-                placeholder="https://www.tiktok.com/..."
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-              />
             </Field>
             <div className="flex gap-3">
               <Field label="Prep (min)">
@@ -300,6 +306,7 @@ export default function RecipeForm({
         )}
       </section>
 
+      {error && <ErrorText>{error}</ErrorText>}
       <Button type="submit" full size="lg" disabled={saving || !name.trim()}>
         {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}
       </Button>
