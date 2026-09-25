@@ -46,6 +46,10 @@ xcrun simctl launch <udid> cloud.gehan.mealplanner \
   -mp_debug_tab groceries          # plan | recipes | groceries | household | gallery
 ```
 
+`-mp_debug_screen edit|detail|settings|household` opens that sheet on top, and `-mp_debug_screen
+day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to show the
+first dish's actions.
+
 Both hooks are inside `#if DEBUG`, so a release build has neither.
 
 ## Where the server is
@@ -69,3 +73,9 @@ MealPlanner/
 
 The project uses a synchronized folder group, so a new `.swift` file under `MealPlanner/` is
 picked up with no project edit and nothing to merge.
+
+## Where the phone still differs from the web
+
+- **Change on the day sheet** swaps a dish for a recipe. On the web it can also swap to a single
+  cupboard item or a place; on the phone that is Remove, then Add. Only recipes can be added from
+  the phone's day sheet so far, so Change matches what Add can do.

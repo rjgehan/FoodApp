@@ -80,10 +80,42 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
     let mealType: MealType
     let recipeId: UUID?
     let recipeName: String?
+    /// A recipe saved with just its name: planned, but it adds nothing to the list yet.
+    /// Optional only because an older server did not send it.
+    let needsIngredients: Bool?
+    let placeId: UUID?
     let placeName: String?
     let itemName: String?
+    /// For a single item: whether the cupboard has it, and whether it is running low.
+    let inCupboard: Bool?
+    let runningLow: Bool?
     let time: String?
     let servings: Int?
+    let notes: String?
+    /// Which of the recipe's optional ingredients are being bought this time.
+    let includedOptionalIngredientIds: [UUID]?
+
+    /// Everything past the basics defaults, so the sample data does not have to spell it out.
+    init(id: UUID, date: String, mealType: MealType, recipeId: UUID?, recipeName: String?,
+         needsIngredients: Bool? = nil, placeId: UUID? = nil, placeName: String?, itemName: String?,
+         inCupboard: Bool? = nil, runningLow: Bool? = nil, time: String?, servings: Int?,
+         notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil) {
+        self.id = id
+        self.date = date
+        self.mealType = mealType
+        self.recipeId = recipeId
+        self.recipeName = recipeName
+        self.needsIngredients = needsIngredients
+        self.placeId = placeId
+        self.placeName = placeName
+        self.itemName = itemName
+        self.inCupboard = inCupboard
+        self.runningLow = runningLow
+        self.time = time
+        self.servings = servings
+        self.notes = notes
+        self.includedOptionalIngredientIds = includedOptionalIngredientIds
+    }
 
     /** What the web calls entryLabel: a meal is a recipe, a place, or a bare item. */
     var label: String { recipeName ?? placeName ?? itemName ?? "Something" }

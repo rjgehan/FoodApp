@@ -165,11 +165,28 @@ struct AddToPlanSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var day = Date()
-    @State private var meal: MealType = .dinner
+    @State private var meal: MealType
+    /// Which optional ingredients to buy this time. None, unless somebody ticks them.
+    @State private var extras: Set<UUID> = []
     @State private var busy = false
     @State private var error: String?
 
+    init(recipe: Recipe, session: Session?, onPlanned: @escaping (String) -> Void) {
+        self.recipe = recipe
+        self.session = session
+        self.onPlanned = onPlanned
+        // The meal it most likely goes on, from where it is filed — the web's MEAL_FOR_SECTION.
+        let likely: MealType = switch recipe.section {
+        case .breakfast: .breakfast
+        case .lunch: .lunch
+        case .snacks, .drinks: .snack
+        case .dinner, .other, nil: .dinner
+        }
+        _meal = State(initialValue: likely)
+    }
+
     private var days: [Date] { (0..<14).map { Day.adding($0, to: Date()) } }
+    private var optional: [RecipeIngredient] { recipe.ingredients.filter(\.optional) }
 
     var body: some View {
         NavigationStack {
@@ -207,6 +224,17 @@ struct AddToPlanSheet: View {
                     .pickerStyle(.segmented)
                 }
 
+                if !optional.isEmpty {
+                    Section("Buying the optional extras?") {
+                        ForEach(optional) { ingredient in
+                            OptionalExtraRow(ingredient: ingredient, isOn: extras.contains(ingredient.id)) {
+                                if extras.contains(ingredient.id) { extras.remove(ingredient.id) }
+                                else { extras.insert(ingredient.id) }
+                            }
+                        }
+                    }
+                }
+
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }
@@ -232,7 +260,9 @@ struct AddToPlanSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        // Full height from the start when there are extras to tick: at .medium the Add button
+        // sat under the sheet's corner with one extra and off the screen with two.
+        .presentationDetents(optional.isEmpty ? [.medium] : [.large])
     }
 
     private func label(for date: Date) -> String {
@@ -253,7 +283,11 @@ struct AddToPlanSheet: View {
                 household: household,
                 date: Day.iso(day),
                 meal: meal,
-                recipeId: recipe.id
+                recipeId: recipe.id,
+                // The household's usual number, like the web; the recipe's own if the server
+                // has not said.
+                servings: session?.defaultServings ?? recipe.servings,
+                includedOptionalIngredientIds: Array(extras)
             )
             onPlanned("\(label(for: day)) · \(meal.title)")
             dismiss()

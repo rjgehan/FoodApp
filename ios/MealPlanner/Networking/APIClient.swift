@@ -235,6 +235,12 @@ actor APIClient {
         try await get("/api/households/\(household.uuidString)/recipes")
     }
 
+    /// One recipe. The household says whose filing to show it with, when it is shared.
+    func recipe(_ id: UUID, household: UUID?) async throws -> Recipe {
+        let query = household.map { "?householdId=\($0.uuidString)" } ?? ""
+        return try await get("/api/recipes/\(id.uuidString)\(query)")
+    }
+
     /// Reads a recipe off a link: the page's own structured data, or TikTok's caption.
     func importRecipe(household: UUID, url: String) async throws -> ImportedRecipe {
         try await send("POST", "/api/households/\(household.uuidString)/recipes/import", body: ["url": url])
@@ -359,12 +365,46 @@ actor APIClient {
         date: String,
         meal: MealType,
         recipeId: UUID? = nil,
-        itemName: String? = nil
+        itemName: String? = nil,
+        servings: Int? = nil,
+        includedOptionalIngredientIds: [UUID] = []
     ) async throws -> MealPlanEntry {
         var body: [String: Any] = ["date": date, "mealType": meal.rawValue]
-        if let recipeId { body["recipeId"] = recipeId.uuidString }
+        if let recipeId {
+            body["recipeId"] = recipeId.uuidString
+            // Servings are about cooking, so only a recipe carries them. Left out, the server
+            // uses the household's usual number.
+            if let servings { body["servings"] = servings }
+            body["includedOptionalIngredientIds"] = includedOptionalIngredientIds.map(\.uuidString)
+        }
         if let itemName { body["itemName"] = itemName }
         return try await send("POST", "/api/households/\(household.uuidString)/meal-plan/entries", body: body)
+    }
+
+    /// How many a planned dish is for. Nothing else about the entry changes.
+    @discardableResult
+    func setPlanServings(household: UUID, entry: UUID, servings: Int) async throws -> MealPlanEntry {
+        try await send("PATCH", "/api/households/\(household.uuidString)/meal-plan/entries/\(entry.uuidString)",
+                       body: ["servings": servings])
+    }
+
+    /// Swaps the dish on a planned slot for another recipe, keeping its day, meal and servings.
+    /// The extras are always sent, because the old recipe's choices mean nothing on the new one.
+    @discardableResult
+    func changePlannedRecipe(
+        household: UUID,
+        entry: UUID,
+        recipeId: UUID,
+        includedOptionalIngredientIds: [UUID],
+        servings: Int? = nil
+    ) async throws -> MealPlanEntry {
+        var body: [String: Any] = [
+            "recipeId": recipeId.uuidString,
+            "includedOptionalIngredientIds": includedOptionalIngredientIds.map(\.uuidString),
+        ]
+        if let servings { body["servings"] = servings }
+        return try await send("PATCH", "/api/households/\(household.uuidString)/meal-plan/entries/\(entry.uuidString)",
+                              body: body)
     }
 
     func removeFromPlan(household: UUID, entry: UUID) async throws {

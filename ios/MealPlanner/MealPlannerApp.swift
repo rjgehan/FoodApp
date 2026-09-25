@@ -82,7 +82,9 @@ struct RootView: View {
     }()
 
     /// -mp_debug_screen "edit", "detail", "settings" or "household" opens that screen straight
-    /// run can see something that otherwise needs three taps to reach. With -mp_debug_tab.
+    /// away, so a screenshot run can see something that otherwise needs three taps to reach.
+    /// "day" is handled by PlanView: today's day sheet, and -mp_debug_expand 1 opens its first
+    /// dish's actions. With -mp_debug_tab.
     #if DEBUG
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
     #endif
