@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { CupboardItem, GroceryCategory } from '../api/types';
@@ -11,6 +11,9 @@ import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
 import UnitInput from '../components/UnitInput';
 import ScanToCupboard from '../components/ScanToCupboard';
+
+/* The rows hold the card's 16px padding, so the separators start and stop where the padding does. */
+const CARD_ROW_INSET = { '--row-inset': '1rem', '--row-inset-end': '1rem' } as CSSProperties;
 
 function byName(a: CupboardItem, b: CupboardItem) {
   return a.name.localeCompare(b.name);
@@ -172,9 +175,23 @@ export default function CupboardPage() {
       ) : (
         groups.map(({ category, items: rows }) => (
           <Card key={category?.id ?? 'unsorted'} title={category?.name ?? 'Unsorted'}>
-            <ul className="card inset-rows px-4">
+            {/*
+              * The rows run to the card's edges and carry its padding themselves, so a tap or a
+              * swipe on the outer strip of a row reaches the row instead of the card.
+              */}
+            <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
               {rows.map((item) => {
                 const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
+                // "Always have" means it is never low, so there is nothing to toggle.
+                const trailing = item.quantity != null ? (
+                  <QuantityStepper
+                    quantity={item.quantity}
+                    unit={item.unit}
+                    onAdjust={(delta) => adjustQuantity(item, delta)}
+                  />
+                ) : (
+                  !item.staple && <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
+                );
                 return (
                   <li key={item.id}>
                     <SwipeRow
@@ -183,26 +200,21 @@ export default function CupboardPage() {
                         { label: 'Remove', tone: 'danger', onAction: () => remove(item) },
                       ]}
                     >
-                      <div className="flex items-center gap-2 py-2">
+                      {/* With nothing on the right, the button reaches the card's right edge too. */}
+                      <div className={cx('flex items-center gap-2 py-2', trailing && 'pr-4')}>
                         <button
                           type="button"
                           onClick={() => setEditing(item)}
-                          className="flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-elevated/60"
+                          className={cx(
+                            'flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-elevated/60',
+                            trailing ? 'pl-4' : 'px-4',
+                          )}
                           aria-label={`Edit ${item.name}`}
                         >
                           <span className="block truncate">{item.name}</span>
                           {detail && <span className="block truncate text-[0.8125rem] text-muted">{detail}</span>}
                         </button>
-                        {item.quantity != null ? (
-                          <QuantityStepper
-                            quantity={item.quantity}
-                            unit={item.unit}
-                            onAdjust={(delta) => adjustQuantity(item, delta)}
-                          />
-                        ) : (
-                          // "Always have" means it is never low, so there is nothing to toggle.
-                          !item.staple && <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
-                        )}
+                        {trailing}
                       </div>
                     </SwipeRow>
                   </li>

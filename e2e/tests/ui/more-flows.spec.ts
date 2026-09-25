@@ -113,6 +113,50 @@ test('cupboard: Low is a one-tap toggle', async ({ page }) => {
     (await call('GET', `/api/households/${hh.id}/cupboard`, { token: owner.token }))[0].runningLow).toBe(true);
 });
 
+test('groceries and cupboard: the outer edges of a row are part of the row', async ({ page }) => {
+  // The rows sit on a card. When the card held the padding, a thumb on the outer strip of a
+  // row — about where the circle is — tapped the card and nothing happened.
+  const hh = await newHousehold();
+  const owner = await admin();
+  await call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: owner.token, body: { ingredientName: 'limes' } });
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'rice' } });
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'salt', staple: true } });
+  await signIn(page, hh.owner, hh.id);
+
+  await page.goto('/grocery-list');
+  const edgesOf = async (text: string) => {
+    const row = page.getByText(text, { exact: true });
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(150);
+    const card = (await page.locator('ul.card', { hasText: text }).boundingBox())!;
+    const y = (await row.boundingBox())!.y + 10;
+    return { left: card.x + 4, right: card.x + card.width - 4, y };
+  };
+  const limes = await edgesOf('limes');
+  await page.mouse.click(limes.left, limes.y);
+  await expect(page.getByText(/In the cart · 1/)).toBeVisible();
+  await expect.poll(async () => find(await groceries(hh.id), 'limes')?.checked).toBe(true);
+
+  // Unticking it from the cart, then ticking it again from the far edge of its card.
+  await page.getByRole('button', { name: /limes/ }).click();
+  await expect(page.getByText(/In the cart/)).toHaveCount(0);
+  const again = await edgesOf('limes');
+  await page.mouse.click(again.right, again.y);
+  await expect(page.getByText(/In the cart · 1/)).toBeVisible();
+
+  await page.goto('/cupboard');
+  const rice = await edgesOf('rice');
+  await page.mouse.click(rice.left, rice.y);
+  await expect(sheet(page).getByText('Edit rice')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet(page)).toHaveCount(0);
+
+  // An "Always have" row has nothing on its right, so its right edge is the row too.
+  const salt = await edgesOf('salt');
+  await page.mouse.click(salt.right, salt.y);
+  await expect(sheet(page).getByText('Edit salt')).toBeVisible();
+});
+
 test('groceries: Move an item to another aisle and it sticks', async ({ page }) => {
   const hh = await newHousehold();
   const owner = await admin();

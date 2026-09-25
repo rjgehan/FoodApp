@@ -149,7 +149,8 @@
 
   /*
    * iOS separators start where the text starts, not at the screen edge. Set --row-inset on the
-   * list to the width of whatever leads each row (a checkbox, an icon).
+   * list to the width of whatever leads each row (a checkbox, an icon). A list whose rows carry
+   * their own side padding sets --row-inset-end too, so the line stops where the text does.
    */
   .inset-rows > * {
     position: relative;
@@ -158,7 +159,7 @@
     content: '';
     position: absolute;
     top: 0;
-    right: 0;
+    right: var(--row-inset-end, 0px);
     left: var(--row-inset, 0px);
     z-index: 1;
     border-top: 0.5px solid rgb(var(--line));
@@ -203,10 +204,34 @@
       0 1px 0.5px rgb(0 0 0 / 0.03);
   }
 
+  /*
+   * A card whose rows run to its edges (so the edges are part of each row's tap and swipe).
+   * Clipped so a swipe's red button takes the card's rounded corners. Isolated so the hairline
+   * below stacks against the rows, not against the rest of the page.
+   */
+  .card-rows {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
   @media (prefers-color-scheme: dark) {
     /* Shadows do not read on black; a hairline is what separates a card from the page. */
     .card {
       box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+    }
+    /*
+     * An inset shadow paints under the card's children, and edge-to-edge rows are opaque, so
+     * they would cover it. Draw the same hairline over them instead.
+     */
+    .card-rows::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+      pointer-events: none;
     }
   }
 

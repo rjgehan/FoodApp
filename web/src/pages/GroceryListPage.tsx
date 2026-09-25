@@ -29,6 +29,12 @@ import SwipeRow from '../components/SwipeRow';
 
 /* Separators start after the checkbox: 24px circle + 12px gap. */
 const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
+/*
+ * On a card the rows run to its edges and carry the card's 16px padding inside them. When the
+ * card held the padding, a tap on the outer strip of a row — where a thumb reaching for the
+ * circle often lands — hit the card and did nothing, and a swipe started there never began.
+ */
+const CARD_ROW_INSET = { '--row-inset': '3.25rem', '--row-inset-end': '1rem' } as CSSProperties;
 
 export default function GroceryListPage() {
   const { activeHouseholdId, groceryCategories } = useHousehold();
@@ -234,7 +240,7 @@ export default function GroceryListPage() {
           {groups.map(({ category, items: rows }) => (
             <section key={category?.id ?? 'unsorted'}>
               <SubHeading>{category?.name ?? 'Unsorted'}</SubHeading>
-              <ul className="card inset-rows px-4" style={ROW_INSET}>
+              <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
                 {rows.map((item) => (
                   <li key={item.id}>
                     <ItemRow
@@ -259,7 +265,8 @@ export default function GroceryListPage() {
                   Done shopping
                 </Button>
               </div>
-              <ul className="inset-rows" style={ROW_INSET}>
+              {/* A card like the aisles above. Without one, each row's opaque cover was a white stripe across the well. */}
+              <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
                 {inCart.map((item) => (
                   <li key={item.id}>
                     <ItemRow
@@ -352,6 +359,7 @@ function ItemRow({
     .join(' · ');
   // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
   const have = item.inCupboard && !item.checked;
+  const picking = moving && !!item.ingredientId;
 
   const row = (
     <div className="flex items-center gap-1">
@@ -360,7 +368,12 @@ function ItemRow({
         type="button"
         onClick={() => onToggle(item)}
         aria-pressed={item.checked}
-        className="flex min-h-touch min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
+        className={cx(
+          'flex min-h-touch min-w-0 flex-1 items-center gap-3 py-2.5 text-left',
+          // The row holds its card's padding, so both edges are part of the tap — except the right
+          // one where the bin or the aisle picker sits.
+          picking ? 'pl-4' : 'px-4 [@media(hover:hover)]:pr-0',
+        )}
       >
         <CheckCircle checked={item.checked} />
         {/*
@@ -378,9 +391,9 @@ function ItemRow({
           </span>
         )}
       </button>
-      {moving && item.ingredientId ? (
+      {picking ? (
         <Select
-          className="h-9 w-36 shrink-0 text-sm"
+          className="mr-4 h-9 w-36 shrink-0 text-sm"
           value={item.categoryId ?? ''}
           onChange={(e) => onMove(item, e.target.value)}
           aria-label={`Aisle for ${item.name}`}
@@ -401,7 +414,7 @@ function ItemRow({
       ) : (
         <IconButton
           label={`Remove ${item.name}`}
-          className="hidden text-subtle [@media(hover:hover)]:inline-flex"
+          className="mr-4 hidden text-subtle [@media(hover:hover)]:inline-flex"
           onClick={() => onRemove(item.id)}
         >
           <TrashIcon className="h-5 w-5" />
