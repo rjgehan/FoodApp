@@ -4,12 +4,14 @@ import { api, ApiError } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { ActionMenu, Button, Card, Chip, EmptyState, ErrorText, Field, Input, Sheet } from '../components/ui';
-import { ChevronLeftIcon } from '../components/icons';
+import { ChevronLeftIcon, PlusIcon } from '../components/icons';
 import RecipeGrid from '../components/RecipeGrid';
 import { PageTitle } from '../components/PageTitle';
 import { SHARED_KEY, sectionFromSlug, sectionLabel } from '../utils/recipeMeta';
+import { iconByKey } from '../components/FoodIcons';
 import { buildTree, isIn, suggestGroup, suggestSplit, type CategoryTree } from '../utils/categoryTree';
 import GroupTree from '../components/GroupTree';
+import IconPicker from '../components/IconPicker';
 
 function errorMessage(err: unknown, fallback: string): string {
   return (err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null) ?? fallback;
@@ -96,6 +98,8 @@ export default function RecipeSectionPage() {
   }
 
   const drawerName = isShared ? 'Shared with you' : sectionLabel(section);
+  // A recipe started from in here is filed in here — the drawer, and the group you are in.
+  const addHere = `/recipes/new?${new URLSearchParams({ section: section ?? '', ...(groupId ? { group: groupId } : {}) })}`;
 
   function goTo(id: string | null) {
     setParams(id ? { group: id } : {});
@@ -139,14 +143,23 @@ export default function RecipeSectionPage() {
         onBack={() => (group ? goTo(parent?.id ?? null) : navigate('/recipes'))}
         title={group?.name ?? drawerName}
         action={
-          <ActionMenu
-            label={group ? `Options for ${group.name}` : `Options for ${drawerName}`}
-            title={group?.name ?? drawerName}
-            items={[
-              { label: group ? `Add a group inside ${group.name}` : 'Add a group', onSelect: () => setAdding(true) },
-              group && { label: 'Rename or delete', onSelect: () => setEditing(true) },
-            ]}
-          />
+          <div className="flex items-center gap-1">
+            <Link
+              to={addHere}
+              className="flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent pl-2.5 pr-3.5 text-sm font-medium text-accent-ink active:opacity-80"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Add recipe
+            </Link>
+            <ActionMenu
+              label={group ? `Options for ${group.name}` : `Options for ${drawerName}`}
+              title={group?.name ?? drawerName}
+              items={[
+                { label: group ? `Add a group inside ${group.name}` : 'Add a group', onSelect: () => setAdding(true) },
+                group && { label: 'Edit group', onSelect: () => setEditing(true) },
+              ]}
+            />
+          </div>
         }
       />
 
@@ -168,7 +181,14 @@ export default function RecipeSectionPage() {
       {recipes === null ? (
         <Loading />
       ) : here.length === 0 && allChildren.length === 0 ? (
-        <Empty text={group ? `Nothing from ${drawerName} in ${group.name} yet.` : 'Nothing filed here yet.'} />
+        <Card>
+          <EmptyState>
+            {group ? `Nothing from ${drawerName} in ${group.name} yet.` : 'Nothing filed here yet.'}{' '}
+            <Link to={addHere} className="font-medium text-accent underline">
+              Add a recipe
+            </Link>
+          </EmptyState>
+        </Card>
       ) : sorting ? (
         <SortList
           householdId={activeHouseholdId}
@@ -183,7 +203,11 @@ export default function RecipeSectionPage() {
           {/* Groups but no recipes yet — a new household. The groups are what there is to see. */}
           {here.length === 0 && (
             <p className="text-[0.9375rem] text-muted">
-              Nothing filed in {group?.name ?? drawerName} yet. Add a recipe, or open a group.
+              Nothing filed in {group?.name ?? drawerName} yet.{' '}
+              <Link to={addHere} className="font-medium text-accent underline">
+                Add a recipe
+              </Link>
+              , or open a group.
             </p>
           )}
           {splits.length > 0 && (
@@ -247,6 +271,7 @@ export default function RecipeSectionPage() {
             setEditing(false);
             await load();
           }}
+          onIconChanged={load}
           onDeleted={async () => {
             setEditing(false);
             goTo(parent?.id ?? null);
@@ -271,12 +296,14 @@ function Header({
 }) {
   return (
     <div>
+      {/* The back label gives way to the actions: a long parent's name is cut short on one line
+          rather than wrapping into the title, and "Add recipe" never folds in half. */}
       <div className="flex items-center justify-between gap-2">
-        <Button variant="ghost" size="sm" className="-ml-3" onClick={onBack}>
-          <ChevronLeftIcon className="h-5 w-5" />
-          {backLabel}
+        <Button variant="ghost" size="sm" className="-ml-3 min-w-0" onClick={onBack}>
+          <ChevronLeftIcon className="h-5 w-5 shrink-0" />
+          <span className="truncate">{backLabel}</span>
         </Button>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       <PageTitle title={title} />
     </div>
@@ -503,8 +530,11 @@ export function AddGroup({
   onCancel: () => void;
 }) {
   const [name, setName] = useState('');
+  const [iconKey, setIconKey] = useState<string | null>(null);
+  const [choosingIcon, setChoosingIcon] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const Chosen = iconByKey(iconKey)?.Icon;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -517,6 +547,7 @@ export function AddGroup({
         parentId: parent?.id ?? null,
         // A group inside another joins its drawer; a top-level one joins the drawer it is made in.
         section: parent ? null : section,
+        iconKey,
       });
       await onAdded();
     } catch (err) {
@@ -540,6 +571,22 @@ export function AddGroup({
           </Button>
         </div>
       </Field>
+      {/* Optional, and folded away so a quick "Add" is still just a name. */}
+      {choosingIcon ? (
+        <IconPicker
+          allowNone
+          value={iconKey}
+          onChange={(key) => {
+            setIconKey(key);
+            setChoosingIcon(false);
+          }}
+        />
+      ) : (
+        <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setChoosingIcon(true)}>
+          {Chosen ? <Chosen className="h-5 w-5" /> : <PlusIcon className="h-4 w-4" />}
+          {Chosen ? 'Change icon' : 'Pick an icon'}
+        </Button>
+      )}
       {error && <ErrorText>{error}</ErrorText>}
       <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={onCancel}>
         Cancel
@@ -548,7 +595,11 @@ export function AddGroup({
   );
 }
 
-/** Rename, or delete — which moves everything in it up a level rather than losing it. */
+/**
+ * Rename, pick its icon, or delete — which moves everything in it up a level rather than losing
+ * it. An icon is saved the moment it is tapped and the sheet stays open, so you can see it on
+ * the tile behind and try another.
+ */
 export function EditGroup({
   householdId,
   group,
@@ -556,6 +607,7 @@ export function EditGroup({
   onClose,
   onAddInside,
   onRenamed,
+  onIconChanged,
   onDeleted,
 }: {
   householdId: string;
@@ -565,9 +617,14 @@ export function EditGroup({
   /** Offered when the sheet was opened from a group card. */
   onAddInside?: () => void;
   onRenamed: () => Promise<void>;
+  /** Reload whatever draws the tile, without closing the sheet. */
+  onIconChanged: () => Promise<void>;
   onDeleted: () => Promise<void>;
 }) {
   const [name, setName] = useState(group.name);
+  const [iconKey, setIconKey] = useState<string | null>(group.iconKey ?? null);
+  // One icon at a time: two taps racing could leave the ring on one and the server on the other.
+  const [savingIcon, setSavingIcon] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -584,6 +641,26 @@ export function EditGroup({
       setError(errorMessage(err, 'Could not rename it.'));
       setBusy(false);
     }
+  }
+
+  async function chooseIcon(key: string | null) {
+    const before = iconKey;
+    setIconKey(key);
+    setSavingIcon(true);
+    setError(null);
+    try {
+      // An empty string is how the server is told to take it off; null would mean "unchanged".
+      await api('PATCH', `/api/households/${householdId}/recipe-categories/${group.id}`, { iconKey: key ?? '' });
+    } catch (err) {
+      setIconKey(before);
+      setError(errorMessage(err, 'Could not change the icon.'));
+      return;
+    } finally {
+      setSavingIcon(false);
+    }
+    // Saved by now, so a reload that fails only leaves the tile behind a moment — not an error
+    // about an icon that did change.
+    await onIconChanged().catch(() => undefined);
   }
 
   async function remove() {
@@ -611,6 +688,10 @@ export function EditGroup({
             </div>
           </Field>
         </form>
+
+        <Field label="Icon">
+          <IconPicker allowNone value={iconKey} onChange={chooseIcon} disabled={busy || savingIcon} />
+        </Field>
 
         {onAddInside && (
           <Button variant="secondary" full onClick={onAddInside}>

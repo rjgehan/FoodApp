@@ -1,4 +1,4 @@
-import type { RecipeSection } from '../api/types';
+import type { RecipeCategory, RecipeSection } from '../api/types';
 
 /** The fixed top level of the catalog, in the order the chooser lists them. */
 export const SECTION_OPTIONS: { value: RecipeSection; label: string }[] = [
@@ -37,3 +37,33 @@ export interface Filing {
 }
 
 export const DEFAULT_FILING: Filing = { section: 'DINNER', categories: [] };
+
+/**
+ * Moving a recipe to another drawer before it is saved. Groups belong to a drawer, and the
+ * server files a recipe by group name, making any it cannot find — so a ticked group left behind
+ * in the old drawer would quietly become a new, empty group of the same name in this one. Those
+ * are set aside in `parked` instead, and ticked again if the recipe moves back to a drawer that
+ * has them. A name the household has no group for anywhere was typed in as a new group, and
+ * goes wherever the recipe goes.
+ */
+export function moveToDrawer(
+  filing: Filing,
+  section: RecipeSection,
+  known: RecipeCategory[],
+  parked: string[],
+): { filing: Filing; parked: string[] } {
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const inDrawer = (name: string) =>
+    known.some((c) => same(c.name, name) && (c.section === null || c.section === section));
+  const isKnown = (name: string) => known.some((c) => same(c.name, name));
+
+  const kept = filing.categories.filter((name) => !isKnown(name) || inDrawer(name));
+  const setAside = filing.categories.filter((name) => !kept.includes(name));
+  const back = parked.filter((name) => inDrawer(name) && !kept.some((k) => same(k, name)));
+  return {
+    filing: { section, categories: [...kept, ...back] },
+    parked: [...parked.filter((name) => !back.includes(name)), ...setAside].filter(
+      (name, i, all) => all.findIndex((other) => same(other, name)) === i,
+    ),
+  };
+}

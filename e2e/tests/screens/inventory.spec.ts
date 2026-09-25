@@ -228,8 +228,8 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'Group — with split suggestion', '', { full: true });
     await page.getByRole('button', { name: /^Options for/ }).click();
     await shot(page, 'Group ••• menu');
-    await sheet(page).getByRole('button', { name: 'Rename or delete' }).click();
-    await shot(page, 'Rename or delete group');
+    await sheet(page).getByRole('button', { name: 'Edit group' }).click();
+    await shot(page, 'Edit group');
   });
   await step('recipe', async () => {
     await page.goto(`/recipes/${parm.id}`);

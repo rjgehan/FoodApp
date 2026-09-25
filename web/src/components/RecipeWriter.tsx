@@ -16,6 +16,7 @@ export function WriteForMe({
   initialName = '',
   initialServings = 4,
   section,
+  groups,
   onSaved,
 }: {
   householdId: string;
@@ -23,6 +24,8 @@ export function WriteForMe({
   initialServings?: number;
   /** Where the finished recipe is filed to begin with. */
   section?: RecipeSection;
+  /** Groups the recipe starts in — see RecipeForm. */
+  groups?: string[];
   onSaved: (recipe: Recipe) => void;
 }) {
   const [name, setName] = useState(initialName);
@@ -71,7 +74,7 @@ export function WriteForMe({
           </Button>
         </Card>
         {/* Keyed on the name so asking twice really does replace the fields. */}
-        <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} onSaved={onSaved} />
+        <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} groups={groups} onSaved={onSaved} />
       </div>
     );
   }

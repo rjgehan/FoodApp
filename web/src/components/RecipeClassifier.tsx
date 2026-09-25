@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { RecipeCategory, RecipeSection } from '../api/types';
 import { Button, Chip, Field, Input } from './ui';
 import { PlusIcon } from './icons';
-import { SECTION_OPTIONS, type Filing } from '../utils/recipeMeta';
+import { SECTION_OPTIONS, moveToDrawer, type Filing } from '../utils/recipeMeta';
 import { buildTree } from '../utils/categoryTree';
 
 /**
@@ -17,21 +17,33 @@ export default function RecipeClassifier({
   value,
   onChange,
   sectionsHidden = false,
+  groups,
 }: {
   householdId: string;
   value: Filing;
   onChange: (next: Filing) => void;
   /** The add-recipe form shows its own drawer picker, so it suppresses this one. */
   sectionsHidden?: boolean;
+  /** The household's groups, when the caller already has them; otherwise they are fetched here. */
+  groups?: RecipeCategory[];
 }) {
-  const [known, setKnown] = useState<RecipeCategory[]>([]);
+  const [fetched, setFetched] = useState<RecipeCategory[]>([]);
+  const known = groups ?? fetched;
   const [draft, setDraft] = useState('');
+  const [parked, setParked] = useState<string[]>([]);
 
   useEffect(() => {
+    if (groups) return;
     api<RecipeCategory[]>('GET', `/api/households/${householdId}/recipe-categories`)
-      .then(setKnown)
-      .catch(() => setKnown([]));
-  }, [householdId]);
+      .then(setFetched)
+      .catch(() => setFetched([]));
+  }, [householdId, groups]);
+
+  function chooseSection(section: RecipeSection) {
+    const moved = moveToDrawer(value, section, known, parked);
+    setParked(moved.parked);
+    onChange(moved.filing);
+  }
 
   // Only this drawer's groups, plus any that belong to every drawer.
   const inSection = useMemo(
@@ -87,7 +99,7 @@ export default function RecipeClassifier({
             <Chip
               key={s.value}
               active={value.section === s.value}
-              onClick={() => onChange({ ...value, section: s.value as RecipeSection })}
+              onClick={() => chooseSection(s.value)}
             >
               {s.label}
             </Chip>

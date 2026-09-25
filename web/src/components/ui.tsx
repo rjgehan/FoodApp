@@ -538,6 +538,8 @@ export function Chip({
   return (
     <button
       type="button"
+      // A chip that can be on or off says which, so a screen reader hears "selected" too.
+      aria-pressed={active}
       className={cx(
         'press shrink-0 rounded-full px-3.5 py-2 text-[0.9375rem] font-medium',
         active ? 'bg-accent text-accent-ink' : 'bg-elevated text-ink',

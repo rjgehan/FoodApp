@@ -186,3 +186,11 @@ export const MoreIcon = (p: SVGProps<SVGSVGElement>) => (
     <circle cx="19" cy="12" r="1.75" />
   </Icon>
 );
+
+/** "Nothing" — a circle struck through, for choosing no picture at all. */
+export const NoneIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M6.5 17.5l11-11" />
+  </Icon>
+);

@@ -18,6 +18,7 @@ export function PasteFromChatGpt({
   initialName = '',
   initialServings = 4,
   section,
+  groups,
   onSaved,
 }: {
   householdId: string;
@@ -25,6 +26,8 @@ export function PasteFromChatGpt({
   initialServings?: number;
   /** Where the finished recipe is filed to begin with. */
   section?: RecipeSection;
+  /** Groups the recipe starts in — see RecipeForm. */
+  groups?: string[];
   onSaved: (recipe: Recipe) => void;
 }) {
   const [dish, setDish] = useState(initialName);
@@ -92,7 +95,7 @@ export function PasteFromChatGpt({
           </Button>
         </Card>
         {/* Keyed on the name so reading a second paste really does replace the fields. */}
-        <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} onSaved={onSaved} />
+        <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} groups={groups} onSaved={onSaved} />
       </div>
     );
   }

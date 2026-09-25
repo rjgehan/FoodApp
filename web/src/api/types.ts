@@ -43,6 +43,8 @@ export interface RecipeCategory {
   parentId: string | null;
   /** The drawer it belongs to; null means it shows in every drawer. */
   section: RecipeSection | null;
+  /** Which of the FoodIcons its tile wears; null (or absent, from an older server) for none. */
+  iconKey?: string | null;
 }
 
 export interface Household {

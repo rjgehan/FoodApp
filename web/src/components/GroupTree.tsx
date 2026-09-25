@@ -2,14 +2,15 @@ import { useState } from 'react';
 import type { RecipeCategory } from '../api/types';
 import type { CategoryTree } from '../utils/categoryTree';
 import { AddGroup, EditGroup } from '../pages/RecipeSectionPage';
-import { cx } from './ui';
 import { coverClass } from '../utils/recipeFormat';
 import { MoreIcon } from './icons';
+import { CATALOG_GRID, CatalogTileFace, catalogTileClass } from './CatalogTile';
 
 /**
- * One level at a time: the groups directly inside the current one, as the same two-up tiles the
- * catalog uses for Breakfast and Dinner. Tapping one opens it — Dinner, then Full meal, then
- * Chicken — and Back walks out the way you came.
+ * One level at a time: the groups directly inside the current one, as the same square tiles the
+ * catalog uses for Breakfast and Dinner — the group's own icon drawn big, if it has one.
+ * Tapping one opens it — Dinner, then Full meal, then Chicken — and Back walks out the way you
+ * came.
  *
  * The whole tree used to be drawn at once, indented. Three levels of that on a phone is a wall
  * of tiles where a group and the groups inside it look alike, and which belongs to which is left
@@ -44,28 +45,24 @@ export default function GroupTree({
 
   return (
     <div>
-      <ul className="grid grid-cols-2 gap-3">
+      <ul className={CATALOG_GRID}>
         {groups.map((node) => {
           const recipes = countFor(node.id);
           const inside = tree.children(node.id).length;
 
           return (
             <li key={node.id} className="relative">
-              <button
-                type="button"
-                onClick={() => onNavigate(node.id)}
-                className={cx(
-                  'flex aspect-[3/2] w-full flex-col justify-end overflow-hidden rounded-2xl p-3 text-left',
-                  'transition-transform active:scale-[0.98]',
-                  coverClass(node.id),
-                )}
-              >
-                <span className="pr-8 text-lg font-semibold leading-tight">{node.name}</span>
-                <span className="text-sm text-muted">
-                  {/* What is inside, in the order you care: the recipes, then whether it opens further. */}
-                  {recipes} {recipes === 1 ? 'recipe' : 'recipes'}
-                  {inside > 0 && ` · ${inside} ${inside === 1 ? 'group' : 'groups'}`}
-                </span>
+              <button type="button" onClick={() => onNavigate(node.id)} className={catalogTileClass(coverClass(node.id))}>
+                <CatalogTileFace
+                  name={node.name}
+                  iconKey={node.iconKey}
+                  cornerButton
+                  detail={
+                    // What is inside, in the order you care: the recipes, then whether it opens further.
+                    `${recipes} ${recipes === 1 ? 'recipe' : 'recipes'}` +
+                    (inside > 0 ? ` · ${inside} ${inside === 1 ? 'group' : 'groups'}` : '')
+                  }
+                />
               </button>
 
               {/* A 44pt target in the corner, drawn as a small dot. */}
@@ -112,6 +109,7 @@ export default function GroupTree({
             setEditingGroup(null);
             await onChanged();
           }}
+          onIconChanged={onChanged}
           onDeleted={async () => {
             setEditingGroup(null);
             await onChanged();

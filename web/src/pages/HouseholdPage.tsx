@@ -4,14 +4,14 @@ import type { RecipeSection } from '../api/types';
 import type { HouseholdMember, Place } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_SECTION_ICONS, FOOD_ICONS, iconByKey } from '../components/FoodIcons';
+import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
+import IconPicker from '../components/IconPicker';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
 import {
   Badge,
   Button,
   Card,
   Chip,
-  cx,
   EmptyState,
   ErrorText,
   Field,
@@ -200,23 +200,8 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
               </button>
 
               {open && (
-                <div className="mt-2 grid grid-cols-6 gap-2">
-                  {FOOD_ICONS.map(({ key, label, Icon: Option }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      title={label}
-                      aria-label={label}
-                      disabled={busy}
-                      onClick={() => choose(s.value, key)}
-                      className={cx(
-                        'flex aspect-square items-center justify-center rounded-xl border transition-colors',
-                        key === current ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted',
-                      )}
-                    >
-                      <Option className="h-6 w-6" />
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <IconPicker value={current} onChange={(key) => key && choose(s.value, key)} disabled={busy} />
                 </div>
               )}
             </li>

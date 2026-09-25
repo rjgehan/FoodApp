@@ -1,13 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api, imageUrl } from '../api/client';
-import type { Recipe, RecipeSection, SourceLink } from '../api/types';
+import type { Recipe, RecipeCategory, RecipeSection, SourceLink } from '../api/types';
 import UnitInput from './UnitInput';
 import { Button, Chip, ErrorText, Field, IconButton, Input, NumberInput, Textarea } from './ui';
 import { PlusIcon, TrashIcon } from './icons';
 import ImagePicker from './ImagePicker';
 import RecipeClassifier from './RecipeClassifier';
 import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from './LinksEditor';
-import { SECTION_OPTIONS, DEFAULT_FILING, type Filing } from '../utils/recipeMeta';
+import { SECTION_OPTIONS, DEFAULT_FILING, moveToDrawer, type Filing } from '../utils/recipeMeta';
 import { splitAmount } from '../utils/amount';
 
 export interface DraftIngredient {
@@ -47,6 +47,7 @@ export default function RecipeForm({
   recipe,
   draft,
   section,
+  groups,
   onSaved,
 }: {
   householdId: string;
@@ -55,6 +56,8 @@ export default function RecipeForm({
   draft?: RecipeDraft;
   /** Where a new recipe is filed to begin with — Breakfast, when made from the breakfast slot. */
   section?: RecipeSection;
+  /** Groups a new recipe starts in — the one you were looking at when you pressed Add recipe. */
+  groups?: string[];
   onSaved: (recipe: Recipe) => void;
 }) {
   // `recipe` means "this already exists, save over it"; `draft` only seeds the fields.
@@ -79,8 +82,32 @@ export default function RecipeForm({
     // A recipe you own is normally filed, but an unfiled one still has to land somewhere.
     recipe
       ? { section: recipe.section ?? DEFAULT_FILING.section, categories: recipe.categories }
-      : { ...DEFAULT_FILING, section: section ?? DEFAULT_FILING.section },
+      : { section: section ?? DEFAULT_FILING.section, categories: groups ?? DEFAULT_FILING.categories },
   );
+  // Groups sit with the drawer, and open when there is already one ticked — a recipe started
+  // from inside Chicken should show Chicken ticked, not hide it behind a button.
+  const [showGroups, setShowGroups] = useState(filing.categories.length > 0);
+  // The household's groups, so changing the drawer knows which ticked ones live in the new one.
+  const [known, setKnown] = useState<RecipeCategory[]>([]);
+  const [parked, setParked] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    api<RecipeCategory[]>('GET', `/api/households/${householdId}/recipe-categories`)
+      .then((all) => live && setKnown(all))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [householdId]);
+
+  // Started from inside Veggie and then moved to Lunch: Veggie is a Dinner group, so it is set
+  // aside rather than made again, empty, in Lunch — and comes back if Dinner is picked again.
+  function chooseSection(section: RecipeSection) {
+    const moved = moveToDrawer(filing, section, known, parked);
+    setParked(moved.parked);
+    setFiling(moved.filing);
+  }
 
   // Everything optional lives behind this, so the first screen is just the recipe.
   // Opened by default when editing: if any of it is already filled in, hiding it would look
@@ -257,18 +284,28 @@ export default function RecipeForm({
         <h2 className="mb-2 text-lg font-semibold">Filed under</h2>
         <div className="flex flex-wrap gap-2">
           {SECTION_OPTIONS.map((s) => (
-            <Chip key={s.value} active={filing.section === s.value} onClick={() => setFiling({ ...filing, section: s.value })}>
+            <Chip key={s.value} active={filing.section === s.value} onClick={() => chooseSection(s.value)}>
               {s.label}
             </Chip>
           ))}
         </div>
+        {showGroups ? (
+          <div className="mt-4">
+            <RecipeClassifier householdId={householdId} value={filing} onChange={setFiling} groups={known} sectionsHidden />
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" size="sm" className="-ml-3 mt-1" onClick={() => setShowGroups(true)}>
+            <PlusIcon className="h-4 w-4" />
+            Put it in a group
+          </Button>
+        )}
       </section>
 
       <section>
         {!showExtras ? (
           <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setShowExtras(true)}>
             <PlusIcon className="h-4 w-4" />
-            Photo, times, groups
+            Photo and times
           </Button>
         ) : (
           <div className="space-y-4">
@@ -295,13 +332,6 @@ export default function RecipeForm({
                 <NumberInput min={0} className="w-24" value={cook} onChange={setCook} />
               </Field>
             </div>
-
-            <RecipeClassifier
-              householdId={householdId}
-              value={filing}
-              onChange={setFiling}
-              sectionsHidden
-            />
           </div>
         )}
       </section>

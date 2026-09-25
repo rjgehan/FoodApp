@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Recipe, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Card, cx, EmptyState, Input } from '../components/ui';
+import { Card, EmptyState, Input } from '../components/ui';
 import { PlusIcon } from '../components/icons';
 import { coverClass } from '../utils/recipeFormat';
 import { SECTION_OPTIONS, SHARED_KEY, sectionSlug } from '../utils/recipeMeta';
-import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
+import { DEFAULT_SECTION_ICONS } from '../components/FoodIcons';
+import { CATALOG_GRID, CatalogTileFace, catalogTileClass } from '../components/CatalogTile';
 import RecipeGrid from '../components/RecipeGrid';
 import { PageTitle } from '../components/PageTitle';
 
@@ -88,28 +89,35 @@ export default function RecipesPage() {
         )
       ) : (
         <>
-          <ul className="grid grid-cols-2 gap-3">
-            {SECTION_OPTIONS.map((s, i) => (
-              <li key={s.value}>
-                <SectionTile
-                  to={`/recipes/section/${sectionSlug(s.value)}`}
-                  label={s.label}
-                  count={all.filter((r) => r.section === s.value).length}
-                  tint={coverClass(String(i))}
-                  iconKey={icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value]}
-                />
-              </li>
-            ))}
+          <ul className={CATALOG_GRID}>
+            {SECTION_OPTIONS.map((s, i) => {
+              const count = all.filter((r) => r.section === s.value).length;
+              return (
+                <li key={s.value}>
+                  <Link to={`/recipes/section/${sectionSlug(s.value)}`} className={catalogTileClass(coverClass(String(i)))}>
+                    <CatalogTileFace
+                      name={s.label}
+                      detail={`${count} ${count === 1 ? 'recipe' : 'recipes'}`}
+                      iconKey={icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value]}
+                    />
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
+          {/* Not a drawer of yours, so it keeps the long plain tile rather than looking like one. */}
           {sharedCount > 0 && (
-            <SectionTile
+            <Link
               to={`/recipes/section/${SHARED_KEY}`}
-              label="Shared with you"
-              count={sharedCount}
-              hint="From other households"
-              wide
-            />
+              className="block min-h-[4.5rem] rounded-2xl bg-elevated p-4 transition-transform active:scale-[0.98]"
+            >
+              <p className="text-lg font-semibold leading-tight">Shared with you</p>
+              <p className="text-sm text-muted">
+                {sharedCount} {sharedCount === 1 ? 'recipe' : 'recipes'}
+              </p>
+              <p className="mt-1 text-xs text-subtle">From other households</p>
+            </Link>
           )}
 
           {all.length === 0 && (
@@ -126,44 +134,5 @@ export default function RecipesPage() {
         </>
       )}
     </div>
-  );
-}
-
-function SectionTile({
-  to,
-  label,
-  count,
-  tint,
-  hint,
-  iconKey,
-  wide = false,
-}: {
-  to: string;
-  label: string;
-  count: number;
-  tint?: string;
-  hint?: string;
-  iconKey?: string;
-  wide?: boolean;
-}) {
-  const Icon = iconByKey(iconKey)?.Icon;
-
-  return (
-    <Link
-      to={to}
-      className={cx(
-        'block overflow-hidden rounded-2xl transition-transform active:scale-[0.98]',
-        tint ?? 'bg-elevated',
-      )}
-    >
-      <div className={cx('flex flex-col justify-end p-4', wide ? 'min-h-[4.5rem]' : 'aspect-[3/2]')}>
-        {Icon && !wide && <Icon className="mb-auto h-9 w-9 text-ink/55" />}
-        <p className="text-lg font-semibold leading-tight">{label}</p>
-        <p className="text-sm text-muted">
-          {count} {count === 1 ? 'recipe' : 'recipes'}
-        </p>
-        {hint && <p className="mt-1 text-xs text-subtle">{hint}</p>}
-      </div>
-    </Link>
   );
 }
