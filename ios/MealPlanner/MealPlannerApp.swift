@@ -106,6 +106,14 @@ struct RootView: View {
                     .tabItem { Label("Explore", systemImage: "safari") }
                     .tag("explore")
             }
+            /*
+             A new household is a new set of tabs. Each tab loads once when it appears, and the
+             switcher is a sheet over it, so the tab never re-appeared: the header said the new
+             house while the plan underneath was still the old one's, and editing it sent the
+             old house's ids to the new house. The id only — a same-house refresh of its
+             settings must not throw away where you were.
+            */
+            .id(session.household?.id)
             #if DEBUG
             .sheet(isPresented: Binding(
                 get: { debugSheet == "edit" },

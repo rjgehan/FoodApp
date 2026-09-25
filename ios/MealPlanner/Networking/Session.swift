@@ -55,7 +55,6 @@ final class Session {
 
     var isSignedIn: Bool { token != nil && household != nil }
 
-    /// Loaded after signing in, and again on resume: someone may have been added to a house.
     /// Sends what a share sheet handed over to the server's import log, where it can be
     /// read later. Best effort: a note that does not arrive costs nothing.
     func noteShare(_ report: String) async {
@@ -63,8 +62,21 @@ final class Session {
         try? await APIClient.shared.noteShare(household: household, report: report)
     }
 
+    /// Loaded at launch and again after every sign-in: the list belongs to whoever is signed
+    /// in, on whichever server they signed in to, and someone may have been added to a house.
     func loadHouseholds() async {
         households = (try? await APIClient.shared.myHouseholds()) ?? []
+        // The sign-in screen's copy of the household has no settings on it; the list's does,
+        // and the plan needs the house's usual servings.
+        if let current = household, let fresh = households.first(where: { $0.id == current.id }), fresh != current {
+            switchTo(fresh)
+        }
+    }
+
+    /// How many this house usually cooks for, when the server has said. Nil lets the server
+    /// fall back to the same number itself.
+    var defaultServings: Int? {
+        household?.defaultServings ?? households.first { $0.id == household?.id }?.defaultServings
     }
 
     func switchTo(_ household: HouseholdSummary) {
@@ -119,12 +131,19 @@ final class Session {
             UserDefaults.standard.set(data, forKey: Self.householdKey)
         }
         await APIClient.shared.use(token: auth.token)
+        /*
+         The switcher top left reads this list, and it used to be filled only at launch — so
+         after signing in, or signing in again on another server, it held nothing (or the last
+         person's houses) and stayed that way until the app was killed and reopened.
+        */
+        await loadHouseholds()
     }
 
     func signOut() async {
         token = nil
         displayName = nil
         household = nil
+        households = []
         TokenStore.clear()
         UserDefaults.standard.removeObject(forKey: Self.householdKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)
