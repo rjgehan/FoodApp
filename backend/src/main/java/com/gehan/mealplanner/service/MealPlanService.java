@@ -6,6 +6,7 @@ import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.Place;
 import com.gehan.mealplanner.domain.Recipe;
+import com.gehan.mealplanner.domain.SavedLink;
 import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
 import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
@@ -36,6 +37,7 @@ public class MealPlanService {
     private final CupboardItemRepository cupboardRepository;
     private final HouseholdService householdService;
     private final IngredientService ingredientService;
+    private final SavedLinkService savedLinkService;
 
     public MealPlanService(MealPlanEntryRepository mealPlanEntryRepository,
                             HouseholdRepository householdRepository,
@@ -43,7 +45,8 @@ public class MealPlanService {
                             PlaceRepository placeRepository,
                             CupboardItemRepository cupboardRepository,
                             HouseholdService householdService,
-                            IngredientService ingredientService) {
+                            IngredientService ingredientService,
+                            SavedLinkService savedLinkService) {
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdRepository = householdRepository;
         this.recipeRepository = recipeRepository;
@@ -51,6 +54,7 @@ public class MealPlanService {
         this.cupboardRepository = cupboardRepository;
         this.householdService = householdService;
         this.ingredientService = ingredientService;
+        this.savedLinkService = savedLinkService;
     }
 
     @Transactional(readOnly = true)
@@ -69,13 +73,16 @@ public class MealPlanService {
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
-        // Exactly one: a dish you cook, a place you go, or a single thing to eat.
+        // Exactly one: a dish you cook, a place you go, a single thing to eat, or a saved link.
         String itemName = blankToNull(request.itemName());
-        int kinds = (request.recipeId() != null ? 1 : 0) + (request.placeId() != null ? 1 : 0) + (itemName != null ? 1 : 0);
+        int kinds = (request.recipeId() != null ? 1 : 0) + (request.placeId() != null ? 1 : 0)
+                + (itemName != null ? 1 : 0) + (request.savedLinkId() != null ? 1 : 0);
         if (kinds != 1) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send one of a recipe, a place or an item.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send one of a recipe, a place, an item or a saved link.");
         }
         Ingredient item = itemName == null ? null : ingredientService.findOrCreate(itemName, null);
+        SavedLink savedLink = request.savedLinkId() == null ? null
+                : savedLinkService.visible(householdId, request.savedLinkId(), requesterId);
 
         boolean alreadyThere = mealPlanEntryRepository
                 .findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(householdId, request.date(), request.mealType())
@@ -84,7 +91,9 @@ public class MealPlanService {
                         ? e.getRecipe() != null && e.getRecipe().getId().equals(request.recipeId())
                         : request.placeId() != null
                                 ? e.getPlace() != null && e.getPlace().getId().equals(request.placeId())
-                                : e.getItem() != null && e.getItem().getId().equals(item.getId()));
+                                : savedLink != null
+                                        ? e.getSavedLink() != null && e.getSavedLink().getId().equals(savedLink.getId())
+                                        : e.getItem() != null && e.getItem().getId().equals(item.getId()));
         if (alreadyThere) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That's already on this meal.");
         }
@@ -96,8 +105,10 @@ public class MealPlanService {
                 .recipe(request.recipeId() == null ? null : requireRecipe(request.recipeId()))
                 .place(request.placeId() == null ? null : requirePlace(request.placeId(), householdId))
                 .item(item)
+                .savedLink(savedLink)
                 .time(request.time())
-                // Servings describe cooking. A table booking or a bowl of strawberries does not have them.
+                // Servings describe cooking. A table booking or a bowl of strawberries does not have
+                // them, and a saved link has no amounts for them to scale.
                 .servings(request.recipeId() == null ? null
                         : request.servings() != null ? request.servings() : household.getDefaultServings())
                 .notes(request.notes())
@@ -122,8 +133,12 @@ public class MealPlanService {
         // A deleted recipe's name is one of those things: once the slot holds something else,
         // "was deleted" is no longer about it.
         String itemName = blankToNull(request.itemName());
-        if (request.recipeId() != null || request.placeId() != null || itemName != null) {
+        if (request.recipeId() != null || request.placeId() != null || itemName != null
+                || request.savedLinkId() != null) {
             entry.setDeletedRecipeName(null);
+            // Whatever it becomes, it is not the saved link any more — including from an older
+            // app, which has never heard of them and only ever sends the other three.
+            entry.setSavedLink(null);
         }
         if (request.recipeId() != null) {
             entry.setRecipe(requireRecipe(request.recipeId()));
@@ -139,6 +154,14 @@ public class MealPlanService {
             entry.setItem(ingredientService.findOrCreate(itemName, null));
             entry.setRecipe(null);
             entry.setPlace(null);
+        }
+        if (request.savedLinkId() != null) {
+            entry.setSavedLink(savedLinkService.visible(householdId, request.savedLinkId(), requesterId));
+            entry.setRecipe(null);
+            entry.setPlace(null);
+            entry.setItem(null);
+            entry.setServings(null);
+            entry.getIncludedOptionalIngredientIds().clear();
         }
         if (Boolean.TRUE.equals(request.clearTime())) {
             entry.setTime(null);
@@ -193,13 +216,14 @@ public class MealPlanService {
     private MealPlanEntryResponse toResponse(MealPlanEntry entry, Map<UUID, CupboardItem> cupboard) {
         Recipe recipe = entry.getRecipe();
         Ingredient item = entry.getItem();
+        SavedLink link = entry.getSavedLink();
         CupboardItem stocked = item == null ? null : cupboard.get(item.getId());
         return new MealPlanEntryResponse(
                 entry.getId(),
                 entry.getDate(),
                 entry.getMealType(),
                 recipe != null ? recipe.getId() : null,
-                recipe != null ? recipe.getName() : entry.getDeletedRecipeName(),
+                recipe != null ? recipe.getName() : link != null ? link.getName() : entry.getDeletedRecipeName(),
                 recipe != null && recipe.getIngredients().isEmpty(),
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
@@ -210,6 +234,11 @@ public class MealPlanService {
                 entry.getServings(),
                 entry.getNotes(),
                 List.copyOf(entry.getIncludedOptionalIngredientIds()),
-                recipe == null && entry.getDeletedRecipeName() != null);
+                recipe == null && link == null && entry.getDeletedRecipeName() != null,
+                link != null ? link.getId() : null,
+                link != null ? link.getName() : null,
+                link != null ? link.getUrl() : null,
+                link != null ? link.getSource() : null,
+                link != null && link.getCoverImage() != null ? link.getCoverImage().getId() : null);
     }
 }

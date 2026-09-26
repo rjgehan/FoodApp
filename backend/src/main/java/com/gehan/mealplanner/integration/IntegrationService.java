@@ -107,6 +107,12 @@ public class IntegrationService {
             return new PlannedItem("ITEM", entry.getItem().getName(), entry.getTime(), null, entry.getNotes(),
                     null, null, null, null, null, null);
         }
+        // A saved link is a recipe that is still only a link. Like a deleted recipe below it goes
+        // out as an ITEM — its name and picture — rather than as a kind no dashboard knows.
+        if (entry.getSavedLink() != null) {
+            return new PlannedItem("ITEM", entry.getSavedLink().getName(), entry.getTime(), null, entry.getNotes(),
+                    null, imageUrl(entry.getSavedLink().getCoverImage()), null, null, null, null);
+        }
         // A shared recipe its owners deleted is still what this household means to eat. It goes
         // out as an ITEM — a name with nothing to open — rather than a new kind that a dashboard
         // switching on `kind` has never seen, or a RECIPE with no recipe behind it.

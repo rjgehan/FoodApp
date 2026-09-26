@@ -21,6 +21,9 @@ public interface MealPlanEntryRepository extends JpaRepository<MealPlanEntry, UU
 
     long countByRecipeId(UUID recipeId);
 
+    /** Meals planned with a saved link, for when it is deleted or becomes a recipe. */
+    List<MealPlanEntry> findBySavedLinkId(UUID savedLinkId);
+
     List<MealPlanEntry> findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(
             UUID householdId, LocalDate start, LocalDate end);
 

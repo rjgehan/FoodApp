@@ -19,8 +19,9 @@ import java.util.UUID;
 
 /**
  * A single meal slot on the household calendar (e.g. "Tuesday dinner").
- * Holds exactly one of: a {@link #recipe} you cook, a {@link #place} you eat at, or a single
- * {@link #item} — just eggs, just strawberries. A slot with none of them is simply empty.
+ * Holds exactly one of: a {@link #recipe} you cook, a {@link #place} you eat at, a single
+ * {@link #item} — just eggs, just strawberries — or a {@link #savedLink} to cook from. A slot
+ * with none of them is simply empty.
  */
 @Entity
 @Table(name = "meal_plan_entries")
@@ -71,6 +72,15 @@ public class MealPlanEntry {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingredient_id")
     private Ingredient item;
+
+    /**
+     * A recipe that is still only a link — the TikTok you mean to make on Thursday. Planned like
+     * a recipe, but there is nothing in it to shop for, so it adds nothing to the grocery list.
+     * Made into a real recipe later, the entry moves over to that (see SavedLinkService.madeInto).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "saved_link_id")
+    private SavedLink savedLink;
 
     /**
      * When you are sitting down, for the occasions that have a time — a booking, a pickup slot.
