@@ -136,6 +136,7 @@ public class MealPlanService {
         if (request.recipeId() != null || request.placeId() != null || itemName != null
                 || request.savedLinkId() != null) {
             entry.setDeletedRecipeName(null);
+            entry.setDeletedWasSavedLink(false);
             // Whatever it becomes, it is not the saved link any more — including from an older
             // app, which has never heard of them and only ever sends the other three.
             entry.setSavedLink(null);
@@ -235,6 +236,7 @@ public class MealPlanService {
                 entry.getNotes(),
                 List.copyOf(entry.getIncludedOptionalIngredientIds()),
                 recipe == null && link == null && entry.getDeletedRecipeName() != null,
+                recipe == null && link == null && entry.getDeletedRecipeName() != null && entry.isDeletedWasSavedLink(),
                 link != null ? link.getId() : null,
                 link != null ? link.getName() : null,
                 link != null ? link.getUrl() : null,

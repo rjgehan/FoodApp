@@ -271,6 +271,8 @@ export interface MealPlanEntry {
    * an older server never sends them.
    */
   savedLinkId?: string | null;
+  /** With `recipeDeleted`: what was deleted was a saved link, not a shared recipe. */
+  savedLinkDeleted?: boolean;
   savedLinkName?: string | null;
   savedLinkUrl?: string | null;
   savedLinkSource?: SavedLinkSource | null;

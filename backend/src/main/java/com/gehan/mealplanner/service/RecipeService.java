@@ -682,6 +682,7 @@ public class RecipeService {
             } else {
                 entry.setRecipe(null);
                 entry.setDeletedRecipeName(recipe.getName());
+                entry.setDeletedWasSavedLink(false);
                 // Chosen from this recipe's ingredients, which are about to go too.
                 entry.getIncludedOptionalIngredientIds().clear();
             }

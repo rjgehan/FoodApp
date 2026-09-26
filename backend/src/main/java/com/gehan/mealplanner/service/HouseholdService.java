@@ -243,7 +243,8 @@ public class HouseholdService {
     private void forgetSavedLinks(UUID userId) {
         String theirsAlone = "(SELECT id FROM saved_links WHERE created_by_user_id = ? AND personal)";
         jdbc.update("UPDATE meal_plan_entries e SET deleted_recipe_name ="
-                + " (SELECT l.name FROM saved_links l WHERE l.id = e.saved_link_id), saved_link_id = NULL"
+                + " (SELECT l.name FROM saved_links l WHERE l.id = e.saved_link_id),"
+                + " saved_link_id = NULL, deleted_was_saved_link = true"
                 + " WHERE e.saved_link_id IN " + theirsAlone, userId);
         List<UUID> pictures = jdbc.queryForList("SELECT cover_image_id FROM saved_links"
                 + " WHERE created_by_user_id = ? AND personal AND cover_image_id IS NOT NULL", UUID.class, userId);

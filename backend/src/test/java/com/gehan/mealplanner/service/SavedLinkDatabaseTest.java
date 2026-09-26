@@ -178,6 +178,7 @@ class SavedLinkDatabaseTest {
         MealPlanEntryResponse after = mealPlanService.listRange(home, me.getId(), TUESDAY, TUESDAY).get(0);
         assertThat(after.savedLinkId()).isNull();
         assertThat(after.recipeDeleted()).isTrue();
+        assertThat(after.savedLinkDeleted()).isTrue();
         assertThat(after.recipeName()).isEqualTo("Pasta bake");
         assertThat(imageRepository.findById(picture)).isEmpty();
     }
@@ -230,6 +231,7 @@ class SavedLinkDatabaseTest {
         assertThat(imageRepository.findById(hidden.coverImageId())).isEmpty();
         MealPlanEntryResponse entry = mealPlanService.listRange(home, me.getId(), TUESDAY, TUESDAY).get(0);
         assertThat(entry.recipeDeleted()).isTrue();
+        assertThat(entry.savedLinkDeleted()).isTrue();
         assertThat(entry.recipeName()).isEqualTo("Cake");
     }
 

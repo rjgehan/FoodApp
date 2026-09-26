@@ -178,6 +178,8 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
     /// A saved link planned as the meal — a recipe that is still only a link. Its name also
     /// comes as `recipeName`, for builds from before saved links. All nil from an older server.
     let savedLinkId: UUID?
+    /// With `recipeDeleted`: what was deleted was a saved link, not a shared recipe.
+    let savedLinkDeleted: Bool?
     let savedLinkUrl: String?
     let savedLinkSource: SavedLinkSource?
     let savedLinkImageId: UUID?
@@ -187,7 +189,7 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
          needsIngredients: Bool? = nil, placeId: UUID? = nil, placeName: String?, itemName: String?,
          inCupboard: Bool? = nil, runningLow: Bool? = nil, time: String?, servings: Int?,
          notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil, recipeDeleted: Bool? = nil,
-         savedLinkId: UUID? = nil, savedLinkUrl: String? = nil, savedLinkSource: SavedLinkSource? = nil,
+         savedLinkId: UUID? = nil, savedLinkDeleted: Bool? = nil, savedLinkUrl: String? = nil, savedLinkSource: SavedLinkSource? = nil,
          savedLinkImageId: UUID? = nil) {
         self.id = id
         self.date = date
@@ -206,6 +208,7 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
         self.includedOptionalIngredientIds = includedOptionalIngredientIds
         self.recipeDeleted = recipeDeleted
         self.savedLinkId = savedLinkId
+        self.savedLinkDeleted = savedLinkDeleted
         self.savedLinkUrl = savedLinkUrl
         self.savedLinkSource = savedLinkSource
         self.savedLinkImageId = savedLinkImageId

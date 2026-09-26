@@ -190,6 +190,7 @@ public class SavedLinkService {
         for (MealPlanEntry entry : mealPlanEntryRepository.findBySavedLinkId(linkId)) {
             entry.setSavedLink(null);
             entry.setDeletedRecipeName(link.getName());
+            entry.setDeletedWasSavedLink(true);
         }
         remove(link);
     }

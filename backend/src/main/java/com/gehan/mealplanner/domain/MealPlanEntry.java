@@ -83,6 +83,16 @@ public class MealPlanEntry {
     private SavedLink savedLink;
 
     /**
+     * {@link #deletedRecipeName} is a saved link's that was deleted, not a shared recipe's — so
+     * the plan can say which, rather than blaming a household that never had anything to do
+     * with it. Cleared with the name. The column carries its own default so Hibernate can add
+     * it to a table that already has rows.
+     */
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private boolean deletedWasSavedLink = false;
+
+    /**
      * When you are sitting down, for the occasions that have a time — a booking, a pickup slot.
      * Optional, and on the entry rather than the Place: "Columns" is somewhere you go often,
      * "Columns at 5" is one particular Tuesday.

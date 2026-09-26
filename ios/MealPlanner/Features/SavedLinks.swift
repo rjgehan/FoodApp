@@ -569,3 +569,8 @@ struct SavedLinkImportSheet: View {
 #Preview("Save a link") {
     SaveLinkSheet(session: .preview) { _ in }
 }
+
+#Preview("Try importing again") {
+    // No server behind a preview, so this shows the way on when a link cannot be read.
+    SavedLinkImportSheet(link: SampleData.savedLinks[1], session: .preview) { _ in }
+}

@@ -838,9 +838,10 @@ function DaySheet({
                           <div className="space-y-1 pb-3">
                           {entry.recipeDeleted && (
                             <p className="text-sm text-muted">
-                              It was deleted — by the household that shared the recipe, or from
-                              Saved links — so there is nothing to open. Change it to something
-                              else, or remove it.
+                              {entry.savedLinkDeleted
+                                ? 'It was deleted from Saved links, so there is nothing to open. '
+                                : 'The household that shared this recipe has deleted it, so there is nothing to open. '}
+                              Change it to something else, or remove it.
                             </p>
                           )}
                           <div className="flex flex-wrap items-center gap-2">
@@ -1000,7 +1001,11 @@ function MealPhoto({
 /** The second line under a planned dish: what it means for the shopping. */
 function EntryDetail({ entry }: { entry: MealPlanEntry }) {
   if (entry.recipeDeleted) {
-    return <span className="block text-sm text-accent">Was deleted</span>;
+    return (
+      <span className="block text-sm text-accent">
+        {entry.savedLinkDeleted ? 'Saved link was deleted' : 'Recipe was deleted'}
+      </span>
+    );
   }
   if (entry.savedLinkId) {
     return (

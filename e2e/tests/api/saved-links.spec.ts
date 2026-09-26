@@ -167,7 +167,9 @@ test('deleting a planned link keeps the meal on the plan by name', async () => {
   await call('DELETE', `${base(hh.id)}/${link.id}`, { token: owner.token });
   expect(await call('GET', base(hh.id), { token: owner.token })).toEqual([]);
   const [entry] = await call('GET', `/api/households/${hh.id}/meal-plan?start=${day}&end=${day}`, { token: owner.token });
-  expect(entry).toMatchObject({ recipeName: 'Pasta bake', recipeDeleted: true, savedLinkId: null, recipeId: null });
+  expect(entry).toMatchObject({
+    recipeName: 'Pasta bake', recipeDeleted: true, savedLinkDeleted: true, savedLinkId: null, recipeId: null,
+  });
   // Its picture went with it: nothing else was showing it.
   expect((await fetch(`${process.env.API_URL ?? 'http://localhost:8080'}/api/images/${picture}`)).status).toBe(404);
 });

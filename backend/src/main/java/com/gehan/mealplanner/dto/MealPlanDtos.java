@@ -99,9 +99,11 @@ public class MealPlanDtos {
              * null. An older app that does not know this field shows it as a meal by that name
              * with nothing to open, which is still better than a gap.
              *
-             * A saved link that was planned and then deleted ends up the same way.
+             * A saved link that was planned and then deleted ends up the same way, with
+             * savedLinkDeleted also set so the plan can say which it was.
              */
             boolean recipeDeleted,
+            boolean savedLinkDeleted,
             /**
              * A saved link planned as the meal. Its name is also sent as recipeName, so an older
              * app that has never heard of saved links still shows the meal by name — as a recipe

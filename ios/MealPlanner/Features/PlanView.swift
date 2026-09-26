@@ -480,7 +480,9 @@ struct DaySheet: View {
 
     /// The second line under a dish: what it means for the cooking or the shopping.
     private func detail(for entry: MealPlanEntry) -> String? {
-        if entry.recipeDeleted == true { return "Was deleted" }
+        if entry.recipeDeleted == true {
+            return entry.savedLinkDeleted == true ? "Saved link was deleted" : "Recipe was deleted"
+        }
         if entry.savedLinkId != nil {
             return "Saved link · \(SavedLink.label(source: entry.savedLinkSource, url: entry.savedLinkUrl))"
         }
@@ -501,7 +503,9 @@ struct DaySheet: View {
     @ViewBuilder
     private func actions(for entry: MealPlanEntry) -> some View {
         if entry.recipeDeleted == true {
-            Text("It was deleted — by the household that shared the recipe, or from Saved links — so there is nothing to open. Change it to something else, or remove it.")
+            Text(entry.savedLinkDeleted == true
+                 ? "It was deleted from Saved links, so there is nothing to open. Change it to something else, or remove it."
+                 : "The household that shared this recipe has deleted it, so there is nothing to open. Change it to something else, or remove it.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -1042,4 +1046,8 @@ struct OptionalExtraRow: View {
     NavigationStack {
         OptionalExtrasPicker(recipe: SampleData.recipes[0], selected: [], action: "Add to Dinner") { _ in }
     }
+}
+
+#Preview("Planned link") {
+    HStack { PlannedLinkPicture(imageId: nil); SavedLinkBadge(text: "TikTok") }.padding().background(.gray)
 }
