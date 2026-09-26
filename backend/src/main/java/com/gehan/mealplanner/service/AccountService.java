@@ -9,6 +9,7 @@ import com.gehan.mealplanner.dto.AuthDtos.PasswordResetInfo;
 import com.gehan.mealplanner.dto.AuthDtos.PasswordResetLinkResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
+import com.gehan.mealplanner.dto.HouseholdDtos.ThemeResponse;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.PasswordResetRepository;
 import com.gehan.mealplanner.repository.UserRepository;
@@ -425,6 +426,6 @@ public class AccountService {
     private MeResponse toMe(User user) {
         return new MeResponse(user.getId(), user.getUsername(), user.getDisplayName(),
                 user.getPinHash() != null, user.getEmail(), user.getPasswordHash() != null,
-                lastHouseholdOf(user), adminAccess.isAdmin(user));
+                lastHouseholdOf(user), adminAccess.isAdmin(user), ThemeResponse.of(user));
     }
 }

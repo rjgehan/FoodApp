@@ -1,6 +1,8 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.HouseholdRole;
+import com.gehan.mealplanner.domain.ThemeMode;
+import com.gehan.mealplanner.domain.User;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -77,11 +79,11 @@ public class HouseholdDtos {
     /**
      * You, as the settings screen and the "add an email" prompt need you. `admin` is whether the
      * admin pages will open for you — decided on the server (AdminAccess); the app only uses it
-     * to show the way in.
+     * to show the way in. `theme` is always there, its fields null for the app's own colours.
      */
     public record MeResponse(
             UUID userId, String username, String displayName, boolean pinSet,
-            String email, boolean hasPassword, UUID lastHouseholdId, boolean admin) {
+            String email, boolean hasPassword, UUID lastHouseholdId, boolean admin, ThemeResponse theme) {
 
         /**
          * The admin pages only open for a session that began with a password, so an admin
@@ -90,8 +92,32 @@ public class HouseholdDtos {
          */
         public MeResponse forSession(boolean signedInWithPassword) {
             return signedInWithPassword || !admin ? this
-                    : new MeResponse(userId, username, displayName, pinSet, email, hasPassword, lastHouseholdId, false);
+                    : new MeResponse(userId, username, displayName, pinSet, email, hasPassword, lastHouseholdId, false,
+                            theme);
         }
+    }
+
+    /**
+     * Your colours. `preset` is a key from ThemeSettings.PRESETS or "custom"; `primary` and
+     * `secondary` are the custom pair as #RRGGBB; `mode` is SYSTEM, LIGHT or DARK. Null throughout
+     * is the app as it has always looked.
+     */
+    public record ThemeResponse(String preset, String primary, String secondary, ThemeMode mode) {
+        public static ThemeResponse of(User user) {
+            return new ThemeResponse(user.getThemePreset(), user.getThemePrimary(), user.getThemeSecondary(),
+                    user.getThemeMode());
+        }
+    }
+
+    /**
+     * Setting your colours, all four at once. Strings rather than an enum so a wrong value is
+     * answered with a sentence rather than a parse error; ThemeSettings checks them.
+     */
+    public record ThemeRequest(
+            @Size(max = 20) String preset,
+            @Size(max = 7) String primary,
+            @Size(max = 7) String secondary,
+            @Size(max = 10) String mode) {
     }
 
     /**
