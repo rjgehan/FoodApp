@@ -725,6 +725,8 @@ struct NewHouseholdScreen: View {
     @State private var name = ""
     @State private var busy = false
     @State private var error: String?
+    /// The house just made, whose empty cupboard is offered the starter list before going back.
+    @State private var made: HouseholdSummary?
 
     var body: some View {
         Form {
@@ -741,6 +743,9 @@ struct NewHouseholdScreen: View {
         }
         .navigationTitle("Start another household")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $made, onDismiss: { dismiss() }) { household in
+            StartCupboardSheet(household: household.id, first: true)
+        }
     }
 
     private func create() async {
@@ -749,9 +754,10 @@ struct NewHouseholdScreen: View {
         busy = true
         defer { busy = false }
         do {
-            try await APIClient.shared.createHousehold(name: wanted)
+            let household = try await APIClient.shared.createHousehold(name: wanted)
             await session.loadHouseholds()
-            dismiss()
+            // A new house has an empty cupboard, and most of what goes in it is the same everywhere.
+            made = household
         } catch {
             self.error = error.localizedDescription
         }

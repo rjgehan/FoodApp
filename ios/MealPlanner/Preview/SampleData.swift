@@ -140,6 +140,31 @@ enum SampleData {
         CupboardItem(id: UUID(), name: "parmesan", runningLow: false, staple: false, categoryId: dairy, onList: false, quantity: nil, unit: nil),
     ]
 
+    /// Somebody's second house, for copying a cupboard across.
+    static let otherHousehold = HouseholdSummary(id: UUID(), name: "Mum's", memberCount: 2, role: "MEMBER")
+
+    static let otherCupboard: [CupboardItem] = cupboard + [
+        CupboardItem(id: UUID(), name: "coffee", runningLow: false, staple: false, categoryId: dryGoods, onList: false, quantity: nil, unit: nil),
+        CupboardItem(id: UUID(), name: "honey", runningLow: true, staple: false, categoryId: dryGoods, onList: false, quantity: nil, unit: nil),
+    ]
+
+    /// A short copy of the server's starter list — the real one is about sixty things.
+    static let starters: [StarterGroup] = [
+        StarterGroup(name: "Baking", items: ["all-purpose flour", "sugar", "brown sugar", "baking soda", "baking powder", "vanilla extract"]
+            .map { StarterItem(name: $0, have: false) }),
+        StarterGroup(name: "Spices", items: ["salt", "black pepper", "garlic powder", "paprika", "cumin", "cinnamon"]
+            .map { StarterItem(name: $0, have: false) }),
+        StarterGroup(name: "Fridge", items: ["butter", "eggs", "milk", "cheddar cheese", "parmesan"]
+            .map { StarterItem(name: $0, have: false) }),
+    ]
+
+    /// The same, for a cupboard that has some of it already.
+    static let startersSomeHere: [StarterGroup] = starters.map { group in
+        StarterGroup(name: group.name, items: group.items.map {
+            StarterItem(name: $0.name, have: ["butter", "parmesan", "salt"].contains($0.name))
+        })
+    }
+
     static let recipeCategories: [RecipeCategory] = {
         let main = RecipeCategory(id: UUID(), name: "Main", recipeCount: 4, parentId: nil, section: .dinner)
         return [

@@ -377,6 +377,31 @@ struct CupboardItem: Codable, Identifiable, Hashable {
     }
 }
 
+/// One group of the starter list — "Baking", "Spices" — the common things a new cupboard is
+/// offered. The list itself lives on the server, so the web offers the same one.
+struct StarterGroup: Codable, Hashable {
+    let name: String
+    let items: [StarterItem]
+}
+
+struct StarterItem: Codable, Hashable {
+    let name: String
+    /// In this cupboard already.
+    let have: Bool
+}
+
+/// What adding from the starter list did. `skipped` were here already, and are left as they were.
+struct StartersAdded: Codable {
+    let added: Int
+    let skipped: Int
+}
+
+/// What copying another household's cupboard did. `skipped` were here already, and are left alone.
+struct CupboardCopied: Codable {
+    let copied: Int
+    let skipped: Int
+}
+
 /// A group inside a drawer — "Main", and "Chicken" inside it. `parentId` is the group it sits
 /// in; `section` is the drawer it belongs to, null meaning it shows in every drawer.
 struct RecipeCategory: Codable, Identifiable, Hashable {

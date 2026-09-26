@@ -10,6 +10,13 @@ struct GalleryView: View {
 
     private let session = Session.preview
 
+    /// Somebody in two houses — the only person offered a cupboard copy.
+    private let twoHouses: Session = {
+        let session = Session.preview
+        session.households = [SampleData.household, SampleData.otherHousehold]
+        return session
+    }()
+
     var body: some View {
         NavigationStack {
             List {
@@ -65,6 +72,15 @@ struct GalleryView: View {
                             sample: SampleData.cupboard,
                             sampleCategories: SampleData.categories
                         )
+                    }
+                    entry("Let's start your cupboard", "checklist") {
+                        StartCupboardSheet(household: SampleData.household.id, first: true, sample: SampleData.starters)
+                    }
+                    entry("Cupboard — start with the basics", "checklist.checked") {
+                        StartCupboardSheet(household: SampleData.household.id, sample: SampleData.startersSomeHere)
+                    }
+                    entry("Cupboard — copy from another household", "square.on.square") {
+                        CopyCupboardSheet(session: twoHouses, items: SampleData.cupboard, sample: SampleData.otherCupboard)
                     }
                     entry("Scan an invite", "qrcode.viewfinder") {
                         ScanInviteScreen(session: Session())

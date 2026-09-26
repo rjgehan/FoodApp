@@ -462,6 +462,22 @@ actor APIClient {
         try await send("POST", "/api/households/\(household.uuidString)/cupboard", body: ["name": name])
     }
 
+    /// The starter list, each thing marked if this cupboard has it already.
+    func cupboardStarters(household: UUID) async throws -> [StarterGroup] {
+        try await get("/api/households/\(household.uuidString)/cupboard/starters")
+    }
+
+    /// Everything ticked on the starter list, in one request. What is here already stays as it is.
+    func addStarters(household: UUID, names: [String]) async throws -> StartersAdded {
+        try await send("POST", "/api/households/\(household.uuidString)/cupboard/starters", body: ["names": names])
+    }
+
+    /// Copies what another of your households has in its cupboard, and this one does not, into
+    /// this one. You have to be in both.
+    func copyCupboard(into household: UUID, from source: UUID) async throws -> CupboardCopied {
+        try await send("POST", "/api/households/\(household.uuidString)/cupboard/copy-from/\(source.uuidString)", body: [:])
+    }
+
     /// What a barcode names. The server asks Open Food Facts and caches the answer for a month,
     /// so the phone never talks to the catalogue itself. Throws a 404 for one nobody has
     /// published — which is an answer, not a failure.
