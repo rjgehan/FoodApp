@@ -126,7 +126,6 @@ struct RootView: View {
     /// The households asked about since the app last came to the front — once each, like the
     /// web's once per session. Emptied when the app goes to the background.
     @State private var restockAsked: Set<UUID> = []
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         if session.isSignedIn {
