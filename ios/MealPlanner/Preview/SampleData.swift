@@ -35,8 +35,14 @@ enum SampleData {
                 servings: 4
             )
         }
+        let link = savedLinks[0]
+        let plannedLink = MealPlanEntry(
+            id: UUID(), date: Day.iso(today), mealType: .lunch, recipeId: nil, recipeName: link.name,
+            placeName: nil, itemName: nil, time: nil, servings: nil,
+            savedLinkId: link.id, savedLinkUrl: link.url, savedLinkSource: link.source)
         return [
             on(0, .breakfast, "Full English Breakfast"),
+            plannedLink,
             on(0, .dinner, "Tuna Nicoise"),
             on(1, .dinner, "Lasagne"),
             on(2, .lunch, "Grilled Mac and Cheese Sandwich"),
@@ -153,6 +159,21 @@ enum SampleData {
             RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "fish"),
         ]
     }()
+}
+
+extension SampleData {
+    /// A shelf of links to try: videos and a page, one only for me, one filed, none with a
+    /// picture — previews have no server to fetch covers from, so these show the placeholders.
+    static let savedLinks: [SavedLink] = [
+        SavedLink(id: UUID(), url: "https://www.tiktok.com/@potatoqueen/video/1", name: "Crispy smashed potatoes with garlic aioli",
+                  source: .tiktok, coverImageId: nil, section: .dinner, personal: false, mine: true, savedByName: "Ryan"),
+        SavedLink(id: UUID(), url: "https://www.instagram.com/reel/abc1/", name: "Marry me chicken orzo",
+                  source: .instagram, coverImageId: nil, section: nil, personal: false, mine: false, savedByName: "Maya"),
+        SavedLink(id: UUID(), url: "https://www.tiktok.com/@cookwithme/video/2", name: "Hot honey feta pasta",
+                  source: .tiktok, coverImageId: nil, section: nil, personal: true, mine: true, savedByName: "Ryan"),
+        SavedLink(id: UUID(), url: "https://www.bbcgoodfood.com/recipes/banana-bread", name: "Best ever banana bread",
+                  source: .web, coverImageId: nil, section: .snacks, personal: false, mine: true, savedByName: "Ryan"),
+    ]
 }
 
 extension Session {

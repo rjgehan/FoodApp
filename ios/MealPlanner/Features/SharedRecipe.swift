@@ -150,6 +150,21 @@ struct SharedRecipeView: View {
     @State private var spokenSteps: [String]?
     /// A recipe sent as one of this app's own public links, saved as a copy — to open from here.
     @State private var copy: Recipe?
+    /// The link the server was asked to read, so it can be kept when it could not be.
+    @State private var readLink: String?
+    /// Kept in Saved links, instead of or as well as reading it.
+    @State private var kept: SavedLink?
+    @State private var keeping = false
+
+    /// What "Save the link" would keep: the link read, or the page the share sheet came from.
+    private var linkToKeep: String? {
+        // The share extension marks "all I got was a link" with a 🔗, which is the link itself.
+        let marked = text.hasPrefix("\u{1F517}")
+            ? String(text.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        let candidate = readLink ?? link ?? fromPage?.url ?? marked
+        guard let candidate, candidate.lowercased().hasPrefix("http") else { return nil }
+        return candidate
+    }
 
     #if canImport(FoundationModels)
     @State private var parsedStore: Any?
@@ -191,6 +206,38 @@ struct SharedRecipeView: View {
             }
             if let error {
                 Section { Text(error).foregroundStyle(.red) }
+            }
+
+            // Could not be read, and a link is all there is: keep it rather than lose it. The
+            // recipe is in the video, or behind a bio link, and can be made a recipe later.
+            if error != nil, fromPage == nil, copy == nil, kept == nil, linkToKeep != nil {
+                Section {
+                    Button(keeping ? "Saving…" : "Save the link", systemImage: "link") {
+                        Task { await keep(name: nil, cover: nil) }
+                    }
+                    .disabled(keeping)
+                    .fontWeight(.semibold)
+                } footer: {
+                    Text("It goes in Recipes › Saved links with its name and picture, to make into a recipe whenever you like.")
+                }
+            }
+
+            if let kept {
+                Section {
+                    HStack(spacing: 12) {
+                        PlannedLinkPicture(imageId: kept.coverImageId)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kept.name).lineLimit(2)
+                            Text(kept.sourceLabel).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Label(kept.alreadySaved == true ? "Already in Saved links" : "Saved to Saved links",
+                          systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Palette.success)
+                } footer: {
+                    Text("Find it under Recipes › Saved links.")
+                }
             }
 
             if let copy {
@@ -264,6 +311,15 @@ struct SharedRecipeView: View {
                         Task { await savePage(fromPage) }
                     }
                     .buttonStyle(.borderless)
+                    // Read fine, but only the link is wanted for now.
+                    if linkToKeep != nil, kept == nil, saved == nil {
+                        Button(keeping ? "Saving…" : "Just save it as a link", systemImage: "link") {
+                            Task { await keep(name: fromPage.name, cover: fromPage.coverImageId) }
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .disabled(keeping)
+                    }
                     if let saved {
                         Text(saved).font(.footnote).foregroundStyle(.secondary)
                     }
@@ -362,10 +418,25 @@ struct SharedRecipeView: View {
         }
     }
 
+    /// Keeps the link in Saved links. What was already read goes with it, so the page is not
+    /// fetched twice; otherwise the server reads it for a name and a picture.
+    private func keep(name: String?, cover: UUID?) async {
+        guard let household = session.household?.id, let url = linkToKeep else { return }
+        keeping = true
+        defer { keeping = false }
+        do {
+            kept = try await APIClient.shared.saveLink(household: household, url: url, name: name, coverImageId: cover)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     /// Asks the server to read a link. It knows about structured data and about TikTok, and
     /// being one implementation means the phone and the web agree on what a page says.
     private func importLink(_ link: String) async {
         guard let household = session.household?.id else { return }
+        readLink = link
         note = "Reading \(link)…"
         do {
             let imported = try await APIClient.shared.importRecipe(household: household, url: link)

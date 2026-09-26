@@ -175,12 +175,20 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
     /// its old `recipeName`, with no `recipeId` to open. Optional because an older server did
     /// not send it.
     let recipeDeleted: Bool?
+    /// A saved link planned as the meal — a recipe that is still only a link. Its name also
+    /// comes as `recipeName`, for builds from before saved links. All nil from an older server.
+    let savedLinkId: UUID?
+    let savedLinkUrl: String?
+    let savedLinkSource: SavedLinkSource?
+    let savedLinkImageId: UUID?
 
     /// Everything past the basics defaults, so the sample data does not have to spell it out.
     init(id: UUID, date: String, mealType: MealType, recipeId: UUID?, recipeName: String?,
          needsIngredients: Bool? = nil, placeId: UUID? = nil, placeName: String?, itemName: String?,
          inCupboard: Bool? = nil, runningLow: Bool? = nil, time: String?, servings: Int?,
-         notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil, recipeDeleted: Bool? = nil) {
+         notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil, recipeDeleted: Bool? = nil,
+         savedLinkId: UUID? = nil, savedLinkUrl: String? = nil, savedLinkSource: SavedLinkSource? = nil,
+         savedLinkImageId: UUID? = nil) {
         self.id = id
         self.date = date
         self.mealType = mealType
@@ -197,6 +205,10 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
         self.notes = notes
         self.includedOptionalIngredientIds = includedOptionalIngredientIds
         self.recipeDeleted = recipeDeleted
+        self.savedLinkId = savedLinkId
+        self.savedLinkUrl = savedLinkUrl
+        self.savedLinkSource = savedLinkSource
+        self.savedLinkImageId = savedLinkImageId
     }
 
     /** What the web calls entryLabel: a meal is a recipe, a place, or a bare item. */
@@ -388,6 +400,46 @@ struct RecipeCategory: Codable, Identifiable, Hashable {
     /// Which of the food drawings (`FoodIcon`) its tile wears. Nil for a plain tile, and from a
     /// server older than group icons.
     var iconKey: String? = nil
+}
+
+/// Where a saved link goes. Only the two apps recipes get shared from have a name of their own.
+enum SavedLinkSource: String, Codable, Hashable {
+    case tiktok = "TIKTOK"
+    case instagram = "INSTAGRAM"
+    case web = "WEB"
+}
+
+/**
+ A recipe kept as just a link — a TikTok, a Reel, a website — with a name and its picture. The
+ household's, unless `personal` ("Just me"), which only whoever saved it sees.
+*/
+struct SavedLink: Codable, Identifiable, Hashable {
+    let id: UUID
+    let url: String
+    let name: String
+    let source: SavedLinkSource
+    let coverImageId: UUID?
+    /// The drawer it would go in, for filtering.
+    let section: RecipeSection?
+    let personal: Bool
+    /// You saved it — the only one who can make it "Just me".
+    let mine: Bool
+    let savedByName: String?
+    /// On a save only: the link was already there, and that one was updated.
+    var alreadySaved: Bool? = nil
+
+    /// "TikTok", "Instagram", or the site's address — what its badge says.
+    var sourceLabel: String { Self.label(source: source, url: url) }
+
+    static func label(source: SavedLinkSource?, url: String?) -> String {
+        switch source {
+        case .tiktok: return "TikTok"
+        case .instagram: return "Instagram"
+        default:
+            let host = url.flatMap { URL(string: $0)?.host() } ?? ""
+            return host.isEmpty ? "Website" : host.replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
+        }
+    }
 }
 
 /// A draft read off a link by the server, to be checked in the editor before it is saved.

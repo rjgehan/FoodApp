@@ -76,14 +76,16 @@ struct CatalogTile: View {
     let detail: String
     let tint: Color
     var iconKey: String?
+    /// A drawing that is not one of the food icons a group can wear — Saved links' chain.
+    var art: Image? = nil
 
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 GeometryReader { box in
-                    if let icon = FoodIcon.named(iconKey) {
-                        icon.image
+                    if let picture = art ?? FoodIcon.named(iconKey)?.image {
+                        picture
                             .resizable()
                             .scaledToFit()
                             .frame(width: box.size.width * 0.66, height: box.size.height * 0.66)
