@@ -1,3 +1,5 @@
+import { quote, sqlQuery } from './db';
+
 /**
  * A thin client for the backend, used to arrange state quickly so UI tests only click through
  * the part they are actually about.
@@ -57,6 +59,7 @@ export async function statusOf(
 
 export type Session = { token: string; userId: string; displayName: string };
 
+
 export const login = (username: string, pin: string): Promise<Session> =>
   call('POST', '/api/auth/login', { body: { username, pin } });
 
@@ -83,13 +86,49 @@ export async function newHousehold(name = unique('House')): Promise<{ id: string
   return { id: hh.id, name, owner };
 }
 
-/** A new account inside a household, with its PIN already chosen. */
-export async function newMember(householdId: string, pin = '4321'): Promise<Session & { username: string }> {
-  const owner = await admin();
+export type Member = Session & { username: string; email: string; password: string };
+
+/** The household's invite link token, as anyone in it would see it on the Invite card. */
+export async function inviteToken(householdId: string, as?: Session): Promise<string> {
+  const who = as ?? (await admin());
+  return (await call('GET', `/api/households/${householdId}/invite`, { token: who.token })).token;
+}
+
+/**
+ * Somebody new, the only way there is now: they open the household's invite link and make an
+ * account with an email and password, which signs them in.
+ */
+export async function newMember(householdId: string): Promise<Member> {
+  const email = `${unique('member').toLowerCase()}@example.com`;
+  const password = 'member-password';
+  const session: Session = await call('POST', '/api/auth/signup', {
+    body: { inviteToken: await inviteToken(householdId), displayName: unique('Cook'), email, password },
+  });
+  const me = await call('GET', '/api/users/me', { token: session.token });
+  return { ...session, username: me.username, email, password };
+}
+
+/**
+ * An account the way they were made before invite links: somebody in the house created it,
+ * and it signs in with a name and PIN — or, with `pin: null`, has never been signed into at all.
+ * The API no longer makes these, so it is written straight into the local database; plenty are
+ * still about on the real server, and the PIN screens have to keep working for them.
+ */
+export async function legacyMember(householdId: string, pin: string | null = '4321'): Promise<Session & { username: string }> {
   const username = unique('u').toLowerCase();
-  await call('POST', `/api/households/${householdId}/users`, { token: owner.token, body: { username } });
-  const session = await call('POST', '/api/auth/pin', { body: { username, pin } });
-  return { ...session, username };
+  sqlQuery('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+  const hash = pin === null ? 'NULL' : `crypt(${quote(pin)}, gen_salt('bf', 4))`;
+  const userId = sqlQuery(
+    `INSERT INTO users (id, username, display_name, password_hash, created_at) ` +
+      `VALUES (gen_random_uuid(), ${quote(username)}, ${quote(username)}, ${hash}, now()) RETURNING id`,
+  );
+  if (!userId) throw new Error('legacyMember needs docker access to the local dev database.');
+  sqlQuery(
+    `INSERT INTO household_members (id, household_id, user_id, role, joined_at) ` +
+      `VALUES (gen_random_uuid(), ${quote(householdId)}, ${quote(userId)}, 'MEMBER', now())`,
+  );
+  if (pin === null) return { token: '', userId, displayName: username, username };
+  return { ...(await login(username, pin)), username };
 }
 
 export type IngredientInput = { name: string; qty: number; unit?: string; optional?: boolean };

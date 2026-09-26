@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
   admin,
   call,
+  inviteToken,
+  legacyMember,
   login,
   loginWithEmail,
   newHousehold,
@@ -15,6 +14,7 @@ import {
   statusOf,
   unique,
 } from '../../lib/api';
+import { sql } from '../../lib/db';
 
 /** A fresh address per test, so reruns against the same database never collide. */
 const address = (who: string) => `${unique(who).toLowerCase()}@example.com`;
@@ -22,7 +22,7 @@ const address = (who: string) => `${unique(who).toLowerCase()}@example.com`;
 test.describe('email and password', () => {
   test('a PIN account adds an email and password once, then signs in with them', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const email = address('first');
 
     const before = await call('GET', '/api/users/me', { token: m.token });
@@ -49,7 +49,7 @@ test.describe('email and password', () => {
 
   test('changing them afterwards needs the current password', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email: address('chg'), password: 'first-password' } });
 
     const newEmail = address('chg2');
@@ -68,7 +68,7 @@ test.describe('email and password', () => {
 
   test('passwords need 8 to 128 characters, and emails have to look like emails', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     for (const body of [
       { email: address('short'), password: 'short' },
       { email: address('long'), password: 'x'.repeat(129) },
@@ -81,9 +81,9 @@ test.describe('email and password', () => {
 
   test('an email belongs to one account, however it is typed, even when two ask at once', async () => {
     const hh = await newHousehold();
-    const a = await newMember(hh.id);
-    const b = await newMember(hh.id);
-    const c = await newMember(hh.id);
+    const a = await legacyMember(hh.id);
+    const b = await legacyMember(hh.id);
+    const c = await legacyMember(hh.id);
     const email = address('taken');
     await call('PUT', '/api/users/me/credentials', { token: a.token, body: { email, password: 'password-a' } });
 
@@ -109,7 +109,7 @@ test.describe('email and password', () => {
 
   test('five wrong passwords lock the address, and the right one is refused while locked', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const email = address('lock');
     await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email, password: 'right-password' } });
     for (let i = 0; i < 5; i++) {
@@ -131,8 +131,8 @@ test.describe('remembering the household', () => {
   test('signing in opens the house you were last in, or the one you tapped', async () => {
     const first = await newHousehold();
     const second = await newHousehold();
-    const m = await newMember(first.id);
-    await call('POST', `/api/households/${second.id}/members`, { token: second.owner.token, body: { username: m.username } });
+    const m = await legacyMember(first.id);
+    await call('POST', `/api/invites/${await inviteToken(second.id)}/accept`, { token: m.token });
 
     await call('PUT', '/api/users/me/active-household', { token: m.token, body: { householdId: second.id } });
     expect((await login(m.username, '4321')).lastHouseholdId).toBe(second.id);
@@ -160,7 +160,7 @@ test.describe('owner password reset', () => {
 
   test('the link works once, signs them in, and says nothing more than whose it is', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const link = await resetOf(hh.owner.token, hh.id, m.userId);
     expect(link.token.length).toBeGreaterThanOrEqual(43);
     expect(new Date(link.expiresAt).getTime() - Date.now()).toBeGreaterThan(23 * 3600 * 1000);
@@ -184,8 +184,8 @@ test.describe('owner password reset', () => {
 
   test('only the owner makes them, a newer link retires the older one, and they run out', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
-    const other = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
+    const other = await legacyMember(hh.id);
     const outsider = await newHousehold();
 
     expect(await statusOf('POST', `/api/households/${hh.id}/members/${other.userId}/password-reset`, { token: m.token })).toBe(403);
@@ -214,14 +214,15 @@ test.describe('nobody can take over somebody else\'s account', () => {
   test('an account with a password cannot be given a PIN by whoever finds it on the roster', async () => {
     const hh = await newHousehold();
     const owner = await admin();
-    const username = unique('pwonly').toLowerCase();
-    const made = await call('POST', `/api/households/${hh.id}/users`, { token: owner.token, body: { username } });
-    const link = await call('POST', `/api/households/${hh.id}/members/${made.userId}/password-reset`, { token: owner.token });
+    // Made for them before invite links and never signed into, then given a password by a reset link.
+    const { username, userId } = await legacyMember(hh.id, null);
+    const link = await call('POST', `/api/households/${hh.id}/members/${userId}/password-reset`, { token: owner.token });
     await call('POST', '/api/auth/password-reset', { body: { token: link.token, password: 'their-password', email: address('pwonly') } });
 
     expect(await statusOf('POST', '/api/auth/pin', { body: { username, pin: '0000' } })).toBe(409);
+    // Off the roster altogether: there is nothing on the PIN screens they could use.
     const roster = await call('GET', `/api/auth/households/${hh.id}/users`);
-    expect(roster.find((u: any) => u.username === username).pinSet).toBe(true);
+    expect(roster.find((u: any) => u.username === username)).toBeUndefined();
     // And the PIN sign-in says what to use instead.
     const res = await fetch(`${process.env.API_URL ?? 'http://localhost:8080'}/api/auth/login`, {
       method: 'POST',
@@ -232,17 +233,37 @@ test.describe('nobody can take over somebody else\'s account', () => {
     expect((await res.json()).message).toMatch(/email and password/);
   });
 
-  test('making a house and pulling somebody into it does not let you reset their password', async () => {
+  test('making a house cannot pull somebody into it, so it cannot reset their password', async () => {
     const theirs = await newHousehold();
     const victim = await newMember(theirs.id);
-    const victimEmail = address('victim');
-    await call('PUT', '/api/users/me/credentials', { token: victim.token, body: { email: victimEmail, password: 'victim-password' } });
 
     const attacker = await newMember((await newHousehold()).id);
     const den = await call('POST', '/api/households', { token: attacker.token, body: { name: unique('Den') } });
-    await call('POST', `/api/households/${den.id}/members`, { token: attacker.token, body: { username: victim.username } });
-    expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(403);
-    expect((await loginWithEmail(victimEmail, 'victim-password')).userId).toBe(victim.userId);
+    await pullIn(attacker.token, den.id, victim);
+    // Not in the den, so there is nobody there to reset.
+    expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(404);
+    expect((await loginWithEmail(victim.email, victim.password)).userId).toBe(victim.userId);
+  });
+
+  test('the only way into the den is the victim opening its link themselves', async () => {
+    // The link is the attacker's to hand out, but only whoever is signed in can say yes to it:
+    // there is nothing that accepts on somebody else's behalf.
+    const theirs = await newHousehold();
+    const victim = await newMember(theirs.id);
+    const attacker = await newMember((await newHousehold()).id);
+    const den = await call('POST', '/api/households', { token: attacker.token, body: { name: unique('Den') } });
+    const link = await inviteToken(den.id, attacker);
+
+    await call('POST', `/api/invites/${link}/accept`, { token: attacker.token });
+    const inDen = await call('GET', `/api/households/${den.id}/members`, { token: attacker.token });
+    expect(inDen.map((m: { userId: string }) => m.userId)).toEqual([attacker.userId]);
+    // Signing up through it makes a new account; it never lands on one that exists.
+    expect(
+      await statusOf('POST', '/api/auth/signup', {
+        body: { inviteToken: link, displayName: 'Victim', email: victim.email.toUpperCase(), password: 'attacker-picked' },
+      }),
+    ).toBe(409);
+    expect((await loginWithEmail(victim.email, victim.password)).userId).toBe(victim.userId);
   });
 
   // Somebody left in no house is the easy target: a house of the attacker's own would be the
@@ -250,7 +271,7 @@ test.describe('nobody can take over somebody else\'s account', () => {
   for (const howTheyLeft of ['their house was deleted', 'they left their only house'] as const) {
     test(`nor when ${howTheyLeft} and they are in no house at all`, async () => {
       const theirs = await newHousehold();
-      const victim = await newMember(theirs.id);
+      const victim = await legacyMember(theirs.id);
       const victimEmail = address('homeless');
       await call('PUT', '/api/users/me/credentials', { token: victim.token, body: { email: victimEmail, password: 'victim-password' } });
       if (howTheyLeft === 'their house was deleted') {
@@ -262,15 +283,32 @@ test.describe('nobody can take over somebody else\'s account', () => {
 
       const attacker = await newMember((await newHousehold()).id);
       const den = await call('POST', '/api/households', { token: attacker.token, body: { name: unique('Den') } });
-      await call('POST', `/api/households/${den.id}/members`, { token: attacker.token, body: { username: victim.username } });
-      expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(403);
+      await pullIn(attacker.token, den.id, victim);
+      expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(404);
+      // Nor will the PIN screens hand a PIN-less account with an email to whoever asks.
+      expect(await statusOf('POST', '/api/auth/pin', { body: { username: victim.username, pin: '0000' } })).toBe(409);
       expect((await loginWithEmail(victimEmail, 'victim-password')).userId).toBe(victim.userId);
     });
   }
 
+  test('nor when the victim is talked into opening the den\'s link themselves', async () => {
+    // Left in no house, then sent a stranger's invite and tapping Join: that is saying yes to
+    // the house, not to its owner being able to reset the password on an account they already had.
+    const theirs = await newHousehold();
+    const victim = await newMember(theirs.id);
+    await call('DELETE', `/api/households/${theirs.id}/members/me`, { token: victim.token });
+
+    const attacker = await newMember((await newHousehold()).id);
+    const den = await call('POST', '/api/households', { token: attacker.token, body: { name: unique('Den') } });
+    await call('POST', `/api/invites/${await inviteToken(den.id, attacker)}/accept`, { token: victim.token });
+    expect((await call('GET', '/api/households', { token: victim.token })).map((h: { id: string }) => h.id)).toEqual([den.id]);
+    expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(403);
+    expect((await loginWithEmail(victim.email, victim.password)).userId).toBe(victim.userId);
+  });
+
   test('a reset link cannot move an account to another email', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const email = address('keep');
     await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email, password: 'first-password' } });
     const link = await call('POST', `/api/households/${hh.id}/members/${m.userId}/password-reset`, { token: hh.owner.token });
@@ -280,7 +318,7 @@ test.describe('nobody can take over somebody else\'s account', () => {
 
   test('two people using one reset link at once: only one gets in', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const link = await call('POST', `/api/households/${hh.id}/members/${m.userId}/password-reset`, { token: hh.owner.token });
     const statuses = await Promise.all(
       ['racer-one-pw', 'racer-two-pw'].map((password) =>
@@ -292,7 +330,7 @@ test.describe('nobody can take over somebody else\'s account', () => {
 
   test('a long passphrase is kept in full, past what BCrypt reads', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id);
+    const m = await legacyMember(hh.id);
     const email = address('long');
     const passphrase = 'correct horse battery staple '.repeat(4);
     await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email, password: passphrase } });
@@ -311,17 +349,12 @@ test.describe('the name-and-PIN screens', () => {
   });
 });
 
-/** Runs SQL against the local dev Postgres. False when there is no docker to run it with. */
-function sql(statement: string): boolean {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
-  try {
-    const container = execFileSync('docker', ['compose', '-f', join(root, 'docker-compose.dev.yml'), 'ps', '-q', 'postgres'])
-      .toString()
-      .trim();
-    if (!container) return false;
-    execFileSync('docker', ['exec', container, 'psql', '-q', '-U', 'mealplanner', '-d', 'mealplanner', '-c', statement]);
-    return true;
-  } catch {
-    return false;
+/** Every door there used to be for putting somebody else's account in your house. All shut. */
+async function pullIn(attackerToken: string, householdId: string, victim: { username: string }) {
+  for (const [path, body] of [
+    [`/api/households/${householdId}/members`, { username: victim.username }],
+    [`/api/households/${householdId}/users`, { username: victim.username }],
+  ] as const) {
+    expect([404, 405]).toContain(await statusOf('POST', path, { token: attackerToken, body }));
   }
 }

@@ -3,7 +3,7 @@
 //
 //   npm run seed
 //
-// Signs in: "Test House" → maya, PIN 5678 (or e2e-admin, 1234).
+// Signs in: maya@example.com / maya-password (or e2e-admin, PIN 1234).
 const API = process.env.API_URL ?? 'http://localhost:8080';
 
 async function call(method, path, { token, body } = {}) {
@@ -34,10 +34,15 @@ const { token } = await call('POST', '/api/auth/login', { body: { username: 'e2e
 const hh = await call('POST', '/api/households', { token, body: { name: 'Test House' } });
 const H = hh.id;
 
-await call('POST', `/api/households/${H}/users`, { token, body: { username: 'maya', displayName: 'Maya' } }).catch(() =>
-  call('POST', `/api/households/${H}/members`, { token, body: { username: 'maya' } }),
-);
-await call('POST', '/api/auth/pin', { body: { username: 'maya', pin: '5678' } }).catch(() => {});
+// In through the house's invite link, the only way in there is — or, when Maya already has an
+// account from an earlier seed, signed in and saying yes to it.
+const invite = (await call('GET', `/api/households/${H}/invite`, { token })).token;
+await call('POST', '/api/auth/signup', {
+  body: { inviteToken: invite, displayName: 'Maya', email: 'maya@example.com', password: 'maya-password' },
+}).catch(async () => {
+  const maya = await call('POST', '/api/auth/login/email', { body: { email: 'maya@example.com', password: 'maya-password' } });
+  await call('POST', `/api/invites/${invite}/accept`, { token: maya.token });
+});
 
 const I = (ingredientName, quantity, unit = null, optional = false) => ({ ingredientName, quantity, unit, optional });
 const recipe = (name, section, categories, servings, ingredients, extra = {}) =>
@@ -76,4 +81,4 @@ for (const [name, staple] of [['olive oil', true], ['salt', true], ['rice', fals
   await call('POST', `/api/households/${H}/cupboard`, { token, body: { name, staple } });
 }
 
-console.log(`Seeded "Test House" (${H}). Sign in as maya / 5678 or e2e-admin / 1234.`);
+console.log(`Seeded "Test House" (${H}). Sign in as maya@example.com / maya-password, or e2e-admin with PIN 1234.`);

@@ -1,12 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { call, login, newHousehold, newMember, statusOf, unique, admin } from '../../lib/api';
+import { call, legacyMember, login, newHousehold, statusOf, unique, admin } from '../../lib/api';
 
 test.describe('sign-in', () => {
-  test('a new member picks a PIN once, then signs in with it', async () => {
+  test('an account nobody has signed into picks a PIN once, then signs in with it', async () => {
+    // Made for somebody before invite links, and never used: the PIN screens still let them in.
     const hh = await newHousehold();
-    const owner = await admin();
-    const username = unique('fresh').toLowerCase();
-    await call('POST', `/api/households/${hh.id}/users`, { token: owner.token, body: { username } });
+    const { username } = await legacyMember(hh.id, null);
 
     const before = await call('GET', `/api/auth/users/${username}`);
     expect(before.pinSet).toBe(false);
@@ -21,7 +20,7 @@ test.describe('sign-in', () => {
 
   test('five wrong PINs lock the account, and the right PIN is refused while locked', async () => {
     const hh = await newHousehold();
-    const m = await newMember(hh.id, '7777');
+    const m = await legacyMember(hh.id, '7777');
     for (let i = 0; i < 5; i++) {
       expect(await statusOf('POST', '/api/auth/login', { body: { username: m.username, pin: '0000' } })).toBe(401);
     }
@@ -52,7 +51,7 @@ test.describe('sign-in', () => {
   test('usernames are matched regardless of case', async () => {
     // iOS capitalises the first letter of a text field, so "Ryan" is what people will type.
     const hh = await newHousehold();
-    const m = await newMember(hh.id, '5555');
+    const m = await legacyMember(hh.id, '5555');
     const capitalised = m.username[0].toUpperCase() + m.username.slice(1);
     expect((await login(capitalised, '5555')).token).toBeTruthy();
   });

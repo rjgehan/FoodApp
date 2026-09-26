@@ -7,6 +7,7 @@ import com.gehan.mealplanner.dto.AuthDtos.LandingResponse;
 import com.gehan.mealplanner.dto.AuthDtos.LoginRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetupRequest;
+import com.gehan.mealplanner.dto.AuthDtos.SignupRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UserSummary;
 import com.gehan.mealplanner.service.AuthService;
 import jakarta.validation.Valid;
@@ -21,7 +22,8 @@ import java.util.UUID;
 
 /**
  * All of this is deliberately unauthenticated — it is what the login screen draws before anyone
- * has signed in. There is no self-registration: new accounts are made from inside a household.
+ * has signed in. There is no open registration: a new account is made from an invite link
+ * (/signup), or at first-run setup when the server has nobody at all.
  *
  * The name-and-PIN endpoints (/households/{id}/users, /users/{username}, /login, /pin) answer
  * 410 once app.auth.legacy-pin-login is off; email sign-in is always on.
@@ -82,6 +84,15 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Signed out");
         }
         return authService.refresh(userId);
+    }
+
+    /**
+     * A new account through an invite link: made, put in that household, and signed in. Refused
+     * without a link that still works — this is not a way to make an account on its own.
+     */
+    @PostMapping("/signup")
+    public ResponseEntity<AuthResponse> signUp(@Valid @RequestBody SignupRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(authService.signUp(request));
     }
 
     @PostMapping("/setup")

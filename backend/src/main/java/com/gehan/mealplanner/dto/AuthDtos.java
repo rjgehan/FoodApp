@@ -100,6 +100,17 @@ public class AuthDtos {
             @Size(max = 254) String email) {
     }
 
+    /**
+     * A new account, made from an invite link — the only way to make one, apart from the very
+     * first at setup. The username is made from the email; nobody types one any more.
+     */
+    public record SignupRequest(
+            @NotBlank String inviteToken,
+            @NotBlank(message = "Add your name.") @Size(max = 50) String displayName,
+            @NotBlank(message = "Add your email.") @Size(max = 254) String email,
+            @NotBlank(message = PASSWORD_RULE) @Size(max = PASSWORD_MAX) String password) {
+    }
+
     /** The link an owner hands over. The token is shown once; only its hash is kept. */
     public record PasswordResetLinkResponse(String token, Instant expiresAt) {
     }

@@ -1,17 +1,17 @@
 package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.domain.Household;
+import com.gehan.mealplanner.domain.HouseholdInvite;
 import com.gehan.mealplanner.domain.HouseholdMember;
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.RecipeCategory;
 import com.gehan.mealplanner.domain.User;
-import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
-import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
+import com.gehan.mealplanner.repository.HouseholdInviteRepository;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.RecipeCategoryRepository;
@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +35,7 @@ public class HouseholdService {
     private final UserRepository userRepository;
     private final RecipeCategoryRepository categoryRepository;
     private final GroceryCategoryService groceryCategoryService;
+    private final HouseholdInviteRepository inviteRepository;
     private final JdbcTemplate jdbc;
 
     public HouseholdService(HouseholdRepository householdRepository,
@@ -41,12 +43,14 @@ public class HouseholdService {
                              UserRepository userRepository,
                              RecipeCategoryRepository categoryRepository,
                              GroceryCategoryService groceryCategoryService,
+                             HouseholdInviteRepository inviteRepository,
                              JdbcTemplate jdbc) {
         this.householdRepository = householdRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
         this.groceryCategoryService = groceryCategoryService;
+        this.inviteRepository = inviteRepository;
         this.jdbc = jdbc;
     }
 
@@ -99,6 +103,14 @@ public class HouseholdService {
         return toResponse(householdRepository.save(household), HouseholdRole.OWNER);
     }
 
+    /** The household as this person sees it — their role in it included. */
+    @Transactional(readOnly = true)
+    public HouseholdResponse responseFor(UUID householdId, UUID userId) {
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        return toResponse(household, roleOf(householdId, userId));
+    }
+
     private HouseholdResponse toResponse(Household household, HouseholdRole role) {
         return new HouseholdResponse(
                 household.getId(), household.getName(), household.getDefaultServings(),
@@ -112,61 +124,6 @@ public class HouseholdService {
         return memberRepository.findByHouseholdId(householdId).stream()
                 .map(m -> toMemberResponse(m.getUser(), m.getRole()))
                 .toList();
-    }
-
-    public MemberResponse addMember(UUID householdId, UUID requesterId, AddMemberRequest request) {
-        assertMember(householdId, requesterId);
-
-        Household household = householdRepository.findById(householdId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-        User newMember = userRepository.findForSignIn(request.username())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No user with that username"));
-
-        if (memberRepository.existsByHouseholdIdAndUserId(householdId, newMember.getId())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "User is already a member");
-        }
-
-        HouseholdMember member = memberRepository.save(HouseholdMember.builder()
-                .household(household)
-                .user(newMember)
-                .role(HouseholdRole.MEMBER)
-                .addedWithoutAsking(true)
-                .build());
-
-        return toMemberResponse(newMember, member.getRole());
-    }
-
-    /**
-     * Makes an account for someone who does not have one yet and drops them straight into this
-     * household. Any member can do this for any household they belong to — there is no separate
-     * sign-up, so this is how everyone but the very first person gets an account. The new account
-     * has no PIN; its owner picks one the first time they sign in.
-     */
-    @Transactional
-    public MemberResponse createUser(UUID householdId, UUID requesterId, CreateUserRequest request) {
-        assertMember(householdId, requesterId);
-
-        Household household = householdRepository.findById(householdId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-
-        String username = request.username().trim();
-        if (userRepository.existsByUsernameIgnoreCase(username)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Someone already uses that name — invite them instead.");
-        }
-
-        User user = userRepository.save(User.builder()
-                .username(username)
-                .displayName(AuthService.displayNameOr(request.displayName(), username))
-                .build());
-
-        HouseholdMember member = memberRepository.save(HouseholdMember.builder()
-                .household(household)
-                .user(user)
-                .role(HouseholdRole.MEMBER)
-                .build());
-
-        return toMemberResponse(user, member.getRole());
     }
 
     private MemberResponse toMemberResponse(User user, HouseholdRole role) {
@@ -191,7 +148,7 @@ public class HouseholdService {
         // household should be a thing you choose, not a side effect of walking out.
         if (remaining.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "You're the only one here. Add someone else first, or delete the household.");
+                    "You're the only one here. Invite someone else first, or delete the household.");
         }
 
         // An ownerless household could never be renamed again, so the longest-standing member
@@ -206,6 +163,46 @@ public class HouseholdService {
         }
 
         memberRepository.delete(leaving);
+    }
+
+    /**
+     * The owner takes somebody out of the house. The same as that person leaving — only their
+     * membership row goes, and everything they added stays with the house — except that it is
+     * the owner's choice, not theirs. Your own way out is Leave, which knows about handing the
+     * house on; this refuses to be used on yourself rather than guess.
+     *
+     * The house's invite link goes with them. Everyone in a house can see its link, so the person
+     * just taken out has it too — left alone, it would let them straight back in without asking
+     * anybody, which would make removing them mean nothing. The next person to open the Invite
+     * card gets a fresh one.
+     *
+     * Their phone finds out on its next request here, which answers 403 like any house they are
+     * not in, and falls back to another house of theirs.
+     */
+    @Transactional
+    public void removeMember(UUID householdId, UUID ownerId, UUID userId) {
+        assertOwner(householdId, ownerId);
+        if (ownerId.equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "That's you. Use Leave to take yourself out of the household.");
+        }
+        HouseholdMember removing = memberRepository.findByHouseholdIdAndUserId(householdId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "They aren't in this household."));
+        memberRepository.delete(removing);
+        retireInvites(householdId);
+    }
+
+    /**
+     * Stops every link into the house from working. Takes the household's lock first, as making
+     * a link does, so a link being made at the same moment cannot slip out alive afterwards.
+     */
+    @Transactional
+    public void retireInvites(UUID householdId) {
+        householdRepository.lockById(householdId);
+        Instant now = Instant.now();
+        for (HouseholdInvite invite : inviteRepository.findByHouseholdIdAndRevokedAtIsNull(householdId)) {
+            invite.setRevokedAt(now);
+        }
     }
 
     /**
@@ -286,26 +283,9 @@ public class HouseholdService {
         jdbc.update("DELETE FROM places WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM stored_images WHERE household_id = ?", householdId);
 
+        jdbc.update("DELETE FROM household_invites WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM household_members WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM households WHERE id = ?", householdId);
-    }
-
-    /**
-     * Makes an account that belongs to no household — for someone who will have their own, or
-     * who you just want to be able to share with. They pick a PIN when they first sign in.
-     */
-    @Transactional
-    public MemberResponse createUnassignedUser(CreateUserRequest request) {
-        String username = request.username().trim();
-        if (userRepository.existsByUsernameIgnoreCase(username)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Someone already uses that name — invite them instead.");
-        }
-        User user = userRepository.save(User.builder()
-                .username(username)
-                .displayName(AuthService.displayNameOr(request.displayName(), username))
-                .build());
-        return toMemberResponse(user, null);
     }
 
     /** Renames you. The username has to stay unique, since it is what you sign in with. */

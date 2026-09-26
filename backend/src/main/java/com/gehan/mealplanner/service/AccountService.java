@@ -286,9 +286,9 @@ public class AccountService {
         }
         HouseholdMember member = memberRepository.findByHouseholdIdAndUserId(householdId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "They aren't in this household."));
-        if (member.wasAddedWithoutAsking()) {
+        if (member.cameWithOwnAccount()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "They were added with an account they already had, so they change their password themselves, from Settings.");
+                    "They joined with an account they already had, so they change their password themselves, from Settings.");
         }
         if (!vouchesFor(ownerId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
@@ -320,15 +320,16 @@ public class AccountService {
      * person must own none — then the only people this account is shared with are the owner's.
      * Someone in two families' houses changes their own password; nobody else can.
      *
-     * Nor does a membership count that the person never agreed to. An account left in no house
-     * — theirs was deleted, or they walked out of it — would otherwise pass the moment a stranger
-     * added it to a house of their own by username, since that house is then all it is in. So
-     * none of their memberships may be one somebody pulled their existing account into.
+     * Nor does a membership count that brought an account the house did not make. An account
+     * left in no house — theirs was deleted, or they walked out of it — would otherwise pass the
+     * moment it joined a stranger's house, since that house is then all it is in: pulled in by
+     * username in the old days, or now by being talked into opening the stranger's invite. So
+     * none of their memberships may be one their existing account came into.
      */
     private boolean vouchesFor(UUID ownerId, UUID userId) {
         List<HouseholdMember> theirs = memberRepository.findByUserId(userId);
         return !theirs.isEmpty() && theirs.stream().allMatch(m -> m.getRole() != HouseholdRole.OWNER
-                && !m.wasAddedWithoutAsking()
+                && !m.cameWithOwnAccount()
                 && memberRepository.findByHouseholdIdAndUserId(m.getHousehold().getId(), ownerId)
                         .map(mine -> mine.getRole() == HouseholdRole.OWNER)
                         .orElse(false));

@@ -1,5 +1,7 @@
 package com.gehan.mealplanner.service;
 
+import com.gehan.mealplanner.domain.HouseholdMember;
+import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.PasswordReset;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.AuthDtos.AuthResponse;
@@ -8,9 +10,7 @@ import com.gehan.mealplanner.dto.AuthDtos.LoginRequest;
 import com.gehan.mealplanner.dto.AuthDtos.PasswordResetLinkResponse;
 import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UsePasswordResetRequest;
-import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
-import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
@@ -46,6 +46,7 @@ class AccountDatabaseTest {
     @Autowired AccountService accountService;
     @Autowired AuthService authService;
     @Autowired HouseholdService householdService;
+    @Autowired InviteService inviteService;
     @Autowired UserRepository userRepository;
     @Autowired HouseholdRepository householdRepository;
     @Autowired HouseholdMemberRepository memberRepository;
@@ -73,9 +74,28 @@ class AccountDatabaseTest {
         member = userRepository.save(member);
     }
 
+    /**
+     * An account made for somebody inside this house, the way accounts were made before invite
+     * links — still in the database, and still ones an owner can vouch for.
+     */
     private User newAccountIn(UUID household, String username) {
-        UUID id = householdService.createUser(household, owner.getId(), new CreateUserRequest(username, null)).userId();
-        return userRepository.findById(id).orElseThrow();
+        User user = userRepository.save(User.builder().username(username).displayName(username).build());
+        memberRepository.save(HouseholdMember.builder()
+                .household(householdRepository.findById(household).orElseThrow())
+                .user(user)
+                .role(HouseholdRole.MEMBER)
+                .build());
+        return user;
+    }
+
+    /** A membership the retired add-by-username made: nobody asked the person, and it is marked so. */
+    private void pulledIn(UUID household, User user) {
+        memberRepository.save(HouseholdMember.builder()
+                .household(householdRepository.findById(household).orElseThrow())
+                .user(user)
+                .role(HouseholdRole.MEMBER)
+                .broughtOwnAccount(true)
+                .build());
     }
 
     private String email(String who) {
@@ -243,20 +263,23 @@ class AccountDatabaseTest {
         assertThatThrownBy(() -> authService.setInitialPin(new SetPinRequest(passwordOnly.getUsername(), "0000", null)))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(409));
         assertThat(userRepository.findById(passwordOnly.getId()).orElseThrow().getPinHash()).isNull();
-        // The roster no longer offers "choose your PIN" for them.
+        // Nor are they on the roster any more: there is no "choose your PIN" to offer them, and
+        // nothing else on those screens they could use.
         assertThat(authService.listHouseholdUsers(householdId))
-                .filteredOn(u -> u.username().equals(passwordOnly.getUsername()))
-                .singleElement().satisfies(u -> assertThat(u.pinSet()).isTrue());
+                .noneMatch(u -> u.username().equals(passwordOnly.getUsername()));
+        assertThat(authService.listHouseholdUsers(householdId))
+                .anyMatch(u -> u.username().equals(owner.getUsername()));
     }
 
     @Test
     void anOwnerCannotResetSomebodyTheyPulledInFromAnotherHouse() {
-        // The attack: make a house, add somebody by username, and "reset" their password.
+        // The attack, from before invite links: make a house, add somebody by username, and
+        // "reset" their password. The endpoint is gone, but the rows it made are still about.
         User attacker = userRepository.save(User.builder()
                 .username("acct-attacker-" + tag).displayName("Attacker").pinHash(passwordEncoder.encode("9999")).build());
         UUID den = householdService.create(attacker.getId(), new CreateHouseholdRequest("Den IT")).id();
-        householdService.addMember(den, attacker.getId(), new AddMemberRequest(member.getUsername()));
-        householdService.addMember(den, attacker.getId(), new AddMemberRequest(owner.getUsername()));
+        pulledIn(den, member);
+        pulledIn(den, owner);
 
         assertThatThrownBy(() -> accountService.createPasswordReset(den, attacker.getId(), member.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
@@ -279,7 +302,7 @@ class AccountDatabaseTest {
         User attacker = userRepository.save(User.builder()
                 .username("acct-taker-" + tag).displayName("Taker").pinHash(passwordEncoder.encode("9999")).build());
         UUID den = householdService.create(attacker.getId(), new CreateHouseholdRequest("Den IT")).id();
-        householdService.addMember(den, attacker.getId(), new AddMemberRequest(member.getUsername()));
+        pulledIn(den, member);
 
         assertThatThrownBy(() -> accountService.createPasswordReset(den, attacker.getId(), member.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
@@ -328,7 +351,7 @@ class AccountDatabaseTest {
     @Test
     void withThePinScreensOffTheRosterIsPrivateAndPinSignInIsGone() {
         AuthService pinOff = new AuthService(userRepository, householdRepository, memberRepository, passwordEncoder,
-                jwtService, limiter, householdService, accountService, false);
+                jwtService, limiter, householdService, accountService, inviteService, false);
 
         var landing = pinOff.landing();
         assertThat(landing.legacyPinLogin()).isFalse();

@@ -1,7 +1,6 @@
 package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.HouseholdDtos.ActiveHouseholdRequest;
-import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
@@ -13,7 +12,6 @@ import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,9 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Accounts that belong to no household — deliberately not under /api/households/{id}, because
- * the whole point is that they are nobody's house yet. Any signed-in person can make one; this
- * is a small app for people who already know each other.
+ * You: your name, how you sign in, and the house you were last in. Deliberately nothing here
+ * reaches anybody else's account — accounts are only ever made through an invite link.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -36,11 +33,6 @@ public class UserController {
     public UserController(HouseholdService householdService, AccountService accountService) {
         this.householdService = householdService;
         this.accountService = accountService;
-    }
-
-    @PostMapping
-    public MemberResponse create(@Valid @RequestBody CreateUserRequest request) {
-        return householdService.createUnassignedUser(request);
     }
 
     /** Includes your email and whether you have a password — what the "add an email" prompt checks. */

@@ -3,7 +3,9 @@
 A small meal-planning app for one family and their friends: a shared recipe catalog, a weekly
 plan, and a grocery list that updates live across everyone's phones.
 
-- **Sign in** with a username and a 4-digit PIN, tapped out on a keypad. No emails, no passwords.
+- **Sign in** with an email and a password (older accounts still have a name-and-PIN keypad until
+  the server turns it off). New people join through a household's **invite link** or its QR code;
+  the owner can take someone out again.
 - **Recipes** are filed into Breakfast / Lunch / Dinner / Snacks / Drinks / Other, with
   sub-categories you invent yourself, cover photos, and an index-card view.
 - **Plan** a week at a time; a meal can be a main plus its sides.

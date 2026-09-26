@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, newHousehold, newMember, newRecipe, plan, isoDate, statusOf } from '../../lib/api';
+import { admin, call, newHousehold, newMember, newRecipe, plan, isoDate, statusOf, unique } from '../../lib/api';
 
 /**
  * An outsider — signed in, but in a different household — must not be able to read or change
@@ -39,7 +39,9 @@ test('an outsider cannot reach another household’s data', async () => {
     ['POST', `/api/households/${T}/cupboard/${cup.id}/adjust`, { delta: 1 }],
     ['DELETE', `/api/households/${T}/cupboard/${cup.id}`],
     ['GET', `/api/households/${O}/members`],
-    ['POST', `/api/households/${O}/members`, { username: outsider.username }],
+    ['DELETE', `/api/households/${O}/members/${owner.userId}`],
+    ['GET', `/api/households/${O}/invite`],
+    ['DELETE', `/api/households/${O}/invite`],
     ['PATCH', `/api/households/${O}/name`, { name: 'x' }],
     ['GET', `/api/households/${O}/places`],
   ];
@@ -63,18 +65,22 @@ test('signed-out requests are refused', async () => {
   }
 });
 
-test('a member can pull any existing account into their household', async () => {
-  // Low risk in a family app, but it happens without the other person agreeing.
-  test.fail(true, 'KNOWN ISSUE: adding an existing username needs no consent from that person');
+test('nobody can put an existing account into a household, or make one for somebody else', async () => {
+  // Adding someone by username never asked them, and with owner password resets that was a way
+  // to take an account over. The only ways in now are founding a house or the person opening
+  // its invite link themselves — so the old doors are simply not there.
   const a = await newHousehold();
   const b = await newHousehold();
   const inB = await newMember(b.id);
   const member = await newMember(a.id);
-  const status = await statusOf('POST', `/api/households/${a.id}/members`, {
-    token: member.token,
-    body: { username: inB.username },
-  });
-  expect(status).toBeGreaterThanOrEqual(400);
+  const refusals = [
+    await statusOf('POST', `/api/households/${a.id}/members`, { token: member.token, body: { username: inB.username } }),
+    await statusOf('POST', `/api/households/${a.id}/users`, { token: member.token, body: { username: unique('made').toLowerCase() } }),
+    await statusOf('POST', '/api/users', { token: member.token, body: { username: unique('loose').toLowerCase() } }),
+  ];
+  for (const status of refusals) expect([404, 405]).toContain(status);
+  const members = await call('GET', `/api/households/${a.id}/members`, { token: member.token });
+  expect(members.some((m: { userId: string }) => m.userId === inB.userId)).toBe(false);
 });
 
 test.describe('live grocery updates', () => {
@@ -126,5 +132,22 @@ test.describe('live grocery updates', () => {
       call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: owner.token, body: { ingredientName: 'secret' } }),
     );
     expect(got.some((m) => m.includes('secret'))).toBe(false);
+  });
+
+  test('somebody taken out stops hearing the list, even with it still open', async () => {
+    const hh = await newHousehold();
+    const member = await newMember(hh.id);
+    const owner = await admin();
+    const add = (ingredientName: string) =>
+      call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: owner.token, body: { ingredientName } });
+    // Subscribed while still in the house; removed with the socket open; then the list changes.
+    const got = await whatArrives(member.token, hh.id, async () => {
+      await add('before-removal');
+      await new Promise((r) => setTimeout(r, 500));
+      await call('DELETE', `/api/households/${hh.id}/members/${member.userId}`, { token: owner.token });
+      await add('after-removal');
+    });
+    expect(got.some((m) => m.includes('before-removal'))).toBe(true);
+    expect(got.some((m) => m.includes('after-removal'))).toBe(false);
   });
 });

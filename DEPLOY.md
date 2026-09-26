@@ -168,10 +168,24 @@ endpoints (`/api/auth/login`, `/api/auth/pin`, `/api/auth/households/{id}/users`
 **Forgotten passwords** are reset by the household's owner — there is no email sending. Owner →
 Household settings → Who's here → ••• → Reset password makes a one-time link (with a QR code) that
 works for 24 hours; opening it sets a new password and signs them in. An owner can only do this for
-someone whose every household is one they own (and who owns none): anyone can make a household and
-add an existing account to it, so that alone is not a reason to hand out a way in. Someone in two
+someone whose every household is one they own (and who owns none), and never for an account that
+came into the house already made — pulled in by the old add-by-username, or joining by accepting
+an invite with an account they already had. Only accounts made through that house's own invite
+(or before any of this was recorded) can be reset by its owner. Someone in two
 families' houses changes their own password from Settings. Emails are one account each, enforced
 by a unique index on `lower(email)`.
+
+**Getting people in.** The only way into somebody else's household is its invite link:
+Household settings → Invite someone shows `<site>/invite/<token>` (and a QR code), which any
+member can hand out. Whoever opens it makes an account there — name, email, password — or signs
+in to the one they have, and joins. There is no other sign-up, and nobody can be added to a house
+without opening the link themselves (adding an existing account by username, and making accounts
+on somebody's behalf, are gone). A link lasts 7 days; the owner can replace it at any time, which
+kills the old one. The owner can also remove somebody from ••• beside their name; they keep their
+account, and the invite link is replaced at the same moment — they had seen it, as everyone in
+the house has — so they can only come back if somebody sends them the new one. A removed person's
+open grocery list stops getting live updates straight away. Accounts that only ever had an email
+and password are left off the public name-and-PIN screens.
 
 ## Things worth knowing
 

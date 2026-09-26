@@ -127,11 +127,15 @@ const { token } = await call('POST', '/api/auth/login', { body: { username: 'e2e
 const home = await call('POST', '/api/households', { token, body: { name: HOUSEHOLD } });
 const H = home.id;
 
+// Everyone comes in through the house's invite link — the only way in there is.
+const invite = (await call('GET', `/api/households/${H}/invite`, { token })).token;
 for (const [username, displayName] of [['ryan', 'Ryan'], ['maya', 'Maya']]) {
-  await call('POST', `/api/households/${H}/users`, { token, body: { username, displayName } }).catch(() =>
-    call('POST', `/api/households/${H}/members`, { token, body: { username } }),
-  );
-  await call('POST', '/api/auth/pin', { body: { username, pin: username === 'ryan' ? '1234' : '5678' } }).catch(() => {});
+  const email = `${username}@example.com`;
+  const password = `${username}-password`;
+  await call('POST', '/api/auth/signup', { body: { inviteToken: invite, displayName, email, password } }).catch(async () => {
+    const who = await call('POST', '/api/auth/login/email', { body: { email, password } });
+    await call('POST', `/api/invites/${invite}/accept`, { token: who.token });
+  });
 }
 
 // Dish -> where it is filed. Names are what TheMealDB calls them.
@@ -266,4 +270,4 @@ for (const [name, section] of [['Katsu Chicken curry', 'DINNER'], ['Banana Panca
 }
 
 console.log(`\n"${HOUSEHOLD}" (${H}) — ${saved.length} recipes, ${saved.filter((r) => r.photo).length} with photos.`);
-console.log('Sign in as ryan / 1234 or maya / 5678.');
+console.log('Sign in as ryan@example.com / ryan-password or maya@example.com / maya-password.');

@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public class HouseholdDtos {
@@ -36,14 +37,23 @@ public class HouseholdDtos {
         public static final int MAX_PLANNING_DAYS = 60;
     }
 
-    /** Adds an account that already exists — including one belonging to another household. */
-    public record AddMemberRequest(@NotBlank String username) {
+    /**
+     * The household's invite link as a member sees it. The token goes on the end of
+     * `<web origin>/invite/`; the app builds the address, since only it knows its own origin.
+     */
+    public record InviteResponse(String token, Instant expiresAt) {
     }
 
-    /** Makes a brand new account inside this household. It has no PIN until its owner first signs in. */
-    public record CreateUserRequest(
-            @NotBlank @Size(min = 2, max = 50) String username,
-            @Size(max = 50) String displayName) {
+    /**
+     * What an invite link says to somebody who is not signed in yet: whose house, who asked, and
+     * how many are in it — no names, nothing else. All null but `valid` when the link does not
+     * work, so a dead or made-up token tells nobody anything.
+     */
+    public record InviteInfo(String householdName, String invitedByName, Integer memberCount, boolean valid) {
+    }
+
+    /** A signed-in person's place in the house a link is for: in it already, and if so which. */
+    public record InviteStanding(boolean alreadyMember, UUID householdId) {
     }
 
     /**

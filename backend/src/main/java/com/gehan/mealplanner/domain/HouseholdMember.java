@@ -40,18 +40,24 @@ public class HouseholdMember {
     private Instant joinedAt = Instant.now();
 
     /**
-     * True when somebody else put an existing account in here by its username, without that
-     * person saying yes. Such a membership never lets the owner reset their password: anyone can
-     * make a house and pull a stranger into it, and for an account in no other house that would
-     * otherwise make the stranger's new "owner" the only one who speaks for it.
+     * True when the account came into this house already made — it existed before, and the house
+     * did not make it. Such a membership never lets the owner reset its password. Anyone can make
+     * a house, and for an account in no other house its new "owner" would otherwise be the only
+     * one who speaks for it: pulled in by a stranger, or talked into accepting a stranger's
+     * invite, it could then have its password "reset" out from under the person it belongs to.
+     * Saying yes to a house is not saying yes to that.
+     *
+     * Set by accepting an invite, and on the rows the old add-by-username made without asking
+     * anybody. The column keeps its old name so those rows keep their protection.
      *
      * Null on every membership made before this was recorded, and on the ones made any other way
-     * — founding a house, being given a brand new account in it — which are the ones an owner
-     * can vouch for.
+     * — founding a house, or signing up through its invite, which makes the account there and
+     * then — which are the ones an owner can vouch for.
      */
-    private Boolean addedWithoutAsking;
+    @Column(name = "added_without_asking")
+    private Boolean broughtOwnAccount;
 
-    public boolean wasAddedWithoutAsking() {
-        return Boolean.TRUE.equals(addedWithoutAsking);
+    public boolean cameWithOwnAccount() {
+        return Boolean.TRUE.equals(broughtOwnAccount);
     }
 }

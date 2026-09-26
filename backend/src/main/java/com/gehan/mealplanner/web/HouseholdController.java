@@ -1,8 +1,6 @@
 package com.gehan.mealplanner.web;
 
-import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
-import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.RenameHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
@@ -44,26 +42,22 @@ public class HouseholdController {
         return householdService.listMembers(householdId, userId);
     }
 
-    @PostMapping("/{householdId}/members")
-    public ResponseEntity<MemberResponse> addMember(@AuthenticationPrincipal UUID userId,
-                                                      @PathVariable UUID householdId,
-                                                      @Valid @RequestBody AddMemberRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(householdService.addMember(householdId, userId, request));
-    }
-
-    @PostMapping("/{householdId}/users")
-    public ResponseEntity<MemberResponse> createUser(@AuthenticationPrincipal UUID userId,
-                                                      @PathVariable UUID householdId,
-                                                      @Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(householdService.createUser(householdId, userId, request));
-    }
-
     /** Walk out of a household. Blocked if you are the last one in it. */
     @DeleteMapping("/{householdId}/members/me")
     public ResponseEntity<Void> leave(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
         householdService.leave(householdId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The owner takes somebody else out. `members/me` above is the literal path and wins for
+     * yourself, which is Leave; asking this for your own id is refused.
+     */
+    @DeleteMapping("/{householdId}/members/{userId}")
+    public ResponseEntity<Void> removeMember(@AuthenticationPrincipal UUID ownerId,
+                                             @PathVariable UUID householdId,
+                                             @PathVariable UUID userId) {
+        householdService.removeMember(householdId, ownerId, userId);
         return ResponseEntity.noContent().build();
     }
 

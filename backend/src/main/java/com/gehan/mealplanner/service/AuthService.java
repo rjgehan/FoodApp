@@ -13,6 +13,7 @@ import com.gehan.mealplanner.dto.AuthDtos.LandingResponse;
 import com.gehan.mealplanner.dto.AuthDtos.LoginRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetupRequest;
+import com.gehan.mealplanner.dto.AuthDtos.SignupRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UserSummary;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
@@ -41,6 +42,7 @@ public class AuthService {
     private final SignInAttemptLimiter attemptLimiter;
     private final HouseholdService householdService;
     private final AccountService accountService;
+    private final InviteService inviteService;
     /**
      * The name-and-PIN screens. On while people are still moving to email sign-in; the owner
      * turns it off (LEGACY_PIN_LOGIN=false) once every member list shows an email for everyone.
@@ -55,6 +57,7 @@ public class AuthService {
                        SignInAttemptLimiter attemptLimiter,
                        HouseholdService householdService,
                        AccountService accountService,
+                       InviteService inviteService,
                        @Value("${app.auth.legacy-pin-login:true}") boolean legacyPinLogin) {
         this.userRepository = userRepository;
         this.householdRepository = householdRepository;
@@ -64,6 +67,7 @@ public class AuthService {
         this.attemptLimiter = attemptLimiter;
         this.householdService = householdService;
         this.accountService = accountService;
+        this.inviteService = inviteService;
         this.legacyPinLogin = legacyPinLogin;
     }
 
@@ -102,6 +106,7 @@ public class AuthService {
                 .toList();
         // Somebody has to be able to sign in as them, and the whole design is tap-your-name.
         List<UserSummary> unassigned = userRepository.findAll().stream()
+                .filter(AuthService::onPinRoster)
                 .filter(u -> memberRepository.findByUserId(u.getId()).isEmpty())
                 .map(this::toSummary)
                 .sorted(Comparator.comparing(UserSummary::displayName, String.CASE_INSENSITIVE_ORDER))
@@ -116,7 +121,9 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such household");
         }
         return memberRepository.findByHouseholdId(householdId).stream()
-                .map(m -> toSummary(m.getUser()))
+                .map(HouseholdMember::getUser)
+                .filter(AuthService::onPinRoster)
+                .map(this::toSummary)
                 .sorted(Comparator.comparing(UserSummary::displayName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
@@ -195,6 +202,11 @@ public class AuthService {
         return toAuthResponse(accountService.useReset(request.token(), request.password(), request.email()));
     }
 
+    /** Somebody new, through an invite link. Signs them straight in, in the house that asked. */
+    public AuthResponse signUp(SignupRequest request) {
+        return toAuthResponse(inviteService.signUp(request));
+    }
+
     /**
      * On the name-and-PIN screens you get to your name by tapping a house, and that is the house
      * you meant — so it becomes the one you are remembered in, and the answer below reports it.
@@ -252,7 +264,7 @@ public class AuthService {
     public AuthResponse setup(SetupRequest request) {
         if (userRepository.count() > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "This app is already set up — ask someone to make you an account.");
+                    "This app is already set up — ask someone in your household for an invite link.");
         }
         boolean withEmail = request.email() != null && !request.email().isBlank();
         boolean withPin = request.pin() != null && !request.pin().isBlank();
@@ -296,6 +308,16 @@ public class AuthService {
     /** An email or a password means somebody already owns this account, PIN or no PIN. */
     private static boolean hasOtherSignIn(User user) {
         return user.getPasswordHash() != null || user.getEmail() != null;
+    }
+
+    /**
+     * Whether the tap-your-name screens list this account. Not one that only ever had an email
+     * and password — somebody who signed up through an invite, say. The keypad has nothing to
+     * offer them, and their username is made from their email, so listing it on a page anybody
+     * can open would hand out half of the address they sign in with.
+     */
+    private static boolean onPinRoster(User user) {
+        return user.getPinHash() != null || !hasOtherSignIn(user);
     }
 
     /**
