@@ -150,6 +150,17 @@ actor APIClient {
         return try await send("PUT", "/api/users/me/credentials", body: body)
     }
 
+    /// Your colours, all four at once, so the web and your other devices follow.
+    func updateTheme(_ theme: Theme) async throws -> Theme {
+        let body: [String: Any] = [
+            "preset": theme.preset ?? NSNull(),
+            "primary": theme.primary ?? NSNull(),
+            "secondary": theme.secondary ?? NSNull(),
+            "mode": theme.mode?.rawValue ?? NSNull(),
+        ]
+        return try await send("PUT", "/api/users/me/theme", body: body)
+    }
+
     /// The house you just switched to, so the next sign-in — here or on the web — opens it.
     func rememberHousehold(_ id: UUID) async throws {
         _ = try await sendNoContent("PUT", "/api/users/me/active-household", body: ["householdId": id.uuidString])

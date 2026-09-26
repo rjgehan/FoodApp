@@ -76,9 +76,9 @@ struct AccountButton: ToolbarContent {
             } label: {
                 Text(initial)
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Palette.secondary)
                     .frame(width: 30, height: 30)
-                    .background(Palette.accentSoft, in: Circle())
+                    .background(Palette.secondarySoft, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Your account")

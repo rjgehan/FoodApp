@@ -231,6 +231,8 @@ final class Session {
         TokenStore.clear()
         UserDefaults.standard.removeObject(forKey: Self.householdKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)
+        // Colours belong to the person: the next one to sign in here gets their own.
+        ThemeStore.shared.reset()
         await APIClient.shared.use(token: nil)
     }
 }

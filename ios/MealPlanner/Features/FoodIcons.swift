@@ -155,11 +155,11 @@ struct FoodIconPicker: View {
             content()
                 .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fit)
-                .foregroundStyle(isOn ? Palette.accent : Color.secondary)
-                .background(isOn ? Palette.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(isOn ? Palette.secondary : Color.secondary)
+                .background(isOn ? Palette.secondarySoft : Color.clear, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(isOn ? Palette.accent : Color(.separator), lineWidth: 1)
+                        .strokeBorder(isOn ? Palette.secondary : Color(.separator), lineWidth: 1)
                 )
         }
         // Borderless so a grid of these inside a Form row is many buttons, not one.

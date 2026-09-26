@@ -17,22 +17,43 @@ import SwiftUI
 
  What is here is what UIKit cannot know: the orange that means "you can act", and the six
  tints that make a recipe recognisable when you flip past it.
+
+ The orange and its tint are Classic, the default. Somebody who picks other colours in Settings
+ → Appearance gets theirs instead (Theme.swift): the accent, the tint and the text on it are read
+ from ThemeStore each time, which is also what redraws a view when the pick changes.
  */
 enum Palette {
 
     /// The one colour that means "you can act". Without it every button is Apple's blue,
     /// which is the single clearest sign that nobody chose anything.
-    static let accent = dynamic(light: 0xEA580C, dark: 0xFF9F40)
+    static var accent: Color {
+        guard let c = ThemeStore.shared.colors else { return classicAccent }
+        return dynamic(light: c.light.accent, dark: c.dark.accent)
+    }
+    private static let classicAccent = dynamic(light: 0xEA580C, dark: 0xFF9F40)
 
     /// "You have this" — the only other colour that carries meaning. Green in both schemes,
     /// the web's --success, which is darker than Apple's green in light mode so it reads as
     /// text rather than as a tick.
     static let success = dynamic(light: 0x248A3D, dark: 0x30D158)
 
-    /// The accent at a whisper — behind an avatar, or under a selected day. The web's
-    /// --accent-soft, which is a warm tint in light and a dark ember in dark, not the accent
-    /// at low opacity.
-    static let accentSoft = dynamic(light: 0xFFEDD5, dark: 0x402008)
+    /// The second colour at a whisper — behind an avatar, a notice, a selected icon. The web's
+    /// --secondary-soft: in Classic a warm tint in light and a dark ember in dark, not the
+    /// accent at low opacity.
+    static var secondarySoft: Color {
+        guard let c = ThemeStore.shared.colors else { return classicSoft }
+        return dynamic(light: c.light.secondarySoft, dark: c.dark.secondarySoft)
+    }
+    private static let classicSoft = dynamic(light: 0xFFEDD5, dark: 0x402008)
+
+    /// Text and icons on `secondarySoft` — the web's --secondary. Classic's is its orange.
+    static var secondary: Color {
+        guard let c = ThemeStore.shared.colors else { return classicAccent }
+        return dynamic(light: c.light.secondary, dark: c.dark.secondary)
+    }
+
+    /// The tint's old name, from before there was a second colour to tint it with.
+    static var accentSoft: Color { secondarySoft }
 
     /**
      Recipe tints, in the web's order so the same recipe is the same colour in both places.
@@ -62,7 +83,7 @@ enum Palette {
         return covers[Int(hash % UInt32(covers.count))]
     }
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
     }
 }

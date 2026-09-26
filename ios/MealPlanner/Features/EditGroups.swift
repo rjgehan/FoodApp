@@ -140,8 +140,8 @@ struct EditGroupsView: View {
             Group {
                 if let icon = FoodIcon.named(key) {
                     icon.image.resizable().scaledToFit().padding(5)
-                        .foregroundStyle(Palette.accent)
-                        .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Palette.secondary)
+                        .background(Palette.secondarySoft, in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     Image(systemName: "photo.badge.plus")
                         .foregroundStyle(.secondary)

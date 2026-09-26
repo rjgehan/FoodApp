@@ -75,14 +75,14 @@ struct ScanBarcodeSheet: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("You already have this.")
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Palette.accent)
+                                        .foregroundStyle(Palette.secondary)
                                     Text("It is in the cupboard as “\(already.name)”"
                                          + (already.runningLow ? ", and it is marked running low." : "."))
                                         .font(.subheadline)
                                 }
                                 .padding(.vertical, 2)
                             }
-                            .listRowBackground(Palette.accentSoft)
+                            .listRowBackground(Palette.secondarySoft)
                         } else {
                             Section {
                                 TextField("Name", text: $name)
