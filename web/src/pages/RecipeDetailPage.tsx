@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { ActionMenu, Button, Card, CheckCircle, cx, EmptyState, ErrorText, IconButton, Input, Sheet } from '../components/ui';
+import { ActionMenu, Button, Card, cx, EmptyState, ErrorText, IconButton, Sheet, SwitchKnob } from '../components/ui';
+import LinkHandout from '../components/LinkHandout';
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, PlayIcon, PlusIcon, TrashIcon } from '../components/icons';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
 import RecipeIndexCard from '../components/RecipeIndexCard';
@@ -19,7 +20,7 @@ import LinkList, { FeaturedVideoName } from '../components/LinkList';
 export default function RecipeDetailPage() {
   const { recipeId } = useParams<{ recipeId: string }>();
   const navigate = useNavigate();
-  const { activeHouseholdId, activeHousehold } = useHousehold();
+  const { activeHouseholdId, activeHousehold, households } = useHousehold();
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [siblings, setSiblings] = useState<Recipe[]>([]);
@@ -30,7 +31,9 @@ export default function RecipeDetailPage() {
   const [sharing, setSharing] = useState(false);
   const [targets, setTargets] = useState<ShareTarget[]>([]);
   const [linkToken, setLinkToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  /** "Turn off the link" pressed once: it asks before breaking every copy already sent. */
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [draft, setDraft] = useState<Filing | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
   const [linkDrafts, setLinkDrafts] = useState<DraftLink[]>([]);
@@ -71,10 +74,20 @@ export default function RecipeDetailPage() {
 
   async function openSharing() {
     if (!recipe) return;
-    setTargets(await api<ShareTarget[]>('GET', `/api/recipes/${recipe.id}/share-targets`));
-    const { token } = await api<{ token: string | null }>('GET', `/api/recipes/${recipe.id}/link`);
-    setLinkToken(token);
-    setSharing(true);
+    setShareError(null);
+    setConfirmingRevoke(false);
+    try {
+      const [houses, link] = await Promise.all([
+        api<ShareTarget[]>('GET', `/api/recipes/${recipe.id}/share-targets`),
+        api<{ token: string | null }>('GET', `/api/recipes/${recipe.id}/link`),
+      ]);
+      setTargets(houses);
+      setLinkToken(link.token);
+      setSharing(true);
+    } catch (err) {
+      // Said under the header, not in place of the page: the recipe they were reading is fine.
+      setShareError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
+    }
   }
 
   function publicUrl(token: string): string {
@@ -84,9 +97,12 @@ export default function RecipeDetailPage() {
   async function createLink() {
     if (!recipe) return;
     setBusy(true);
+    setShareError(null);
     try {
       const { token } = await api<{ token: string }>('POST', `/api/recipes/${recipe.id}/link`);
       setLinkToken(token);
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
     } finally {
       setBusy(false);
     }
@@ -95,35 +111,37 @@ export default function RecipeDetailPage() {
   async function revokeLink() {
     if (!recipe) return;
     setBusy(true);
+    setShareError(null);
     try {
       await api('DELETE', `/api/recipes/${recipe.id}/link`);
       setLinkToken(null);
-      setCopied(false);
+      setConfirmingRevoke(false);
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
     } finally {
       setBusy(false);
     }
   }
 
-  /** Clipboard writes fail on http origins and when the tab is not focused, so the readonly
-   *  input above stays the fallback: the text is already selectable. */
-  async function copyLink(token: string) {
-    try {
-      await navigator.clipboard.writeText(publicUrl(token));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  async function setShares(householdIds: string[]) {
+  /**
+   * Flips one of your own households. Only yours are sent: the server leaves a share somebody
+   * else made — into a house you are not in — exactly where it is.
+   */
+  async function toggleShare(target: ShareTarget) {
     if (!recipe) return;
+    const next = targets.map((t) => (t.householdId === target.householdId ? { ...t, shared: !t.shared } : t));
+    setTargets(next);
     setBusy(true);
+    setShareError(null);
     try {
-      setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/shares`, { householdIds }));
-      setTargets((prev) =>
-        prev.map((t) => ({ ...t, shared: householdIds.includes(t.householdId) })),
+      setRecipe(
+        await api<Recipe>('PUT', `/api/recipes/${recipe.id}/shares`, {
+          householdIds: next.filter((t) => t.shared).map((t) => t.householdId),
+        }),
       );
+    } catch (err) {
+      setTargets(targets);
+      setShareError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
     } finally {
       setBusy(false);
     }
@@ -181,8 +199,14 @@ export default function RecipeDetailPage() {
   async function setPublished(published: boolean) {
     if (!recipe) return;
     setBusy(true);
+    setShareError(null);
     try {
-      setRecipe(await api<Recipe>('PUT', `/api/recipes/${recipe.id}/published`, { published }));
+      // Only the switch is taken from the answer: the rest of the page — its drawer, its
+      // groups — is already right, and is what Organize and Edit start from.
+      const saved = await api<Recipe>('PUT', `/api/recipes/${recipe.id}/published`, { published });
+      setRecipe((current) => (current ? { ...current, published: saved.published } : saved));
+    } catch (err) {
+      setShareError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
     } finally {
       setBusy(false);
     }
@@ -217,6 +241,10 @@ export default function RecipeDetailPage() {
   }
 
   const mine = recipe.householdId === activeHouseholdId;
+  // Counted among your own houses only — the ones the Share sheet shows. A share somebody else
+  // in this house made into a house you are not in is theirs, and would be a number with no
+  // switch behind it.
+  const sharedWithMine = recipe.sharedWith.filter((id) => households.some((h) => h.id === id)).length;
   const total = totalMinutes(recipe);
   const steps = instructionSteps(recipe.instructions);
 
@@ -327,8 +355,8 @@ export default function RecipeDetailPage() {
                   mine && {
                     label: recipe.published
                       ? 'Share · in Explore'
-                      : recipe.sharedWith.length
-                        ? `Share · with ${recipe.sharedWith.length}`
+                      : sharedWithMine
+                        ? `Share · with ${sharedWithMine}`
                         : 'Share',
                     onSelect: openSharing,
                   },
@@ -341,6 +369,7 @@ export default function RecipeDetailPage() {
           )}
         </div>
       </div>
+      {shareError && !sharing && <ErrorText>{shareError}</ErrorText>}
 
       {asCard ? (
         <RecipeIndexCard recipe={recipe} />
@@ -536,18 +565,41 @@ export default function RecipeDetailPage() {
           <div className="space-y-5">
             <section>
               <h3 className="font-semibold">Anyone with the link</h3>
-              <p className="mt-0.5 text-sm text-muted">Opens the recipe on its own. No account needed.</p>
+              <p className="mt-0.5 text-sm text-muted">
+                Opens the recipe on its own — no account needed. Anyone with an account can save
+                a copy to their own recipes.
+              </p>
               {linkToken ? (
-                <div className="mt-3 space-y-2">
-                  <Input readOnly value={publicUrl(linkToken)} onFocus={(e) => e.target.select()} />
-                  <div className="flex gap-2">
-                    <Button className="flex-1" disabled={busy} onClick={() => copyLink(linkToken)}>
-                      {copied ? 'Copied' : 'Copy link'}
+                <div className="mt-3 space-y-3">
+                  <LinkHandout url={publicUrl(linkToken)} shareTitle={recipe.name} qr="toggle" />
+                  {/* Asks first, as the phone does: a new link is a different address, so every
+                      one already sent is gone for good. */}
+                  {confirmingRevoke ? (
+                    <div className="space-y-3 rounded-xl bg-elevated p-3">
+                      <p className="text-sm">
+                        Anyone you sent it to won't be able to open it any more. Copies people
+                        already saved stay theirs.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="danger" size="sm" className="flex-1" disabled={busy} onClick={revokeLink}>
+                          {busy ? 'Turning off…' : 'Turn off the link'}
+                        </Button>
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirmingRevoke(false)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 text-danger"
+                      disabled={busy}
+                      onClick={() => setConfirmingRevoke(true)}
+                    >
+                      Turn off the link
                     </Button>
-                    <Button variant="danger" disabled={busy} onClick={revokeLink}>
-                      Revoke
-                    </Button>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <Button className="mt-3" full variant="secondary" disabled={busy} onClick={createLink}>
@@ -556,6 +608,33 @@ export default function RecipeDetailPage() {
               )}
             </section>
 
+            {/* Only the other houses you are in — none at all for somebody in just this one. */}
+            {targets.length > 0 && (
+              <section className="border-t border-line pt-4">
+                <h3 className="font-semibold">Your other households</h3>
+                <p className="mt-0.5 text-sm text-muted">
+                  It shows up in their recipes too. Only this household can change it.
+                </p>
+                <ul className="mt-1 divide-y divide-line">
+                  {targets.map((t) => (
+                    <li key={t.householdId}>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={t.shared}
+                        disabled={busy}
+                        onClick={() => toggleShare(t)}
+                        className="flex min-h-touch w-full items-center gap-3 py-3 text-left"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">{t.name}</span>
+                        <SwitchKnob on={t.shared} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             <section className="border-t border-line pt-4">
               <h3 className="font-semibold">Explore</h3>
               <p className="mt-0.5 text-sm text-muted">
@@ -563,45 +642,21 @@ export default function RecipeDetailPage() {
                   ? 'Anyone signed in here can read this and keep it in their own recipes.'
                   : 'Put it where every household on this server can find it.'}
               </p>
-              <Button
-                className="mt-3"
-                full
-                variant="secondary"
+              {/* A switch, like the households above and the phone's: it takes effect when flipped. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={recipe.published}
                 disabled={busy}
                 onClick={() => setPublished(!recipe.published)}
+                className="mt-1 flex min-h-touch w-full items-center gap-3 py-3 text-left"
               >
-                {recipe.published ? 'Take out of Explore' : 'Publish to Explore'}
-              </Button>
+                <span className="min-w-0 flex-1 font-medium">In Explore</span>
+                <SwitchKnob on={recipe.published} />
+              </button>
             </section>
 
-            <section className="border-t border-line pt-4">
-              <h3 className="font-semibold">Share with a household</h3>
-              {targets.length === 0 ? (
-                <EmptyState>No other households yet.</EmptyState>
-              ) : (
-                <ul className="mt-1 divide-y divide-line">
-                  {targets.map((t) => (
-                    <li key={t.householdId}>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          setShares(
-                            t.shared
-                              ? recipe.sharedWith.filter((id) => id !== t.householdId)
-                              : [...recipe.sharedWith, t.householdId],
-                          )
-                        }
-                        className="flex min-h-touch w-full items-center gap-3 py-3 text-left"
-                      >
-                        <CheckCircle checked={t.shared} />
-                        <span className="flex-1 font-medium">{t.name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {shareError && <ErrorText>{shareError}</ErrorText>}
           </div>
         </Sheet>
       )}

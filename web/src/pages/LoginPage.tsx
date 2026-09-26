@@ -20,6 +20,7 @@ export default function LoginPage({
   startWithPin = false,
   notice,
   exit,
+  leave,
 }: {
   /** Straight to the name-and-PIN screens — an invite page's "Sign in with your name and PIN". */
   startWithPin?: boolean;
@@ -30,6 +31,11 @@ export default function LoginPage({
    * an invite page, whose other ways in are what somebody who tapped the wrong one wants.
    */
   exit?: { label: string; onBack: () => void };
+  /**
+   * A way back out from the email screen, for a page that asked somebody to sign in on the way
+   * to something — a shared recipe's "Save to my recipes" — rather than to open the app.
+   */
+  leave?: { label: string; onLeave: () => void };
 } = {}) {
   const { login, loginWithEmail, setInitialPin, setup, expired } = useAuth();
 
@@ -284,6 +290,7 @@ export default function LoginPage({
                 </TextLink>
               </div>
             )}
+            {leave && <TextLink onClick={leave.onLeave}>{leave.label}</TextLink>}
           </form>
         )}
 

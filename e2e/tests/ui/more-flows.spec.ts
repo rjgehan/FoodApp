@@ -248,10 +248,15 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
   await signIn(page, mine.owner, mine.id);
   await page.goto(`/recipes/${r.id}`);
   await fromMenu(page, 'Recipe options', /^Share/);
-  await sheet(page).getByRole('button', { name: 'Publish to Explore' }).click();
-  await expect(sheet(page).getByRole('button', { name: 'Take out of Explore' })).toBeVisible();
+  const inExplore = sheet(page).getByRole('switch', { name: 'In Explore' });
+  await expect(inExplore).toHaveAttribute('aria-checked', 'false');
+  await inExplore.click();
+  await expect(inExplore).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await expect(page.getByText(/in Explore/)).toBeVisible();
+  // Still in its own drawer, not shown as somebody else's recipe.
+  await expect(page.getByText(/Dinner/).first()).toBeVisible();
+  await expect(page.getByText(/^Shared ·/)).toHaveCount(0);
 
   // Find it from the other household.
   await signIn(page, theirs.owner, theirs.id);

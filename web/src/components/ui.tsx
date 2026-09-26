@@ -529,6 +529,31 @@ export function CheckCircle({ checked, className }: { checked: boolean; classNam
   );
 }
 
+/**
+ * An on/off pill, for a setting that takes effect the moment it is flipped — no Save to hunt
+ * for. Only the drawing: the row it sits in is the button (with role="switch"), so the whole row
+ * is the thing to tap rather than a small pill at its end.
+ */
+export function SwitchKnob({ on, className }: { on: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        'relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors duration-150',
+        on ? 'bg-accent' : 'bg-subtle/40',
+        className,
+      )}
+    >
+      <span
+        className={cx(
+          'absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-150',
+          on && 'translate-x-5',
+        )}
+      />
+    </span>
+  );
+}
+
 /** Filter pill for the recipe catalog. */
 export function Chip({
   active,
