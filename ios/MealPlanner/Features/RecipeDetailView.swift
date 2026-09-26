@@ -176,9 +176,11 @@ struct RecipeDetailView: View {
     }
 }
 
-/// Day, then meal, then done — the same two-tap shape as the web sheet.
+/// Day, then meal, then done — the same two-tap shape as the web sheet. A saved link plans the
+/// same way, minus the servings and extras it has no ingredients for.
 struct AddToPlanSheet: View {
-    let recipe: Recipe
+    let recipe: Recipe?
+    var savedLink: SavedLink? = nil
     var session: Session?
     var onPlanned: (String) -> Void
 
@@ -191,11 +193,21 @@ struct AddToPlanSheet: View {
     @State private var error: String?
 
     init(recipe: Recipe, session: Session?, onPlanned: @escaping (String) -> Void) {
+        self.init(recipe: recipe, savedLink: nil, section: recipe.section, session: session, onPlanned: onPlanned)
+    }
+
+    init(savedLink: SavedLink, session: Session?, onPlanned: @escaping (String) -> Void) {
+        self.init(recipe: nil, savedLink: savedLink, section: savedLink.section, session: session, onPlanned: onPlanned)
+    }
+
+    private init(recipe: Recipe?, savedLink: SavedLink?, section: RecipeSection?, session: Session?,
+                 onPlanned: @escaping (String) -> Void) {
         self.recipe = recipe
+        self.savedLink = savedLink
         self.session = session
         self.onPlanned = onPlanned
         // The meal it most likely goes on, from where it is filed — the web's MEAL_FOR_SECTION.
-        let likely: MealType = switch recipe.section {
+        let likely: MealType = switch section {
         case .breakfast: .breakfast
         case .lunch: .lunch
         case .snacks, .drinks: .snack
@@ -205,7 +217,7 @@ struct AddToPlanSheet: View {
     }
 
     private var days: [Date] { (0..<14).map { Day.adding($0, to: Date()) } }
-    private var optional: [RecipeIngredient] { recipe.ingredients.filter(\.optional) }
+    private var optional: [RecipeIngredient] { (recipe?.ingredients ?? []).filter(\.optional) }
 
     var body: some View {
         NavigationStack {
@@ -298,16 +310,21 @@ struct AddToPlanSheet: View {
         busy = true
         defer { busy = false }
         do {
-            _ = try await APIClient.shared.addToPlan(
-                household: household,
-                date: Day.iso(day),
-                meal: meal,
-                recipeId: recipe.id,
-                // The household's usual number, like the web; the recipe's own if the server
-                // has not said.
-                servings: session?.defaultServings ?? recipe.servings,
-                includedOptionalIngredientIds: Array(extras)
-            )
+            if let recipe {
+                _ = try await APIClient.shared.addToPlan(
+                    household: household,
+                    date: Day.iso(day),
+                    meal: meal,
+                    recipeId: recipe.id,
+                    // The household's usual number, like the web; the recipe's own if the server
+                    // has not said.
+                    servings: session?.defaultServings ?? recipe.servings,
+                    includedOptionalIngredientIds: Array(extras)
+                )
+            } else if let savedLink {
+                _ = try await APIClient.shared.addToPlan(
+                    household: household, date: Day.iso(day), meal: meal, savedLinkId: savedLink.id)
+            }
             onPlanned("\(label(for: day)) · \(meal.title)")
             dismiss()
         } catch {

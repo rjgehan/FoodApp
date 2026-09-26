@@ -69,7 +69,21 @@ public class RecipeDtos {
              * May be empty: from the meal planner you can save just a name and fill the rest in
              * later. Such a recipe adds nothing to the grocery list, and the planner says so.
              */
-            @NotNull @Valid List<RecipeIngredientRequest> ingredients) {
+            @NotNull @Valid List<RecipeIngredientRequest> ingredients,
+            /**
+             * On a new recipe: the saved link it was made from. That link has done its job and
+             * is deleted, and meals planned with it get this recipe instead. Ignored on an edit.
+             */
+            UUID savedLinkId) {
+
+        /** A recipe that did not come from a saved link — which is every recipe from before them. */
+        public RecipeRequest(String name, String description, String instructions, Integer prepTimeMinutes,
+                Integer cookTimeMinutes, Integer servings, String sourceUrl, String videoUrl,
+                List<SourceLink> links, RecipeSection section, List<String> categories, UUID coverImageId,
+                List<UUID> photoIds, List<RecipeIngredientRequest> ingredients) {
+            this(name, description, instructions, prepTimeMinutes, cookTimeMinutes, servings, sourceUrl, videoUrl,
+                    links, section, categories, coverImageId, photoIds, ingredients, null);
+        }
     }
 
     /** A link to a recipe on the web, to be read from the page's own structured data. */

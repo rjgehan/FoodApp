@@ -90,6 +90,7 @@ public class RecipeService {
     private final MealPlanEntryRepository mealPlanEntryRepository;
     private final HouseholdService householdService;
     private final IngredientService ingredientService;
+    private final SavedLinkService savedLinkService;
 
     public RecipeService(RecipeRepository recipeRepository,
                           RecipeCategoryRepository categoryRepository,
@@ -101,7 +102,8 @@ public class RecipeService {
                           RecipeLinkRepository linkRepository,
                           MealPlanEntryRepository mealPlanEntryRepository,
                           HouseholdService householdService,
-                          IngredientService ingredientService) {
+                          IngredientService ingredientService,
+                          SavedLinkService savedLinkService) {
         this.recipeRepository = recipeRepository;
         this.categoryRepository = categoryRepository;
         this.filingRepository = filingRepository;
@@ -113,6 +115,7 @@ public class RecipeService {
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdService = householdService;
         this.ingredientService = ingredientService;
+        this.savedLinkService = savedLinkService;
     }
 
     @Transactional
@@ -147,6 +150,12 @@ public class RecipeService {
         Recipe saved = recipeRepository.save(recipe);
         // Your own recipe is filed straight away — only other people's start out unfiled.
         RecipeFiling filing = upsertFiling(household, saved, request.section(), request.categories());
+        if (request.savedLinkId() != null) {
+            // Made from a saved link: in the same save, so the link cannot outlive the recipe
+            // that replaced it, nor go without one.
+            recipeRepository.flush();
+            savedLinkService.madeInto(saved, request.savedLinkId(), requesterId);
+        }
         return toResponse(saved, filing, householdId);
     }
 
@@ -673,6 +682,7 @@ public class RecipeService {
             } else {
                 entry.setRecipe(null);
                 entry.setDeletedRecipeName(recipe.getName());
+                entry.setDeletedWasSavedLink(false);
                 // Chosen from this recipe's ingredients, which are about to go too.
                 entry.getIncludedOptionalIngredientIds().clear();
             }

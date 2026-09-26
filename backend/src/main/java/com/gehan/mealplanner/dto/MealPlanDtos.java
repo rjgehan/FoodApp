@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.MealType;
+import com.gehan.mealplanner.domain.SavedLinkSource;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
@@ -14,7 +15,7 @@ public class MealPlanDtos {
     /**
      * Adds one thing to a date + meal-type slot. Called once for the main and again for each
      * side, so "mac and cheese with dinner" is just a slot holding a single side. Send exactly
-     * one of recipeId, placeId or itemName.
+     * one of recipeId, placeId, itemName or savedLinkId.
      */
     public record AddMealPlanEntryRequest(
             @NotNull LocalDate date,
@@ -32,7 +33,17 @@ public class MealPlanDtos {
              * Which of the recipe's optional ingredients to buy this time — asked for once, when
              * the recipe is planned onto this slot. Omitted or null means none of them.
              */
-            List<UUID> includedOptionalIngredientIds) {
+            List<UUID> includedOptionalIngredientIds,
+            /** Or one of the household's saved links — a recipe that is still only a link. */
+            UUID savedLinkId) {
+
+        /** Everything from before saved links, which is still most of what gets planned. */
+        public AddMealPlanEntryRequest(LocalDate date, MealType mealType, UUID recipeId, UUID placeId,
+                String itemName, LocalTime time, Integer servings, String notes,
+                List<UUID> includedOptionalIngredientIds) {
+            this(date, mealType, recipeId, placeId, itemName, time, servings, notes,
+                    includedOptionalIngredientIds, null);
+        }
     }
 
     /** Swaps what is in the slot, or changes the servings on one dish already in it. */
@@ -50,7 +61,13 @@ public class MealPlanDtos {
             @Min(1) Integer servings,
             String notes,
             /** Same meaning as on {@link AddMealPlanEntryRequest}; null leaves it unchanged. */
-            List<UUID> includedOptionalIngredientIds) {
+            List<UUID> includedOptionalIngredientIds,
+            UUID savedLinkId) {
+
+        public UpdateMealPlanEntryRequest(UUID recipeId, UUID placeId, String itemName, LocalTime time,
+                Boolean clearTime, Integer servings, String notes, List<UUID> includedOptionalIngredientIds) {
+            this(recipeId, placeId, itemName, time, clearTime, servings, notes, includedOptionalIngredientIds, null);
+        }
     }
 
     public record MealPlanEntryResponse(
@@ -81,7 +98,21 @@ public class MealPlanDtos {
              * does not vanish without a word: recipeName still carries its name and recipeId is
              * null. An older app that does not know this field shows it as a meal by that name
              * with nothing to open, which is still better than a gap.
+             *
+             * A saved link that was planned and then deleted ends up the same way, with
+             * savedLinkDeleted also set so the plan can say which it was.
              */
-            boolean recipeDeleted) {
+            boolean recipeDeleted,
+            boolean savedLinkDeleted,
+            /**
+             * A saved link planned as the meal. Its name is also sent as recipeName, so an older
+             * app that has never heard of saved links still shows the meal by name — as a recipe
+             * with nothing to open — rather than as an empty slot.
+             */
+            UUID savedLinkId,
+            String savedLinkName,
+            String savedLinkUrl,
+            SavedLinkSource savedLinkSource,
+            UUID savedLinkImageId) {
     }
 }

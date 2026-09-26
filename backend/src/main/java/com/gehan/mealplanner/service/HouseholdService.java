@@ -223,6 +223,7 @@ public class HouseholdService {
 
         jdbc.update("UPDATE grocery_list_items SET checked_by_user_id = NULL WHERE checked_by_user_id = ?", userId);
         jdbc.update("DELETE FROM password_resets WHERE user_id = ? OR created_by = ?", userId, userId);
+        forgetSavedLinks(userId);
         // In SQL like the rest: delete() above removes a whole house's rows in SQL, so the session
         // still holds their membership pointing at this user, and deleting the user through JPA
         // would have Hibernate refuse to leave that membership pointing at nothing.
@@ -230,6 +231,26 @@ public class HouseholdService {
 
         done.sort(Comparator.comparing(HouseholdOutcome::name, String.CASE_INSENSITIVE_ORDER));
         return new AccountDeletion(userId, user.getDisplayName(), done);
+    }
+
+    /**
+     * A deleted account's saved links, in the houses that carry on without it. The ones it
+     * shared stay, like its recipes, and simply stop saying who saved them. Its "just me" ones
+     * go: nobody else could ever see them, so they would sit in the house unseen for good. A
+     * meal planned with one stays on the plan by name, marked as deleted, as it would have if
+     * they had deleted the link themselves; its picture goes unless something else shows it.
+     */
+    private void forgetSavedLinks(UUID userId) {
+        String theirsAlone = "(SELECT id FROM saved_links WHERE created_by_user_id = ? AND personal)";
+        jdbc.update("UPDATE meal_plan_entries e SET deleted_recipe_name ="
+                + " (SELECT l.name FROM saved_links l WHERE l.id = e.saved_link_id),"
+                + " saved_link_id = NULL, deleted_was_saved_link = true"
+                + " WHERE e.saved_link_id IN " + theirsAlone, userId);
+        List<UUID> pictures = jdbc.queryForList("SELECT cover_image_id FROM saved_links"
+                + " WHERE created_by_user_id = ? AND personal AND cover_image_id IS NOT NULL", UUID.class, userId);
+        jdbc.update("DELETE FROM saved_links WHERE created_by_user_id = ? AND personal", userId);
+        SavedLinks.deleteUnusedImages(jdbc, pictures);
+        jdbc.update("UPDATE saved_links SET created_by_user_id = NULL WHERE created_by_user_id = ?", userId);
     }
 
     private HouseholdOutcome outcomeOfDeleting(HouseholdMember member) {
@@ -381,8 +402,10 @@ public class HouseholdService {
         jdbc.update("DELETE FROM section_icons WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM blacklisted_ingredients WHERE household_id = ?", householdId);
 
-        // Places hold a picture, so they go before the pictures do.
+        // Places and saved links hold a picture, so they go before the pictures do. Saved links
+        // are only ever planned by their own household, whose plan went above.
         jdbc.update("DELETE FROM places WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM saved_links WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM stored_images WHERE household_id = ?", householdId);
 
         jdbc.update("DELETE FROM household_invites WHERE household_id = ?", householdId);

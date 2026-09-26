@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import type { Recipe, RecipeSection } from '../api/types';
 import RecipeForm, { type RecipeDraft } from './RecipeForm';
 import { Button, Card, ErrorText, Field, Input, NumberInput, Textarea } from './ui';
@@ -174,6 +174,8 @@ export function DraftToCheck({
   groups,
   again,
   note,
+  aside,
+  savedLinkId,
   onAgain,
   onSaved,
 }: {
@@ -185,6 +187,10 @@ export function DraftToCheck({
   again: string;
   /** What to check first, when there is something in particular; otherwise the usual line. */
   note?: string;
+  /** Another way out beside `again` — From a link's "Just save the link". */
+  aside?: ReactNode;
+  /** The saved link this is being made from; see RecipeForm. */
+  savedLinkId?: string;
   onAgain: () => void;
   onSaved: (recipe: Recipe) => void;
 }) {
@@ -194,12 +200,23 @@ export function DraftToCheck({
         <p className="text-sm text-muted">
           {note ?? 'Here’s what came through — check the amounts, change anything, then save it.'}
         </p>
-        <Button variant="ghost" size="sm" className="mt-2" onClick={onAgain}>
-          {again}
-        </Button>
+        <div className="mt-2 flex flex-wrap items-center gap-x-1">
+          <Button variant="ghost" size="sm" className="-ml-3" onClick={onAgain}>
+            {again}
+          </Button>
+          {aside}
+        </div>
       </Card>
       {/* Keyed on the name so reading a second one really does replace the fields. */}
-      <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} groups={groups} onSaved={onSaved} />
+      <RecipeForm
+        key={draft.name}
+        householdId={householdId}
+        draft={draft}
+        section={section}
+        groups={groups}
+        savedLinkId={savedLinkId}
+        onSaved={onSaved}
+      />
     </div>
   );
 }

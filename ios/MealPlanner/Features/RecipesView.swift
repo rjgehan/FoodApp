@@ -17,6 +17,8 @@ struct RecipesView: View {
     @State private var switchingHousehold = false
     @State private var showingAccount = false
     @State private var addingOne = false
+    /// How many saved links there are; nil until known, and from a server without them.
+    @State private var savedLinkCount: Int?
     #if DEBUG
     /// `-mp_debug_drawer dinner` opens that drawer on launch, for screenshot runs.
     @State private var debugDrawer: RecipeSection? = UserDefaults.standard.string(forKey: "mp_debug_drawer")
@@ -71,6 +73,23 @@ struct RecipesView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        // After the drawers and looking like one: it is where the rest of what
+                        // you mean to cook is kept, just not as recipes yet. The web's tint too.
+                        if let savedLinkCount {
+                            NavigationLink {
+                                SavedLinksView(session: session, sample: sample == nil ? nil : SampleData.savedLinks) {
+                                    await loadSavedLinks()
+                                }
+                            } label: {
+                                CatalogTile(
+                                    name: "Saved links",
+                                    detail: "\(savedLinkCount) \(savedLinkCount == 1 ? "link" : "links")",
+                                    tint: Palette.cover(index: 2),
+                                    art: Image("SavedLinks")
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -78,7 +97,10 @@ struct RecipesView: View {
             }
             .navigationTitle("Recipes")
             .searchable(text: $query, prompt: "Search recipes and ingredients")
-            .refreshable { await load() }
+            .refreshable {
+                await load()
+                await loadSavedLinks()
+            }
             .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
             // Household › Recipe icons lives in that sheet, over this tab, so closing it is when a
             // drawer's new picture has to show — not on the next pull to refresh.
@@ -108,7 +130,21 @@ struct RecipesView: View {
             }
             #endif
         }
-        .task { await load() }
+        .task {
+            await load()
+            await loadSavedLinks()
+        }
+    }
+
+    /// Only the count, for the tile. A server from before saved links has none to count, and
+    /// then there is no tile rather than one that says 0.
+    private func loadSavedLinks() async {
+        if sample != nil {
+            savedLinkCount = SampleData.savedLinks.count
+            return
+        }
+        guard let household = session.household?.id else { return }
+        savedLinkCount = (try? await APIClient.shared.savedLinks(household: household))?.count
     }
 
     private func load() async {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection } from '../api/types';
+import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection, SavedLink } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { coverClass } from '../utils/recipeFormat';
@@ -14,7 +14,9 @@ import RecipeForm from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
 import { PasteFromAi } from '../components/RecipePaste';
 import { Button, Card, CheckCircle, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
-import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon } from '../components/icons';
+import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, LinkIcon, PlusIcon, StoreIcon } from '../components/icons';
+import { isSafeLink } from '../utils/videoLink';
+import { sourceLabel } from '../utils/savedLinks';
 
 const BASE_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER'];
 const ALL_MEALS: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
@@ -136,8 +138,10 @@ export default function MealPlanPage() {
     const map = new Map<string, string>();
     for (const r of recipes) if (r.coverImageId) map.set(r.id, r.coverImageId);
     for (const p of places) if (p.imageId) map.set(p.id, p.imageId);
+    // A planned saved link brings its own picture along.
+    for (const e of entries) if (e.savedLinkId && e.savedLinkImageId) map.set(e.savedLinkId, e.savedLinkImageId);
     return map;
-  }, [recipes, places]);
+  }, [recipes, places, entries]);
 
   if (!activeHouseholdId) {
     return (
@@ -202,6 +206,7 @@ export default function MealPlanPage() {
           dates={contributingDates(windowEntries)}
           missing={missingIngredients(windowEntries)}
           items={singleItems(windowEntries)}
+          links={savedLinkMeals(windowEntries)}
           busy={addingWeek}
           onCancel={() => setWindowEntries(null)}
           onConfirm={async () => {
@@ -484,6 +489,7 @@ function DaySheet({
   const [choosingOptionals, setChoosingOptionals] = useState<{ recipe: Recipe; selected: Set<string> } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [cupboard, setCupboard] = useState<CupboardItem[]>([]);
+  const [savedLinks, setSavedLinks] = useState<SavedLink[]>([]);
   // Lives here, not in the picker, so it survives switching tabs while deciding.
   const [outTime, setOutTime] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -503,6 +509,7 @@ function DaySheet({
   useEffect(() => {
     api<Place[]>('GET', `/api/households/${householdId}/places`).then(setPlaces).catch(() => setPlaces([]));
     api<CupboardItem[]>('GET', `/api/households/${householdId}/cupboard`).then(setCupboard).catch(() => setCupboard([]));
+    api<SavedLink[]>('GET', `/api/households/${householdId}/saved-links`).then(setSavedLinks).catch(() => setSavedLinks([]));
   }, [householdId]);
 
   // The three staples, plus any other slot that already has something in it.
@@ -511,8 +518,10 @@ function DaySheet({
   );
   const missing = ALL_MEALS.filter((m) => !slots.includes(m));
 
-  /** Puts a recipe or a single item in the slot being picked for — or swaps the dish being changed. */
-  async function fill(what: { recipeId: string; includedOptionalIngredientIds?: string[] } | { itemName: string }) {
+  /** Puts a recipe, a single item or a saved link in the slot being picked for — or swaps the dish being changed. */
+  async function fill(
+    what: { recipeId: string; includedOptionalIngredientIds?: string[] } | { itemName: string } | { savedLinkId: string },
+  ) {
     if (!picking) return;
     setBusy(true);
     setError(null);
@@ -547,6 +556,12 @@ function DaySheet({
   async function recipeMade(recipe: Recipe) {
     onRecipeCreated(recipe);
     await fill({ recipeId: recipe.id });
+  }
+
+  /** So does a link that could only be saved, not read: it is still what is for dinner. */
+  async function linkSaved(link: SavedLink) {
+    setSavedLinks((all) => [link, ...all.filter((l) => l.id !== link.id)]);
+    await fill({ savedLinkId: link.id });
   }
 
   /**
@@ -659,6 +674,7 @@ function DaySheet({
         dates={contributingDates(entries)}
         missing={missingIngredients(entries)}
         items={singleItems(entries)}
+        links={savedLinkMeals(entries)}
         busy={busy}
         onCancel={() => setConfirming(false)}
         onConfirm={async () => {
@@ -686,6 +702,7 @@ function DaySheet({
           section={SECTION_FOR_MEAL[picking.meal]}
           servings={defaultServings}
           onSaved={recipeMade}
+          onLinkSaved={linkSaved}
         />
       </Sheet>
     );
@@ -749,8 +766,10 @@ function DaySheet({
           disabled={busy}
           time={outTime}
           onTimeChange={setOutTime}
+          savedLinks={savedLinks}
           onPickRecipe={pickRecipe}
           onPickItem={(name) => fill({ itemName: name })}
+          onPickSavedLink={(link) => fill({ savedLinkId: link.id })}
           onNewRecipe={(name) => {
             setError(null);
             setCreating(name);
@@ -775,7 +794,7 @@ function DaySheet({
                 {/* A side goes with something cooked; a night out or a single food takes none.
                     A shared recipe its owners deleted may still be cooked from memory, so it
                     counts as cooked — as it does on the phone. */}
-                {(dishes.length === 0 || dishes.some((d) => d.recipeId || d.recipeDeleted)) && (
+                {(dishes.length === 0 || dishes.some((d) => d.recipeId || d.recipeDeleted || d.savedLinkId)) && (
                   <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
                     <PlusIcon className="h-4 w-4" />
                     {dishes.length ? 'Add side' : 'Add'}
@@ -796,7 +815,14 @@ function DaySheet({
                           onClick={() => setExpanded(open ? null : entry.id)}
                           className="flex min-h-touch w-full items-center gap-3 py-2 text-left"
                         >
-                          {pictures && <MealPhoto entry={entry} pictures={pictures} className="h-12 w-12 shrink-0 rounded-lg" />}
+                          {/* A saved link is its picture, so it shows one even where recipes do not. */}
+                          {(pictures || entry.savedLinkId) && (
+                            <MealPhoto
+                              entry={entry}
+                              pictures={pictures ?? linkPictures(entries)}
+                              className="h-12 w-12 shrink-0 rounded-lg"
+                            />
+                          )}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">
                               {entryLabel(entry)}
@@ -812,8 +838,10 @@ function DaySheet({
                           <div className="space-y-1 pb-3">
                           {entry.recipeDeleted && (
                             <p className="text-sm text-muted">
-                              The household that shared this recipe has deleted it, so there is
-                              nothing to open. Change it to something else, or remove it.
+                              {entry.savedLinkDeleted
+                                ? 'It was deleted from Saved links, so there is nothing to open. '
+                                : 'The household that shared this recipe has deleted it, so there is nothing to open. '}
+                              Change it to something else, or remove it.
                             </p>
                           )}
                           <div className="flex flex-wrap items-center gap-2">
@@ -823,6 +851,17 @@ function DaySheet({
                                   {entry.needsIngredients ? 'Add ingredients' : 'View recipe'}
                                 </Button>
                               </Link>
+                            )}
+                            {entry.savedLinkId && entry.savedLinkUrl && isSafeLink(entry.savedLinkUrl) && (
+                              <a
+                                href={entry.savedLinkUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="press inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-elevated px-3 text-[0.9375rem] font-semibold text-ink active:bg-line"
+                              >
+                                <LinkIcon className="h-4 w-4" />
+                                Open on {sourceLabel({ source: entry.savedLinkSource, url: entry.savedLinkUrl })}
+                              </a>
                             )}
                             {entry.itemName && (
                               <Button
@@ -914,7 +953,7 @@ function MealPhoto({
   /** A calendar square: the letter and icon are drawn smaller, and the plate gets an edge. */
   small?: boolean;
 }) {
-  const imageId = pictures.get(entry.recipeId ?? entry.placeId ?? '');
+  const imageId = pictures.get(entry.recipeId ?? entry.placeId ?? entry.savedLinkId ?? '');
   // A cover that was deleted, or a server that is briefly away, falls back to the plate rather
   // than the browser's broken-image box. Remembered by id, so a new cover gets its own try.
   const [failedId, setFailedId] = useState<string | null>(null);
@@ -939,7 +978,7 @@ function MealPhoto({
       aria-hidden
       className={cx(
         'flex items-center justify-center overflow-hidden',
-        coverClass(entry.recipeId ?? entry.placeId ?? label),
+        coverClass(entry.recipeId ?? entry.placeId ?? entry.savedLinkId ?? label),
         // In a calendar square a bare pastel tile next to a photo reads as one still loading, and
         // nearly vanishes on a white card, so it gets an edge and a darker mark.
         small ? 'text-ink/60 ring-1 ring-inset ring-line' : 'text-ink/40',
@@ -948,6 +987,8 @@ function MealPhoto({
     >
       {entry.placeId ? (
         <StoreIcon className={small ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
+      ) : entry.savedLinkId ? (
+        <LinkIcon className={small ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
       ) : (
         <span className={cx('select-none font-serif font-semibold', small ? 'text-xs' : 'text-2xl')}>
           {label.charAt(0).toUpperCase()}
@@ -960,7 +1001,18 @@ function MealPhoto({
 /** The second line under a planned dish: what it means for the shopping. */
 function EntryDetail({ entry }: { entry: MealPlanEntry }) {
   if (entry.recipeDeleted) {
-    return <span className="block text-sm text-accent">Recipe was deleted</span>;
+    return (
+      <span className="block text-sm text-accent">
+        {entry.savedLinkDeleted ? 'Saved link was deleted' : 'Recipe was deleted'}
+      </span>
+    );
+  }
+  if (entry.savedLinkId) {
+    return (
+      <span className="block text-sm text-muted">
+        Saved link · {sourceLabel({ source: entry.savedLinkSource, url: entry.savedLinkUrl })}
+      </span>
+    );
   }
   if (entry.recipeId && entry.needsIngredients) {
     return <span className="block text-sm text-accent">No ingredients yet</span>;
@@ -1025,6 +1077,7 @@ function ConfirmAddToGroceries({
   dates,
   missing,
   items,
+  links,
   busy,
   onConfirm,
   onCancel,
@@ -1034,6 +1087,8 @@ function ConfirmAddToGroceries({
   missing: string[];
   /** How many single items are planned here, which this deliberately leaves out. */
   items: number;
+  /** How many saved links are planned here — no ingredients, so nothing to add. */
+  links: number;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -1059,6 +1114,11 @@ function ConfirmAddToGroceries({
         {items > 0 && (
           <p className="text-sm text-muted">
             Single foods aren't included — tap one on its day to add it to Groceries.
+          </p>
+        )}
+        {links > 0 && (
+          <p className="text-sm text-muted">
+            Saved links have no ingredients, so they add nothing. Make one a recipe to shop for it.
           </p>
         )}
         <div className="flex gap-2">
@@ -1088,6 +1148,17 @@ function singleItems(entries: MealPlanEntry[]): number {
   return entries.filter((e) => e.itemName).length;
 }
 
+function savedLinkMeals(entries: MealPlanEntry[]): number {
+  return entries.filter((e) => e.savedLinkId).length;
+}
+
+/** Just the saved links' own pictures, for a phone's day sheet that shows no others. */
+function linkPictures(entries: MealPlanEntry[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const e of entries) if (e.savedLinkId && e.savedLinkImageId) map.set(e.savedLinkId, e.savedLinkImageId);
+  return map;
+}
+
 /** The days in a set of entries that would actually put something on the list. */
 function contributingDates(entries: MealPlanEntry[]): string[] {
   return [...new Set(entries.filter(contributes).map((e) => e.date))].sort();
@@ -1105,22 +1176,26 @@ function PickerTabs({
   recipes,
   places,
   cupboard,
+  savedLinks,
   disabled,
   time,
   onTimeChange,
   onPickRecipe,
   onPickItem,
+  onPickSavedLink,
   onNewRecipe,
   onPickPlace,
 }: {
   recipes: Recipe[];
   places: Place[];
   cupboard: CupboardItem[];
+  savedLinks: SavedLink[];
   disabled: boolean;
   time: string;
   onTimeChange: (time: string) => void;
   onPickRecipe: (recipe: Recipe) => void;
   onPickItem: (name: string) => void;
+  onPickSavedLink: (link: SavedLink) => void;
   onNewRecipe: (name: string) => void;
   onPickPlace: (place: Place | { name: string }) => void;
 }) {
@@ -1151,9 +1226,11 @@ function PickerTabs({
         <HomePicker
           recipes={recipes}
           cupboard={cupboard}
+          savedLinks={savedLinks}
           disabled={disabled}
           onPickRecipe={onPickRecipe}
           onPickItem={onPickItem}
+          onPickSavedLink={onPickSavedLink}
           onNewRecipe={onNewRecipe}
         />
       ) : (
@@ -1264,20 +1341,26 @@ function PlacePicker({
 function HomePicker({
   recipes,
   cupboard,
+  savedLinks,
   onPickRecipe,
   onPickItem,
+  onPickSavedLink,
   onNewRecipe,
   disabled,
 }: {
   recipes: Recipe[];
   cupboard: CupboardItem[];
+  savedLinks: SavedLink[];
   onPickRecipe: (recipe: Recipe) => void;
   onPickItem: (name: string) => void;
+  onPickSavedLink: (link: SavedLink) => void;
   onNewRecipe: (name: string) => void;
   disabled: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  // The saved links, in place of the recipes: the TikTok you meant to make is a dinner too.
+  const [linksOnly, setLinksOnly] = useState(false);
 
   // Filing categories double as the "mains vs sides" filter — no separate concept needed.
   const categories = useMemo(() => {
@@ -1288,9 +1371,13 @@ function HomePicker({
 
   const typed = query.trim();
   const q = typed.toLowerCase();
-  const shown = recipes
-    .filter((r) => (!category || r.categories.includes(category)) && (!q || r.name.toLowerCase().includes(q)))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const shown = linksOnly
+    ? []
+    : recipes
+        .filter((r) => (!category || r.categories.includes(category)) && (!q || r.name.toLowerCase().includes(q)))
+        .sort((a, b) => a.name.localeCompare(b.name));
+  // Listed on their own when chosen, and alongside the recipes whenever you search.
+  const links = linksOnly || (q && !category) ? savedLinks.filter((l) => !q || l.name.toLowerCase().includes(q)) : [];
   // Only while searching: the cupboard is long, and "eggs" is something you type, not scroll to.
   const stocked = q
     ? cupboard
@@ -1350,20 +1437,77 @@ function HomePicker({
         </div>
       )}
 
-      {categories.length > 0 && (
+      {(categories.length > 0 || savedLinks.length > 0) && (
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
-          <Chip active={!category} onClick={() => setCategory(null)}>
+          <Chip
+            active={!category && !linksOnly}
+            onClick={() => {
+              setCategory(null);
+              setLinksOnly(false);
+            }}
+          >
             All
           </Chip>
+          {savedLinks.length > 0 && (
+            <Chip
+              active={linksOnly}
+              onClick={() => {
+                setCategory(null);
+                setLinksOnly(!linksOnly);
+              }}
+            >
+              Saved links
+            </Chip>
+          )}
           {categories.map((c) => (
-            <Chip key={c} active={category === c} onClick={() => setCategory(category === c ? null : c)}>
+            <Chip
+              key={c}
+              active={category === c}
+              onClick={() => {
+                setLinksOnly(false);
+                setCategory(category === c ? null : c);
+              }}
+            >
               {c}
             </Chip>
           ))}
         </div>
       )}
 
-      {shown.length === 0 ? (
+      {links.length > 0 && (
+        <div>
+          {!linksOnly && <p className="text-xs font-semibold uppercase tracking-wide text-subtle">Saved links</p>}
+          <ul className="divide-y divide-line">
+            {links.map((link) => (
+              <li key={link.id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onPickSavedLink(link)}
+                  className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+                >
+                  {link.coverImageId ? (
+                    <img src={imageUrl(link.coverImageId)} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink/45', coverClass(link.id))}>
+                      <LinkIcon className="h-5 w-5" />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{link.name}</span>
+                    <span className="block truncate text-sm text-muted">
+                      {sourceLabel(link)}
+                      {link.personal ? ' · Just me' : ''}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {linksOnly ? null : shown.length === 0 ? (
         !typed && (
           <EmptyState>
             No recipes yet.{' '}
@@ -1374,7 +1518,7 @@ function HomePicker({
         )
       ) : (
         <>
-          {stocked.length > 0 && (
+          {(stocked.length > 0 || links.length > 0) && (
             <p className="text-xs font-semibold uppercase tracking-wide text-subtle">Recipes</p>
           )}
           <ul className="divide-y divide-line">
@@ -1414,12 +1558,15 @@ function NewRecipeFromPlan({
   section,
   servings,
   onSaved,
+  onLinkSaved,
 }: {
   householdId: string;
   initialName: string;
   section: RecipeSection;
   servings: number;
   onSaved: (recipe: Recipe) => void;
+  /** A link kept in Saved links rather than read — it goes into the slot all the same. */
+  onLinkSaved: (link: SavedLink) => void;
 }) {
   const [mode, setMode] = useState<'choose' | 'write' | 'link' | 'paste'>('choose');
   const [name, setName] = useState(initialName);
@@ -1477,6 +1624,7 @@ function NewRecipeFromPlan({
             initialServings={servings}
             section={section}
             onSaved={onSaved}
+            onLinkSaved={onLinkSaved}
           />
         ) : (
           <PasteFromAi

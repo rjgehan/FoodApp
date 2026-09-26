@@ -343,6 +343,7 @@ struct DaySheet: View {
     var onChanged: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var picking: PlanPick?
     @State private var busy = false
     @State private var error: String?
@@ -411,14 +412,15 @@ struct DaySheet: View {
         // one its owners deleted counts, so that state can be screenshotted too.
         .onAppear {
             if UserDefaults.standard.bool(forKey: "mp_debug_expand") {
-                expanded = meals.first { $0.recipeId != nil || $0.recipeDeleted == true }?.id
+                expanded = meals.first { $0.recipeId != nil || $0.recipeDeleted == true || $0.savedLinkId != nil }?.id
             }
         }
         #endif
         .sheet(item: $picking) { pick in
             switch pick {
             case .add(let meal):
-                RecipePicker(session: session, title: "Add to \(meal.title)", action: "Add to \(meal.title)") { recipe, extras in
+                RecipePicker(session: session, title: "Add to \(meal.title)", action: "Add to \(meal.title)",
+                             onPickLink: { link in Task { await add(link, to: meal) } }) { recipe, extras in
                     Task { await add(recipe, extras: extras, to: meal) }
                 }
             case .change(let entry):
@@ -428,7 +430,9 @@ struct DaySheet: View {
                     action: "Change to this",
                     current: entry.recipeId,
                     // Picking the same recipe again keeps what was chosen for it last time.
-                    chosen: { $0.id == entry.recipeId ? entry.includedOptionalIngredientIds ?? [] : [] }
+                    chosen: { $0.id == entry.recipeId ? entry.includedOptionalIngredientIds ?? [] : [] },
+                    currentLink: entry.savedLinkId,
+                    onPickLink: { link in Task { await change(entry, to: link) } }
                 ) { recipe, extras in
                     Task { await change(entry, to: recipe, extras: extras) }
                 }
@@ -443,6 +447,10 @@ struct DaySheet: View {
             withAnimation(.snappy) { expanded = open ? nil : entry.id }
         } label: {
             HStack(spacing: 12) {
+                // A saved link is its picture — the video's cover is how you know which one.
+                if entry.savedLinkId != nil {
+                    PlannedLinkPicture(imageId: entry.savedLinkImageId)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.label).foregroundStyle(.primary)
                     if let detail = detail(for: entry) {
@@ -472,7 +480,12 @@ struct DaySheet: View {
 
     /// The second line under a dish: what it means for the cooking or the shopping.
     private func detail(for entry: MealPlanEntry) -> String? {
-        if entry.recipeDeleted == true { return "Recipe was deleted" }
+        if entry.recipeDeleted == true {
+            return entry.savedLinkDeleted == true ? "Saved link was deleted" : "Recipe was deleted"
+        }
+        if entry.savedLinkId != nil {
+            return "Saved link · \(SavedLink.label(source: entry.savedLinkSource, url: entry.savedLinkUrl))"
+        }
         if entry.recipeId != nil {
             if entry.needsIngredients == true { return "No ingredients yet" }
             let servings = servingsDraft[entry.id] ?? entry.servings
@@ -490,8 +503,28 @@ struct DaySheet: View {
     @ViewBuilder
     private func actions(for entry: MealPlanEntry) -> some View {
         if entry.recipeDeleted == true {
-            Text("The household that shared this recipe has deleted it, so there is nothing to open. Change it to something else, or remove it.")
+            Text(entry.savedLinkDeleted == true
+                 ? "It was deleted from Saved links, so there is nothing to open. Change it to something else, or remove it."
+                 : "The household that shared this recipe has deleted it, so there is nothing to open. Change it to something else, or remove it.")
                 .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        // Opened where it lives: a TikTok link opens the TikTok app when the phone has it.
+        if entry.savedLinkId != nil, let link = entry.savedLinkUrl, let url = URL(string: link) {
+            Button {
+                openURL(url)
+            } label: {
+                HStack {
+                    Label("Open on \(SavedLink.label(source: entry.savedLinkSource, url: link))", systemImage: "link")
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            Text("A saved link has no ingredients, so it adds nothing to Groceries.")
+                .font(.footnote)
                 .foregroundStyle(.secondary)
         }
         if let recipeId = entry.recipeId {
@@ -595,6 +628,31 @@ struct DaySheet: View {
         }
     }
 
+    private func add(_ link: SavedLink, to meal: MealType) async {
+        guard let household = session.household?.id else { return }
+        do {
+            error = nil
+            _ = try await APIClient.shared.addToPlan(household: household, date: date, meal: meal, savedLinkId: link.id)
+            await onChanged()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func change(_ entry: MealPlanEntry, to link: SavedLink) async {
+        guard let household = session.household?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            error = nil
+            try await APIClient.shared.changePlannedToLink(household: household, entry: entry.id, savedLinkId: link.id)
+            await onChanged()
+            expanded = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     private func change(_ entry: MealPlanEntry, to recipe: Recipe, extras: [UUID]) async {
         guard let household = session.household?.id else { return }
         busy = true
@@ -637,6 +695,30 @@ struct DaySheet: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// A planned saved link's cover, small, beside its name — or the link drawn where there is none.
+struct PlannedLinkPicture: View {
+    let imageId: UUID?
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color(.tertiarySystemFill))
+            .frame(width: 44, height: 44)
+            .overlay {
+                if let imageId, let url = APIClient.shared.imageURL(imageId) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.clear
+                    }
+                } else {
+                    Image(systemName: "link").foregroundStyle(.secondary)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
     }
 }
 
@@ -745,14 +827,21 @@ struct RecipePicker: View {
     var current: UUID?
     /// Extras already chosen for a recipe, so re-picking the same one keeps them.
     var chosen: (Recipe) -> [UUID] = { _ in [] }
+    /// The saved link being replaced, ticked the same way.
+    var currentLink: UUID? = nil
     /// Recipes to show instead of asking the server, for previews.
     var sample: [Recipe]?
+    /// Offers the household's saved links too, when given — a recipe that is still only a link
+    /// is a dinner as much as any other.
+    var onPickLink: ((SavedLink) -> Void)? = nil
+    var sampleLinks: [SavedLink]? = nil
     var onPick: (Recipe, [UUID]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var askingExtras: Recipe?
     @State private var recipes: [Recipe]?
+    @State private var links: [SavedLink] = []
     @State private var error: String?
 
     private var shown: [Recipe] {
@@ -761,10 +850,15 @@ struct RecipePicker: View {
         return q.isEmpty ? all : all.filter { $0.name.lowercased().contains(q) }
     }
 
+    private var shownLinks: [SavedLink] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? links : links.filter { $0.name.lowercased().contains(q) }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                if let recipes, recipes.isEmpty {
+                if let recipes, recipes.isEmpty, links.isEmpty {
                     ContentUnavailableView("No recipes yet", systemImage: "book",
                                            description: Text("Write one down on the Recipes tab, then plan it from here."))
                 } else if recipes != nil {
@@ -792,45 +886,86 @@ struct RecipePicker: View {
     }
 
     private var list: some View {
-        List(shown) { recipe in
-            Button {
-                // Asked once, here, rather than every time the meal goes on a list.
-                if recipe.ingredients.contains(where: \.optional) {
-                    askingExtras = recipe
-                } else {
-                    onPick(recipe, [])
-                    dismiss()
+        List {
+            Section {
+                ForEach(shown) { recipe in
+                    recipeRow(recipe)
                 }
-            } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(recipe.name).foregroundStyle(.primary)
-                        Text(recipe.facts).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    if recipe.id == current {
-                        Image(systemName: "checkmark").foregroundStyle(Palette.accent)
-                    }
-                }
-                .contentShape(Rectangle())
+            } header: {
+                if !links.isEmpty { Text("Recipes") }
             }
-            // Plain, or every row turns the accent colour and reads as a link.
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(recipe.id == current ? .isSelected : [])
+            if let onPickLink, !shownLinks.isEmpty {
+                Section("Saved links") {
+                    ForEach(shownLinks) { link in
+                        Button {
+                            onPickLink(link)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                PlannedLinkPicture(imageId: link.coverImageId)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(link.name).foregroundStyle(.primary).lineLimit(2)
+                                    Text(link.sourceLabel + (link.personal ? " · Just me" : ""))
+                                        .font(.subheadline).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                if link.id == currentLink {
+                                    Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(link.id == currentLink ? .isSelected : [])
+                    }
+                }
+            }
         }
         .overlay {
-            if shown.isEmpty { ContentUnavailableView.search(text: query) }
+            if shown.isEmpty && shownLinks.isEmpty { ContentUnavailableView.search(text: query) }
         }
-        .searchable(text: $query, prompt: "Search recipes")
+        .searchable(text: $query, prompt: onPickLink == nil ? "Search recipes" : "Search recipes and saved links")
+    }
+
+    private func recipeRow(_ recipe: Recipe) -> some View {
+        Button {
+            // Asked once, here, rather than every time the meal goes on a list.
+            if recipe.ingredients.contains(where: \.optional) {
+                askingExtras = recipe
+            } else {
+                onPick(recipe, [])
+                dismiss()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recipe.name).foregroundStyle(.primary)
+                    Text(recipe.facts).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if recipe.id == current {
+                    Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        // Plain, or every row turns the accent colour and reads as a link.
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(recipe.id == current ? .isSelected : [])
     }
 
     private func load() async {
         if let sample {
             recipes = sample
+            links = onPickLink == nil ? [] : sampleLinks ?? []
             return
         }
         guard recipes == nil, let household = session.household?.id else { return }
         do {
+            // Only offered where they can be picked; an older server has none, which is no error.
+            if onPickLink != nil {
+                links = (try? await APIClient.shared.savedLinks(household: household)) ?? []
+            }
             recipes = try await APIClient.shared.recipes(household: household)
         } catch {
             self.error = error.localizedDescription
@@ -903,11 +1038,16 @@ struct OptionalExtraRow: View {
 }
 
 #Preview("Picker") {
-    RecipePicker(session: .preview, title: "Add to Dinner", sample: SampleData.recipes) { _, _ in }
+    RecipePicker(session: .preview, title: "Add to Dinner", sample: SampleData.recipes,
+                 onPickLink: { _ in }, sampleLinks: SampleData.savedLinks) { _, _ in }
 }
 
 #Preview("Extras") {
     NavigationStack {
         OptionalExtrasPicker(recipe: SampleData.recipes[0], selected: [], action: "Add to Dinner") { _ in }
     }
+}
+
+#Preview("Planned link") {
+    HStack { PlannedLinkPicture(imageId: nil); SavedLinkBadge(text: "TikTok") }.padding().background(.gray)
 }

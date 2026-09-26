@@ -46,6 +46,8 @@ struct RecipeDraft: Hashable {
     var note: String? = nil
     /// The picture the link came with, already saved on the server.
     var coverImageId: UUID? = nil
+    /// The saved link it is being made from, which saving it takes off Saved links.
+    var savedLinkId: UUID? = nil
 }
 
 extension RecipeDraft {
@@ -219,6 +221,10 @@ struct FromALinkPage: View {
     @State private var link: String
     @State private var readingSince: Date?
     @State private var error: String?
+    /// Keeping it in Saved links instead of reading it.
+    @State private var keeping = false
+    @State private var keepError: String?
+    @State private var kept: SavedLink?
     @FocusState private var focused: Bool
 
     init(session: Session?, link: String = "", active: Bool = true, busy: Binding<Bool> = .constant(false),
@@ -268,19 +274,63 @@ struct FromALinkPage: View {
                     }
                 } else {
                     Button("Get the recipe", systemImage: "arrow.down.doc") { Task { await read() } }
-                        .disabled(!canRead)
+                        .disabled(!canRead || keeping)
+                    // Quietly, always: for a link you only want to keep.
+                    if error == nil && kept == nil {
+                        Button(keeping ? "Saving…" : "Just save the link", systemImage: "link") {
+                            Task { await keep() }
+                        }
+                        .disabled(!canRead || keeping)
+                        .foregroundStyle(.secondary)
+                    }
                 }
             } footer: {
                 Text("A website’s own recipe comes through exactly as they wrote it. A video’s is read from its caption or what’s said in it, so give it a look. Either way it opens in the editor before anything is saved.")
             }
 
-            if let error {
-                Section { Text(error).foregroundStyle(.red) }
+            if let error, kept == nil {
+                // A link that cannot be read is still worth keeping — the recipe is in the
+                // video, or behind a bio — so the way on is right under the reason.
+                Section {
+                    Text(error).foregroundStyle(.red)
+                    Button(keeping ? "Saving…" : "Save the link instead", systemImage: "link") {
+                        Task { await keep() }
+                    }
+                    .disabled(keeping)
+                    .fontWeight(.semibold)
+                } footer: {
+                    Text("It goes in Recipes › Saved links with its name and picture, to make into a recipe whenever you like.")
+                }
+            }
+            if let keepError {
+                Section { Text(keepError).foregroundStyle(.red) }
+            }
+            if let kept {
+                Section {
+                    HStack(spacing: 12) {
+                        PlannedLinkPicture(imageId: kept.coverImageId)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kept.name).lineLimit(2)
+                            Text(kept.sourceLabel).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Label(kept.alreadySaved == true ? "Already in Saved links" : "Saved to Saved links",
+                          systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Palette.success)
+                } footer: {
+                    Text("Find it under Recipes › Saved links.")
+                }
             }
         }
         .onChange(of: handed) { _, next in
             link = next
             error = nil
+            kept = nil
+        }
+        .onChange(of: link) { _, _ in
+            keepError = nil
+            if kept != nil { kept = nil }
         }
         .onChange(of: active) { _, now in
             if now && link.isEmpty { focused = true }
@@ -297,6 +347,26 @@ struct FromALinkPage: View {
                 Task { await read() }
             }
             #endif
+        }
+    }
+
+    /// Keeps the link in Saved links. The server reads the page for its name and picture, and
+    /// never refuses over them.
+    private func keep() async {
+        guard let household = session?.household?.id else {
+            keepError = "No household to save it to."
+            return
+        }
+        focused = false
+        keeping = true
+        keepError = nil
+        defer { keeping = false }
+        do {
+            kept = try await APIClient.shared.saveLink(
+                household: household, url: link.trimmingCharacters(in: .whitespacesAndNewlines))
+            error = nil
+        } catch {
+            keepError = error.localizedDescription
         }
     }
 

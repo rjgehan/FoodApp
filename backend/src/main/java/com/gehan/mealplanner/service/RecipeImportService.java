@@ -254,8 +254,12 @@ public class RecipeImportService {
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
     private JsonNode tikTokItem(URI uri) {
+        return tikTokItem(uri, Duration.ofSeconds(20));
+    }
+
+    private JsonNode tikTokItem(URI uri, Duration timeout) {
         try {
-            return tikTokItem(fetch(uri));
+            return tikTokItem(fetch(uri, timeout));
         } catch (RuntimeException e) {
             // Includes ResponseStatusException from fetch(): a page that will not load is a
             // reason to fall back to oEmbed, not to give up.
@@ -1098,6 +1102,158 @@ public class RecipeImportService {
             if (matcher.find()) return unescape(matcher.group(1)).trim();
         }
         return null;
+    }
+
+    // --- Peeking: a name and a picture for a saved link ---------------------------------------
+
+    /**
+     * What a link says about itself: a name for it and where its picture is. Either may be null.
+     * The picture address is fetched straight away by the caller, for the same reason an
+     * import's is — a TikTok cover's address stops working within days.
+     */
+    public record Peek(String title, String pictureUrl) {
+        static final Peek NOTHING = new Peek(null, null);
+    }
+
+    /** Short, because somebody is waiting on it to save a link, and it is only a nicety. */
+    private static final Duration PEEK_TIMEOUT = Duration.ofSeconds(10);
+
+    private static final Pattern OG_TITLE = Pattern.compile(
+            "<meta[^>]+(?:property|name)=\"og:title\"[^>]+content=\"([^\"]*)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OG_TITLE_REVERSED = Pattern.compile(
+            "<meta[^>]+content=\"([^\"]*)\"[^>]+(?:property|name)=\"og:title\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OG_SITE_NAME = Pattern.compile(
+            "<meta[^>]+(?:property|name)=\"og:site_name\"[^>]+content=\"([^\"]*)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PAGE_TITLE = Pattern.compile(
+            "<title[^>]*>(.*?)</title>", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+    /** Between a page's own title and the site's name: "Lasagne | BBC Good Food". */
+    private static final List<String> TITLE_SEPARATORS = List.of(" | ", " - ", " – ", " — ", " · ");
+
+    /**
+     * A name and a picture for a link that is being kept rather than imported — the same
+     * picture an import of it would have used. Never throws: a link whose page will not load,
+     * or that points somewhere this server must not go, is still worth keeping, just without
+     * the extras. The caller names it after the site then.
+     */
+    public Peek peek(String rawUrl) {
+        try {
+            URI uri = safeUri(linkIn(rawUrl));
+            if (isTikTok(uri)) {
+                JsonNode item = tikTokItem(uri, PEEK_TIMEOUT);
+                String title = tikTokTitle(item);
+                if (title == null) {
+                    title = captionTitle(oembedTitle(uri));
+                }
+                return new Peek(title, tikTokCover(item, uri));
+            }
+            return peekPage(fetch(uri, PEEK_TIMEOUT), uri);
+        } catch (RuntimeException e) {
+            log.info("Could not peek at {} ({})", rawUrl, e.toString());
+            return Peek.NOTHING;
+        }
+    }
+
+    /** Visible for tests: a page's name and picture, from HTML already fetched. */
+    Peek peekPage(String html, URI uri) {
+        if (isInstagram(uri)) {
+            // The caption is the post; og:title only wraps it in "Name on Instagram: …".
+            String title = captionTitle(captionOf(html));
+            return new Peek(title != null ? title : SavedLinks.tidyName(metaTitle(html)), metaImage(html));
+        }
+        JsonNode recipe = findRecipe(html);
+        String recipeName = recipe == null ? null : text(recipe, "name");
+        String title = recipeName == null ? null : SavedLinks.tidyName(unescape(recipeName));
+        if (title == null) {
+            String pageTitle = metaTitle(html);
+            if (pageTitle == null) {
+                Matcher tag = PAGE_TITLE.matcher(html);
+                pageTitle = tag.find() ? unescape(TAGS.matcher(tag.group(1)).replaceAll("")).trim() : null;
+            }
+            title = SavedLinks.tidyName(withoutSiteName(pageTitle, siteName(html), uri.getHost()));
+        }
+        String picture = recipe == null ? null : pictureIn(recipe.get("image"));
+        return new Peek(title, picture != null ? picture : metaImage(html));
+    }
+
+    /** Visible for tests: a TikTok's name out of its own record, or null when it has no caption. */
+    String tikTokTitle(JsonNode item) {
+        String caption = caption(item);
+        if (caption == null) {
+            caption = text(item, "desc");
+        }
+        return captionTitle(caption);
+    }
+
+    /**
+     * The dish a caption is about, the way an import would name it — the hook and the hashtags
+     * left off — and short enough for a tile. Null for a caption that is only hashtags.
+     */
+    String captionTitle(String caption) {
+        if (caption == null || caption.isBlank()) {
+            return null;
+        }
+        try {
+            return SavedLinks.tidyName(readCaption(caption, null).name());
+        } catch (RuntimeException onlyHashtags) {
+            return null;
+        }
+    }
+
+    /** oEmbed's title is the whole caption on one line, which is still where the name starts. */
+    private String oembedTitle(URI uri) {
+        try {
+            URI oembed = URI.create("https://www.tiktok.com/oembed?url="
+                    + URLEncoder.encode(uri.toString(), StandardCharsets.UTF_8));
+            return text(mapper.readTree(fetch(oembed, PEEK_TIMEOUT)), "title");
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private String metaTitle(String html) {
+        for (Pattern pattern : List.of(OG_TITLE, OG_TITLE_REVERSED)) {
+            Matcher matcher = pattern.matcher(html);
+            if (matcher.find() && !matcher.group(1).isBlank()) return unescape(matcher.group(1)).trim();
+        }
+        return null;
+    }
+
+    private String siteName(String html) {
+        Matcher matcher = OG_SITE_NAME.matcher(html);
+        return matcher.find() ? unescape(matcher.group(1)).trim() : null;
+    }
+
+    /**
+     * "Lasagne | BBC Good Food" is called Lasagne. After a bar, what follows is the site; after
+     * a dash only when it is plainly the site's name, because "One-pot pasta - the easy way" is
+     * all title.
+     */
+    static String withoutSiteName(String title, String siteName, String host) {
+        if (title == null) return null;
+        String out = title.trim();
+        for (String separator : TITLE_SEPARATORS) {
+            int at = out.lastIndexOf(separator);
+            if (at < 3) continue;
+            String tail = out.substring(at + separator.length()).trim();
+            if (separator.equals(" | ") || isTheSite(tail, siteName, host)) {
+                out = out.substring(0, at).trim();
+            }
+        }
+        return out;
+    }
+
+    private static boolean isTheSite(String tail, String siteName, String host) {
+        String name = lettersOf(tail);
+        if (name.isEmpty()) return false;
+        if (siteName != null && name.equals(lettersOf(siteName))) return true;
+        if (host == null) return false;
+        String[] parts = host.toLowerCase().replaceFirst("^www\\.", "").split("\\.");
+        String site = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+        return name.equals(lettersOf(site)) || lettersOf(host).startsWith(name);
+    }
+
+    private static String lettersOf(String text) {
+        return text.toLowerCase().replaceAll("[^a-z0-9]", "");
     }
 
     /** A picture fetched for a draft: what it is and its bytes. */

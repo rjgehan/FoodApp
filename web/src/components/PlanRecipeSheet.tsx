@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { MealType, Recipe, RecipeSection } from '../api/types';
+import type { MealType, Recipe, RecipeSection, SavedLink } from '../api/types';
 import { Button, CheckCircle, Chip, ErrorText, Sheet } from './ui';
 
 const MEALS: { value: MealType; label: string }[] = [
@@ -33,20 +33,26 @@ function dayLabel(d: Date, offset: number): string {
 /**
  * Recipe → Plan without leaving the recipe: pick a day in the planning window and a meal, then
  * add. The same thing the Plan tab's day sheet does, in the direction people actually arrive from.
+ *
+ * A saved link plans the same way — it is a recipe that is still only a link — minus the
+ * servings and extras, which it has no ingredients for.
  */
 export default function PlanRecipeSheet({
   householdId,
   recipe,
+  savedLink,
   days,
   servings,
   onPlanned,
   onClose,
 }: {
   householdId: string;
-  recipe: Recipe;
+  /** One of this or `savedLink`. */
+  recipe?: Recipe;
+  savedLink?: SavedLink;
   /** How many days ahead to offer — the household's planning window. */
   days: number;
-  servings: number;
+  servings?: number;
   onPlanned: (summary: string) => void;
   onClose: () => void;
 }) {
@@ -55,8 +61,9 @@ export default function PlanRecipeSheet({
     new Date(today.getFullYear(), today.getMonth(), today.getDate() + i),
   );
   const [dayIndex, setDayIndex] = useState(0);
-  const [meal, setMeal] = useState<MealType>(recipe.section ? MEAL_FOR_SECTION[recipe.section] : 'DINNER');
-  const optional = recipe.ingredients.filter((i) => i.optional);
+  const section = recipe?.section ?? savedLink?.section ?? null;
+  const [meal, setMeal] = useState<MealType>(section ? MEAL_FOR_SECTION[section] : 'DINNER');
+  const optional = (recipe?.ingredients ?? []).filter((i) => i.optional);
   const [extras, setExtras] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +77,9 @@ export default function PlanRecipeSheet({
       await api('POST', `/api/households/${householdId}/meal-plan/entries`, {
         date: isoDate(dates[dayIndex]),
         mealType: meal,
-        recipeId: recipe.id,
-        servings,
-        includedOptionalIngredientIds: [...extras],
+        ...(recipe
+          ? { recipeId: recipe.id, servings, includedOptionalIngredientIds: [...extras] }
+          : { savedLinkId: savedLink?.id }),
       });
       onPlanned(when);
     } catch (err) {

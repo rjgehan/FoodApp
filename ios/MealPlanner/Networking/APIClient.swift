@@ -263,6 +263,48 @@ actor APIClient {
         _ = try await sendNoContent("DELETE", "/api/places/\(id.uuidString)")
     }
 
+    // MARK: - Saved links
+
+    /// The household's saved links and your own "just me" ones, newest first.
+    func savedLinks(household: UUID) async throws -> [SavedLink] {
+        try await get("/api/households/\(household.uuidString)/saved-links")
+    }
+
+    /**
+     Keeps a link. Only the address is needed: the server reads the page for a name and a
+     picture, which for a TikTok can take a few seconds, and names it after the site when the
+     page will not say. A name or picture already read — an import that came through — is sent
+     along so the page is not read twice.
+    */
+    func saveLink(household: UUID, url: String, name: String? = nil, section: RecipeSection? = nil,
+                  personal: Bool? = nil, coverImageId: UUID? = nil) async throws -> SavedLink {
+        var body: [String: Any] = ["url": url]
+        if let name { body["name"] = name }
+        if let section { body["section"] = section.rawValue }
+        if let personal { body["personal"] = personal }
+        if let coverImageId { body["coverImageId"] = coverImageId.uuidString }
+        var req = request(method: "POST", path: "/api/households/\(household.uuidString)/saved-links", authorized: true)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 60
+        return try await perform(req)
+    }
+
+    /// Rename it, file it (`clearSection` takes it out of its drawer), or make it just yours.
+    func updateSavedLink(household: UUID, link: UUID, name: String? = nil, section: RecipeSection? = nil,
+                         clearSection: Bool = false, personal: Bool? = nil) async throws -> SavedLink {
+        var body: [String: Any] = [:]
+        if let name { body["name"] = name }
+        if let section { body["section"] = section.rawValue }
+        if clearSection { body["clearSection"] = true }
+        if let personal { body["personal"] = personal }
+        return try await send("PATCH", "/api/households/\(household.uuidString)/saved-links/\(link.uuidString)", body: body)
+    }
+
+    func deleteSavedLink(household: UUID, link: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/saved-links/\(link.uuidString)")
+    }
+
     // MARK: - Store aisles
 
     @discardableResult
@@ -553,6 +595,7 @@ actor APIClient {
         meal: MealType,
         recipeId: UUID? = nil,
         itemName: String? = nil,
+        savedLinkId: UUID? = nil,
         servings: Int? = nil,
         includedOptionalIngredientIds: [UUID] = []
     ) async throws -> MealPlanEntry {
@@ -565,7 +608,16 @@ actor APIClient {
             body["includedOptionalIngredientIds"] = includedOptionalIngredientIds.map(\.uuidString)
         }
         if let itemName { body["itemName"] = itemName }
+        // A saved link has no ingredients, so no servings or extras either.
+        if let savedLinkId { body["savedLinkId"] = savedLinkId.uuidString }
         return try await send("POST", "/api/households/\(household.uuidString)/meal-plan/entries", body: body)
+    }
+
+    /// Swaps the dish on a planned slot for a saved link.
+    @discardableResult
+    func changePlannedToLink(household: UUID, entry: UUID, savedLinkId: UUID) async throws -> MealPlanEntry {
+        try await send("PATCH", "/api/households/\(household.uuidString)/meal-plan/entries/\(entry.uuidString)",
+                       body: ["savedLinkId": savedLinkId.uuidString])
     }
 
     /// How many a planned dish is for. Nothing else about the entry changes.

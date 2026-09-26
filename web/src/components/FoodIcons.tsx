@@ -236,6 +236,18 @@ const Glass = (p: SVGProps<SVGSVGElement>) => (
   </Art>
 );
 
+/**
+ * Two links of a chain — the Saved links tile, which holds recipes that are still only a link.
+ * Not in the list below: it names that one place rather than a kind of food, so it is not one
+ * of the pictures a group can wear.
+ */
+export const SavedLinksArt = (p: SVGProps<SVGSVGElement>) => (
+  <Art {...p}>
+    <path d="M20.5 27.5a8.5 8.5 0 0 0 12 0l6.5-6.5a8.5 8.5 0 0 0-12-12l-2.5 2.5" />
+    <path d="M27.5 20.5a8.5 8.5 0 0 0-12 0L9 27a8.5 8.5 0 0 0 12 12l2.5-2.5" />
+  </Art>
+);
+
 export interface FoodIcon {
   key: string;
   label: string;

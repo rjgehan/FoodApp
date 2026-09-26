@@ -39,6 +39,9 @@ struct EditRecipeView: View {
     @State private var error: String?
     /// Where a draft came from and what to check, said above the form.
     private let draftNote: String?
+    /// The saved link this new recipe is being made from: saving it takes the link off Saved
+    /// links, and meals planned with the link move over to the recipe.
+    private let savedLinkId: UUID?
 
     /// An ingredient being edited: amounts are text while you type, numbers only on save.
     struct Draft: Identifiable, Hashable {
@@ -64,6 +67,7 @@ struct EditRecipeView: View {
         // A draft only ever starts a new recipe; an existing one is edited as it is.
         let draft = recipe == nil ? draft : nil
         draftNote = draft?.note
+        savedLinkId = draft?.savedLinkId
         // Dinner is what the web defaults a new recipe to.
         _section = State(initialValue: recipe?.section ?? initialSection ?? .dinner)
         _groups = State(initialValue: Set(recipe?.categories ?? initialGroups))
@@ -336,6 +340,7 @@ struct EditRecipeView: View {
         let legacy = LinkDraft.legacyFields(links)
         body["sourceUrl"] = legacy.sourceUrl ?? NSNull()
         body["videoUrl"] = legacy.videoUrl ?? NSNull()
+        if recipe == nil, let savedLinkId { body["savedLinkId"] = savedLinkId.uuidString }
 
         do {
             let saved: Recipe

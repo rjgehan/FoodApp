@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, SVGProps } from 'react';
 import { cx } from './ui';
 import { iconByKey } from './FoodIcons';
 
@@ -17,18 +17,21 @@ export function CatalogTileFace({
   name,
   detail,
   iconKey,
+  art,
   cornerButton = false,
 }: {
   name: string;
   detail: ReactNode;
   iconKey?: string | null;
+  /** A drawing that is not one of the pickable food icons — the Saved links tile's chain. */
+  art?: (props: SVGProps<SVGSVGElement>) => JSX.Element;
   /**
    * A group tile has its ••• in the top corner. Round drawings like the full meal's plate reach
    * right into that corner at full size, so the drawing sits a little lower and smaller there.
    */
   cornerButton?: boolean;
 }) {
-  const Icon = iconByKey(iconKey)?.Icon;
+  const Icon = art ?? iconByKey(iconKey)?.Icon;
 
   return (
     <span className="relative block aspect-square">
