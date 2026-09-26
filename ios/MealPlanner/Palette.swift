@@ -55,19 +55,17 @@ enum Palette {
     /// The tint's old name, from before there was a second colour to tint it with.
     static var accentSoft: Color { secondarySoft }
 
-    /// Text on the accent — the web's --accent-ink. White on the light orange, near-black on
-    /// the brighter orange dark mode uses, where white would barely read.
-    static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
+    /// Text and icons on a solid accent fill — the web's --accent-ink. Worked out per theme
+    /// (Theme.swift), white or near-black, whichever reads on that accent; Classic's is white in
+    /// light and near-black on the bright orange dark mode uses.
+    static var accentInk: Color {
+        guard let c = ThemeStore.shared.colors else { return classicInk }
+        return dynamic(light: c.light.accentInk, dark: c.dark.accentInk)
+    }
+    private static let classicInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
 
-    /// "You have this" at a whisper — the web's --success-soft, behind something already in
-    /// the cupboard.
-    static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
-
-    /// Text and icons on a solid accent fill — the web's --accent-ink. White in light; in dark
-    /// the accent is a bright orange, and white on it is hard to read, so it is near black.
-    static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
-
-    /// "You have this" at a whisper, behind a Done badge — the web's --success-soft.
+    /// "You have this" at a whisper, behind something already in the cupboard or a Done badge —
+    /// the web's --success-soft.
     static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
 
     /**

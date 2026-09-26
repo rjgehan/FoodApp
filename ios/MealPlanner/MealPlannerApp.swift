@@ -129,118 +129,148 @@ struct RootView: View {
 
     var body: some View {
         if session.isSignedIn {
-            TabView(selection: $tab) {
-                PlanView(session: session)
-                    .tabItem { Label("Plan", systemImage: "calendar") }
-                    .tag("plan")
-                RecipesView(session: session)
-                    .tabItem { Label("Recipes", systemImage: "book") }
-                    .tag("recipes")
-                GroceriesView(session: session)
-                    .tabItem { Label("Groceries", systemImage: "cart") }
-                    .tag("groceries")
-                CupboardView(session: session)
-                    .tabItem { Label("Cupboard", systemImage: "cabinet") }
-                    .tag("cupboard")
-                ExploreView(session: session)
-                    .tabItem { Label("Explore", systemImage: "safari") }
-                    .tag("explore")
-            }
-            /*
-             A new household is a new set of tabs. Each tab loads once when it appears, and the
-             switcher is a sheet over it, so the tab never re-appeared: the header said the new
-             house while the plan underneath was still the old one's, and editing it sent the
-             old house's ids to the new house. The id only — a same-house refresh of its
-             settings must not throw away where you were.
-            */
-            .id(session.household?.id)
-            // After every sign-in (a new token) and on every launch.
-            .task(id: session.token) { await checkCredentials() }
-            // On launch, on switching house, and on coming back to the app.
-            .task(id: session.household?.id) { await checkRestock() }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .background { restockAsked = [] }
-                if phase == .active { Task { await checkRestock() } }
-            }
-            .sheet(item: $restockDue) { due in
-                RestockPrompt(household: due.household, items: due.items)
-            }
-            // Your colours, which may have been changed on the web or another phone.
-            .task(id: session.token) { await loadTheme() }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await loadTheme() } }
-            }
-            // A household that turns us away is one we were taken out of: fetch the list again,
-            // which moves on to another house — or, with none left, back to the sign-in screen.
-            .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
-                .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: false)) { _ in
-                Task { await session.loadHouseholds() }
-            }
-            // Something to say after signing in — an invite that no longer worked, say.
-            .alert("Meal Planner", isPresented: Binding(
-                get: { session.isSignedIn && session.notice != nil },
-                set: { if !$0 { session.notice = nil } }
-            )) {
-                Button("OK") { session.notice = nil }
-            } message: {
-                Text(session.notice ?? "")
-            }
-            .sheet(isPresented: Binding(
-                get: { askingForCredentials != nil },
-                set: { if !$0 { askingForCredentials = nil } }
-            )) {
-                if let me = askingForCredentials {
-                    CredentialsPrompt(session: session, me: me)
-                }
-            }
-            #if DEBUG
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "edit" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                EditRecipeView(recipe: SampleData.recipes[0], session: session) { _ in }
-            }
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "detail" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                NavigationStack {
-                    RecipeDetailView(recipe: SampleData.recipes[0], session: session)
-                }
-            }
-            // -mp_debug_screen share -mp_debug_recipe <uuid>: that recipe, from the server, with
-            // its Share sheet open.
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "share" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                DebugRecipeDetail(session: session)
-            }
-            // Settings is behind the avatar now, which a screenshot run cannot tap.
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "settings" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                SettingsView(session: session)
-            }
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "household" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                NavigationStack { HouseholdScreen(session: session) }
-            }
-            // The ideas board, from the server — the lightbulb is a tap a screenshot run cannot make.
-            .sheet(isPresented: Binding(
-                get: { debugSheet == "ideas" },
-                set: { if !$0 { debugSheet = nil } }
-            )) {
-                IdeasView(session: session)
-            }
-            #endif
+            signedIn
         } else {
             SignInView(session: session)
         }
     }
+
+    /*
+     Split into steps rather than one long chain: every feature hangs something off the tabs, and
+     past a point Swift gives up type-checking a single expression that long.
+    */
+    private var tabs: some View {
+        TabView(selection: $tab) {
+            PlanView(session: session)
+                .tabItem { Label("Plan", systemImage: "calendar") }
+                .tag("plan")
+            RecipesView(session: session)
+                .tabItem { Label("Recipes", systemImage: "book") }
+                .tag("recipes")
+            GroceriesView(session: session)
+                .tabItem { Label("Groceries", systemImage: "cart") }
+                .tag("groceries")
+            CupboardView(session: session)
+                .tabItem { Label("Cupboard", systemImage: "cabinet") }
+                .tag("cupboard")
+            ExploreView(session: session)
+                .tabItem { Label("Explore", systemImage: "safari") }
+                .tag("explore")
+        }
+    }
+
+    /// The tabs, with what runs behind them: sign-in checks, restock, colours, being removed.
+    private var tabsAtWork: some View {
+        tabs
+        /*
+         A new household is a new set of tabs. Each tab loads once when it appears, and the
+         switcher is a sheet over it, so the tab never re-appeared: the header said the new
+         house while the plan underneath was still the old one's, and editing it sent the
+         old house's ids to the new house. The id only — a same-house refresh of its
+         settings must not throw away where you were.
+        */
+        .id(session.household?.id)
+        // After every sign-in (a new token) and on every launch.
+        .task(id: session.token) { await checkCredentials() }
+        // On launch, on switching house, and on coming back to the app.
+        .task(id: session.household?.id) { await checkRestock() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { restockAsked = [] }
+            if phase == .active { Task { await checkRestock() } }
+        }
+        .sheet(item: $restockDue) { due in
+            RestockPrompt(household: due.household, items: due.items)
+        }
+        // Your colours, which may have been changed on the web or another phone.
+        .task(id: session.token) { await loadTheme() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await loadTheme() } }
+        }
+        // A household that turns us away is one we were taken out of: fetch the list again,
+        // which moves on to another house — or, with none left, back to the sign-in screen.
+        .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
+            .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: false)) { _ in
+            Task { await session.loadHouseholds() }
+        }
+    }
+
+    /// ...and what they may ask on top of them.
+    private var tabsWithPrompts: some View {
+        tabsAtWork
+        // Something to say after signing in — an invite that no longer worked, say.
+        .alert("Meal Planner", isPresented: Binding(
+            get: { session.isSignedIn && session.notice != nil },
+            set: { if !$0 { session.notice = nil } }
+        )) {
+            Button("OK") { session.notice = nil }
+        } message: {
+            Text(session.notice ?? "")
+        }
+        .sheet(isPresented: Binding(
+            get: { askingForCredentials != nil },
+            set: { if !$0 { askingForCredentials = nil } }
+        )) {
+            if let me = askingForCredentials {
+                CredentialsPrompt(session: session, me: me)
+            }
+        }
+    }
+
+    @ViewBuilder private var signedIn: some View {
+        #if DEBUG
+        debugSheets(tabsWithPrompts)
+        #else
+        tabsWithPrompts
+        #endif
+    }
+
+    #if DEBUG
+    private func debugSheets(_ content: some View) -> some View {
+        content
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "edit" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            EditRecipeView(recipe: SampleData.recipes[0], session: session) { _ in }
+        }
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "detail" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            NavigationStack {
+                RecipeDetailView(recipe: SampleData.recipes[0], session: session)
+            }
+        }
+        // -mp_debug_screen share -mp_debug_recipe <uuid>: that recipe, from the server, with
+        // its Share sheet open.
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "share" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            DebugRecipeDetail(session: session)
+        }
+        // Settings is behind the avatar now, which a screenshot run cannot tap.
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "settings" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            SettingsView(session: session)
+        }
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "household" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            NavigationStack { HouseholdScreen(session: session) }
+        }
+        // The ideas board, from the server — the lightbulb is a tap a screenshot run cannot make.
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "ideas" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            IdeasView(session: session)
+        }
+    }
+    #endif
 
     /// The server's copy of your colours. Quiet on failure: the cached ones are already on.
     private func loadTheme() async {
