@@ -62,6 +62,8 @@ enum Config {
 extension Notification.Name {
     /// Posted when a household turns this person away — see APIClient.noticeForbidden.
     static let householdForbidden = Notification.Name("mp.householdForbidden")
+    /// Posted when a recipe is deleted, so the lists and the plan that showed it look again.
+    static let recipesChanged = Notification.Name("mp.recipesChanged")
 }
 
 struct APIError: LocalizedError {
@@ -491,6 +493,12 @@ actor APIClient {
     func renameRecipeCategory(household: UUID, category: UUID, name: String) async throws -> RecipeCategory {
         try await send("PATCH", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)",
                        body: ["name": name])
+    }
+
+    /// Gone for good: this household's planned meals with it go too, and another household
+    /// that planned it keeps the meal by name, marked as deleted.
+    func deleteRecipe(_ id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/recipes/\(id.uuidString)")
     }
 
     /// Whatever was filed in it moves up a level rather than going with it.

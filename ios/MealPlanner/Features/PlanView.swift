@@ -87,6 +87,10 @@ struct PlanView: View {
             }
             .navigationTitle("Plan")
             .refreshable { await load() }
+            // Deleting a recipe takes its planned meals with it.
+            .onReceive(NotificationCenter.default.publisher(for: .recipesChanged)) { _ in
+                Task { await load() }
+            }
             .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
         }
         .task(id: monthCursor) { await load() }

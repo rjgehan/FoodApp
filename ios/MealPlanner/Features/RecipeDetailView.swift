@@ -10,6 +10,10 @@ struct RecipeDetailView: View {
     @State private var editing = false
     @State private var changingPhoto = false
     @State private var sharing = false
+    @State private var confirmingDelete = false
+    @State private var deleting = false
+    @State private var deleteError: String?
+    @Environment(\.dismiss) private var dismissDetail
 
     /// One step per line, the way it was written.
     private var steps: [String] {
@@ -145,7 +149,34 @@ struct RecipeDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { editing = true }
                 }
+                // Behind a menu rather than beside Edit: it is the rarest thing anybody does here,
+                // and the one that cannot be taken back.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("More", systemImage: "ellipsis") {
+                        Button("Delete recipe", systemImage: "trash", role: .destructive) {
+                            confirmingDelete = true
+                        }
+                    }
+                    .disabled(deleting)
+                }
             }
+        }
+        .confirmationDialog("Delete “\(recipe.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete forever", role: .destructive) {
+                Task { await deleteRecipe() }
+            }
+        } message: {
+            Text((recipe.sharedWith ?? []).isEmpty && recipe.published != true
+                ? "It comes off your planned meals and any share link stops working. This can't be undone."
+                : "It comes off your planned meals and any share link stops working. Anyone else who planned it keeps the meal, marked as deleted. This can't be undone.")
+        }
+        .alert("Couldn't delete it", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
         }
         .sheet(isPresented: $sharing) {
             RecipeShareSheet(recipe: $recipe)
@@ -172,6 +203,18 @@ struct RecipeDetailView: View {
             AddToPlanSheet(recipe: recipe, session: session) { label in
                 planned = label
             }
+        }
+    }
+
+    private func deleteRecipe() async {
+        deleting = true
+        defer { deleting = false }
+        do {
+            try await APIClient.shared.deleteRecipe(recipe.id)
+            NotificationCenter.default.post(name: .recipesChanged, object: nil)
+            dismissDetail()
+        } catch {
+            deleteError = error.localizedDescription
         }
     }
 }

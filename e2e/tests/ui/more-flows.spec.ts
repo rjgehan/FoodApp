@@ -304,3 +304,22 @@ test('the list copies as plain lines, ready for a Notes checklist', async ({ pag
   // No headings, no title: every line has to be a real item or it becomes a stray checkbox.
   expect(copied).not.toMatch(/Unsorted|Groceries/);
 });
+
+test('a recipe can be deleted from its ••• menu, and its planned meal goes with it', async ({ page }) => {
+  const hh = await newHousehold();
+  const r = await newRecipe(hh.id, 'Leftover stew', [{ name: 'beef', qty: 1, unit: 'lb' }]);
+  await plan(hh.id, isoDate(1), 'DINNER', { recipeId: r.id, servings: 2 });
+  const owner = await admin();
+
+  await signIn(page, hh.owner, hh.id);
+  await page.goto(`/recipes/${r.id}`);
+  await fromMenu(page, 'Recipe options', 'Delete recipe');
+  await expect(sheet(page).getByText('It can’t be undone.').or(sheet(page).getByText("It can't be undone."))).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Delete forever' }).click();
+
+  await expect(page).toHaveURL(/\/recipes$/);
+  const recipes = await call('GET', `/api/households/${hh.id}/recipes`, { token: owner.token });
+  expect(recipes.some((x: any) => x.id === r.id)).toBe(false);
+  const entries = await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(6)}`, { token: owner.token });
+  expect(JSON.stringify(entries)).not.toContain(r.id);
+});

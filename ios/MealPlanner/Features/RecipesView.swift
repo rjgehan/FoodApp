@@ -101,6 +101,10 @@ struct RecipesView: View {
                 await load()
                 await loadSavedLinks()
             }
+            // A recipe deleted from its own page, however deep in a drawer that was.
+            .onReceive(NotificationCenter.default.publisher(for: .recipesChanged)) { _ in
+                Task { await load() }
+            }
             .householdHeader(session, switching: $switchingHousehold, account: $showingAccount)
             // Household › Recipe icons lives in that sheet, over this tab, so closing it is when a
             // drawer's new picture has to show — not on the next pull to refresh.

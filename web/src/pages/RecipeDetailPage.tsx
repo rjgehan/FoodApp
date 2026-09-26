@@ -26,6 +26,7 @@ export default function RecipeDetailPage() {
   const [siblings, setSiblings] = useState<Recipe[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [asCard, setAsCard] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -363,6 +364,8 @@ export default function RecipeDetailPage() {
                   { label: recipe.section ? 'Organize' : 'Save to my recipes', onSelect: startOrganizing },
                   mine && { label: 'Photos & links', onSelect: startEditingMedia },
                   { label: 'Index card', onSelect: () => setAsCard(true) },
+                  // Last, and only for the house that owns it: a shared one is someone else's.
+                  mine && { label: 'Delete recipe', onSelect: () => setDeleting(true) },
                 ]}
               />
             </>
@@ -370,6 +373,13 @@ export default function RecipeDetailPage() {
         </div>
       </div>
       {shareError && !sharing && <ErrorText>{shareError}</ErrorText>}
+      {deleting && (
+        <DeleteRecipeSheet
+          recipe={recipe}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => navigate('/recipes', { replace: true })}
+        />
+      )}
 
       {asCard ? (
         <RecipeIndexCard recipe={recipe} />
@@ -662,5 +672,56 @@ export default function RecipeDetailPage() {
       )}
 
     </div>
+  );
+}
+
+/**
+ * Asks before a recipe goes for good — the same words as the Delete at the foot of its edit page,
+ * from the ••• menu where people look for it.
+ */
+function DeleteRecipeSheet({
+  recipe,
+  onClose,
+  onDeleted,
+}: {
+  recipe: Recipe;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('DELETE', `/api/recipes/${recipe.id}`);
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not delete that.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title={`Delete “${recipe.name}”?`} onClose={busy ? () => undefined : onClose}>
+      <div className="space-y-4">
+        <p className="text-[0.9375rem] text-muted">
+          This removes it for good, takes it off your planned meals, and stops any share link working.
+          It can't be undone.
+          {(recipe.sharedWith.length > 0 || recipe.published) &&
+            ' Anyone else who planned it keeps the meal on their plan, marked as deleted.'}
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex gap-2">
+          <Button variant="danger" className="flex-1" disabled={busy} onClick={remove}>
+            {busy ? 'Deleting…' : 'Delete forever'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
