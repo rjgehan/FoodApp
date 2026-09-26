@@ -63,6 +63,13 @@ enum Palette {
     /// the cupboard.
     static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
 
+    /// Text and icons on a solid accent fill — the web's --accent-ink. White in light; in dark
+    /// the accent is a bright orange, and white on it is hard to read, so it is near black.
+    static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
+
+    /// "You have this" at a whisper, behind a Done badge — the web's --success-soft.
+    static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
+
     /**
      Recipe tints, in the web's order so the same recipe is the same colour in both places.
 

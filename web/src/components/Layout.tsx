@@ -19,6 +19,7 @@ import {
   ChevronRightIcon,
   CompassIcon,
   CupboardIcon,
+  LightbulbIcon,
 } from './icons';
 
 /*
@@ -57,6 +58,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [ideasBoard, setIdeasBoard] = useState(false);
   const isAdminChecked = useRef<string | null>(null);
   // The admin pages are tables that want the width of a computer screen, and the bar widens
   // with them so its tabs still line up with the page.
@@ -65,14 +67,23 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   // Only the way in to the admin pages hangs on this; the server decides who gets through them.
   // Asked again each time Settings opens: adding the admin's email, or renaming yourself, is
-  // done from in there and changes the answer without changing who is signed in.
+  // done from in there and changes the answer without changing who is signed in. The same
+  // answer says whether the beta's ideas board is open, which decides the lightbulb.
+  //
+  // Counted as checked only once an answer lands: marked at the start, a first ask that was
+  // called off (React runs effects twice in development) left nothing asking again, and the
+  // lightbulb never appeared until Settings was opened.
   useEffect(() => {
     if (!session) return;
     if (showProfile === false && isAdminChecked.current === session.userId) return;
-    isAdminChecked.current = session.userId;
     let cancelled = false;
     api<Me>('GET', '/api/users/me')
-      .then((me) => !cancelled && setIsAdmin(me.admin === true))
+      .then((me) => {
+        if (cancelled) return;
+        isAdminChecked.current = session.userId;
+        setIsAdmin(me.admin === true);
+        setIdeasBoard(me.ideasBoard === true);
+      })
       .catch(() => {
         // Offline: no Admin row this time, which is the safe way to be wrong.
       });
@@ -102,11 +113,12 @@ export default function Layout({ children }: { children: ReactNode }) {
             <div className={cx('min-w-0 transition-opacity duration-200', compactTitle && 'pointer-events-none opacity-0')}>
               {households.length > 1 ? (
                 // A bare select is the one control every mobile browser renders as a native
-                // picker, which beats anything custom for one-handed use.
+                // picker, which beats anything custom for one-handed use. It gives way to the
+                // buttons on the right on a narrow phone rather than sliding under them.
                 <div className="relative min-w-0">
                   <select
                     aria-label="Active household"
-                    className="press max-w-[60vw] appearance-none truncate rounded-full bg-elevated py-1.5 pl-3 pr-7
+                    className="press max-w-[min(60vw,100%)] appearance-none truncate rounded-full bg-elevated py-1.5 pl-3 pr-7
                                text-[0.9375rem] font-semibold text-ink outline-none"
                     value={activeHouseholdId ?? ''}
                     onChange={(e) => setActiveHouseholdId(e.target.value)}
@@ -120,27 +132,65 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted">▾</span>
                 </div>
               ) : (
-                <span className="truncate text-[0.9375rem] font-semibold text-muted">{activeName ?? 'Meal Planner'}</span>
+                <span className="block truncate text-[0.9375rem] font-semibold text-muted">{activeName ?? 'Meal Planner'}</span>
               )}
             </div>
 
             <span
               aria-hidden="true"
               className={cx(
-                'pointer-events-none absolute inset-x-20 truncate text-center text-[1.0625rem] font-semibold tracking-[-0.01em]',
+                'pointer-events-none absolute truncate text-center text-[1.0625rem] font-semibold tracking-[-0.01em]',
                 'transition-[opacity,transform] duration-200',
+                // Clear of the lightbulb as well as the avatar, when there is one.
+                ideasBoard ? 'inset-x-24' : 'inset-x-20',
                 compactTitle ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
               )}
             >
               {compactTitle}
             </span>
 
+            {/*
+              The beta's ideas board, on every screen: quieter than the page's own buttons (grey,
+              not orange) but a word rather than a bare icon, since nobody goes looking for a
+              suggestion box. Its label folds away while a page title sits in the bar.
+            */}
+            {ideasBoard && (
+              <NavLink
+                to="/ideas"
+                aria-label="Ideas (beta)"
+                className="press ml-auto flex h-11 items-center rounded-xl"
+              >
+                {({ isActive }) => (
+                  <span
+                    className={cx(
+                      'flex h-8 items-center rounded-full pl-[0.4375rem] text-[0.8125rem] font-semibold',
+                      'transition-[padding,background-color,color] duration-200',
+                      compactTitle ? 'pr-[0.4375rem]' : 'pr-3',
+                      isActive ? 'bg-accent-soft text-accent' : 'bg-elevated text-ink',
+                    )}
+                  >
+                    <LightbulbIcon className="h-[1.125rem] w-[1.125rem] shrink-0 text-accent" />
+                    <span
+                      aria-hidden="true"
+                      className={cx(
+                        'flex items-baseline gap-1 overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-200',
+                        compactTitle ? 'ml-0 max-w-0 opacity-0' : 'ml-1 max-w-[6rem] opacity-100',
+                      )}
+                    >
+                      Ideas
+                      <span className="text-[0.625rem] font-bold uppercase tracking-[0.06em] text-accent">Beta</span>
+                    </span>
+                  </span>
+                )}
+              </NavLink>
+            )}
+
             {/* Who is signed in, and the way to your own account — the same sheet as Household → You. */}
             <button
               type="button"
               onClick={() => setShowProfile(true)}
               aria-label="Your account"
-              className="press ml-auto flex h-11 items-center gap-2 rounded-xl pl-2"
+              className={cx('press flex h-11 items-center gap-2 rounded-xl pl-2', !ideasBoard && 'ml-auto')}
             >
               <span className="hidden text-sm text-muted sm:inline">{session?.displayName}</span>
               <span

@@ -236,6 +236,28 @@ tokens — only whether one exists.
 | `ADMIN_EMAILS` | *(empty — nobody)* | the admin's sign-in email(s) |
 | `ADMIN_USERNAMES` | *(empty — nobody)* | the admin's username(s) |
 
+## The ideas board (beta)
+
+While the app is in beta, a lightbulb **Ideas** button sits at the top of every screen, on the web
+and the phone, next to your initial. Behind it is one board for the whole server — not one per
+household — where anyone signed in suggests an idea for the app (a title of up to 80 characters,
+and details if they like) and upvotes the ones they want, once each. Top puts the most votes first;
+New, the newest. People can reword or delete their own ideas, and suggest up to ten a day.
+
+The admin (see above, signed in with the password) gets a ••• on every idea to mark it **Planned**,
+**Done** or **Not doing** — Done and Not doing drop below the rest under Top — and to delete it.
+Deleting an account from the admin pages takes that person's votes with it; their ideas stay,
+shown as from "Someone", because other people have voted for them.
+
+When the beta is over, set `IDEAS_BOARD=false` in `.env` (docker-compose.prod.yml passes it
+through) and `docker compose up -d backend`. The button disappears from the web and the phone the
+next time they load, and `/api/ideas/**` answers **404**. The ideas are kept in the `ideas` and
+`idea_votes` tables; setting it back to `true` brings the board back as it was.
+
+| Variable | Default | |
+|---|---|---|
+| `IDEAS_BOARD` | `true` | `false` closes the ideas board and hides its button |
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

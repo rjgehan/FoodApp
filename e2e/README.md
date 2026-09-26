@@ -35,6 +35,8 @@ Uses the Chrome already installed (`channel: 'chrome'`), so there's no Playwrigh
 | `tests/api/sharing.spec.ts` | Share links, sharing with a household, deleting a shared recipe |
 | `tests/ui/core-loop.spec.ts` | Keypad sign-in, plan next Tuesday, optional prompt, shop and put away, two-phone sync, Today |
 | `tests/ui/forms.spec.ts` | Paste parser, units, links without https, username field, group cards |
+| `tests/api/ideas.spec.ts` | The beta's ideas board: one vote each, Top and New, author-only edits, admin-only status, limits, deleted accounts |
+| `tests/ui/ideas.spec.ts` | Suggesting from the header's lightbulb, upvoting from a second phone, Top vs New, the admin marking one planned |
 | `tests/screens/inventory.spec.ts` | Not a test — captures every screen and sheet for the PDF |
 
 ### Known bugs are tests too

@@ -72,3 +72,8 @@ app:
     # their account. See DEPLOY.md.
     emails: ${ADMIN_EMAILS:}
     usernames: ${ADMIN_USERNAMES:}
+  ideas:
+    # The beta's ideas board: everyone signed in suggests ideas for the app and upvotes the ones
+    # they want. False hides the button in every app and the endpoints answer 404; the ideas
+    # themselves are kept. See DEPLOY.md.
+    enabled: ${IDEAS_BOARD:true}

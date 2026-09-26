@@ -355,10 +355,19 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'Recipe icon picker');
   });
 
+  // The board is the whole server's, so this only looks: nothing is posted to it.
+  group = 'Ideas';
+  await step('ideas', async () => {
+    await page.goto('/ideas');
+    await shot(page, 'Ideas board (beta)', 'The lightbulb in the header, on every screen.', { full: true });
+    await page.getByRole('button', { name: 'Suggest an idea' }).click();
+    await shot(page, 'Suggest an idea');
+  });
+
   // --- Dark mode pass on the main tabs --------------------------------------------------------
   group = 'Dark mode';
   await page.emulateMedia({ colorScheme: 'dark' });
-  for (const [path, title] of [['/meal-plan', 'Plan'], ['/recipes', 'Recipes'], [`/recipes/${parm.id}`, 'Recipe'], ['/grocery-list', 'Groceries'], ['/cupboard', 'Cupboard'], ['/household', 'Household']]) {
+  for (const [path, title] of [['/meal-plan', 'Plan'], ['/recipes', 'Recipes'], [`/recipes/${parm.id}`, 'Recipe'], ['/grocery-list', 'Groceries'], ['/cupboard', 'Cupboard'], ['/household', 'Household'], ['/ideas', 'Ideas']]) {
     await step(title, async () => {
       await page.goto(path);
       await shot(page, `${title} (dark)`);

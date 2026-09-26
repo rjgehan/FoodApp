@@ -91,14 +91,56 @@ struct AccountButton: ToolbarContent {
     }
 }
 
+/**
+ The beta's ideas board, just left of your face — the web has it in the same place. Only there
+ while the server has the board open, so it goes when the beta does.
+
+ A bare lightbulb rather than a word: the toolbar also carries each tab's own buttons, and the
+ board says "beta" itself once it is open.
+*/
+struct IdeasButton: ToolbarContent {
+    var session: Session
+    @Binding var open: Bool
+
+    var body: some ToolbarContent {
+        if session.ideasBoard {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    open = true
+                } label: {
+                    Image(systemName: "lightbulb")
+                }
+                .accessibilityLabel("Ideas (beta)")
+            }
+        }
+    }
+}
+
 /// Every tab wears the same header, so the current household and your own account are always
 /// in the same place.
 extension View {
     func householdHeader(_ session: Session, switching: Binding<Bool>, account: Binding<Bool>) -> some View {
-        self
-            .toolbar { HouseholdMenu(session: session, switching: switching) }
-            .toolbar { AccountButton(session: session, open: account) }
-            .sheet(isPresented: switching) { HouseholdPicker(session: session) }
-            .sheet(isPresented: account) { SettingsView(session: session) }
+        modifier(HouseholdHeader(session: session, switching: switching, account: account))
+    }
+}
+
+/// The header itself. A modifier rather than a chain in the extension, so the ideas board can
+/// keep whether it is open to itself instead of every tab holding one more flag for it.
+private struct HouseholdHeader: ViewModifier {
+    var session: Session
+    @Binding var switching: Bool
+    @Binding var account: Bool
+    @State private var ideas = false
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar { HouseholdMenu(session: session, switching: $switching) }
+            .toolbar {
+                IdeasButton(session: session, open: $ideas)
+                AccountButton(session: session, open: $account)
+            }
+            .sheet(isPresented: $switching) { HouseholdPicker(session: session) }
+            .sheet(isPresented: $account) { SettingsView(session: session) }
+            .sheet(isPresented: $ideas) { IdeasView(session: session) }
     }
 }

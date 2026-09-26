@@ -20,6 +20,7 @@ import PublicRecipePage from './pages/PublicRecipePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import InvitePage from './pages/InvitePage';
 import AdminRoutes from './pages/AdminPage';
+import IdeasPage from './pages/IdeasPage';
 
 export default function App() {
   const { session } = useAuth();
@@ -85,6 +86,8 @@ export default function App() {
           {/* The server owner's read-only view of everything. Not a tab: reached from Settings,
               and only shown to the admin (the server turns everyone else away). */}
           <Route path="/admin/*" element={<AdminRoutes />} />
+          {/* The beta's ideas board, for everyone. Not a tab either: the lightbulb in the header. */}
+          <Route path="/ideas" element={<IdeasPage />} />
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

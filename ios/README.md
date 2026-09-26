@@ -47,7 +47,7 @@ xcrun simctl launch <udid> cloud.gehan.mealplanner \
   -mp_debug_tab groceries          # plan | recipes | groceries | household | gallery
 ```
 
-`-mp_debug_screen edit|detail|settings|household` opens that sheet on top, and `-mp_debug_screen
+`-mp_debug_screen edit|detail|settings|household|ideas` opens that sheet on top, and `-mp_debug_screen
 day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to show the
 first dish's actions. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
 down to its Links section.
@@ -121,6 +121,16 @@ the app from Safari or Messages or pasted into New recipe → From a link, is no
 importer (it would find the web app's empty page): it is saved as a copy into the open household
 through `POST /api/public/recipes/{token}/save`, the same call as the web page's "Save to my
 recipes". Tapping such a link outside the app opens the web page, which does the same.
+
+## The ideas board (beta)
+
+While the server has it open (`IDEAS_BOARD`, see DEPLOY.md — `/api/users/me` says `ideasBoard`),
+every tab's header has a lightbulb beside your initial. It opens the same board the web's
+`/ideas` shows, for the whole server: Top or New, an upvote button on each idea (tap again to take
+it back), Suggest an idea at the bottom, and swipe — or the ••• — to edit or delete your own. The
+admin, signed in with the password, also gets Where it's up to (Open, Planned, Done, Not doing)
+and Delete on every idea. A build from before the board never asks, and never shows it; if the
+board is switched off while the phone has it open, it says so and the lightbulb goes.
 
 ## Food icons
 
