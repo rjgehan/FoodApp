@@ -92,3 +92,30 @@ test('a cover photo goes up as a JPEG, in the multipart shape the phone writes b
   expect(served.headers.get('content-type')).toContain('image/jpeg');
   expect(Buffer.from(await served.arrayBuffer()).equals(COVER_JPEG)).toBe(true);
 });
+
+test('restock reminders: set from a sheet, the question on opening, and its two answers', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const base = `/api/households/${hh.id}/restock`;
+  // The cupboard item the phone decodes carries the ingredient a reminder hangs on.
+  const coffee = await call('POST', `/api/households/${hh.id}/cupboard`, { token, body: { name: 'coffee' } });
+  const soap = await call('POST', `/api/households/${hh.id}/cupboard`, { token, body: { name: 'dish soap' } });
+  expect(coffee.ingredientId).toEqual(expect.any(String));
+
+  // RestockPicker's Save: {everyDays}, and DELETE for Off.
+  const set = await call('PUT', `${base}/${coffee.ingredientId}`, { token, body: { everyDays: 21 } });
+  for (const key of ['ingredientId', 'name', 'everyDays', 'lastBoughtAt', 'dueAt', 'snoozedUntil', 'due']) {
+    expect(set).toHaveProperty(key);
+  }
+  await call('PUT', `${base}/${soap.ingredientId}`, { token, body: { everyDays: 10 } });
+  expect(await call('GET', `${base}/due`, { token })).toEqual([]);
+
+  // RestockPrompt's answers: uuid strings in both lists.
+  await call('POST', `${base}/add-due`, { token, body: { add: [coffee.ingredientId], snooze: [soap.ingredientId] } });
+  await call('POST', `${base}/snooze`, { token, body: { ingredientIds: [coffee.ingredientId] } });
+  const list = await call('GET', `/api/households/${hh.id}/grocery-list`, { token });
+  expect(find(list, 'coffee')).toBeTruthy();
+
+  await call('DELETE', `${base}/${coffee.ingredientId}`, { token });
+  expect((await call('GET', base, { token })).map((r: any) => r.name)).toEqual(['dish soap']);
+});

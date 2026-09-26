@@ -36,7 +36,8 @@ struct GalleryView: View {
                         GroceriesView(
                             session: session,
                             sample: SampleData.groceries,
-                            sampleCategories: SampleData.categories
+                            sampleCategories: SampleData.categories,
+                            sampleReminders: SampleData.restock
                         )
                     }
                     entry("Groceries — all bought", "cart.badge.checkmark") {
@@ -63,7 +64,15 @@ struct GalleryView: View {
                         CupboardView(
                             session: session,
                             sample: SampleData.cupboard,
-                            sampleCategories: SampleData.categories
+                            sampleCategories: SampleData.categories,
+                            sampleReminders: SampleData.restock
+                        )
+                    }
+                    entry("Time to restock?", "repeat") {
+                        RestockPrompt(
+                            household: SampleData.household.id,
+                            items: SampleData.restock.filter { $0.due == true },
+                            sample: true
                         )
                     }
                     entry("Scan an invite", "qrcode.viewfinder") {

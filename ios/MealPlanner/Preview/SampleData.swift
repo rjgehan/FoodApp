@@ -55,15 +55,19 @@ enum SampleData {
     private static let produce = UUID()
     private static let dairy = UUID()
     private static let dryGoods = UUID()
+    private static let paperTowels = UUID()
+    private static let butter = UUID()
+    private static let oliveOil = UUID()
+    private static let coffee = UUID()
 
     static let groceries: [GroceryItem] = [
         GroceryItem(id: UUID(), name: "carrots", quantity: 4, unit: nil, checked: false, checkedByName: nil, categoryId: produce, inCupboard: false),
         GroceryItem(id: UUID(), name: "celery", quantity: 3, unit: nil, checked: false, checkedByName: nil, categoryId: produce, inCupboard: false),
         GroceryItem(id: UUID(), name: "shallots", quantity: 7, unit: nil, checked: false, checkedByName: nil, categoryId: produce, inCupboard: false),
-        GroceryItem(id: UUID(), name: "butter", quantity: 30, unit: "g", checked: false, checkedByName: nil, categoryId: dairy, inCupboard: true),
+        GroceryItem(id: UUID(), ingredientId: butter, name: "butter", quantity: 30, unit: "g", checked: false, checkedByName: nil, categoryId: dairy, inCupboard: true),
         GroceryItem(id: UUID(), name: "gruyere cheese", quantity: 50, unit: "g", checked: false, checkedByName: nil, categoryId: dairy, inCupboard: false),
         GroceryItem(id: UUID(), name: "tinned tomatoes", quantity: 400, unit: "g", checked: false, checkedByName: nil, categoryId: dryGoods, inCupboard: false),
-        GroceryItem(id: UUID(), name: "paper towels", quantity: nil, unit: nil, checked: false, checkedByName: nil, categoryId: nil, inCupboard: false),
+        GroceryItem(id: UUID(), ingredientId: paperTowels, name: "paper towels", quantity: nil, unit: nil, checked: false, checkedByName: nil, categoryId: nil, inCupboard: false),
         GroceryItem(id: UUID(), name: "chicken stock", quantity: 350, unit: "ml", checked: true, checkedByName: "Maya", categoryId: dryGoods, inCupboard: false),
     ]
 
@@ -133,11 +137,23 @@ enum SampleData {
     ]
 
     static let cupboard: [CupboardItem] = [
-        CupboardItem(id: UUID(), name: "olive oil", runningLow: false, staple: true, categoryId: dryGoods, onList: true, quantity: nil, unit: nil),
+        CupboardItem(id: UUID(), name: "olive oil", runningLow: false, staple: true, categoryId: dryGoods, onList: true, quantity: nil, unit: nil, ingredientId: oliveOil),
         CupboardItem(id: UUID(), name: "rice", runningLow: false, staple: false, categoryId: dryGoods, onList: false, quantity: 3, unit: "kg"),
         CupboardItem(id: UUID(), name: "plain flour", runningLow: false, staple: false, categoryId: dryGoods, onList: false, quantity: nil, unit: nil),
         CupboardItem(id: UUID(), name: "butter", runningLow: true, staple: false, categoryId: dairy, onList: false, quantity: nil, unit: nil),
         CupboardItem(id: UUID(), name: "parmesan", runningLow: false, staple: false, categoryId: dairy, onList: false, quantity: nil, unit: nil),
+    ]
+
+    /// Reminders on some of the things above, and two that have come due.
+    static let restock: [RestockReminder] = [
+        RestockReminder(ingredientId: paperTowels, name: "paper towels", everyDays: 21,
+                        lastBoughtAt: "2026-09-02T10:00:00Z", dueAt: nil, snoozedUntil: nil, due: true),
+        RestockReminder(ingredientId: coffee, name: "coffee", everyDays: 14,
+                        lastBoughtAt: "2026-09-10T10:00:00Z", dueAt: nil, snoozedUntil: nil, due: true),
+        RestockReminder(ingredientId: oliveOil, name: "olive oil", everyDays: 28,
+                        lastBoughtAt: "2026-09-20T10:00:00Z", dueAt: nil, snoozedUntil: nil, due: false),
+        RestockReminder(ingredientId: butter, name: "butter", everyDays: 10,
+                        lastBoughtAt: "2026-09-22T10:00:00Z", dueAt: nil, snoozedUntil: nil, due: false),
     ]
 
     static let recipeCategories: [RecipeCategory] = {
