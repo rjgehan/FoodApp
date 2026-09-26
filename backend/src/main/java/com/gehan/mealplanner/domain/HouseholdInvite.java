@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -19,8 +20,13 @@ import java.util.UUID;
  * can throw it away and get a new one. The token is kept as it is rather than hashed, unlike a
  * password reset, because the whole point is that anyone in the house can open the Invite card
  * and see the same link again. It opens a door into a kitchen, not into somebody's account.
+ *
+ * Saved a column at a time ({@code @DynamicUpdate}): counting one more person in writes the
+ * count and nothing else, so it can never put back a revokedAt it read before the link was
+ * thrown away.
  */
 @Entity
+@DynamicUpdate
 @Table(name = "household_invites")
 @Getter
 @Setter

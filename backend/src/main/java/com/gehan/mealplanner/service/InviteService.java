@@ -158,16 +158,16 @@ public class InviteService {
      * either way the house becomes the one they open next.
      *
      * The household row is locked first, so a double tap, or the phone's own join racing the
-     * button, finds the first one in rather than both trying to add the same row.
+     * button, finds the first one in rather than both trying to add the same row — and somebody
+     * the owner is removing at that moment finds the link already dead, not still open.
      */
     @Transactional
     public HouseholdResponse accept(String token, UUID userId) {
-        HouseholdInvite invite = liveInvite(token);
+        HouseholdInvite invite = lockedLiveInvite(token);
         UUID householdId = invite.getHousehold().getId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
 
-        householdRepository.lockById(householdId);
         if (!memberRepository.existsByHouseholdIdAndUserId(householdId, userId)) {
             // An account they already had: the house did not make it, so its owner does not get
             // to reset its password. See HouseholdMember.broughtOwnAccount.
@@ -182,10 +182,13 @@ public class InviteService {
      * A brand new account, made by the person it belongs to, straight into the house that
      * invited them. The username is made from the email: nobody types it, but the PIN screens
      * and the member list still show one.
+     *
+     * Locks the house as accepting does, so a link the owner is throwing away at that moment
+     * lets nobody in afterwards.
      */
     @Transactional
     public User signUp(SignupRequest request) {
-        HouseholdInvite invite = liveInvite(request.inviteToken());
+        HouseholdInvite invite = lockedLiveInvite(request.inviteToken());
         AccountService.checkPassword(request.password());
 
         String username = accountService.usernameFromEmail(request.email());
@@ -221,15 +224,37 @@ public class InviteService {
         invite.setUseCount(invite.getUseCount() + 1);
     }
 
+    /**
+     * The link, read only once its house is locked — for anything that is about to let somebody
+     * in. Throwing a link away (Make a new link, or removing somebody) takes the same lock, so
+     * this either goes first, or waits and then reads the link as dead. Reading the link before
+     * locking would let a join that was already waiting go ahead on a link that had just been
+     * thrown away, putting back a person the owner had just taken out.
+     */
+    private HouseholdInvite lockedLiveInvite(String token) {
+        UUID householdId = inviteRepository.findHouseholdIdByToken(clean(token))
+                .orElseThrow(InviteService::notOurs);
+        householdRepository.lockById(householdId);
+        return liveInvite(token);
+    }
+
     /** 404 for a token that was never ours, 410 for one that was and is not any more. */
     private HouseholdInvite liveInvite(String token) {
-        HouseholdInvite invite = inviteRepository.findByToken(token == null ? "" : token.trim())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "That invite link isn't one of ours. Check you have all of it."));
+        HouseholdInvite invite = inviteRepository.findByToken(clean(token))
+                .orElseThrow(InviteService::notOurs);
         if (!invite.isLive(Instant.now())) {
             throw new ResponseStatusException(HttpStatus.GONE,
                     "This invite link has run out or been replaced. Ask for a new one.");
         }
         return invite;
+    }
+
+    private static String clean(String token) {
+        return token == null ? "" : token.trim();
+    }
+
+    private static ResponseStatusException notOurs() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "That invite link isn't one of ours. Check you have all of it.");
     }
 }
