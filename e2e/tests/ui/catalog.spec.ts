@@ -124,3 +124,24 @@ test('a new group can be made with an icon', async ({ page }) => {
   const groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
   expect(groups.find((c: any) => c.name === 'Tacos').iconKey).toBe('taco');
 });
+
+test('from the Dinner page, Edit groups gives every group its icon in one list', async ({ page }) => {
+  const hh = await newHousehold();
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/section/dinner');
+  await page.getByRole('button', { name: 'Options for Dinner' }).click();
+  await sheet(page).getByRole('button', { name: 'Edit groups' }).click();
+  await expect(sheet(page).getByText('Groups in Dinner')).toBeVisible();
+
+  await sheet(page).getByRole('button', { name: 'Icon for Main' }).click();
+  await Promise.all([
+    page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/recipe-categories/')),
+    sheet(page).getByRole('button', { name: 'Meat', exact: true }).click(),
+  ]);
+  await page.screenshot({ path: 'test-results/edit-groups-sheet.png' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Main\b/ }).locator('[data-icon="meat"]')).toBeVisible();
+
+  const groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
+  expect(groups.find((c: any) => c.name === 'Main' && c.section === 'DINNER').iconKey).toBe('meat');
+});

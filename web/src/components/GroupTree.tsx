@@ -6,6 +6,14 @@ import { coverClass } from '../utils/recipeFormat';
 import { MoreIcon } from './icons';
 import { CATALOG_GRID, CatalogTileFace, catalogTileClass } from './CatalogTile';
 
+/** What is inside a group, in the order you care: the recipes, then whether it opens further. */
+export function groupDetail(recipes: number, groups: number): string {
+  return (
+    `${recipes} ${recipes === 1 ? 'recipe' : 'recipes'}` +
+    (groups > 0 ? ` · ${groups} ${groups === 1 ? 'group' : 'groups'}` : '')
+  );
+}
+
 /**
  * One level at a time: the groups directly inside the current one, as the same square tiles the
  * catalog uses for Breakfast and Dinner — the group's own icon drawn big, if it has one.
@@ -47,9 +55,6 @@ export default function GroupTree({
     <div>
       <ul className={CATALOG_GRID}>
         {groups.map((node) => {
-          const recipes = countFor(node.id);
-          const inside = tree.children(node.id).length;
-
           return (
             <li key={node.id} className="relative">
               <button type="button" onClick={() => onNavigate(node.id)} className={catalogTileClass(coverClass(node.id))}>
@@ -57,11 +62,7 @@ export default function GroupTree({
                   name={node.name}
                   iconKey={node.iconKey}
                   cornerButton
-                  detail={
-                    // What is inside, in the order you care: the recipes, then whether it opens further.
-                    `${recipes} ${recipes === 1 ? 'recipe' : 'recipes'}` +
-                    (inside > 0 ? ` · ${inside} ${inside === 1 ? 'group' : 'groups'}` : '')
-                  }
+                  detail={groupDetail(countFor(node.id), tree.children(node.id).length)}
                 />
               </button>
 

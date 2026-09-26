@@ -3,6 +3,7 @@ package com.gehan.mealplanner.config;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.service.CupboardService;
+import com.gehan.mealplanner.service.FoodIcons;
 import com.gehan.mealplanner.service.GroceryCategoryService;
 import com.gehan.mealplanner.service.IngredientService;
 import com.gehan.mealplanner.service.RecipeService;
@@ -13,6 +14,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * Data moves that bring an existing database up to date, run on every start. Each one only
@@ -173,5 +179,56 @@ public class StartupBackfills {
                 log.warn("Could not mark grocery rows as asked for: {}", e.getMessage());
             }
         };
+    }
+
+    /**
+     * A household from before groups had icons has Full meal, Side and Veggie as plain tiles,
+     * while a household made today starts with them drawn. Give those old groups the same icons
+     * a new household's get, going by name — trimmed, any case — and never over one somebody
+     * chose. "Main" has nothing obvious to draw, so it stays plain here too.
+     */
+    @Bean
+    public ApplicationRunner offerOldGroupsTheirIcons(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int given = offerObviousGroupIcons(jdbc);
+                if (given > 0) {
+                    log.info("Gave {} recipe groups the icon their name suggests", given);
+                }
+            } catch (Exception e) {
+                log.warn("Could not give recipe groups their icons: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Offers each group its icon once, ever: a group is only looked at while its
+     * {@code default_icon_offered_at} is still empty, and is marked as it is. Without that mark a
+     * "no icon" somebody picks later would look exactly like never having had one, and the next
+     * restart would put it back. Every group made since the column exists is marked as it is
+     * made, so this only ever sees the old ones.
+     *
+     * The icons go on before the mark, so a start that dies in between leaves groups that are
+     * simply offered again next time — and a group that got its icon is not touched twice,
+     * because it has one. Returns how many groups got an icon.
+     */
+    public static int offerObviousGroupIcons(JdbcTemplate jdbc) {
+        List<Object> params = new ArrayList<>();
+        StringBuilder values = new StringBuilder();
+        for (Map.Entry<String, String> entry : FoodIcons.DEFAULT_GROUP_ICONS.entrySet()) {
+            values.append(values.isEmpty() ? "" : ", ").append("(?, ?)");
+            params.add(entry.getKey().trim().toLowerCase(Locale.ROOT));
+            params.add(entry.getValue());
+        }
+        int given = jdbc.update("""
+                UPDATE recipe_categories c
+                SET icon_key = d.icon
+                FROM (VALUES %s) AS d(name, icon)
+                WHERE c.default_icon_offered_at IS NULL
+                  AND c.icon_key IS NULL
+                  AND lower(trim(c.name)) = d.name
+                """.formatted(values), params.toArray());
+        jdbc.update("UPDATE recipe_categories SET default_icon_offered_at = now() WHERE default_icon_offered_at IS NULL");
+        return given;
     }
 }

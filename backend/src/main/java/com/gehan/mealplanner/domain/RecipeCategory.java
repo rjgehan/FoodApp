@@ -61,6 +61,16 @@ public class RecipeCategory {
     @Column(length = 40)
     private String iconKey;
 
+    /**
+     * When this group was offered the obvious icon for its name (FoodIcons.DEFAULT_GROUP_ICONS).
+     * A group made now has had its chance as it is made — a new household's are seeded with
+     * theirs, and one made by hand wears whatever it was given — so only a group from before
+     * group icons is ever null here. StartupBackfills offers those theirs once and fills this
+     * in, so an icon somebody takes off later stays off through every restart after.
+     */
+    @Builder.Default
+    private Instant defaultIconOfferedAt = Instant.now();
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

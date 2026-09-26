@@ -29,8 +29,9 @@ public final class FoodIcons {
     /**
      * What the groups a new household starts with wear, so the catalog opens onto pictures
      * rather than blank tiles. Matched by name; anything not listed starts with no icon.
+     * StartupBackfills offers the same icons, once, to groups made before groups had icons.
      */
-    static final Map<String, String> DEFAULT_GROUP_ICONS = Map.ofEntries(
+    public static final Map<String, String> DEFAULT_GROUP_ICONS = Map.ofEntries(
             Map.entry("Full meal", "full-meal"),
             Map.entry("Side", "side"),
             Map.entry("Veggie", "veggie"),

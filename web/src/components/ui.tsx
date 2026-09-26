@@ -378,7 +378,11 @@ export function Sheet({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') dismiss();
+      if (e.key !== 'Escape') return;
+      // With one sheet over another, Escape closes the top one — not both at once.
+      const open = document.querySelectorAll('[role="dialog"]');
+      if (open.length > 0 && open[open.length - 1] !== panel.current) return;
+      dismiss();
     }
     window.addEventListener('keydown', onKey);
     // Stop the page behind from scrolling while the sheet is up.

@@ -11,7 +11,8 @@ import { PageTitle } from '../components/PageTitle';
 import { SHARED_KEY, sectionFromSlug, sectionLabel } from '../utils/recipeMeta';
 import { iconByKey } from '../components/FoodIcons';
 import { buildTree, isIn, suggestGroup, suggestSplit, type CategoryTree } from '../utils/categoryTree';
-import GroupTree from '../components/GroupTree';
+import GroupTree, { groupDetail } from '../components/GroupTree';
+import EditGroupsSheet from '../components/EditGroupsSheet';
 import IconPicker from '../components/IconPicker';
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -34,6 +35,7 @@ export default function RecipeSectionPage() {
   const [sorting, setSorting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingGroups, setEditingGroups] = useState(false);
   // Remembered on this phone: "Not now" that comes back on the next visit is just nagging.
   const [splitDismissed, setSplitDismissed] = useState<string[]>(readDismissedSplits);
 
@@ -61,6 +63,7 @@ export default function RecipeSectionPage() {
     setSorting(false);
     setAdding(false);
     setEditing(false);
+    setEditingGroups(false);
   }, [groupId, slug]);
 
   // A drawer shows its own groups, plus any group that belongs to every drawer.
@@ -129,6 +132,7 @@ export default function RecipeSectionPage() {
   const allChildren = tree.children(group?.id ?? null);
   // Here, but in none of the groups below: filed on this group itself, or on nothing at all.
   const loose = here.filter((r) => !allChildren.some((c) => isIn(r, c.id, tree)));
+  const countFor = (id: string) => here.filter((r) => isIn(r, id, tree)).length;
 
   // Names a split-up group cannot take: this group and the ones above it.
   const taken = new Set((group ? tree.path(group.id) : []).map((c) => c.name.toLowerCase()));
@@ -157,6 +161,11 @@ export default function RecipeSectionPage() {
               title={group?.name ?? drawerName}
               items={[
                 { label: group ? `Add a group inside ${group.name}` : 'Add a group', onSelect: () => setAdding(true) },
+                // The groups on this screen, all in one list — where their pictures are given.
+                allChildren.length > 0 && {
+                  label: group ? `Edit groups inside ${group.name}` : 'Edit groups',
+                  onSelect: () => setEditingGroups(true),
+                },
                 group && { label: 'Edit group', onSelect: () => setEditing(true) },
               ]}
             />
@@ -238,7 +247,7 @@ export default function RecipeSectionPage() {
                 householdId={activeHouseholdId}
                 tree={tree}
                 rootId={group?.id ?? null}
-                countFor={(id) => here.filter((r) => isIn(r, id, tree)).length}
+                countFor={countFor}
                 drawerName={drawerName}
                 onNavigate={goTo}
                 onChanged={load}
@@ -260,6 +269,17 @@ export default function RecipeSectionPage() {
             </>
           )}
         </>
+      )}
+
+      {editingGroups && (
+        <EditGroupsSheet
+          householdId={activeHouseholdId}
+          place={group?.name ?? drawerName}
+          groups={allChildren}
+          detailFor={(g) => groupDetail(countFor(g.id), tree.children(g.id).length)}
+          onClose={() => setEditingGroups(false)}
+          onChanged={load}
+        />
       )}
 
       {editing && group && (

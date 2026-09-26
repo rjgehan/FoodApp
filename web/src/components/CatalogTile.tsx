@@ -34,6 +34,8 @@ export function CatalogTileFace({
     <span className="relative block aspect-square">
       {Icon && (
         <Icon
+          // Which drawing it is, for a test to find; the name on the tile is what a reader hears.
+          data-icon={iconKey}
           className={cx(
             'absolute left-1/2 -translate-x-1/2 text-ink opacity-70',
             cornerButton ? 'top-[11%] h-[59%] w-[59%]' : 'top-[5%] h-[66%] w-[66%]',
