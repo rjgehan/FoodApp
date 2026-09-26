@@ -44,6 +44,12 @@ enum TokenStore {
     }
 }
 
+/// An invite waiting on a sign-in: the link, and the house's name for the sign-in screen to show.
+struct PendingInvite: Hashable {
+    let token: String
+    let householdName: String
+}
+
 /// Who is signed in and which household they are looking at — the two things every screen needs.
 @Observable
 final class Session {
@@ -58,6 +64,12 @@ final class Session {
     /// "Not now" on the add-an-email prompt. Kept in memory only, so it lasts until the app
     /// is next launched — and a fresh sign-in asks again.
     var credentialsPromptDismissed = false
+    /// An invite link somebody chose "I already have an account" on. The next sign-in, by email
+    /// or PIN, says yes to it as it lands — they already said so on the invite screen.
+    var pendingInvite: PendingInvite?
+    /// Something the sign-in screen should say when it next appears: that you were taken out of
+    /// your last household, or that an invite you signed in for did not work any more.
+    var notice: String?
 
     var isSignedIn: Bool { token != nil && household != nil }
 
@@ -71,15 +83,28 @@ final class Session {
     /// Loaded at launch and again after every sign-in: the list belongs to whoever is signed
     /// in, on whichever server they signed in to, and someone may have been added to a house.
     func loadHouseholds() async {
-        households = (try? await APIClient.shared.myHouseholds()) ?? []
+        // A failed fetch is not news that you are in no household: keep what we had.
+        guard let mine = try? await APIClient.shared.myHouseholds() else { return }
+        households = mine
         // After a relaunch only the token is known: ask who it belongs to.
         if userId == nil, token != nil, let me = try? await APIClient.shared.me() {
             userId = me.userId
         }
-        // The sign-in screen's copy of the household has no settings on it; the list's does,
-        // and the plan needs the house's usual servings.
-        if let current = household, let fresh = households.first(where: { $0.id == current.id }), fresh != current {
-            switchTo(fresh)
+        guard let current = household else { return }
+        if let fresh = mine.first(where: { $0.id == current.id }) {
+            // The sign-in screen's copy of the household has no settings on it; the list's
+            // does, and the plan needs the house's usual servings.
+            if fresh != current { switchTo(fresh) }
+        } else if let other = mine.first {
+            // Taken out of this one (or it was deleted): carry on in another. A fallback, not
+            // a choice, so it is not remembered as one.
+            switchTo(other)
+        } else if token != nil {
+            // In no household at all any more. There is nothing for the tabs to show, so back to
+            // the sign-in screen — which says why, and offers to scan an invite.
+            await signOut()
+            notice = "You're not in a household any more. Ask someone for an invite link to join one, "
+                + "or start your own on the Meal Planner website."
         }
     }
 
@@ -151,6 +176,19 @@ final class Session {
     @discardableResult
     func signIn(_ auth: AuthResponse, household picked: HouseholdSummary? = nil) async throws -> Bool {
         await APIClient.shared.use(token: auth.token)
+        var auth = auth
+        // Signed in to say yes to an invite: say it now, before looking for a house to open —
+        // it may be the only one they are in — and open that one.
+        if let invite = pendingInvite {
+            pendingInvite = nil
+            do {
+                let joined = try await APIClient.shared.acceptInvite(token: invite.token)
+                auth = AuthResponse(token: auth.token, userId: auth.userId,
+                                    displayName: auth.displayName, lastHouseholdId: joined.id)
+            } catch {
+                notice = "Signed in, but the invite didn't work: \(error.localizedDescription)"
+            }
+        }
         /*
          The switcher top left reads this list, and it used to be filled only at launch — so
          after signing in, or signing in again on another server, it held nothing (or the last
@@ -184,6 +222,7 @@ final class Session {
     }
 
     func signOut() async {
+        notice = nil
         token = nil
         displayName = nil
         household = nil

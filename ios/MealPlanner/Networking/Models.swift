@@ -103,6 +103,37 @@ struct PasswordResetLink: Codable, Hashable {
     let expiresAt: String
 }
 
+/// What a reset link says before it is used: whose it is, and whether it still works.
+struct PasswordResetInfo: Codable, Hashable {
+    let valid: Bool
+    let displayName: String?
+    /// False means the form asks for an email too — a password is no use without one.
+    let hasEmail: Bool
+}
+
+/// A household's invite link, from /api/households/{id}/invite. Everyone in the house sees the
+/// same one until the owner makes a new one.
+struct InviteLink: Codable, Hashable {
+    let token: String
+    /// ISO-8601, as the server sends it.
+    let expiresAt: String
+
+    var expires: Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt)
+    }
+}
+
+/// What an invite link tells whoever opens it, before they sign in. All nil but `valid` when
+/// the link does not work.
+struct InviteInfo: Codable, Hashable {
+    let valid: Bool
+    let householdName: String?
+    let invitedByName: String?
+    let memberCount: Int?
+}
+
 enum MealType: String, Codable, CaseIterable, Hashable {
     case breakfast = "BREAKFAST"
     case lunch = "LUNCH"

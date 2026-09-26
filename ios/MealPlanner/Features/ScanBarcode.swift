@@ -206,8 +206,8 @@ struct ScanBarcodeSheet: View {
 /**
  A live camera that calls back once, with the first grocery barcode it sees.
 
- Only the four formats groceries use. Letting it look for QR codes as well finds nothing on a
- tin and makes every frame slower.
+ Only the formats groceries use. Letting it look for QR codes as well finds nothing on a tin and
+ makes every frame slower. The invite scanner uses the same controller, looking for QR codes only.
 */
 struct BarcodeCamera: UIViewControllerRepresentable {
     var onFound: (String) -> Void
@@ -225,24 +225,48 @@ struct BarcodeCamera: UIViewControllerRepresentable {
 
 final class BarcodeCameraController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onFound: ((String) -> Void)?
+    /// Called on the main queue when the camera is not allowed, so the screen can say how to fix it.
+    var onDenied: (() -> Void)?
+    /// What to look for. Groceries by default; the invite scanner asks for QR codes only.
+    var types: [AVMetadataObject.ObjectType] = [.ean13, .ean8, .upce]
+    /// Raw values, untouched — a QR code's text is not a product number to tidy up.
+    var raw = false
 
     private let session = AVCaptureSession()
     private var preview: AVCaptureVideoPreviewLayer?
+    private var camera: AVCaptureDevice?
     private var done = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
         AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
-            guard allowed else { return }
-            DispatchQueue.main.async { self?.start() }
+            DispatchQueue.main.async {
+                if allowed { self?.start() } else { self?.onDenied?() }
+            }
         }
+    }
+
+    /// Looks again after a scan that was not what we wanted — a QR code that is not an invite.
+    func resume() {
+        done = false
+        if !session.isRunning {
+            Task.detached(priority: .userInitiated) { [session] in session.startRunning() }
+        }
+    }
+
+    /// The torch, for a code on a screen in a dim kitchen. Quietly nothing on a device without one.
+    func setTorch(_ on: Bool) {
+        guard let camera, camera.hasTorch, (try? camera.lockForConfiguration()) != nil else { return }
+        camera.torchMode = on ? .on : .off
+        camera.unlockForConfiguration()
     }
 
     private func start() {
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let input = try? AVCaptureDeviceInput(device: camera),
               session.canAddInput(input) else { return }
+        self.camera = camera
         session.addInput(input)
 
         let output = AVCaptureMetadataOutput()
@@ -250,7 +274,7 @@ final class BarcodeCameraController: UIViewController, AVCaptureMetadataOutputOb
         session.addOutput(output)
         output.setMetadataObjectsDelegate(self, queue: .main)
         // Set after adding the output: the available types are empty until then.
-        output.metadataObjectTypes = [.ean13, .ean8, .upce].filter {
+        output.metadataObjectTypes = types.filter {
             output.availableMetadataObjectTypes.contains($0)
         }
 
@@ -283,7 +307,7 @@ final class BarcodeCameraController: UIViewController, AVCaptureMetadataOutputOb
               let value = code.stringValue else { return }
         done = true
         session.stopRunning()
-        onFound?(normalised(value, type: code.type))
+        onFound?(raw ? value : normalised(value, type: code.type))
     }
 
     /**

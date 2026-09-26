@@ -66,6 +66,15 @@ struct GalleryView: View {
                             sampleCategories: SampleData.categories
                         )
                     }
+                    entry("Scan an invite", "qrcode.viewfinder") {
+                        ScanInviteScreen(session: Session())
+                    }
+                    entry("Invite someone", "person.badge.plus") {
+                        NavigationStack {
+                            Form { InviteSection(session: session, sample: SampleData.invite) }
+                                .navigationTitle("Who's here")
+                        }
+                    }
                     entry("Recipe", "text.book.closed") {
                         NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: session) }
                     }

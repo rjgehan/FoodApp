@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -125,6 +126,21 @@ struct RootView: View {
             .id(session.household?.id)
             // After every sign-in (a new token) and on every launch.
             .task(id: session.token) { await checkCredentials() }
+            // A household that turns us away is one we were taken out of: fetch the list again,
+            // which moves on to another house — or, with none left, back to the sign-in screen.
+            .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
+                .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: false)) { _ in
+                Task { await session.loadHouseholds() }
+            }
+            // Something to say after signing in — an invite that no longer worked, say.
+            .alert("Meal Planner", isPresented: Binding(
+                get: { session.isSignedIn && session.notice != nil },
+                set: { if !$0 { session.notice = nil } }
+            )) {
+                Button("OK") { session.notice = nil }
+            } message: {
+                Text(session.notice ?? "")
+            }
             .sheet(isPresented: Binding(
                 get: { askingForCredentials != nil },
                 set: { if !$0 { askingForCredentials = nil } }

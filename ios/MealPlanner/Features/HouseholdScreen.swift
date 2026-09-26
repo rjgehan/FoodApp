@@ -6,7 +6,7 @@ import SwiftUI
 
  Reached from Settings, behind your own face. Everything here is set up once and rarely
  touched, which is why it is a page rather than a tab — but "rarely" is not "never", and
- leaving it out of the phone meant reaching for a laptop to add a person or fix an aisle.
+ leaving it out of the phone meant reaching for a laptop to invite a person or fix an aisle.
 
  Recipe icons are here too: the phone draws its drawers with the same food drawings as the web
  and reads which one the household chose, so a pick here shows on both.
@@ -20,6 +20,7 @@ struct HouseholdScreen: View {
     @State private var typedName = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var scanning = false
 
     #if DEBUG
     /// -mp_debug_scroll icons (with -mp_debug_screen household) opens Recipe icons, and
@@ -51,10 +52,15 @@ struct HouseholdScreen: View {
             }
 
             Section {
+                Button {
+                    scanning = true
+                } label: {
+                    Label("Join a household", systemImage: "qrcode.viewfinder")
+                }
                 NavigationLink("Start another household") { NewHouseholdScreen(session: session) }
             } footer: {
-                Text("One for your own place, one for your parents'. The switcher at the top of "
-                     + "every screen moves between them.")
+                Text("Somebody has the Invite card open? Scan its code to join their house. Or start your "
+                     + "own — the switcher at the top of every screen moves between them.")
             }
 
             if let error {
@@ -72,6 +78,7 @@ struct HouseholdScreen: View {
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .fullScreenCover(isPresented: $scanning) { ScanInviteScreen(session: session) }
         #if DEBUG
         .navigationDestination(isPresented: $debugIcons) { RecipeIconsScreen(session: session) }
         .navigationDestination(isPresented: $debugPeople) { PeopleScreen(session: session, people: $people) }
@@ -101,7 +108,7 @@ struct HouseholdScreen: View {
                 + "with it, for good. Type the name to confirm."
         }
         return "You'll lose access to “\(name)”. Its recipes, plan and grocery list stay "
-            + "with everyone else, and you can be invited back."
+            + "with everyone else, and you can be invited back with a new link."
     }
 
     private var nameMatches: Bool {
@@ -212,16 +219,16 @@ struct PeopleScreen: View {
     var session: Session
     @Binding var people: [HouseholdMember]
 
-    @State private var username = ""
-    @State private var displayName = ""
-    @State private var busy = false
     @State private var error: String?
     @State private var resetting: HouseholdMember?
+    @State private var removing: HouseholdMember?
+    /// Taking somebody out replaces the invite link, so the Invite section fetches it again.
+    @State private var linkGeneration = 0
 
     #if DEBUG
     /// -mp_debug_expand 1 (with -mp_debug_scroll people) opens a reset link for the first other
-    /// person, for screenshot runs.
-    @State private var debugExpand = UserDefaults.standard.string(forKey: "mp_debug_expand") == "1"
+    /// person, and -mp_debug_expand remove asks to remove them, for screenshot runs.
+    @State private var debugExpand = UserDefaults.standard.string(forKey: "mp_debug_expand")
     #endif
 
     private var isOwner: Bool { session.household?.isOwner == true }
@@ -251,6 +258,9 @@ struct PeopleScreen: View {
                         if isOwner && person.userId != session.userId {
                             Menu {
                                 Button("Reset password", systemImage: "key") { resetting = person }
+                                Button("Remove from household", systemImage: "person.badge.minus", role: .destructive) {
+                                    removing = person
+                                }
                             } label: {
                                 Image(systemName: "ellipsis.circle")
                                     .font(.title3)
@@ -263,23 +273,12 @@ struct PeopleScreen: View {
                 }
             } footer: {
                 if isOwner {
-                    Text("Forgot a password? Reset it from the ••• beside them — you get a link to send.")
+                    Text("Forgot a password, or moved out? The ••• beside them resets it or takes them out.")
                 }
             }
 
-            Section {
-                TextField("Username", text: $username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                TextField("Name (optional)", text: $displayName)
-                Button("Add them") { Task { await add() } }
-                    .disabled(busy || username.trimmingCharacters(in: .whitespaces).count < 2)
-            } header: {
-                Text("Add someone")
-            } footer: {
-                Text("To get in the first time, they tap “Sign in with your name and PIN” and choose "
-                     + "one — or send them a reset link from the ••• beside them.")
-            }
+            InviteSection(session: session)
+                .id(linkGeneration)
 
             if let error {
                 Section { Text(error).foregroundStyle(.red) }
@@ -290,12 +289,28 @@ struct PeopleScreen: View {
         .sheet(item: $resetting) { member in
             PasswordResetSheet(session: session, member: member)
         }
+        // Asked first: it is quick to do and cannot be undone from here.
+        .confirmationDialog(
+            "Remove \(removing?.shown ?? "them")?",
+            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+            titleVisibility: .visible,
+            presenting: removing
+        ) { member in
+            Button("Remove \(member.shown)", role: .destructive) { Task { await remove(member) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { member in
+            Text("\(member.shown) loses access to “\(session.household?.name ?? "this household")” straight away. "
+                 + "Everything they added stays. The invite link is replaced too, so the one they have stops working — "
+                 + "they can only come back if somebody sends them the new one.")
+        }
         .task { await reload() }
         #if DEBUG
         .onChange(of: people) {
-            if debugExpand, let other = people.first(where: { $0.userId != session.userId }) {
-                debugExpand = false
-                resetting = other
+            // Not the owner: a debug launch may not know who "you" are yet when the list arrives.
+            if let expand = debugExpand,
+               let other = people.first(where: { $0.userId != session.userId && $0.role != "OWNER" }) {
+                debugExpand = nil
+                if expand == "remove" { removing = other } else if expand == "1" { resetting = other }
             }
         }
         #endif
@@ -306,19 +321,124 @@ struct PeopleScreen: View {
         if let fresh = try? await APIClient.shared.members(household: household) { people = fresh }
     }
 
-    private func add() async {
-        guard let household = session.household?.id, !busy else { return }
-        busy = true
-        defer { busy = false }
+    private func remove(_ member: HouseholdMember) async {
+        guard let household = session.household?.id else { return }
         do {
-            try await APIClient.shared.addPerson(
-                household: household,
-                username: username.trimmingCharacters(in: .whitespaces).lowercased(),
-                displayName: displayName.trimmingCharacters(in: .whitespaces))
-            username = ""
-            displayName = ""
-            await reload()
+            try await APIClient.shared.removeMember(household: household, user: member.userId)
+            people.removeAll { $0.userId == member.userId }
+            linkGeneration += 1
             error = nil
+            // The count on the house decides between Leave and Delete.
+            await session.loadHouseholds()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/**
+ How anybody new gets in: the household's invite link, sent as a message or shown as a QR code
+ for somebody across the room to scan — with this app's Scan screen, or the phone's own camera,
+ which opens the link on the web. Anyone here can hand it out; only the owner can swap it for a
+ new one, since that breaks it for everyone it was already sent to.
+*/
+struct InviteSection: View {
+    var session: Session
+    var sample: InviteLink?
+
+    @State private var link: InviteLink?
+    @State private var showQR = false
+    @State private var copied = false
+    @State private var replacing = false
+    @State private var error: String?
+
+    private var url: URL? {
+        // The same address the web is served from — in production the API and the site share
+        // an origin, and that is where the invite page lives.
+        link.flatMap { URL(string: "\(Config.baseURL)/invite/\($0.token)") }
+    }
+
+    var body: some View {
+        Section {
+            if let url {
+                // One line, cut in the middle: wrapped, the text would hyphenate the token and
+                // show a "-" that is not in it. Copy and Share are how the whole link travels.
+                Text(url.absoluteString)
+                    .font(.footnote.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Button(copied ? "Copied" : "Copy link", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = url.absoluteString
+                    copied = true
+                }
+                ShareLink(item: url, subject: Text("Join \(session.household?.name ?? "us") on Meal Planner")) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                Button(showQR ? "Hide QR code" : "Show QR code", systemImage: "qrcode") {
+                    withAnimation { showQR.toggle() }
+                }
+                if showQR, let qr = QRCode.image(for: url.absoluteString) {
+                    Image(uiImage: qr)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 220)
+                        .padding(8)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("QR code of the link")
+                }
+                if session.household?.isOwner == true {
+                    Button("Make a new link", systemImage: "arrow.triangle.2.circlepath", role: .destructive) {
+                        replacing = true
+                    }
+                }
+            } else if let error {
+                Text(error).foregroundStyle(.red)
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        } header: {
+            Text("Invite someone")
+        } footer: {
+            Text(footer)
+        }
+        .task { await load() }
+        .confirmationDialog("Make a new link?", isPresented: $replacing, titleVisibility: .visible) {
+            Button("Make a new link", role: .destructive) { Task { await replace() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The link you have now stops working, for everyone it was sent to. Nobody already in the house is affected.")
+        }
+    }
+
+    private var footer: String {
+        var text = "Send this to anyone you want in the house, or let them scan the code. They make an account (or sign in) and they're in."
+        if let expires = link?.expires {
+            text += " Works until \(expires.formatted(.dateTime.weekday(.wide).month(.wide).day())). Anyone who has it can join, so send it only to people you mean to."
+        }
+        return text
+    }
+
+    private func load() async {
+        if let sample { link = sample; return }
+        guard let household = session.household?.id else { return }
+        do {
+            link = try await APIClient.shared.invite(household: household)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func replace() async {
+        guard let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.revokeInvite(household: household)
+            link = nil
+            copied = false
+            await load()
         } catch {
             self.error = error.localizedDescription
         }
@@ -635,5 +755,12 @@ struct NewHouseholdScreen: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+#Preview("Invite someone") {
+    NavigationStack {
+        Form { InviteSection(session: .preview, sample: SampleData.invite) }
+            .navigationTitle("Who's here")
     }
 }

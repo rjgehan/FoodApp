@@ -64,8 +64,13 @@ reads it; `-mp_debug_paste "<text>"` fills Paste (and `-mp_debug_autoparse 1` re
 `-mp_debug_rules 1` shows Paste as a phone without Apple Intelligence sees it: the format
 warning and the rules-only reader.
 
-`-mp_debug_screen household -mp_debug_scroll people` opens Who's here; add `-mp_debug_expand 1`
-to open a password reset link for the first other person (sign in as the owner). A debug launch
+`-mp_debug_screen household -mp_debug_scroll people` opens Who's here, with the Invite someone
+section; add `-mp_debug_expand 1` to open a password reset link for the first other person, or
+`-mp_debug_expand remove` to ask to remove them (sign in as the owner).
+
+Signed out, `-mp_debug_screen scan` opens the Scan screen (the simulator has no camera, so it
+shows the paste-a-link fallback); add `-mp_debug_invite <token>` to open that invite as though it
+had just been scanned. A debug launch
 never shows the "add an email and password" prompt on top of a `-mp_debug_screen`, except
 `-mp_debug_screen credentials`, which shows just the prompt.
 
@@ -83,6 +88,26 @@ one-time link and QR code for `<server>/reset/<token>`, which the person opens o
 token stays in the Keychain as before; email sign-in adds nothing to what the phone keeps (the
 display name and the open household in UserDefaults, as they always were). The password is
 never stored.
+
+## Invites, the Scan screen, and removing people
+
+Nobody joins a household without opening its invite link themselves. Household → Who's here →
+Invite someone shows the house's link (`<server>/invite/<token>`, built from the configured server
+address — the same origin as the web in production), with Copy, Share and a QR code; the owner
+can make a new link, which kills the old one. The same ••• that resets a password removes somebody
+(after a confirmation, and replacing the invite link so the one they had stops working); their phone notices on its next 403 from that house, reloads the household
+list and moves to another house, or back to the sign-in screen saying why.
+
+The Scan screen (sign-in → "Have an invite? Scan it", or Household → Join a household) is the
+camera looking for QR codes only, with the torch, a paste-a-link fallback, a plain message for a
+code that is not ours, and an Open Settings button when camera access was refused. It opens
+`/invite/<token>` natively — join if signed in, or make an account; "I already have an account"
+goes back to sign-in and joins on the way in, by email or PIN — and `/reset/<token>` as a native
+set-a-new-password form.
+
+Universal links (tapping an invite link in Messages and landing in the app) need an Associated
+Domains entitlement, which a free personal team cannot sign. Until the paid account arrives, a
+tapped link opens the web, which handles it completely; scanning the code in the app works today.
 
 ## Food icons
 

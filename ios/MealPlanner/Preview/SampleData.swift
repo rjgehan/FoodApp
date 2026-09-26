@@ -15,6 +15,11 @@ enum SampleData {
         HouseholdMember(userId: UUID(), username: "grandad", displayName: "Grandad", role: "MEMBER", pinSet: false, hasEmail: false, hasPassword: false),
     ]
 
+    /// The house's invite link, a week out.
+    static let invite = InviteLink(
+        token: "k3Xh9Qv2LmN8pR4tY7wZ1aB5cD6eF0gH2iJ3kL4mN5o",
+        expiresAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(7 * 24 * 3600)))
+
     static var plan: [MealPlanEntry] {
         let today = Date()
         func on(_ offset: Int, _ meal: MealType, _ name: String) -> MealPlanEntry {

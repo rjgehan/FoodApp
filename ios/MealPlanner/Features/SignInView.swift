@@ -22,6 +22,14 @@ struct SignInView: View {
     @State private var busy = false
     @State private var editingServer = false
     @State private var serverDraft = Config.baseURL
+    @State private var scanning: Bool = {
+        #if DEBUG
+        // -mp_debug_screen scan opens the Scan screen from here, for screenshot runs.
+        return UserDefaults.standard.string(forKey: "mp_debug_screen") == "scan"
+        #else
+        return false
+        #endif
+    }()
 
     var body: some View {
         NavigationStack {
@@ -50,6 +58,7 @@ struct SignInView: View {
             }
         }
         .task { await loadHouseholds() }
+        .fullScreenCover(isPresented: $scanning) { ScanInviteScreen(session: session) }
         .alert("Kitchen server", isPresented: $editingServer) {
             TextField(Config.fallback, text: $serverDraft)
                 .textInputAutocapitalization(.never)
@@ -79,6 +88,23 @@ struct SignInView: View {
 
     private var emailForm: some View {
         Form {
+            if let pending = session.pendingInvite {
+                Section {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label("Sign in to join \(pending.householdName)", systemImage: "house")
+                            .foregroundStyle(Palette.accent)
+                        Spacer()
+                        Button("Cancel") { session.pendingInvite = nil }
+                            .font(.subheadline)
+                    }
+                    if let notice = session.notice { Text(notice).font(.subheadline).foregroundStyle(.secondary) }
+                }
+                .listRowBackground(Palette.accentSoft)
+            } else if let notice = session.notice {
+                Section { Text(notice).foregroundStyle(Palette.accent) }
+                    .listRowBackground(Palette.accentSoft)
+            }
+
             Section {
                 TextField("Email", text: $email)
                     .textContentType(.username)
@@ -113,6 +139,19 @@ struct SignInView: View {
                     }
                 }
                 .disabled(busy || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+            }
+
+            Section {
+                Button {
+                    scanning = true
+                } label: {
+                    Label("Have an invite? Scan it", systemImage: "qrcode.viewfinder")
+                        .frame(maxWidth: .infinity)
+                }
+            } footer: {
+                Text("New here? Ask someone in your household for their invite link or QR code.")
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
             }
 
             if legacyPinLogin {
@@ -287,7 +326,8 @@ struct SignInView: View {
             if try await session.signIn(auth) {
                 password = ""
             } else {
-                error = "You're not in a household yet. Ask someone to invite you."
+                error = "You're not in a household yet. Ask someone for an invite link, then scan it below — "
+                    + "or start your own on the Meal Planner website."
             }
         } catch {
             self.error = error.localizedDescription

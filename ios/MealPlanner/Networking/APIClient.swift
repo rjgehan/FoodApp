@@ -59,6 +59,11 @@ enum Config {
     }
 }
 
+extension Notification.Name {
+    /// Posted when a household turns this person away — see APIClient.noticeForbidden.
+    static let householdForbidden = Notification.Name("mp.householdForbidden")
+}
+
 struct APIError: LocalizedError {
     let status: Int
     let body: String
@@ -180,12 +185,56 @@ actor APIClient {
         try await send("POST", "/api/households/\(household.uuidString)/members/\(user.uuidString)/password-reset", body: [:])
     }
 
-    /// A new person in this house, with no PIN yet — they choose one the first time they sign in.
-    @discardableResult
-    func addPerson(household: UUID, username: String, displayName: String?) async throws -> UserSummary {
-        var body: [String: Any] = ["username": username]
-        if let displayName, !displayName.isEmpty { body["displayName"] = displayName }
-        return try await send("POST", "/api/households/\(household.uuidString)/users", body: body)
+    /// Owner only: takes somebody out of the house. They keep their account.
+    func removeMember(household: UUID, user: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/members/\(user.uuidString)")
+    }
+
+    // MARK: - Invite links
+
+    /// The house's link, made on the spot if there is none. Any member.
+    func invite(household: UUID) async throws -> InviteLink {
+        try await get("/api/households/\(household.uuidString)/invite")
+    }
+
+    /// Owner only: the old link stops working, and the next `invite` makes a new one.
+    func revokeInvite(household: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/invite")
+    }
+
+    /// Whose house and who asked — readable signed out, which is when a new person opens it.
+    func inviteInfo(token: String) async throws -> InviteInfo {
+        try await get("/api/public/invites/\(Self.pathSafe(token))", authorized: false)
+    }
+
+    /// Join, as whoever is signed in. Saying yes twice is just being in already.
+    func acceptInvite(token: String) async throws -> HouseholdSummary {
+        try await send("POST", "/api/invites/\(Self.pathSafe(token))/accept", body: [:])
+    }
+
+    /// A new account through an invite link: made, put in that house, and signed in.
+    func signUp(inviteToken: String, displayName: String, email: String, password: String) async throws -> AuthResponse {
+        try await send("POST", "/api/auth/signup",
+                       body: ["inviteToken": inviteToken, "displayName": displayName, "email": email, "password": password],
+                       authorized: false)
+    }
+
+    // MARK: - Reset links, the other end
+
+    func resetInfo(token: String) async throws -> PasswordResetInfo {
+        try await get("/api/public/password-resets/\(Self.pathSafe(token))", authorized: false)
+    }
+
+    /// Sets the new password (and an email, for someone who never had one) and signs them in.
+    func useReset(token: String, password: String, email: String?) async throws -> AuthResponse {
+        var body: [String: Any] = ["token": token, "password": password]
+        if let email { body["email"] = email }
+        return try await send("POST", "/api/auth/password-reset", body: body, authorized: false)
+    }
+
+    /// Tokens are URL-safe base64 already; anything else pasted in is escaped rather than trusted.
+    private static func pathSafe(_ token: String) -> String {
+        token.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? token
     }
 
     // MARK: - Places we eat
@@ -618,9 +667,21 @@ actor APIClient {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
+            Self.noticeForbidden(status, req)
             throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
         }
         return true
+    }
+
+    /**
+     A household that answers 403 is one you are no longer in — the owner took you out, or it
+     was deleted. Said out loud so the app can fetch its list of houses again and move on to
+     another, rather than showing the old one's errors until it is relaunched.
+    */
+    nonisolated private static func noticeForbidden(_ status: Int, _ req: URLRequest) {
+        guard status == 403, req.value(forHTTPHeaderField: "Authorization") != nil,
+              req.url?.path.hasPrefix("/api/households/") == true else { return }
+        NotificationCenter.default.post(name: .householdForbidden, object: nil)
     }
 
     private func request(method: String, path: String, authorized: Bool) -> URLRequest {
@@ -643,6 +704,7 @@ actor APIClient {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
+            Self.noticeForbidden(status, req)
             throw APIError(status: status, body: String(data: data, encoding: .utf8) ?? "")
         }
         return try decoder.decode(T.self, from: data)
