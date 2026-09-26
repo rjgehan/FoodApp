@@ -73,7 +73,7 @@ struct EditRecipeView: View {
         _prep = State(initialValue: recipe?.prepTimeMinutes ?? draft?.prep ?? 0)
         _cook = State(initialValue: recipe?.cookTimeMinutes ?? draft?.cook ?? 0)
         _instructions = State(initialValue: recipe?.instructions ?? draft?.instructions ?? "")
-        _coverImageId = State(initialValue: recipe?.coverImageId)
+        _coverImageId = State(initialValue: recipe?.coverImageId ?? draft?.coverImageId)
         _links = State(initialValue: (recipe?.allLinks ?? draft?.links ?? []).map { LinkDraft($0) })
         // One empty row when there are none — a new recipe, or one planned as just a name and
         // opened from "Add ingredients" — so there is somewhere to start typing. Blank rows

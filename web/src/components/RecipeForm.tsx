@@ -31,6 +31,8 @@ export interface RecipeDraft {
   ingredients: { ingredientName: string; quantity: number | null; unit: string }[];
   /** Where it was read from, when it came off a link. */
   links?: SourceLink[] | null;
+  /** The picture the link came with — a video's cover, a page's photo — already saved. */
+  coverImageId?: string | null;
 }
 
 /**
@@ -113,12 +115,14 @@ export default function RecipeForm({
   // Opened by default when editing: if any of it is already filled in, hiding it would look
   // like the edit form had quietly dropped the values.
   const [showExtras, setShowExtras] = useState(
-    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes || recipe?.coverImageId),
+    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes || seed?.coverImageId),
   );
   const [description, setDescription] = useState(seed?.description ?? '');
   const [prep, setPrep] = useState<number | null>(seed?.prepTimeMinutes ?? null);
   const [cook, setCook] = useState<number | null>(seed?.cookTimeMinutes ?? null);
-  const [coverImageId, setCoverImageId] = useState<string | null>(recipe?.coverImageId ?? null);
+  // An imported draft can bring the video's cover or the page's photo, already saved — it
+  // stays the picture until somebody chooses their own.
+  const [coverImageId, setCoverImageId] = useState<string | null>(seed?.coverImageId ?? null);
   const [links, setLinks] = useState<DraftLink[]>(() => toDraftLinks(seed?.links));
 
   const [saving, setSaving] = useState(false);

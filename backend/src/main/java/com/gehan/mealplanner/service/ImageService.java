@@ -37,6 +37,22 @@ public class ImageService {
         this.householdService = householdService;
     }
 
+    /**
+     * Keeps a picture the server fetched itself — an imported recipe's cover. The caller has
+     * checked the household and the picture; this only files it where uploads go.
+     */
+    @Transactional
+    public StoredImage store(UUID householdId, String contentType, byte[] bytes) {
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        return imageRepository.save(StoredImage.builder()
+                .household(household)
+                .contentType(contentType)
+                .byteSize(bytes.length)
+                .data(bytes)
+                .build());
+    }
+
     @Transactional
     public StoredImage upload(UUID householdId, UUID requesterId, MultipartFile file) {
         householdService.assertMember(householdId, requesterId);

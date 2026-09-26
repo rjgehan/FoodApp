@@ -44,6 +44,8 @@ struct RecipeDraft: Hashable {
     var links: [SourceLink] = []
     /// Where it came from and what is worth checking, said above the editor.
     var note: String? = nil
+    /// The picture the link came with, already saved on the server.
+    var coverImageId: UUID? = nil
 }
 
 extension RecipeDraft {
@@ -64,7 +66,8 @@ extension RecipeDraft {
             links: imported.links ?? (typed.lowercased().hasPrefix("http") ? [SourceLink(url: typed, label: nil)] : []),
             note: imported.methodWasSpoken
                 ? "The steps were pieced together from what’s said in the video. Give them a read, then save."
-                : "Read from the page itself. Check the amounts, change anything, then save."
+                : "Read from the page itself. Check the amounts, change anything, then save.",
+            coverImageId: imported.coverImageId
         )
     }
 }

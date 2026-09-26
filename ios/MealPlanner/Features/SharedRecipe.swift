@@ -118,6 +118,8 @@ struct StructuredRecipe: Codable {
     /// The page it came from, kept as the recipe's first link. Absent from a share extension
     /// built before it sent one.
     var url: String? = nil
+    /// The picture the link came with, already saved on the server, to be the cover.
+    var coverImageId: UUID? = nil
 }
 
 struct SharedRecipeView: View {
@@ -380,7 +382,8 @@ struct SharedRecipeView: View {
                 steps: (imported.instructions ?? "").split(separator: "\n").map(String.init),
                 // The server hands the page back as a link; an older one did not, and the
                 // link that was shared is the same page.
-                url: imported.links?.first?.url ?? link
+                url: imported.links?.first?.url ?? link,
+                coverImageId: imported.coverImageId
             )
             note = "Read from the page itself — nothing was guessed."
 
@@ -734,6 +737,10 @@ struct SharedRecipeView: View {
         // Read off a page, so the recipe keeps a way back to it.
         if let url = recipe.url, !url.isEmpty {
             body["links"] = [["url": url, "label": NSNull()]]
+        }
+        // The video's cover, until somebody picks their own.
+        if let cover = recipe.coverImageId {
+            body["coverImageId"] = cover.uuidString
         }
         do {
             let created = try await APIClient.shared.createRecipe(household: household, body: body)

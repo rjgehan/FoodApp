@@ -1,9 +1,11 @@
 package com.gehan.mealplanner.ai;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 public class RecipeAiDtos {
 
@@ -42,26 +44,44 @@ public class RecipeAiDtos {
              * Where it was read from, as the recipe's first link — so the form saves it with
              * the recipe. It used to be put in the description, where it was only text.
              */
-            List<SourceLink> links) {
+            List<SourceLink> links,
+            /**
+             * Where the page keeps its picture — a video's cover, a post's preview, a recipe
+             * site's photo. Only for the server: TikTok's are signed addresses that stop working
+             * within days, so the picture is fetched once, at import, and kept as `coverImageId`.
+             */
+            @JsonIgnore String pictureUrl,
+            /** That picture, saved in the household's images, to be the cover until another is chosen. */
+            UUID coverImageId) {
 
         /** Most callers know exactly where their steps came from and say so; this is the rest. */
         public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
                 Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
                 String instructions) {
             this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
-                    instructions, null, List.of(), List.of());
+                    instructions, null, List.of(), List.of(), null, null);
         }
 
         public GeneratedRecipe(String name, String description, Integer prepTimeMinutes,
                 Integer cookTimeMinutes, int servings, List<GeneratedIngredient> ingredients,
                 String instructions, MethodSource methodSource) {
             this(name, description, prepTimeMinutes, cookTimeMinutes, servings, ingredients,
-                    instructions, methodSource, List.of(), List.of());
+                    instructions, methodSource, List.of(), List.of(), null, null);
         }
 
         public GeneratedRecipe withMethod(String newInstructions, MethodSource source) {
             return new GeneratedRecipe(name, description, prepTimeMinutes, cookTimeMinutes,
-                    servings, ingredients, newInstructions, source, spokenLines, links);
+                    servings, ingredients, newInstructions, source, spokenLines, links, pictureUrl, coverImageId);
+        }
+
+        public GeneratedRecipe withPicture(String url) {
+            return new GeneratedRecipe(name, description, prepTimeMinutes, cookTimeMinutes,
+                    servings, ingredients, instructions, methodSource, spokenLines, links, url, coverImageId);
+        }
+
+        public GeneratedRecipe withCoverImage(UUID imageId) {
+            return new GeneratedRecipe(name, description, prepTimeMinutes, cookTimeMinutes,
+                    servings, ingredients, instructions, methodSource, spokenLines, links, pictureUrl, imageId);
         }
     }
 

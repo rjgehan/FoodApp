@@ -407,6 +407,9 @@ struct ImportedRecipe: Codable {
     /// away. Only sent for a spoken method, and only so the phone can do better than the
     /// rules did — half of what a rule drops is the other half of a broken sentence.
     let spokenLines: [String]?
+    /// The picture the link came with — a video's cover, a page's photo — which the server has
+    /// already saved. The recipe's cover until somebody picks their own. Absent from older servers.
+    let coverImageId: UUID?
 
     /// Steps pieced together from somebody narrating a video, rather than a list anybody
     /// wrote down. Worth offering to rewrite; a publisher's own steps are not.

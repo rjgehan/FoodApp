@@ -131,7 +131,8 @@ public class RecipeImportService {
      * impersonation in this direction, which is the right way round.
      */
     private GeneratedRecipe fromInstagram(URI uri, ImportLog.Entry entry) {
-        String caption = captionOf(fetch(uri));
+        String html = fetch(uri);
+        String caption = captionOf(html);
         entry.caption(caption);
         if (caption == null || caption.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -144,7 +145,7 @@ public class RecipeImportService {
                     "That caption does not list any ingredients — the recipe is probably in the video "
                             + "or behind a link in their bio. Instagram publishes no transcript to fall back on.");
         }
-        return draft;
+        return draft.withPicture(metaImage(html));
     }
 
     /** The caption out of og:description, without the "N likes, M comments - who on when" wrapper. */
@@ -187,7 +188,8 @@ public class RecipeImportService {
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "That page does not publish its recipe in a way this can read. Copy its ingredients and steps into Paste, or type it out.");
         }
-        return toDraft(recipe, uri.toString());
+        String picture = pictureIn(recipe.get("image"));
+        return toDraft(recipe, uri.toString()).withPicture(picture != null ? picture : metaImage(html));
     }
 
     private boolean isTikTok(URI uri) {
@@ -205,6 +207,10 @@ public class RecipeImportService {
      */
     private GeneratedRecipe fromTikTok(URI uri, ImportLog.Entry entry) {
         JsonNode item = tikTokItem(uri);
+        return readTikTok(uri, item, entry).withPicture(tikTokCover(item, uri));
+    }
+
+    private GeneratedRecipe readTikTok(URI uri, JsonNode item, ImportLog.Entry entry) {
         String caption = caption(item);
         if (caption == null || caption.isBlank()) caption = oembedCaption(uri);
         entry.caption(caption);
@@ -243,7 +249,7 @@ public class RecipeImportService {
                 hasSteps ? draft.instructions() : spoken.method(),
                 hasSteps ? MethodSource.PUBLISHED : MethodSource.SPOKEN,
                 hasSteps ? List.of() : spoken.lines(),
-                draft.links());
+                draft.links(), null, null);
     }
 
     /** The video's own record in the page, or a missing node. One fetch serves everything. */
@@ -752,7 +758,7 @@ public class RecipeImportService {
         String name = nameFrom(shoppingStartsAt > 0 ? lines.subList(0, shoppingStartsAt) : lines, lines);
 
         return new GeneratedRecipe(name, null, null, null, 4, ingredients,
-                String.join("\n", steps), MethodSource.PUBLISHED, List.of(), linkTo(sourceUrl));
+                String.join("\n", steps), MethodSource.PUBLISHED, List.of(), linkTo(sourceUrl), null, null);
     }
 
     /** A caption numbers its own steps: "1. ", "2)", "Step 3:". The app numbers them too. */
@@ -1047,6 +1053,95 @@ public class RecipeImportService {
         }
     }
 
+    /**
+     * The video's cover, from the page's own record of it; oEmbed's thumbnail when the page
+     * would not load. Either is a signed address that expires, which is why it is fetched
+     * straight away rather than kept.
+     */
+    private String tikTokCover(JsonNode item, URI uri) {
+        for (String field : List.of("cover", "originCover")) {
+            String url = text(item.path("video"), field);
+            if (url != null && !url.isBlank()) return url;
+        }
+        try {
+            URI oembed = URI.create("https://www.tiktok.com/oembed?url="
+                    + URLEncoder.encode(uri.toString(), StandardCharsets.UTF_8));
+            return text(mapper.readTree(fetch(oembed, Duration.ofSeconds(10))), "thumbnail_url");
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** schema.org's `image`: an address, a list of them, or an ImageObject with a `url`. */
+    String pictureIn(JsonNode image) {
+        if (image == null || image.isNull() || image.isMissingNode()) return null;
+        if (image.isTextual()) return image.asText().isBlank() ? null : image.asText().trim();
+        if (image.isArray()) {
+            for (JsonNode each : image) {
+                String found = pictureIn(each);
+                if (found != null) return found;
+            }
+            return null;
+        }
+        return pictureIn(image.get("url"));
+    }
+
+    private static final Pattern OG_IMAGE = Pattern.compile(
+            "<meta[^>]+(?:property|name)=\"og:image(?::secure_url)?\"[^>]+content=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OG_IMAGE_REVERSED = Pattern.compile(
+            "<meta[^>]+content=\"([^\"]+)\"[^>]+(?:property|name)=\"og:image(?::secure_url)?\"", Pattern.CASE_INSENSITIVE);
+
+    /** The picture every link preview shows, which Instagram and most sites put in og:image. */
+    String metaImage(String html) {
+        for (Pattern pattern : List.of(OG_IMAGE, OG_IMAGE_REVERSED)) {
+            Matcher matcher = pattern.matcher(html);
+            if (matcher.find()) return unescape(matcher.group(1)).trim();
+        }
+        return null;
+    }
+
+    /** A picture fetched for a draft: what it is and its bytes. */
+    public record Picture(String contentType, byte[] bytes) {
+    }
+
+    private static final Set<String> PICTURE_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final int MAX_PICTURE_BYTES = 3 * 1024 * 1024;
+
+    /**
+     * Fetches a draft's picture, or nothing. The address came off somebody else's page, so it
+     * gets the same inside-the-network check a typed link does. Anything that is not a small
+     * JPEG, PNG or WebP is skipped rather than refused: a recipe without its picture is still
+     * the recipe, and nothing about the import should fail over one.
+     */
+    public java.util.Optional<Picture> fetchPicture(String url) {
+        if (url == null || url.isBlank()) return java.util.Optional.empty();
+        try {
+            URI uri = safeUri(url);
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(10))
+                    .header("User-Agent", WHO_WE_ARE)
+                    .header("Accept", "image/jpeg,image/png,image/webp")
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            String type = response.headers().firstValue("Content-Type").orElse("")
+                    .split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
+            byte[] bytes = response.body();
+            if (response.statusCode() != 200 || !PICTURE_TYPES.contains(type)
+                    || bytes.length == 0 || bytes.length > MAX_PICTURE_BYTES) {
+                log.info("Skipped the picture at {} ({} {}, {} bytes)", uri.getHost(), response.statusCode(), type, bytes.length);
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(new Picture(type, bytes));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return java.util.Optional.empty();
+        } catch (Exception e) {
+            log.info("Could not fetch a picture: {}", e.toString());
+            return java.util.Optional.empty();
+        }
+    }
+
     /** Visible for tests: pulls the Recipe out of a page's JSON-LD, wherever it is nested. */
     JsonNode findRecipe(String html) {
         Matcher matcher = LD_JSON.matcher(html);
@@ -1116,7 +1211,7 @@ public class RecipeImportService {
                 String.join("\n", steps),
                 MethodSource.PUBLISHED,
                 List.of(),
-                linkTo(sourceUrl));
+                linkTo(sourceUrl), null, null);
     }
 
     /** The page a draft was read from, as its first link. */

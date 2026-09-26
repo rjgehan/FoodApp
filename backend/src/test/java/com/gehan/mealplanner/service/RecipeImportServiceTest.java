@@ -719,4 +719,34 @@ class RecipeImportServiceTest {
             // good
         }
     }
+
+    @Test
+    void aRecipesPictureIsReadHoweverSchemaOrgWritesIt() {
+        tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+        assertThat(service.pictureIn(mapper.readTree("\"https://x.test/a.jpg\""))).isEqualTo("https://x.test/a.jpg");
+        assertThat(service.pictureIn(mapper.readTree("[\"https://x.test/1.jpg\", \"https://x.test/2.jpg\"]")))
+                .isEqualTo("https://x.test/1.jpg");
+        assertThat(service.pictureIn(mapper.readTree("{\"@type\": \"ImageObject\", \"url\": \"https://x.test/o.jpg\"}")))
+                .isEqualTo("https://x.test/o.jpg");
+        assertThat(service.pictureIn(mapper.readTree("[{\"url\": \"https://x.test/first.webp\"}]")))
+                .isEqualTo("https://x.test/first.webp");
+        assertThat(service.pictureIn(null)).isNull();
+    }
+
+    @Test
+    void thePreviewPictureIsReadFromOgImageEitherWayRound() {
+        assertThat(service.metaImage(
+                "<meta property=\"og:image\" content=\"https://cdn.test/p.jpg?a=1&amp;b=2\" />"))
+                .isEqualTo("https://cdn.test/p.jpg?a=1&b=2");
+        assertThat(service.metaImage("<meta content=\"https://cdn.test/r.jpg\" property=\"og:image\">"))
+                .isEqualTo("https://cdn.test/r.jpg");
+        assertThat(service.metaImage("<html>no picture</html>")).isNull();
+    }
+
+    @Test
+    void aPictureOnTheLocalNetworkIsNeverFetched() {
+        assertThat(service.fetchPicture("http://127.0.0.1:8080/actuator/health")).isEmpty();
+        assertThat(service.fetchPicture("http://192.168.1.1/cover.jpg")).isEmpty();
+        assertThat(service.fetchPicture(null)).isEmpty();
+    }
 }

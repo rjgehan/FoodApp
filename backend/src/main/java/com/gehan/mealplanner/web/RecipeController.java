@@ -18,6 +18,7 @@ import com.gehan.mealplanner.dto.RecipeDtos.UpdateVideoRequest;
 import com.gehan.mealplanner.ai.RecipeAiDtos.GeneratedRecipe;
 import com.gehan.mealplanner.dto.RecipeDtos.ImportRecipeRequest;
 import com.gehan.mealplanner.service.HouseholdService;
+import com.gehan.mealplanner.service.ImageService;
 import com.gehan.mealplanner.service.RecipeImportService;
 import com.gehan.mealplanner.service.RecipeLinkService;
 import com.gehan.mealplanner.service.RecipeService;
@@ -44,11 +45,15 @@ public class RecipeController {
 
     private final com.gehan.mealplanner.service.ImportLog importLog;
 
+    private final ImageService imageService;
+
     public RecipeController(RecipeService recipeService,
                             RecipeLinkService linkService,
                             RecipeImportService importService,
                             HouseholdService householdService,
-                            com.gehan.mealplanner.service.ImportLog importLog) {
+                            com.gehan.mealplanner.service.ImportLog importLog,
+                            ImageService imageService) {
+        this.imageService = imageService;
         this.linkService = linkService;
         this.recipeService = recipeService;
         this.importService = importService;
@@ -177,7 +182,12 @@ public class RecipeController {
                                           @PathVariable UUID householdId,
                                           @Valid @RequestBody ImportRecipeRequest request) {
         householdService.assertMember(householdId, userId);
-        return importService.fromUrl(request.url());
+        GeneratedRecipe draft = importService.fromUrl(request.url());
+        // The picture becomes the cover until somebody picks their own. Fetched now because a
+        // TikTok cover's address stops working within days; missing it only means no picture.
+        return importService.fetchPicture(draft.pictureUrl())
+                .map(p -> draft.withCoverImage(imageService.store(householdId, p.contentType(), p.bytes()).getId()))
+                .orElse(draft);
     }
 
     /**
