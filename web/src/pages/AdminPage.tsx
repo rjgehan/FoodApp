@@ -25,6 +25,7 @@ import { PageTitle } from '../components/PageTitle';
 import { Badge, Button, cx, ErrorText, Input, Select, Sheet } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { sectionLabel } from '../utils/recipeMeta';
+import AdminThemes, { ThemeDot } from '../components/AdminThemes';
 import AdminHouseholdPage from './AdminHouseholdPage';
 import AdminRecipePage from './AdminRecipePage';
 
@@ -77,12 +78,13 @@ export default function AdminRoutes() {
   );
 }
 
-type Tab = 'households' | 'people' | 'recipes';
+type Tab = 'households' | 'people' | 'recipes' | 'themes';
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'households', label: 'Households' },
   { value: 'people', label: 'People' },
   { value: 'recipes', label: 'Recipes' },
+  { value: 'themes', label: 'Themes' },
 ];
 
 /**
@@ -110,7 +112,7 @@ function AdminHome() {
 
       <Overview overview={overview} />
 
-      <div className="flex rounded-xl bg-elevated p-0.5 md:max-w-md" role="tablist" aria-label="What to look at">
+      <div className="flex rounded-xl bg-elevated p-0.5 md:max-w-lg" role="tablist" aria-label="What to look at">
         {TABS.map((t) => (
           <button
             key={t.value}
@@ -133,6 +135,7 @@ function AdminHome() {
         {tab === 'households' && <HouseholdsTab params={params} update={update} />}
         {tab === 'people' && <PeopleTab params={params} update={update} />}
         {tab === 'recipes' && <RecipesTab params={params} update={update} />}
+        {tab === 'themes' && <AdminThemes />}
       </div>
     </div>
   );
@@ -439,6 +442,7 @@ function PersonName({ user: u }: { user: AdminUserRow }) {
   return (
     <span className="block min-w-0">
       <span className="flex items-center gap-1.5">
+        <ThemeDot theme={u.theme} />
         <span className="truncate font-medium">{u.displayName}</span>
         {u.admin && <Badge tone="accent">Admin</Badge>}
       </span>

@@ -92,17 +92,17 @@ struct SignInView: View {
                 Section {
                     HStack(alignment: .firstTextBaseline) {
                         Label("Sign in to join \(pending.householdName)", systemImage: "house")
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(Palette.secondary)
                         Spacer()
                         Button("Cancel") { session.pendingInvite = nil }
                             .font(.subheadline)
                     }
                     if let notice = session.notice { Text(notice).font(.subheadline).foregroundStyle(.secondary) }
                 }
-                .listRowBackground(Palette.accentSoft)
+                .listRowBackground(Palette.secondarySoft)
             } else if let notice = session.notice {
-                Section { Text(notice).foregroundStyle(Palette.accent) }
-                    .listRowBackground(Palette.accentSoft)
+                Section { Text(notice).foregroundStyle(Palette.secondary) }
+                    .listRowBackground(Palette.secondarySoft)
             }
 
             Section {

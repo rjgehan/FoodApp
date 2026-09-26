@@ -484,7 +484,7 @@ export function Sheet({
 
 const BADGE_TONES = {
   neutral: 'bg-elevated text-muted',
-  accent: 'bg-accent-soft text-accent',
+  accent: 'bg-secondary-soft text-secondary',
   success: 'bg-success-soft text-success',
   danger: 'bg-danger-soft text-danger',
 };

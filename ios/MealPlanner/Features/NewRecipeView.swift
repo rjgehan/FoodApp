@@ -549,7 +549,7 @@ private struct FormatWarning: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(Palette.secondary)
             VStack(alignment: .leading, spacing: 4) {
                 Text("You can’t paste just anything here.").font(.subheadline.weight(.semibold))
                 Text("It only reads a recipe laid out the way the question asks: the name at the top, a line saying “Ingredients” with one ingredient per line under it, then a line saying “Instructions” with the steps. A recipe written as a paragraph won’t come through, and one copied off a website needs those two headings — or use From a link for the website itself.")
@@ -557,7 +557,7 @@ private struct FormatWarning: View {
             }
         }
         .padding(.vertical, 4)
-        .listRowBackground(Palette.accentSoft)
+        .listRowBackground(Palette.secondarySoft)
         .accessibilityElement(children: .combine)
     }
 }

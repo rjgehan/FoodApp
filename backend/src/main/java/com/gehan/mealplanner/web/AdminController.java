@@ -7,6 +7,7 @@ import com.gehan.mealplanner.dto.AdminDtos.HouseholdRow;
 import com.gehan.mealplanner.dto.AdminDtos.Overview;
 import com.gehan.mealplanner.dto.AdminDtos.RecipeDetail;
 import com.gehan.mealplanner.dto.AdminDtos.RecipeRow;
+import com.gehan.mealplanner.dto.AdminDtos.ThemeUsage;
 import com.gehan.mealplanner.dto.AdminDtos.UserRow;
 import com.gehan.mealplanner.service.AdminAccess;
 import com.gehan.mealplanner.service.AdminService;
@@ -82,6 +83,13 @@ public class AdminController {
                                     @RequestParam(required = false) Integer size) {
         requireAdmin(auth);
         return adminService.users(q, page, size);
+    }
+
+    /** Which colours people pick — see AdminService.themes. */
+    @GetMapping("/themes")
+    public ThemeUsage themes(Authentication auth) {
+        requireAdmin(auth);
+        return adminService.themes();
     }
 
     @GetMapping("/recipes")

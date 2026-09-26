@@ -6,6 +6,8 @@ import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
 import { CardInSheetProvider, cx, Sheet } from './ui';
 import ProfileCard from './ProfileCard';
+import { AppearanceRow } from './AppearanceSettings';
+import { useThemeSync } from '../theme/sync';
 import CredentialsPrompt from './CredentialsPrompt';
 import StartCupboardSheet from './StartCupboardSheet';
 import { RestockPrompt } from './Restock';
@@ -59,6 +61,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // The admin pages are tables that want the width of a computer screen, and the bar widens
   // with them so its tabs still line up with the page.
   const wide = useLocation().pathname.startsWith('/admin');
+  useThemeSync(session?.userId);
 
   // Only the way in to the admin pages hangs on this; the server decides who gets through them.
   // Asked again each time Settings opens: adding the admin's email, or renaming yourself, is
@@ -141,8 +144,8 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <span className="hidden text-sm text-muted sm:inline">{session?.displayName}</span>
               <span
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-sm
-                           font-semibold text-accent"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary-soft text-sm
+                           font-semibold text-secondary"
                 aria-hidden="true"
               >
                 {session?.displayName?.charAt(0).toUpperCase()}
@@ -159,7 +162,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 className={({ isActive }) =>
                   cx(
                     'press flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium',
-                    isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-elevated',
+                    isActive ? 'bg-secondary-soft text-secondary' : 'text-muted hover:bg-elevated',
                   )
                 }
               >
@@ -199,6 +202,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <ChevronRightIcon className="h-5 w-5 shrink-0 text-subtle" />
                 </NavLink>
               )}
+              <AppearanceRow />
               <ProfileCard />
             </CardInSheetProvider>
           </Sheet>
@@ -221,7 +225,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               the switch does not look like the app losing its place. With no house left, the
               pages' own empty state says it instead. */}
           {lostHousehold && activeName && (
-            <div role="status" className="mb-3 flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent">
+            <div role="status" className="mb-3 flex items-start gap-3 rounded-xl bg-secondary-soft px-4 py-3 text-sm text-secondary">
               <p className="flex-1 font-medium">
                 You're no longer in “{lostHousehold}”, so you're looking at “{activeName}”.
               </p>

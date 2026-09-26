@@ -2,6 +2,8 @@ package com.gehan.mealplanner.dto;
 
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.RecipeSection;
+import com.gehan.mealplanner.domain.ThemeMode;
+import com.gehan.mealplanner.dto.HouseholdDtos.ThemeResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
 
 import java.time.Instant;
@@ -58,10 +60,32 @@ public class AdminDtos {
     public record UserHousehold(UUID householdId, String name, HouseholdRole role) {
     }
 
-    /** Every account, including ones in no house at all. */
+    /** Every account, including ones in no house at all. `theme` is the colours they picked. */
     public record UserRow(
             UUID userId, String displayName, String username, String email, boolean hasPassword,
-            boolean hasPin, boolean admin, Instant createdAt, List<UserHousehold> households) {
+            boolean hasPin, boolean admin, Instant createdAt, List<UserHousehold> households,
+            ThemeResponse theme) {
+    }
+
+    /**
+     * Which colours people pick, for choosing the app's own one day. `untouched` never opened
+     * Appearance at all, and count as Classic in `presets` — that is what they see. `presets` has
+     * every preset (and "custom"), in the order the apps show them, even at zero: a preset nobody
+     * picks is as much the answer as one everybody does. `custom` are the pairs themselves.
+     */
+    public record ThemeUsage(
+            long people, long untouched, List<PresetCount> presets, List<CustomPair> custom, List<ModeCount> modes) {
+    }
+
+    public record PresetCount(String key, long count) {
+    }
+
+    /** One custom pair and how many have it, most popular first. */
+    public record CustomPair(String primary, String secondary, long count) {
+    }
+
+    /** No mode set counts as SYSTEM, which is what it does. */
+    public record ModeCount(ThemeMode mode, long count) {
     }
 
     /**

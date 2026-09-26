@@ -177,7 +177,7 @@ export default function PublicRecipePage() {
             href={featuredVideo.url}
             target="_blank"
             rel="noreferrer noopener"
-            className="mt-4 flex min-h-touch items-center gap-2 rounded-xl bg-accent-soft px-4 font-medium text-accent"
+            className="mt-4 flex min-h-touch items-center gap-2 rounded-xl bg-secondary-soft px-4 font-medium text-secondary"
           >
             <PlayIcon className="h-5 w-5" />
             <FeaturedVideoName link={featuredVideo} />
@@ -207,7 +207,7 @@ export default function PublicRecipePage() {
           <ol className="space-y-3">
             {steps.map((step, idx) => (
               <li key={idx} className="flex gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold text-accent">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary-soft text-sm font-semibold text-secondary">
                   {idx + 1}
                 </span>
                 <span className="flex-1 pt-0.5">{step}</span>

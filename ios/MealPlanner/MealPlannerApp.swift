@@ -57,9 +57,9 @@ struct MealPlannerApp: App {
                         )
                     }
                 }
-                // Every control in the app, in the app's own colour. Without this they are
-                // all Apple's blue, which is the clearest sign that nobody chose anything.
-                .tint(Palette.accent)
+                // Every control in the app, in the app's own colour — or the one picked in
+                // Appearance — and light or dark as chosen there.
+                .modifier(Themed())
         }
     }
 }
@@ -69,6 +69,22 @@ struct RestockDue: Identifiable {
     let household: UUID
     let items: [RestockReminder]
     var id: UUID { household }
+}
+
+/**
+ The picked colours and mode on everything below. Without the tint every control is Apple's
+ blue, which is the clearest sign that nobody chose anything. A modifier rather than lines in
+ the scene, so reading ThemeStore here redraws it when a new theme is picked.
+ */
+struct Themed: ViewModifier {
+    var store = ThemeStore.shared
+
+    func body(content: Content) -> some View {
+        content
+            .tint(Palette.accent)
+            .preferredColorScheme(store.colorScheme)
+            .onAppear { store.applyInterfaceStyle() }
+    }
 }
 
 /// `sheet(item:)` needs something Identifiable, and a String is not.
@@ -103,6 +119,7 @@ struct RootView: View {
 
     /// Set when the signed-in person still has no email or password: the prompt asking for them.
     @State private var askingForCredentials: Me?
+    @Environment(\.scenePhase) private var scenePhase
 
     /// "Time to restock?", when something has come due.
     @State private var restockDue: RestockDue?
@@ -148,6 +165,11 @@ struct RootView: View {
             }
             .sheet(item: $restockDue) { due in
                 RestockPrompt(household: due.household, items: due.items)
+            }
+            // Your colours, which may have been changed on the web or another phone.
+            .task(id: session.token) { await loadTheme() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await loadTheme() } }
             }
             // A household that turns us away is one we were taken out of: fetch the list again,
             // which moves on to another house — or, with none left, back to the sign-in screen.
@@ -212,6 +234,14 @@ struct RootView: View {
         } else {
             SignInView(session: session)
         }
+    }
+
+    /// The server's copy of your colours. Quiet on failure: the cached ones are already on.
+    private func loadTheme() async {
+        guard session.isSignedIn else { return }
+        let before = ThemeStore.shared.pickCount
+        guard let me = try? await APIClient.shared.me() else { return }
+        await MainActor.run { ThemeStore.shared.adopt(me.theme, since: before) }
     }
 
     /// Asks for an email and password if they are missing and "Not now" has not been said since
@@ -288,6 +318,19 @@ struct SettingsView: View {
                         HouseholdScreen(session: session)
                     } label: {
                         LabeledContent("Household settings", value: session.household?.name ?? "—")
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        AppearanceScreen()
+                    } label: {
+                        HStack {
+                            Text("Appearance")
+                            Spacer(minLength: 12)
+                            Text(ThemeStore.shared.theme.summary).foregroundStyle(.secondary)
+                            ThemeSwatch(pair: ThemeStore.shared.theme.pair, size: 20)
+                        }
                     }
                 }
 

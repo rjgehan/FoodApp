@@ -250,10 +250,10 @@ export default function MealPlanPage() {
                 className={cx(
                   'flex shrink-0 snap-start flex-col rounded-2xl border p-3 text-left transition-colors',
                   photos ? 'w-48' : 'w-36',
-                  isToday ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface active:bg-elevated',
+                  isToday ? 'border-secondary bg-secondary-soft/40' : 'border-line bg-surface active:bg-elevated',
                 )}
               >
-                <span className={cx('text-[0.8125rem] font-medium', isToday ? 'text-accent' : 'text-muted')}>
+                <span className={cx('text-[0.8125rem] font-medium', isToday ? 'text-secondary' : 'text-muted')}>
                   {isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday: 'short' })}
                 </span>
                 <span className="text-2xl font-semibold leading-tight">{day.getDate()}</span>
@@ -1239,7 +1239,7 @@ function PlacePicker({
                 {place.imageId ? (
                   <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary-soft text-secondary">
                     <StoreIcon className="h-5 w-5" />
                   </span>
                 )}

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, getToken, onSignedOut } from '../api/client';
 import type { AuthResponse } from '../api/types';
 import { useOnResume } from '../utils/useOnResume';
+import { resetTheme } from '../theme/theme';
 
 interface Session {
   userId: string;
@@ -79,12 +80,16 @@ function storeActiveHousehold(auth: AuthResponse, pickedHouseholdId?: string) {
   else localStorage.removeItem('mp_activeHouseholdId');
 }
 
-/** Everything that belongs to whoever was signed in, including the house they were looking at. */
+/**
+ * Everything that belongs to whoever was signed in, including the house they were looking at
+ * and their colours — the next person to sign in on this browser gets their own.
+ */
 function clearSession() {
   localStorage.removeItem('mp_token');
   localStorage.removeItem('mp_userId');
   localStorage.removeItem('mp_displayName');
   localStorage.removeItem('mp_activeHouseholdId');
+  resetTheme();
 }
 
 /** When the token was issued, in seconds. Read from the token itself — nothing to keep in sync. */

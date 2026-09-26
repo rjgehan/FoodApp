@@ -7,8 +7,13 @@ import com.gehan.mealplanner.domain.Recipe;
 import com.gehan.mealplanner.domain.RecipeCategory;
 import com.gehan.mealplanner.domain.RecipeFiling;
 import com.gehan.mealplanner.domain.RecipeSection;
+import com.gehan.mealplanner.domain.ThemeMode;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.AdminDtos.AdminPage;
+import com.gehan.mealplanner.dto.AdminDtos.CustomPair;
+import com.gehan.mealplanner.dto.AdminDtos.ModeCount;
+import com.gehan.mealplanner.dto.AdminDtos.PresetCount;
+import com.gehan.mealplanner.dto.AdminDtos.ThemeUsage;
 import com.gehan.mealplanner.dto.AdminDtos.HouseholdDetail;
 import com.gehan.mealplanner.dto.AdminDtos.HouseholdMemberRow;
 import com.gehan.mealplanner.dto.AdminDtos.HouseholdRecipeRow;
@@ -18,6 +23,7 @@ import com.gehan.mealplanner.dto.AdminDtos.RecipeDetail;
 import com.gehan.mealplanner.dto.AdminDtos.RecipeRow;
 import com.gehan.mealplanner.dto.AdminDtos.UserHousehold;
 import com.gehan.mealplanner.dto.AdminDtos.UserRow;
+import com.gehan.mealplanner.dto.HouseholdDtos.ThemeResponse;
 import com.gehan.mealplanner.repository.HouseholdInviteRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -30,6 +36,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -212,9 +219,60 @@ public class AdminService {
         List<UserRow> items = users.stream()
                 .map(u -> new UserRow(u.getId(), u.getDisplayName(), u.getUsername(), u.getEmail(),
                         u.getPasswordHash() != null, u.getPinHash() != null, adminAccess.isAdmin(u), u.getCreatedAt(),
-                        households.getOrDefault(u.getId(), List.of())))
+                        households.getOrDefault(u.getId(), List.of()), ThemeResponse.of(u)))
                 .toList();
         return new AdminPage<>(items, p, s, total.getSingleResult());
+    }
+
+    // --- Themes ------------------------------------------------------------------------------
+
+    /**
+     * Everybody's colours, counted. One grouped query: the answer is a handful of rows however
+     * many people there are, since most will share a preset.
+     */
+    public ThemeUsage themes() {
+        Map<String, Long> presets = new LinkedHashMap<>();
+        ThemeSettings.PRESETS.forEach(key -> presets.put(key, 0L));
+        presets.put(ThemeSettings.CUSTOM, 0L);
+        Map<List<String>, Long> pairs = new HashMap<>();
+        Map<ThemeMode, Long> modes = new EnumMap<>(ThemeMode.class);
+        for (ThemeMode mode : ThemeMode.values()) {
+            modes.put(mode, 0L);
+        }
+        long people = 0;
+        long untouched = 0;
+
+        for (Object[] row : em.createQuery(
+                        "select u.themePreset, u.themePrimary, u.themeSecondary, u.themeMode, count(u) from User u "
+                                + "group by u.themePreset, u.themePrimary, u.themeSecondary, u.themeMode", Object[].class)
+                .getResultList()) {
+            String preset = (String) row[0];
+            ThemeMode mode = (ThemeMode) row[3];
+            long count = (Long) row[4];
+            people += count;
+            if (preset == null && row[1] == null && row[2] == null && mode == null) {
+                untouched += count;
+            }
+            // A key this server does not know (a newer app's, say) is still what they see as far
+            // as anyone here can tell, which is Classic.
+            boolean custom = ThemeSettings.CUSTOM.equals(preset) && row[1] != null && row[2] != null;
+            String key = custom ? ThemeSettings.CUSTOM
+                    : preset != null && ThemeSettings.PRESETS.contains(preset) ? preset : "classic";
+            presets.merge(key, count, Long::sum);
+            if (custom) {
+                pairs.merge(List.of((String) row[1], (String) row[2]), count, Long::sum);
+            }
+            modes.merge(mode == null ? ThemeMode.SYSTEM : mode, count, Long::sum);
+        }
+
+        return new ThemeUsage(people, untouched,
+                presets.entrySet().stream().map(e -> new PresetCount(e.getKey(), e.getValue())).toList(),
+                pairs.entrySet().stream()
+                        .map(e -> new CustomPair(e.getKey().get(0), e.getKey().get(1), e.getValue()))
+                        .sorted(Comparator.comparingLong(CustomPair::count).reversed()
+                                .thenComparing(CustomPair::primary).thenComparing(CustomPair::secondary))
+                        .toList(),
+                modes.entrySet().stream().map(e -> new ModeCount(e.getKey(), e.getValue())).toList());
     }
 
     // --- Recipes -----------------------------------------------------------------------------

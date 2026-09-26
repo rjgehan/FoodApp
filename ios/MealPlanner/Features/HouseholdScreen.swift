@@ -250,10 +250,10 @@ struct PeopleScreen: View {
                         if person.neverSignedIn || person.hasEmail == false {
                             Text(person.neverSignedIn ? "Hasn't signed in yet" : "No email yet")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(Palette.accent)
+                                .foregroundStyle(Palette.secondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Palette.accentSoft, in: Capsule())
+                                .background(Palette.secondarySoft, in: Capsule())
                         }
                         if isOwner && person.userId != session.userId {
                             Menu {

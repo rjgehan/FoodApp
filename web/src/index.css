@@ -9,6 +9,14 @@
    *
    * Apple's neutrals — a white page, a grey well for fills, hairline separators, and true black
    * in dark mode — with the app's own orange kept as the one colour that means "you can act".
+   *
+   * These values are the Classic theme. Anyone who picks another has --accent, --accent-ink,
+   * --secondary and --secondary-soft replaced at runtime (src/theme/colors.ts says what each one
+   * is for); the neutrals are everyone's.
+   *
+   * Dark mode is `data-theme="dark"` on <html> rather than the media query, so it can be forced
+   * either way from Settings. index.html sets it before the first paint, from the system setting
+   * unless you chose otherwise.
    */
   :root {
     /*
@@ -24,31 +32,32 @@
     --muted: 110 110 115;
     --subtle: 160 160 166;
     --accent: 234 88 12;
-    --accent-soft: 255 237 213;
     --accent-ink: 255 255 255;
+    /* Classic has no second colour: its tints are the orange's own. */
+    --secondary: 234 88 12;
+    --secondary-soft: 255 237 213;
     --danger: 215 40 47;
     --danger-soft: 255 228 228;
     --success: 36 138 61;
     --success-soft: 222 247 229;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: 0 0 0;
-      --surface: 28 28 30;
-      --elevated: 44 44 46;
-      --line: 56 56 58;
-      --ink: 245 245 247;
-      --muted: 152 152 157;
-      --subtle: 99 99 102;
-      --accent: 255 159 64;
-      --accent-soft: 64 32 8;
-      --accent-ink: 28 25 23;
-      --danger: 255 105 97;
-      --danger-soft: 66 16 16;
-      --success: 48 209 88;
-      --success-soft: 8 44 18;
-    }
+  :root[data-theme='dark'] {
+    --bg: 0 0 0;
+    --surface: 28 28 30;
+    --elevated: 44 44 46;
+    --line: 56 56 58;
+    --ink: 245 245 247;
+    --muted: 152 152 157;
+    --subtle: 99 99 102;
+    --accent: 255 159 64;
+    --accent-ink: 28 25 23;
+    --secondary: 255 159 64;
+    --secondary-soft: 64 32 8;
+    --danger: 255 105 97;
+    --danger-soft: 66 16 16;
+    --success: 48 209 88;
+    --success-soft: 8 44 18;
   }
 
   html {
@@ -215,24 +224,22 @@
     overflow: hidden;
   }
 
-  @media (prefers-color-scheme: dark) {
-    /* Shadows do not read on black; a hairline is what separates a card from the page. */
-    .card {
-      box-shadow: inset 0 0 0 0.5px rgb(var(--line));
-    }
-    /*
-     * An inset shadow paints under the card's children, and edge-to-edge rows are opaque, so
-     * they would cover it. Draw the same hairline over them instead.
-     */
-    .card-rows::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      border-radius: inherit;
-      box-shadow: inset 0 0 0 0.5px rgb(var(--line));
-      pointer-events: none;
-    }
+  /* Shadows do not read on black; a hairline is what separates a card from the page. */
+  [data-theme='dark'] .card {
+    box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+  }
+  /*
+   * An inset shadow paints under the card's children, and edge-to-edge rows are opaque, so
+   * they would cover it. Draw the same hairline over them instead.
+   */
+  [data-theme='dark'] .card-rows::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+    pointer-events: none;
   }
 
   /* The label above a group of rows: small, spaced out, and quiet. */
@@ -244,14 +251,12 @@
     color: rgb(var(--muted));
   }
 
-  @media (prefers-color-scheme: dark) {
-    .cover-0 { background-color: #5a3620; }
-    .cover-1 { background-color: #53431d; }
-    .cover-2 { background-color: #2d4a2b; }
-    .cover-3 { background-color: #4c2c3c; }
-    .cover-4 { background-color: #27404f; }
-    .cover-5 { background-color: #473a2f; }
-  }
+  [data-theme='dark'] .cover-0 { background-color: #5a3620; }
+  [data-theme='dark'] .cover-1 { background-color: #53431d; }
+  [data-theme='dark'] .cover-2 { background-color: #2d4a2b; }
+  [data-theme='dark'] .cover-3 { background-color: #4c2c3c; }
+  [data-theme='dark'] .cover-4 { background-color: #27404f; }
+  [data-theme='dark'] .cover-5 { background-color: #473a2f; }
 
   /*
    * The index card. Paper stays paper in both themes — a cream card that flipped to dark

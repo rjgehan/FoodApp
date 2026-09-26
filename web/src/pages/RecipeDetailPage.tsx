@@ -519,7 +519,7 @@ export default function RecipeDetailPage() {
                     <span
                       className={cx(
                         'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                        'bg-accent-soft text-sm font-semibold text-accent',
+                        'bg-secondary-soft text-sm font-semibold text-secondary',
                       )}
                     >
                       {i + 1}

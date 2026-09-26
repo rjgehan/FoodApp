@@ -403,7 +403,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
                 {place.imageId ? (
                   <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary-soft text-secondary">
                     <StoreIcon className="h-5 w-5" />
                   </span>
                 )}
@@ -784,8 +784,8 @@ function MembersCard({ householdId, onRemoved }: { householdId: string; onRemove
         {members.map((m) => (
           <li key={m.userId} className="flex items-center gap-3 py-2.5 first:pt-0">
             <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft
-                         font-semibold text-accent"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary-soft
+                         font-semibold text-secondary"
               aria-hidden="true"
             >
               {m.displayName.charAt(0).toUpperCase()}

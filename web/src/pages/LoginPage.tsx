@@ -221,14 +221,14 @@ export default function LoginPage({
         <p className="mb-7 text-center text-sm text-muted">Who’s cooking?</p>
 
         {notice && (
-          <p className="mb-5 rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
+          <p className="mb-5 rounded-xl bg-secondary-soft px-4 py-3 text-center text-sm font-medium text-secondary">
             {notice}
           </p>
         )}
 
         {/* Said out loud, so being bounced here does not look like the app forgot you at random. */}
         {expired && (
-          <p className="mb-5 rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
+          <p className="mb-5 rounded-xl bg-secondary-soft px-4 py-3 text-center text-sm font-medium text-secondary">
             You were signed out. Sign in again to carry on.
           </p>
         )}
@@ -541,11 +541,11 @@ function Tile({
     <button
       onClick={onClick}
       className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3.5
-                 text-left transition-colors active:bg-accent-soft"
+                 text-left transition-colors active:bg-secondary-soft"
     >
       <span
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft
-                   text-lg font-semibold text-accent"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary-soft
+                   text-lg font-semibold text-secondary"
       >
         {initial.charAt(0).toUpperCase()}
       </span>

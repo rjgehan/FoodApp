@@ -63,6 +63,25 @@ public class User {
      */
     private UUID lastHouseholdId;
 
+    /**
+     * The app's colours, as this person picked them — the same on every device they sign in on.
+     * All four null is the app as it has always looked. `themePreset` is one of
+     * ThemeSettings.PRESETS or "custom"; the two colours are the custom pair, as #RRGGBB, and are
+     * kept while a preset is on so going back to Custom finds them. See ThemeSettings.
+     */
+    @Column(length = 20)
+    private String themePreset;
+
+    @Column(length = 7)
+    private String themePrimary;
+
+    @Column(length = 7)
+    private String themeSecondary;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private ThemeMode themeMode;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

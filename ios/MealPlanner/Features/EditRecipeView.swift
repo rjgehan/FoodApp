@@ -373,8 +373,8 @@ private struct OptionalTag: View {
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(isOn ? Palette.accentSoft : Color(.tertiarySystemFill), in: Capsule())
-                .foregroundStyle(isOn ? Palette.accent : Color(.secondaryLabel))
+                .background(isOn ? Palette.secondarySoft : Color(.tertiarySystemFill), in: Capsule())
+                .foregroundStyle(isOn ? Palette.secondary : Color(.secondaryLabel))
         }
         .buttonStyle(.borderless)
         .accessibilityLabel("Optional")

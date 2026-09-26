@@ -1,7 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
-  darkMode: 'media',
+  // Settings can force light or dark, so dark is the attribute index.html sets, not the media query.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       // Backed by the CSS variables in index.css so both themes come from one definition.
@@ -14,8 +15,11 @@ export default {
         muted: 'rgb(var(--muted) / <alpha-value>)',
         subtle: 'rgb(var(--subtle) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',
-        'accent-soft': 'rgb(var(--accent-soft) / <alpha-value>)',
         'accent-ink': 'rgb(var(--accent-ink) / <alpha-value>)',
+        secondary: 'rgb(var(--secondary) / <alpha-value>)',
+        'secondary-soft': 'rgb(var(--secondary-soft) / <alpha-value>)',
+        // The old name for the tint, from before there was a second colour to tint it with.
+        'accent-soft': 'rgb(var(--secondary-soft) / <alpha-value>)',
         danger: 'rgb(var(--danger) / <alpha-value>)',
         'danger-soft': 'rgb(var(--danger-soft) / <alpha-value>)',
         success: 'rgb(var(--success) / <alpha-value>)',

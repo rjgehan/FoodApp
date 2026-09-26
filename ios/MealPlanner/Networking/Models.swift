@@ -75,6 +75,8 @@ struct Me: Codable, Hashable {
     let displayName: String?
     let email: String?
     let hasPassword: Bool
+    /// Your colours. Absent from an older server, which had none.
+    var theme: Theme? = nil
 
     var needsCredentials: Bool { email == nil || !hasPassword }
 }

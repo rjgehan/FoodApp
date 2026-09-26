@@ -244,7 +244,7 @@ export default function RecipeForm({
                 onClick={() => updateIngredient(i, { optional: !row.optional })}
                 className={
                   'shrink-0 rounded-full px-2 py-1 text-xs font-medium ' +
-                  (row.optional ? 'bg-accent-soft text-accent' : 'bg-elevated text-subtle')
+                  (row.optional ? 'bg-secondary-soft text-secondary' : 'bg-elevated text-subtle')
                 }
               >
                 Opt

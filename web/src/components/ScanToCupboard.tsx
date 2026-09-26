@@ -98,7 +98,7 @@ export default function ScanToCupboard({
             </div>
 
             {stage.already ? (
-              <div className="rounded-xl bg-accent-soft px-4 py-3">
+              <div className="rounded-xl bg-secondary-soft px-4 py-3">
                 <p className="font-medium text-accent">You already have this.</p>
                 <p className="text-sm text-ink">
                   It is in the cupboard as “{stage.already.name}”
