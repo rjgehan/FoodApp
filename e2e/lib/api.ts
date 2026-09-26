@@ -149,3 +149,17 @@ export function isoDate(days = 0): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+/** Uploads a JPEG to a household the way the web app does, and returns its image id. */
+export async function uploadImage(householdId: string, jpeg: Buffer): Promise<string> {
+  const owner = await admin();
+  const form = new FormData();
+  form.append('file', new Blob([jpeg], { type: 'image/jpeg' }), 'photo.jpg');
+  const res = await fetch(`${API_URL}/api/households/${householdId}/images`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${owner.token}` },
+    body: form,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text(), 'POST', `/api/households/${householdId}/images`);
+  return (await res.json()).id;
+}

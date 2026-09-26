@@ -4,6 +4,8 @@ import { api, ApiError, imageUrl } from '../api/client';
 import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
+import { coverClass } from '../utils/recipeFormat';
+import { useMediaQuery } from '../utils/useMediaQuery';
 import { useOnResume } from '../utils/useOnResume';
 import PlaceActions from '../components/PlaceActions';
 import { PageTitle } from '../components/PageTitle';
@@ -89,10 +91,29 @@ export default function MealPlanPage() {
     loadRecipes();
   }, [loadRecipes]);
 
+  /*
+   * Tailwind's lg: — a computer, or a tablet on its side. Not md:, because most phones turned
+   * sideways are wider than 768px, and a phone keeps the text-only plan (and downloads no photos)
+   * however it is held.
+   */
+  const photos = useMediaQuery('(min-width: 1024px)');
+
+  // Restaurants can have a photo too. Only fetched where it will be shown.
+  const [places, setPlaces] = useState<Place[]>([]);
+  const loadPlaces = useCallback(async () => {
+    if (!activeHouseholdId || !photos) return;
+    setPlaces(await api<Place[]>('GET', `/api/households/${activeHouseholdId}/places`));
+  }, [activeHouseholdId, photos]);
+
+  useEffect(() => {
+    loadPlaces().catch(() => setPlaces([]));
+  }, [loadPlaces]);
+
   // Someone may have planned from another phone while this tab sat in the background.
   useOnResume(() => {
     refresh().catch(() => {});
     loadRecipes().catch(() => {});
+    loadPlaces().catch(() => {});
   });
 
   const byDate = useMemo(() => {
@@ -104,6 +125,18 @@ export default function MealPlanPage() {
     }
     return map;
   }, [entries]);
+
+  /*
+   * A plan entry names its recipe or restaurant but not its picture. The recipe list this page
+   * already loads for the picker has the covers; the places list has the rest. Keyed by either id
+   * (both are UUIDs, so they cannot collide).
+   */
+  const pictures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of recipes) if (r.coverImageId) map.set(r.id, r.coverImageId);
+    for (const p of places) if (p.imageId) map.set(p.id, p.imageId);
+    return map;
+  }, [recipes, places]);
 
   if (!activeHouseholdId) {
     return (
@@ -195,7 +228,14 @@ export default function MealPlanPage() {
           </EmptyState>
         </Card>
       ) : (
-        <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1">
+        /* With photos, each card is only as tall as its own meals: stretched to the busiest day, a
+           Saturday out would be mostly empty card. */
+        <div
+          className={cx(
+            '-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1',
+            photos && 'items-start',
+          )}
+        >
           {planDays.map(({ day, planned }) => {
             const key = isoDate(day);
             const isToday = key === isoDate(today);
@@ -207,7 +247,8 @@ export default function MealPlanPage() {
                 aria-label={`Plan for ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`}
                 onClick={() => setOpenDay(key)}
                 className={cx(
-                  'flex w-36 shrink-0 snap-start flex-col rounded-2xl border p-3 text-left transition-colors',
+                  'flex shrink-0 snap-start flex-col rounded-2xl border p-3 text-left transition-colors',
+                  photos ? 'w-48' : 'w-36',
                   isToday ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface active:bg-elevated',
                 )}
               >
@@ -215,13 +256,25 @@ export default function MealPlanPage() {
                   {isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday: 'short' })}
                 </span>
                 <span className="text-2xl font-semibold leading-tight">{day.getDate()}</span>
-                <span className="mt-2 flex min-w-0 flex-col gap-1">
-                  {planned.slice(0, 3).map((e) => (
-                    <span key={e.id} className="truncate text-[0.8125rem] leading-tight">
-                      <span className="text-muted">{titleCase(e.mealType)}</span>
-                      <span className="block truncate">{entryLabel(e)}</span>
-                    </span>
-                  ))}
+                <span className={cx('mt-2 flex min-w-0 flex-col', photos ? 'gap-2' : 'gap-1')}>
+                  {planned.slice(0, 3).map((e) =>
+                    photos ? (
+                      /* A thumbnail beside each meal rather than a photo above it, so a busy day
+                         is not twice as tall and the month below stays on the first screen. */
+                      <span key={e.id} className="flex min-w-0 items-center gap-2 text-[0.8125rem] leading-tight">
+                        <MealPhoto entry={e} pictures={pictures} className="h-11 w-11 shrink-0 rounded-lg" />
+                        <span className="min-w-0 flex-1">
+                          <span className="text-muted">{titleCase(e.mealType)}</span>
+                          <span className="block truncate">{entryLabel(e)}</span>
+                        </span>
+                      </span>
+                    ) : (
+                      <span key={e.id} className="truncate text-[0.8125rem] leading-tight">
+                        <span className="text-muted">{titleCase(e.mealType)}</span>
+                        <span className="block truncate">{entryLabel(e)}</span>
+                      </span>
+                    ),
+                  )}
                   {planned.length > 3 && (
                     <span className="text-[0.8125rem] text-muted">+{planned.length - 3} more</span>
                   )}
@@ -245,6 +298,7 @@ export default function MealPlanPage() {
       <MonthCalendar
         monthCursor={monthCursor}
         byDate={byDate}
+        pictures={photos ? pictures : null}
         today={today}
         horizonEnd={horizonEnd}
         onMonth={(delta) => setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1))}
@@ -257,6 +311,7 @@ export default function MealPlanPage() {
           date={openDay}
           householdId={activeHouseholdId}
           recipes={recipes}
+          pictures={photos ? pictures : null}
           entries={byDate.get(openDay) ?? []}
           defaultServings={activeHousehold?.defaultServings ?? 4}
           onChanged={refresh}
@@ -278,6 +333,7 @@ export default function MealPlanPage() {
 function MonthCalendar({
   monthCursor,
   byDate,
+  pictures,
   today,
   horizonEnd,
   onMonth,
@@ -286,6 +342,8 @@ function MonthCalendar({
 }: {
   monthCursor: Date;
   byDate: Map<string, MealPlanEntry[]>;
+  /** Recipe or place id → image id, or null where there is no room for pictures. */
+  pictures: Map<string, string> | null;
   today: Date;
   horizonEnd: Date;
   onMonth: (delta: number) => void;
@@ -360,11 +418,30 @@ function MonthCalendar({
               >
                 {day.getDate()}
               </span>
-              <span className="mt-1 flex flex-wrap items-center justify-center gap-0.5">
-                {planned.slice(0, 4).map((e) => (
-                  <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-accent" />
-                ))}
-              </span>
+              {/* On a computer each square is wide enough to show what is for dinner rather
+                  than only that something is. */}
+              {pictures ? (
+                planned.length > 0 && (
+                  <span className="mt-1 flex items-center justify-center gap-0.5">
+                    {/* Three fit; a fourth meal turns the third tile into a count, so a busy day
+                        still says it is busier than it looks. */}
+                    {planned.slice(0, planned.length > 3 ? 2 : 3).map((e) => (
+                      <MealPhoto key={e.id} entry={e} pictures={pictures} className="h-7 w-7 rounded-md" small />
+                    ))}
+                    {planned.length > 3 && (
+                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-elevated text-[0.6875rem] font-semibold text-muted">
+                        +{planned.length - 2}
+                      </span>
+                    )}
+                  </span>
+                )
+              ) : (
+                <span className="mt-1 flex flex-wrap items-center justify-center gap-0.5">
+                  {planned.slice(0, 4).map((e) => (
+                    <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-accent" />
+                  ))}
+                </span>
+              )}
             </button>
           );
         })}
@@ -377,6 +454,7 @@ function DaySheet({
   date,
   householdId,
   recipes,
+  pictures,
   entries,
   defaultServings,
   onChanged,
@@ -387,6 +465,8 @@ function DaySheet({
   date: string;
   householdId: string;
   recipes: Recipe[];
+  /** Recipe or place id → image id, or null where there is no room for pictures. */
+  pictures: Map<string, string> | null;
   entries: MealPlanEntry[];
   defaultServings: number;
   onChanged: () => Promise<void>;
@@ -713,6 +793,7 @@ function DaySheet({
                           onClick={() => setExpanded(open ? null : entry.id)}
                           className="flex min-h-touch w-full items-center gap-3 py-2 text-left"
                         >
+                          {pictures && <MealPhoto entry={entry} pictures={pictures} className="h-12 w-12 shrink-0 rounded-lg" />}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">
                               {entryLabel(entry)}
@@ -802,6 +883,68 @@ function DaySheet({
         {added ? 'Added to Groceries' : 'Add this day to Groceries'}
       </Button>
     </Sheet>
+  );
+}
+
+/**
+ * A planned meal's picture on the desktop plan: the recipe's cover or the restaurant's photo when
+ * there is one; otherwise the same tinted plate the recipe grid uses, so a day with one
+ * photographed dinner and one without still lines up. Only rendered where there is room (see
+ * `photos`), so a phone never downloads one; lazy, so a long month on a computer fetches what is
+ * on screen first.
+ */
+function MealPhoto({
+  entry,
+  pictures,
+  className,
+  small = false,
+}: {
+  entry: MealPlanEntry;
+  pictures: Map<string, string>;
+  className: string;
+  /** A calendar square: the letter and icon are drawn smaller, and the plate gets an edge. */
+  small?: boolean;
+}) {
+  const imageId = pictures.get(entry.recipeId ?? entry.placeId ?? '');
+  // A cover that was deleted, or a server that is briefly away, falls back to the plate rather
+  // than the browser's broken-image box. Remembered by id, so a new cover gets its own try.
+  const [failedId, setFailedId] = useState<string | null>(null);
+  const label = entryLabel(entry) ?? '';
+
+  if (imageId && failedId !== imageId) {
+    return (
+      <span className={cx('flex overflow-hidden bg-elevated', className)}>
+        <img
+          src={imageUrl(imageId)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedId(imageId)}
+          className="h-full w-full object-cover"
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden
+      className={cx(
+        'flex items-center justify-center overflow-hidden',
+        coverClass(entry.recipeId ?? entry.placeId ?? label),
+        // In a calendar square a bare pastel tile next to a photo reads as one still loading, and
+        // nearly vanishes on a white card, so it gets an edge and a darker mark.
+        small ? 'text-ink/60 ring-1 ring-inset ring-line' : 'text-ink/40',
+        className,
+      )}
+    >
+      {entry.placeId ? (
+        <StoreIcon className={small ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
+      ) : (
+        <span className={cx('select-none font-serif font-semibold', small ? 'text-xs' : 'text-2xl')}>
+          {label.charAt(0).toUpperCase()}
+        </span>
+      )}
+    </span>
   );
 }
 
