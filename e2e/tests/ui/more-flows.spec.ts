@@ -185,9 +185,11 @@ test('household: reorder an aisle and the list follows', async ({ page }) => {
   // Walk Dairy & eggs to the top.
   for (let i = 0; i < 8; i++) {
     const up = page.getByRole('button', { name: 'Move Dairy & eggs earlier' });
+    // Disabled means either "already at the top" or "the last move is still saving". Give a
+    // save time to land before taking it as the top: a slow one used to end the walk early.
+    await expect(up).toBeEnabled({ timeout: 2_000 }).catch(() => undefined);
     if (await up.isDisabled()) break;
     await up.click();
-    await page.waitForTimeout(150);
   }
   await page.goto('/grocery-list');
   const [milk, apples] = await Promise.all([page.getByText('milk', { exact: true }).boundingBox(), page.getByText('apples', { exact: true }).boundingBox()]);
