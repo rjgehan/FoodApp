@@ -372,6 +372,7 @@ public class HouseholdService {
 
         // The kitchen: what is in it, what is on the list, and where the aisles are.
         jdbc.update("DELETE FROM cupboard_items WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM restock_reminders WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM grocery_list_item_meals WHERE grocery_list_item_id IN ("
                 + "SELECT id FROM grocery_list_items WHERE household_id = ?)", householdId);
         jdbc.update("DELETE FROM grocery_list_items WHERE household_id = ?", householdId);

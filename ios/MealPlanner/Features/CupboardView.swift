@@ -7,9 +7,12 @@ struct CupboardView: View {
     var session: Session
     var sample: [CupboardItem]?
     var sampleCategories: [GroceryCategory]?
+    var sampleReminders: [RestockReminder]?
 
     @State private var items: [CupboardItem] = []
     @State private var categories: [GroceryCategory] = []
+    /// Restock reminders by ingredient, for the "Every 3 weeks" under a name.
+    @State private var reminders: [UUID: RestockReminder] = [:]
     @State private var query = ""
     @State private var error: String?
     @State private var editing: CupboardItem?
@@ -138,7 +141,9 @@ struct CupboardView: View {
         }
         .task { await load() }
         .sheet(item: $editing) { item in
-            CupboardItemSheet(item: item, session: session) { await load() }
+            CupboardItemSheet(item: item, reminder: item.ingredientId.flatMap { reminders[$0] }, session: session) {
+                await load()
+            }
         }
     }
 
@@ -147,7 +152,7 @@ struct CupboardView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
-                if let detail = item.detail {
+                if let detail = detail(item) {
                     Text(detail).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
@@ -176,12 +181,20 @@ struct CupboardView: View {
         }
     }
 
+    /// "Always have · On the list · Every 3 weeks", the same line the web shows under the name.
+    private func detail(_ item: CupboardItem) -> String? {
+        let every = item.ingredientId.flatMap { reminders[$0] }.map { Restock.everyTitle($0.everyDays) }
+        let parts = [item.detail, every].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     // MARK: - Behaviour
 
     private func load() async {
         if let sample {
             items = sample
             categories = sampleCategories ?? []
+            reminders = Dictionary(uniqueKeysWithValues: (sampleReminders ?? []).map { ($0.ingredientId, $0) })
             return
         }
         guard let household = session.household?.id else { return }
@@ -192,6 +205,10 @@ struct CupboardView: View {
             (items, categories) = try await (list, aisles)
         } catch {
             self.error = error.localizedDescription
+        }
+        // Apart from the cupboard: a server from before reminders has none, and that is no error.
+        if let found = try? await APIClient.shared.restockReminders(household: household) {
+            reminders = Dictionary(uniqueKeysWithValues: found.map { ($0.ingredientId, $0) })
         }
     }
 
@@ -299,6 +316,7 @@ struct HaveOrLow: View {
 /// ways out — back on the list, or gone. Tapping a row on the web opens the same thing.
 struct CupboardItemSheet: View {
     let item: CupboardItem
+    var reminder: RestockReminder?
     var session: Session
     var onChanged: () async -> Void
 
@@ -308,12 +326,16 @@ struct CupboardItemSheet: View {
     @State private var tracks: Bool
     @State private var amount: Double
     @State private var unit: String
+    @State private var everyDays: Int?
     @State private var busy = false
     @State private var error: String?
 
-    init(item: CupboardItem, session: Session, onChanged: @escaping () async -> Void) {
+    init(item: CupboardItem, reminder: RestockReminder? = nil, session: Session,
+         onChanged: @escaping () async -> Void) {
         self.item = item
+        self.reminder = reminder
         self.session = session
+        _everyDays = State(initialValue: reminder?.everyDays)
         self.onChanged = onChanged
         _staple = State(initialValue: item.staple)
         _name = State(initialValue: item.name)
@@ -361,6 +383,15 @@ struct CupboardItemSheet: View {
                     Text("A staple goes back on the list as soon as it runs low.")
                 }
 
+                // Needs the ingredient behind it, which a server from before reminders does not send.
+                if item.ingredientId != nil {
+                    Section {
+                        RestockPicker(everyDays: $everyDays)
+                    } footer: {
+                        Text("Counted from the last time it was put away. When it's time, the app asks.")
+                    }
+                }
+
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }
@@ -397,7 +428,7 @@ struct CupboardItemSheet: View {
         busy = true
         defer { busy = false }
         do {
-            _ = try await APIClient.shared.editCupboard(
+            let saved = try await APIClient.shared.editCupboard(
                 household: household,
                 item: item.id,
                 name: named == item.name ? nil : named,
@@ -406,6 +437,10 @@ struct CupboardItemSheet: View {
                 quantity: tracks ? amount : nil,
                 unit: tracks ? unit : nil
             )
+            // After the rename, which takes the reminder along to the new name first.
+            if everyDays != reminder?.everyDays, let ingredient = saved.ingredientId ?? item.ingredientId {
+                try await APIClient.shared.setRestock(household: household, ingredient: ingredient, everyDays: everyDays)
+            }
             await onChanged()
             dismiss()
         } catch {
@@ -437,5 +472,10 @@ struct CupboardItemSheet: View {
 }
 
 #Preview("Cupboard") {
-    CupboardView(session: .preview, sample: SampleData.cupboard, sampleCategories: SampleData.categories)
+    CupboardView(session: .preview, sample: SampleData.cupboard, sampleCategories: SampleData.categories,
+                 sampleReminders: SampleData.restock)
+}
+
+#Preview("Cupboard item") {
+    CupboardItemSheet(item: SampleData.cupboard[0], reminder: SampleData.restock[2], session: .preview) {}
 }

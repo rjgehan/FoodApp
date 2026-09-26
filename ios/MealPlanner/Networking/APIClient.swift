@@ -616,6 +616,46 @@ actor APIClient {
         )
     }
 
+    // MARK: - Restock reminders
+
+    func restockReminders(household: UUID) async throws -> [RestockReminder] {
+        try await get("/api/households/\(household.uuidString)/restock")
+    }
+
+    /// What "Time to restock?" should ask about right now. Usually nothing.
+    func dueRestock(household: UUID) async throws -> [RestockReminder] {
+        try await get("/api/households/\(household.uuidString)/restock/due")
+    }
+
+    /// A number of days sets it, or changes it; nil turns it off.
+    @discardableResult
+    func setRestock(household: UUID, ingredient: UUID, everyDays: Int?) async throws -> RestockReminder? {
+        let path = "/api/households/\(household.uuidString)/restock/\(ingredient.uuidString)"
+        guard let everyDays else {
+            _ = try await sendNoContent("DELETE", path)
+            return nil
+        }
+        return try await send("PUT", path, body: ["everyDays": everyDays])
+    }
+
+    /// "Add to list": `add` onto the grocery list, `snooze` left be for a few days.
+    func addDueRestock(household: UUID, add: [UUID], snooze: [UUID]) async throws {
+        _ = try await sendNoContent(
+            "POST",
+            "/api/households/\(household.uuidString)/restock/add-due",
+            body: ["add": add.map(\.uuidString), "snooze": snooze.map(\.uuidString)]
+        )
+    }
+
+    /// "Not now".
+    func snoozeRestock(household: UUID, ingredients: [UUID]) async throws {
+        _ = try await sendNoContent(
+            "POST",
+            "/api/households/\(household.uuidString)/restock/snooze",
+            body: ["ingredientIds": ingredients.map(\.uuidString)]
+        )
+    }
+
     /// Uploads a JPEG and returns its id. Multipart by hand: one field, no dependencies.
     func uploadImage(household: UUID, jpeg: Data) async throws -> UUID {
         let boundary = "mp-\(UUID().uuidString)"

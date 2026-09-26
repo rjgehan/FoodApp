@@ -7,9 +7,14 @@ struct GroceriesView: View {
     var session: Session
     var sample: [GroceryItem]?
     var sampleCategories: [GroceryCategory]?
+    var sampleReminders: [RestockReminder]?
 
     @State private var items: [GroceryItem] = []
     @State private var categories: [GroceryCategory] = []
+    /// Restock reminders by ingredient, for the "every 3 weeks" on a row.
+    @State private var reminders: [UUID: RestockReminder] = [:]
+    /// The item whose "Remind me to buy it" is open.
+    @State private var reminding: GroceryItem?
 
     /// Things nobody — no keyword list, no model — has put in an aisle yet.
     private var unplaced: Int {
@@ -84,6 +89,7 @@ struct GroceriesView: View {
                                     Button("Remove", systemImage: "trash", role: .destructive) {
                                         Task { await remove(item) }
                                     }
+                                    remindButton(item)
                                 }
                         }
                     }
@@ -97,6 +103,7 @@ struct GroceriesView: View {
                                     Button("Remove", systemImage: "trash", role: .destructive) {
                                         Task { await remove(item) }
                                     }
+                                    remindButton(item)
                                 }
                         }
                     }
@@ -108,6 +115,14 @@ struct GroceriesView: View {
                 }
             }
             .navigationTitle("Groceries")
+            .sheet(item: $reminding) { item in
+                if let ingredient = item.ingredientId {
+                    RestockSheet(name: item.name, ingredientId: ingredient, current: reminders[ingredient],
+                                 session: session) { saved in
+                        reminders[ingredient] = saved
+                    }
+                }
+            }
             .sheet(isPresented: $sorting) {
                 SortIntoAislesSheet(session: session, items: items, aisles: categories) { _ in
                     await load()
@@ -172,11 +187,23 @@ struct GroceriesView: View {
         .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 16))
     }
 
-    /// The one thing worth saying beyond the amount, kept short so the row stays one line.
+    /// What is worth saying beyond the amount, kept short so the row stays one line.
     private func note(_ item: GroceryItem) -> String? {
-        if item.checked, let who = item.checkedByName { return who }
-        if !item.checked, item.inCupboard { return "have some" }
-        return nil
+        var parts: [String] = []
+        if item.checked, let who = item.checkedByName { parts.append(who) }
+        if !item.checked, item.inCupboard { parts.append("have some") }
+        // Quiet: it matters when it is time, which is what the question on opening is for.
+        if let ingredient = item.ingredientId, let reminder = reminders[ingredient] { parts.append(reminder.every) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Free text with no ingredient behind it has nothing for a reminder to hang on.
+    @ViewBuilder
+    private func remindButton(_ item: GroceryItem) -> some View {
+        if item.ingredientId != nil {
+            Button("Remind", systemImage: "repeat") { reminding = item }
+                .tint(Palette.accent)
+        }
     }
 
     /// How the typed text will be read, shown live so the amount is visibly understood.
@@ -197,6 +224,7 @@ struct GroceriesView: View {
         if let sample {
             items = sample
             categories = sampleCategories ?? []
+            reminders = Dictionary(uniqueKeysWithValues: (sampleReminders ?? []).map { ($0.ingredientId, $0) })
             return
         }
         guard let household = session.household?.id else { return }
@@ -207,6 +235,10 @@ struct GroceriesView: View {
             (items, categories) = try await (list, aisles)
         } catch {
             self.error = error.localizedDescription
+        }
+        // Apart from the list: a server from before reminders has none to give, and that is no error.
+        if let found = try? await APIClient.shared.restockReminders(household: household) {
+            reminders = Dictionary(uniqueKeysWithValues: found.map { ($0.ingredientId, $0) })
         }
     }
 
@@ -290,5 +322,6 @@ struct GroceriesView: View {
 }
 
 #Preview("Groceries") {
-    GroceriesView(session: .preview, sample: SampleData.groceries, sampleCategories: SampleData.categories)
+    GroceriesView(session: .preview, sample: SampleData.groceries, sampleCategories: SampleData.categories,
+                  sampleReminders: SampleData.restock)
 }

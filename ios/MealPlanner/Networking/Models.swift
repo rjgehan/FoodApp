@@ -359,6 +359,9 @@ struct CupboardItem: Codable, Identifiable, Hashable {
     /// Null means this item uses the simple Have / Low toggle instead of an exact amount.
     let quantity: Double?
     let unit: String?
+    /// The shared ingredient behind it — what a restock reminder hangs on. Optional and last,
+    /// so sample data built by hand can leave it out.
+    var ingredientId: UUID? = nil
 
     var tracksQuantity: Bool { quantity != nil }
 
@@ -445,4 +448,55 @@ struct ImportedIngredient: Codable {
     let ingredientName: String
     let quantity: Double?
     let unit: String?
+}
+
+/// "Remind me to buy it every 3 weeks", from /api/households/{id}/restock. One per ingredient,
+/// so the grocery list and the cupboard show the same one.
+struct RestockReminder: Codable, Identifiable, Hashable {
+    let ingredientId: UUID
+    let name: String
+    let everyDays: Int
+    /// ISO-8601, as the server sends it.
+    let lastBoughtAt: String
+    let dueAt: String?
+    let snoozedUntil: String?
+    /// Would be asked about now: its time has come, not snoozed, not waiting on the list.
+    let due: Bool?
+
+    var id: UUID { ingredientId }
+
+    /// "every 3 weeks", lower case, for a line of detail.
+    var every: String { Restock.every(everyDays) }
+
+    /// "last bought Sep 2", with the year only when it is not this one.
+    var lastBought: String {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = withFraction.date(from: lastBoughtAt) ?? ISO8601DateFormatter().date(from: lastBoughtAt)
+        else { return "" }
+        let sameYear = Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
+        let format: Date.FormatStyle = sameYear
+            ? .dateTime.month(.abbreviated).day()
+            : .dateTime.month(.abbreviated).day().year()
+        return "last bought \(date.formatted(format))"
+    }
+}
+
+/// The lengths a restock reminder is offered in, and how they read.
+enum Restock {
+    /// Offered first, in days. Anything else is "every N days".
+    static let presets = [7, 14, 21, 28]
+
+    static func every(_ days: Int) -> String {
+        if days == 1 { return "every day" }
+        if days == 7 { return "every week" }
+        if days % 7 == 0 { return "every \(days / 7) weeks" }
+        return "every \(days) days"
+    }
+
+    /// The same, starting a line or a menu option.
+    static func everyTitle(_ days: Int) -> String {
+        let label = every(days)
+        return label.prefix(1).uppercased() + label.dropFirst()
+    }
 }

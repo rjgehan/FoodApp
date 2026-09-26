@@ -64,6 +64,13 @@ struct MealPlannerApp: App {
     }
 }
 
+/// What "Time to restock?" is asking about, and in which house.
+struct RestockDue: Identifiable {
+    let household: UUID
+    let items: [RestockReminder]
+    var id: UUID { household }
+}
+
 /// `sheet(item:)` needs something Identifiable, and a String is not.
 struct SharedText: Identifiable {
     let text: String
@@ -97,6 +104,13 @@ struct RootView: View {
     /// Set when the signed-in person still has no email or password: the prompt asking for them.
     @State private var askingForCredentials: Me?
 
+    /// "Time to restock?", when something has come due.
+    @State private var restockDue: RestockDue?
+    /// The households asked about since the app last came to the front — once each, like the
+    /// web's once per session. Emptied when the app goes to the background.
+    @State private var restockAsked: Set<UUID> = []
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         if session.isSignedIn {
             TabView(selection: $tab) {
@@ -126,6 +140,15 @@ struct RootView: View {
             .id(session.household?.id)
             // After every sign-in (a new token) and on every launch.
             .task(id: session.token) { await checkCredentials() }
+            // On launch, on switching house, and on coming back to the app.
+            .task(id: session.household?.id) { await checkRestock() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { restockAsked = [] }
+                if phase == .active { Task { await checkRestock() } }
+            }
+            .sheet(item: $restockDue) { due in
+                RestockPrompt(household: due.household, items: due.items)
+            }
             // A household that turns us away is one we were taken out of: fetch the list again,
             // which moves on to another house — or, with none left, back to the sign-in screen.
             .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
@@ -206,7 +229,31 @@ struct RootView: View {
         }
         #endif
         guard let me = try? await APIClient.shared.me(), me.needsCredentials else { return }
+        // One sheet at a time: if "Time to restock?" got there first, this asks next launch.
+        guard restockDue == nil else { return }
         askingForCredentials = me
+    }
+
+    /// Asks "Time to restock?" if anything has come due, once per household each time the app
+    /// comes to the front. Quiet on failure, and it waits behind the credentials prompt.
+    private func checkRestock() async {
+        guard session.isSignedIn, let household = session.household?.id,
+              !restockAsked.contains(household), askingForCredentials == nil, restockDue == nil
+        else { return }
+        #if DEBUG
+        // A screenshot run lands on a particular screen; the question would sit on top of it.
+        if debugSheet != nil { return }
+        #endif
+        // Marked before asking the server: launching fires both the task and the scene turning
+        // active, and the second must not ask again while the first is on its way.
+        restockAsked.insert(household)
+        guard let due = try? await APIClient.shared.dueRestock(household: household) else {
+            restockAsked.remove(household)
+            return
+        }
+        // Still the same house, and nothing else came up while the question was on its way.
+        guard !due.isEmpty, session.household?.id == household, askingForCredentials == nil else { return }
+        restockDue = RestockDue(household: household, items: due)
     }
 }
 

@@ -8,6 +8,7 @@ import { CardInSheetProvider, cx, Sheet } from './ui';
 import ProfileCard from './ProfileCard';
 import CredentialsPrompt from './CredentialsPrompt';
 import StartCupboardSheet from './StartCupboardSheet';
+import { RestockPrompt } from './Restock';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
@@ -204,6 +205,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
 
         <CredentialsPrompt />
+        {/* "Time to restock?" — here so it asks whichever page the app opens on. */}
+        <RestockPrompt />
 
         {/* A household made a moment ago, wherever it was made: fill its cupboard before anything
             else. Here rather than on the page that made it, because the first-run setup has no

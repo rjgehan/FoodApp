@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { absoluteUrl, api, ApiError, getToken } from '../api/client';
-import type { GroceryCategory, GroceryListEvent, GroceryListItem as Item } from '../api/types';
+import type { GroceryCategory, GroceryListEvent, GroceryListItem as Item, RestockReminder } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
@@ -24,9 +24,11 @@ import {
   Sheet,
   SubHeading,
 } from '../components/ui';
-import { PlusIcon, TrashIcon } from '../components/icons';
+import { PlusIcon, RepeatIcon, TrashIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
+import { RestockSheet, useRestockReminders } from '../components/Restock';
+import { everyLabel, everyTitle } from '../utils/restock';
 
 /* Separators start after the checkbox: 24px circle + 12px gap. */
 const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
@@ -48,6 +50,9 @@ export default function GroceryListPage() {
   const [exported, setExported] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // The item whose "Remind me to buy it" is open.
+  const [reminding, setReminding] = useState<Item | null>(null);
+  const restock = useRestockReminders(activeHouseholdId);
 
   const clientRef = useRef<Client | null>(null);
 
@@ -249,9 +254,11 @@ export default function GroceryListPage() {
                       item={item}
                       categories={groceryCategories}
                       moving={moving}
+                      reminder={item.ingredientId ? restock.reminders.get(item.ingredientId) : undefined}
                       onToggle={toggleItem}
                       onRemove={removeItem}
                       onMove={moveItem}
+                      onRemind={setReminding}
                     />
                   </li>
                 ))}
@@ -275,9 +282,11 @@ export default function GroceryListPage() {
                       item={item}
                       categories={groceryCategories}
                       moving={false}
+                      reminder={item.ingredientId ? restock.reminders.get(item.ingredientId) : undefined}
                       onToggle={toggleItem}
                       onRemove={removeItem}
                       onMove={moveItem}
+                      onRemind={setReminding}
                     />
                   </li>
                 ))}
@@ -287,7 +296,30 @@ export default function GroceryListPage() {
         </div>
       )}
 
-      {items.length > 0 && <p className="pt-2 text-[0.8125rem] text-subtle">Swipe an item left to remove it.</p>}
+      {items.length > 0 && (
+        <p className="pt-2 text-[0.8125rem] text-subtle">
+          Swipe an item left to remove it, or to be reminded to buy it every few weeks.
+        </p>
+      )}
+
+      {reminding?.ingredientId && (
+        <RestockSheet
+          householdId={activeHouseholdId}
+          ingredientId={reminding.ingredientId}
+          name={reminding.name}
+          current={restock.reminders.get(reminding.ingredientId) ?? null}
+          onClose={() => setReminding(null)}
+          onSaved={(reminder) => {
+            restock.saved(reminding.ingredientId!, reminder);
+            setReminding(null);
+            flash(
+              reminder
+                ? `We'll ask about ${reminding.name} ${everyLabel(reminder.everyDays)}.`
+                : `No more reminders for ${reminding.name}.`,
+            );
+          }}
+        />
+      )}
 
       {exported !== null && (
         <Sheet title="Copy for Notes" onClose={() => setExported(null)}>
@@ -344,16 +376,20 @@ function ItemRow({
   item,
   categories,
   moving,
+  reminder,
   onToggle,
   onRemove,
   onMove,
+  onRemind,
 }: {
   item: Item;
   categories: GroceryCategory[];
   moving: boolean;
+  reminder?: RestockReminder;
   onToggle: (item: Item) => void;
   onRemove: (itemId: string) => void;
   onMove: (item: Item, categoryId: string) => void;
+  onRemind: (item: Item) => void;
 }) {
   const amount = [item.quantity, item.unit].filter(Boolean).join(' ');
   const detail = [amount, item.checked && item.checkedByName ? `got by ${item.checkedByName}` : null]
@@ -385,7 +421,14 @@ function ItemRow({
          */}
         <span className="min-w-0 flex-1">
           <span className={cx('block truncate transition-colors', item.checked && 'text-muted line-through')}>{item.name}</span>
-          {have && <span className="block truncate text-[0.8125rem] text-success">In the cupboard</span>}
+          {(have || reminder) && (
+            <span className="block truncate text-[0.8125rem] text-muted">
+              {have && <span className="text-success">In the cupboard</span>}
+              {have && reminder && ' · '}
+              {/* Quiet: it matters when it is time, which is what the question on opening is for. */}
+              {reminder && everyTitle(reminder.everyDays)}
+            </span>
+          )}
         </span>
         {detail && (
           <span className={cx('shrink-0 text-[0.9375rem] tabular-nums text-muted', item.checked && 'line-through')}>
@@ -414,20 +457,33 @@ function ItemRow({
             ))}
         </Select>
       ) : (
-        <IconButton
-          label={`Remove ${item.name}`}
-          className="mr-4 hidden text-subtle [@media(hover:hover)]:inline-flex"
-          onClick={() => onRemove(item.id)}
-        >
-          <TrashIcon className="h-5 w-5" />
-        </IconButton>
+        <span className="mr-4 hidden [@media(hover:hover)]:flex">
+          {item.ingredientId && (
+            <IconButton label={`Remind me to buy ${item.name}`} className="text-subtle" onClick={() => onRemind(item)}>
+              <RepeatIcon className="h-5 w-5" />
+            </IconButton>
+          )}
+          <IconButton label={`Remove ${item.name}`} className="text-subtle" onClick={() => onRemove(item.id)}>
+            <TrashIcon className="h-5 w-5" />
+          </IconButton>
+        </span>
       )}
     </div>
   );
 
   // While picking aisles the row stays put, so a sideways nudge on the picker is not a swipe.
   if (moving) return row;
-  return <SwipeRow actions={[{ label: 'Remove', tone: 'danger', onAction: () => onRemove(item.id) }]}>{row}</SwipeRow>;
+  return (
+    <SwipeRow
+      actions={[
+        // Free text with no ingredient behind it has nothing for a reminder to hang on.
+        ...(item.ingredientId ? [{ label: 'Remind', tone: 'accent' as const, onAction: () => onRemind(item) }] : []),
+        { label: 'Remove', tone: 'danger' as const, onAction: () => onRemove(item.id) },
+      ]}
+    >
+      {row}
+    </SwipeRow>
+  );
 }
 
 /**

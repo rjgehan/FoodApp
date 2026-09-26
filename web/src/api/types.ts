@@ -141,6 +141,22 @@ export interface StarterGroup {
   items: { name: string; have: boolean }[];
 }
 
+/**
+ * "Remind me to buy it every 3 weeks", from /api/households/{id}/restock. One per ingredient, so
+ * the grocery list and the cupboard show the same one.
+ */
+export interface RestockReminder {
+  ingredientId: string;
+  name: string;
+  everyDays: number;
+  lastBoughtAt: string;
+  dueAt: string;
+  /** Null unless somebody said "Not now" and that has not run out yet. */
+  snoozedUntil: string | null;
+  /** Would be asked about right now: its time has come, not snoozed, not waiting on the list. */
+  due: boolean;
+}
+
 export type HouseholdRole = 'OWNER' | 'MEMBER';
 
 export interface HouseholdMember {

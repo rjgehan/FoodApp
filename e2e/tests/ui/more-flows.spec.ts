@@ -182,13 +182,14 @@ test('household: reorder an aisle and the list follows', async ({ page }) => {
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
   await page.getByRole('button', { name: /^Store aisles/ }).click();
-  // Walk Dairy & eggs to the top.
-  for (let i = 0; i < 8; i++) {
-    const up = page.getByRole('button', { name: 'Move Dairy & eggs earlier' });
-    if (await up.isDisabled()) break;
-    await up.click();
-    await page.waitForTimeout(150);
-  }
+  // Walk Dairy & eggs to the top. The arrows are also disabled while a move is saving, so a
+  // disabled one is not proof it has arrived: ask the server instead.
+  const up = page.getByRole('button', { name: 'Move Dairy & eggs earlier' });
+  await expect(async () => {
+    if (await up.isEnabled()) await up.click();
+    const aisles = await call('GET', `/api/households/${hh.id}/categories`, { token: owner.token });
+    expect(aisles.sort((a: any, b: any) => a.position - b.position)[0].name).toBe('Dairy & eggs');
+  }).toPass({ timeout: 15_000 });
   await page.goto('/grocery-list');
   const [milk, apples] = await Promise.all([page.getByText('milk', { exact: true }).boundingBox(), page.getByText('apples', { exact: true }).boundingBox()]);
   expect(milk!.y).toBeLessThan(apples!.y);
