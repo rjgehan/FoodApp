@@ -75,8 +75,64 @@ struct Me: Codable, Hashable {
     let displayName: String?
     let email: String?
     let hasPassword: Bool
+    /// Whether you are the server's admin, signed in with your password. Absent from an older
+    /// server; on the ideas board it is who can say where an idea is up to.
+    var admin: Bool?
+    /// Whether the beta's ideas board is open (IDEAS_BOARD). Absent from an older server, which
+    /// has no board, so nil hides the lightbulb.
+    var ideasBoard: Bool?
 
     var needsCredentials: Bool { email == nil || !hasPassword }
+}
+
+/// Where an idea on the board has got to. Only the admin moves it on from Open.
+enum IdeaStatus: String, Codable, CaseIterable, Hashable {
+    case open = "OPEN"
+    case planned = "PLANNED"
+    case done = "DONE"
+    case notDoing = "NOT_DOING"
+
+    /// A status this build has never heard of reads as Open, rather than the whole board
+    /// failing to load on a phone that has not been updated.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = IdeaStatus(rawValue: raw) ?? .open
+    }
+
+    var label: String {
+        switch self {
+        case .open: return "Open"
+        case .planned: return "Planned"
+        case .done: return "Done"
+        case .notDoing: return "Not doing"
+        }
+    }
+}
+
+/// One idea on the beta's ideas board, as you see it — from /api/ideas. The board is the whole
+/// server's, not a household's.
+struct Idea: Codable, Identifiable, Hashable {
+    let id: UUID
+    var title: String
+    var details: String?
+    var status: IdeaStatus
+    /// "Someone" once the account that suggested it has been deleted.
+    let authorName: String
+    /// Yours: you can reword it or take it back.
+    let mine: Bool
+    var voteCount: Int
+    var votedByMe: Bool
+    /// ISO-8601, as the server sends it — with microseconds.
+    let createdAt: String
+
+    var created: Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // Six places after the point is more than some versions of the formatter will read;
+        // the seconds are plenty for "5 minutes ago".
+        let whole = createdAt.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        return withFraction.date(from: createdAt) ?? ISO8601DateFormatter().date(from: whole)
+    }
 }
 
 /// Someone in a household, from /api/households/{id}/members — which, unlike the sign-in

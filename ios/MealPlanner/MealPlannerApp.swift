@@ -86,7 +86,7 @@ struct RootView: View {
         #endif
     }()
 
-    /// -mp_debug_screen "edit", "detail", "settings" or "household" opens that screen straight
+    /// -mp_debug_screen "edit", "detail", "settings", "household" or "ideas" opens that screen straight
     /// away, so a screenshot run can see something that otherwise needs three taps to reach.
     /// "day" is handled by PlanView: today's day sheet, and -mp_debug_expand 1 opens its first
     /// dish's actions. With -mp_debug_tab.
@@ -185,27 +185,37 @@ struct RootView: View {
             )) {
                 NavigationStack { HouseholdScreen(session: session) }
             }
+            // The ideas board, from the server — the lightbulb is a tap a screenshot run cannot make.
+            .sheet(isPresented: Binding(
+                get: { debugSheet == "ideas" },
+                set: { if !$0 { debugSheet = nil } }
+            )) {
+                IdeasView(session: session)
+            }
             #endif
         } else {
             SignInView(session: session)
         }
     }
 
-    /// Asks for an email and password if they are missing and "Not now" has not been said since
+    /// Asks who you are: whether the ideas board is open (and whether you are its admin), and
+    /// then for an email and password if they are missing and "Not now" has not been said since
     /// launch. Quiet on failure: offline is no reason to nag.
     private func checkCredentials() async {
+        let me = try? await APIClient.shared.me()
+        if let me { session.learn(me) }
         guard session.isSignedIn, !session.credentialsPromptDismissed else { return }
         #if DEBUG
         // A screenshot run lands on a particular screen; the prompt would sit on top of it.
         // -mp_debug_screen credentials shows the prompt itself, from sample data if need be.
         if let debugSheet {
             if debugSheet == "credentials" {
-                askingForCredentials = (try? await APIClient.shared.me()) ?? SampleData.me
+                askingForCredentials = me ?? SampleData.me
             }
             return
         }
         #endif
-        guard let me = try? await APIClient.shared.me(), me.needsCredentials else { return }
+        guard let me, me.needsCredentials else { return }
         askingForCredentials = me
     }
 }

@@ -78,6 +78,15 @@ struct GalleryView: View {
                     entry("Recipe", "text.book.closed") {
                         NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: session) }
                     }
+                    entry("Ideas (beta)", "lightbulb") {
+                        IdeasView(session: session, sample: SampleData.ideas)
+                    }
+                    entry("Ideas — none yet", "lightbulb.slash") {
+                        IdeasView(session: session, sample: [])
+                    }
+                    entry("Suggest an idea", "plus.bubble") {
+                        IdeaEditor(idea: nil) { _, _ in }
+                    }
                 }
 
                 Section {

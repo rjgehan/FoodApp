@@ -46,6 +46,25 @@ enum SampleData {
         ]
     }
 
+    /// The ideas board mid-beta: one planned, one of yours, one decided against.
+    static var ideas: [Idea] {
+        func ago(_ hours: Double) -> String {
+            ISO8601DateFormatter().string(from: Date().addingTimeInterval(-hours * 3600))
+        }
+        return [
+            Idea(id: UUID(), title: "Suggest a recipe from what is in the cupboard",
+                 details: "Look at what we already have and pick something we could make tonight without shopping.",
+                 status: .planned, authorName: "Sam", mine: false, voteCount: 4, votedByMe: true, createdAt: ago(30)),
+            Idea(id: UUID(), title: "Share the grocery list with someone outside the house",
+                 details: "So my partner can pick things up on the way home.",
+                 status: .open, authorName: "Ryan", mine: true, voteCount: 2, votedByMe: false, createdAt: ago(5)),
+            Idea(id: UUID(), title: "Bigger text option", details: nil,
+                 status: .open, authorName: "Grandad", mine: false, voteCount: 1, votedByMe: false, createdAt: ago(0.2)),
+            Idea(id: UUID(), title: "Weekly nutrition summary", details: nil,
+                 status: .notDoing, authorName: "Someone", mine: false, voteCount: 0, votedByMe: false, createdAt: ago(80)),
+        ]
+    }
+
     static let categories: [GroceryCategory] = [
         GroceryCategory(id: produce, name: "Produce"),
         GroceryCategory(id: dairy, name: "Dairy & eggs"),
@@ -163,6 +182,7 @@ extension Session {
         session.displayName = "Ryan"
         session.household = SampleData.household
         session.userId = SampleData.me.userId
+        session.ideasBoard = true
         return session
     }
 }

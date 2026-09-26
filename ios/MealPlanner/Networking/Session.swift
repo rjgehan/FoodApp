@@ -70,8 +70,20 @@ final class Session {
     /// Something the sign-in screen should say when it next appears: that you were taken out of
     /// your last household, or that an invite you signed in for did not work any more.
     var notice: String?
+    /// Whether the server has the beta's ideas board open — the lightbulb in the header — and
+    /// whether you are its admin there. Both from /api/users/me, on every launch and sign-in;
+    /// an older server says neither, which hides the lightbulb.
+    var ideasBoard = false
+    var isAdmin = false
 
     var isSignedIn: Bool { token != nil && household != nil }
+
+    /// What /api/users/me says about you beyond your name.
+    func learn(_ me: Me) {
+        if userId == nil { userId = me.userId }
+        ideasBoard = me.ideasBoard == true
+        isAdmin = me.admin == true
+    }
 
     /// Sends what a share sheet handed over to the server's import log, where it can be
     /// read later. Best effort: a note that does not arrive costs nothing.
@@ -228,6 +240,8 @@ final class Session {
         household = nil
         households = []
         userId = nil
+        ideasBoard = false
+        isAdmin = false
         TokenStore.clear()
         UserDefaults.standard.removeObject(forKey: Self.householdKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)

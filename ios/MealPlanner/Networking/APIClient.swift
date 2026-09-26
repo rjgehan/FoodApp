@@ -155,6 +155,41 @@ actor APIClient {
         _ = try await sendNoContent("PUT", "/api/users/me/active-household", body: ["householdId": id.uuidString])
     }
 
+    // MARK: - The ideas board (beta)
+
+    /// The whole server's board. `sort` is "top" or "new".
+    func ideas(sort: String) async throws -> [Idea] {
+        try await get("/api/ideas?sort=\(sort)")
+    }
+
+    func suggestIdea(title: String, details: String?) async throws -> Idea {
+        var body: [String: Any] = ["title": title]
+        if let details, !details.isEmpty { body["details"] = details }
+        return try await send("POST", "/api/ideas", body: body)
+    }
+
+    /// Your own idea, reworded. No details clears them.
+    func editIdea(_ id: UUID, title: String, details: String?) async throws -> Idea {
+        var body: [String: Any] = ["title": title]
+        if let details, !details.isEmpty { body["details"] = details }
+        return try await send("PUT", "/api/ideas/\(id.uuidString)", body: body)
+    }
+
+    /// Yours, or anybody's for the admin.
+    func deleteIdea(_ id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/ideas/\(id.uuidString)")
+    }
+
+    /// Your upvote on or off. Either can be sent twice; the idea comes back as it now stands.
+    func vote(idea id: UUID, up: Bool) async throws -> Idea {
+        try await perform(request(method: up ? "PUT" : "DELETE", path: "/api/ideas/\(id.uuidString)/vote", authorized: true))
+    }
+
+    /// The admin only: where an idea is up to.
+    func setIdeaStatus(_ id: UUID, status: IdeaStatus) async throws -> Idea {
+        try await send("PATCH", "/api/ideas/\(id.uuidString)/status", body: ["status": status.rawValue])
+    }
+
     // MARK: - The app
 
     /// The households this person belongs to, for the switcher in the header.
