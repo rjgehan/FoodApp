@@ -258,3 +258,78 @@ test.describe('what the admin sees', () => {
     expect(everything).not.toMatch(/"(passwordHash|pinHash|password|pin|token|tokenHash)"\s*:/i);
   });
 });
+
+test.describe('deleting an account', () => {
+  /** Somebody new who makes a house of their own, with a recipe in it. */
+  async function withOwnHouse() {
+    const hh = await newHousehold();
+    const person = await newMember(hh.id);
+    const own = await call('POST', '/api/households', { token: person.token, body: { name: unique('Theirs') } });
+    await call('POST', `/api/households/${own.id}/recipes`, {
+      token: person.token,
+      body: { name: 'Toast', servings: 2, section: 'BREAKFAST', categories: [], instructions: 'Toast it.', ingredients: [{ ingredientName: 'bread', quantity: 2, unit: null, optional: false }] },
+    });
+    return { hh, person, own };
+  }
+
+  test('the preview says what happens to each house, and the delete does exactly that', async () => {
+    const boss = await adminByPassword();
+    const { hh, person, own } = await withOwnHouse();
+
+    const preview = await call('GET', `/api/admin/users/${person.userId}/deletion-preview`, { token: boss.token });
+    const byId = Object.fromEntries(preview.households.map((h: any) => [h.householdId, h]));
+    expect(byId[hh.id].outcome).toBe('LEAVES');
+    expect(byId[own.id]).toMatchObject({ outcome: 'DELETES_HOUSEHOLD', recipes: 1 });
+
+    const done = await call('DELETE', `/api/admin/users/${person.userId}`, { token: boss.token });
+    expect(done.households).toEqual(preview.households);
+
+    expect(await statusOf('GET', `/api/admin/households/${own.id}`, { token: boss.token })).toBe(404);
+    const members = await call('GET', `/api/households/${hh.id}/members`, { token: boss.token });
+    expect(members.some((m: any) => m.userId === person.userId)).toBe(false);
+
+    // Their token still looks valid, so everything must turn it away cleanly, never with a 500.
+    expect(await statusOf('POST', '/api/auth/refresh', { token: person.token })).toBe(401);
+    for (const path of ['/api/users/me', '/api/households', `/api/households/${hh.id}/grocery-list`]) {
+      expect(await statusOf('GET', path, { token: person.token })).toBeLessThan(500);
+    }
+    expect(await statusOf('POST', '/api/auth/login/email', { body: { email: person.email, password: person.password } })).toBe(401);
+  });
+
+  test('a house they own with others in it passes to whoever has been in it longest', async () => {
+    const boss = await adminByPassword();
+    const { person, own } = await withOwnHouse();
+    const token = await inviteToken(own.id, person);
+    const second: Session = await call('POST', '/api/auth/signup', {
+      body: { inviteToken: token, displayName: unique('Heir'), email: `${unique('heir').toLowerCase()}@example.com`, password: 'heir-password' },
+    });
+
+    const preview = await call('GET', `/api/admin/users/${person.userId}/deletion-preview`, { token: boss.token });
+    expect(preview.households.find((h: any) => h.householdId === own.id)).toMatchObject({
+      outcome: 'HANDS_OVER',
+      newOwnerName: second.displayName,
+    });
+
+    await call('DELETE', `/api/admin/users/${person.userId}`, { token: boss.token });
+    const members = await call('GET', `/api/households/${own.id}/members`, { token: second.token });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ userId: second.userId, role: 'OWNER' });
+    expect((await call('GET', `/api/households/${own.id}/recipes`, { token: second.token })).length).toBe(1);
+  });
+
+  test('only the admin can, and not on themselves', async () => {
+    const hh = await newHousehold();
+    const person = await newMember(hh.id);
+    const bystander = await newMember(hh.id);
+    const boss = await adminByPassword();
+
+    for (const token of [bystander.token, (await admin()).token]) {
+      expect(await statusOf('GET', `/api/admin/users/${person.userId}/deletion-preview`, { token })).toBe(404);
+      expect(await statusOf('DELETE', `/api/admin/users/${person.userId}`, { token })).toBe(404);
+    }
+    expect(await statusOf('DELETE', `/api/admin/users/${boss.userId}`, { token: boss.token })).toBe(409);
+    expect(await statusOf('DELETE', '/api/admin/users/00000000-0000-0000-0000-000000000000', { token: boss.token })).toBe(404);
+    // Still there after all of that.
+    expect((await call('GET', '/api/users/me', { token: person.token })).userId).toBe(person.userId);
+  });
+});

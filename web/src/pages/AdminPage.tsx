@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type {
+  AdminAccountDeletion,
   AdminHouseholdRow,
   AdminOverview,
   AdminPage as Page,
@@ -21,7 +22,8 @@ import {
   type SortDir,
 } from '../components/AdminParts';
 import { PageTitle } from '../components/PageTitle';
-import { Badge, cx, Input, Select } from '../components/ui';
+import { Badge, Button, cx, ErrorText, Input, Select, Sheet } from '../components/ui';
+import { useAuth } from '../auth/AuthContext';
 import { sectionLabel } from '../utils/recipeMeta';
 import AdminHouseholdPage from './AdminHouseholdPage';
 import AdminRecipePage from './AdminRecipePage';
@@ -277,6 +279,17 @@ function PeopleTab({ params, update }: TabProps) {
   const { data, error, reload } = useAdminData<Page<AdminUserRow>>(
     `/api/admin/users?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
   );
+  const { session } = useAuth();
+  const [deleting, setDeleting] = useState<AdminUserRow | null>(null);
+  const [deleted, setDeleted] = useState<string | null>(null);
+
+  // Not on your own row: the server refuses it anyway, and a button that can only fail is a trap.
+  const deleteButton = (u: AdminUserRow) =>
+    u.userId === session?.userId ? null : (
+      <Button variant="ghost" size="sm" className="text-danger" onClick={() => setDeleting(u)} aria-label={`Delete ${u.displayName}`}>
+        Delete
+      </Button>
+    );
 
   return (
     <div className="space-y-3">
@@ -303,6 +316,7 @@ function PeopleTab({ params, update }: TabProps) {
             { label: 'PIN', cell: (u) => <Yes value={u.hasPin} label="PIN" /> },
             { label: 'Households', cell: (u) => <Memberships user={u} /> },
             { label: 'Joined', cell: (u) => formatDay(u.createdAt), className: 'whitespace-nowrap' },
+            { label: '', cell: deleteButton, className: 'text-right' },
           ]}
           card={(u) => (
             <div className="space-y-1">
@@ -315,12 +329,109 @@ function PeopleTab({ params, update }: TabProps) {
               <div className="text-sm">
                 <Memberships user={u} />
               </div>
+              <div className="-ml-3">{deleteButton(u)}</div>
             </div>
           )}
         />
       )}
+      {deleted && <p className="text-sm text-muted" role="status">{deleted}</p>}
+      {deleting && (
+        <DeleteAccountSheet
+          user={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={(name) => {
+            setDeleting(null);
+            setDeleted(`Deleted ${name}.`);
+            reload();
+          }}
+        />
+      )}
       {data && <Pager page={data.page} size={data.size} total={data.total} onPage={(p) => update({ page: String(p) })} />}
     </div>
+  );
+}
+
+/**
+ * Asks before deleting an account, saying first what happens to each house it is in — the
+ * server works that out by the same rule the delete follows, so the list is what will happen.
+ */
+function DeleteAccountSheet({
+  user,
+  onClose,
+  onDeleted,
+}: {
+  user: AdminUserRow;
+  onClose: () => void;
+  onDeleted: (name: string) => void;
+}) {
+  const [plan, setPlan] = useState<AdminAccountDeletion | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<AdminAccountDeletion>('GET', `/api/admin/users/${user.userId}/deletion-preview`)
+      .then((p) => !cancelled && setPlan(p))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : 'Could not load that.'));
+    return () => {
+      cancelled = true;
+    };
+  }, [user.userId]);
+
+  async function go() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('DELETE', `/api/admin/users/${user.userId}`);
+      onDeleted(user.displayName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete that account.');
+      setBusy(false);
+    }
+  }
+
+  const losing = plan?.households.filter((h) => h.outcome === 'DELETES_HOUSEHOLD') ?? [];
+
+  return (
+    <Sheet title={`Delete ${user.displayName}?`} onClose={busy ? () => undefined : onClose}>
+      <div className="space-y-3">
+        <p className="text-[0.9375rem]">
+          {user.username}
+          {user.email && <> · {user.email}</>} will be gone for good, and can't sign in again.
+        </p>
+        {!plan && !error && <p className="text-sm text-muted">Checking their households…</p>}
+        {plan && plan.households.length === 0 && <p className="text-sm text-muted">They're in no household.</p>}
+        {plan && plan.households.length > 0 && (
+          <ul className="space-y-1.5 text-[0.9375rem]">
+            {plan.households.map((h) => (
+              <li key={h.householdId}>
+                <span className="font-medium">{h.name}</span>
+                {': '}
+                {h.outcome === 'LEAVES' && <span className="text-muted">they leave; everyone else stays.</span>}
+                {h.outcome === 'HANDS_OVER' && (
+                  <span className="text-muted">they own it, so it passes to {h.newOwnerName}.</span>
+                )}
+                {h.outcome === 'DELETES_HOUSEHOLD' && (
+                  <span className="text-danger">
+                    nobody else is in it, so it's deleted too — {plural(h.recipes, 'recipe')},{' '}
+                    {plural(h.plannedMeals, 'planned meal')}.
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex gap-2 pt-1">
+          <Button variant="danger" className="flex-1" disabled={!plan || busy} onClick={go}>
+            {busy ? 'Deleting…' : losing.length > 0 ? 'Delete account and household' : 'Delete account'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 

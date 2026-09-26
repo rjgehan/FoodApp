@@ -79,4 +79,20 @@ public class AdminDtos {
             RecipeResponse recipe, String householdName, Instant createdAt, List<String> sharedWith,
             boolean hasPublicLink) {
     }
+
+    /**
+     * What deleting an account does to each house it is in, worked out before anything is
+     * deleted so the admin page can say it first. The delete returns the same thing, as done.
+     */
+    public record AccountDeletion(UUID userId, String displayName, List<HouseholdOutcome> households) {
+    }
+
+    /**
+     * One house's fate: `LEAVES` (everyone else stays), `HANDS_OVER` (it was theirs, and
+     * `newOwnerName` has been in it longest, so it passes to them), or `DELETES_HOUSEHOLD` (nobody
+     * else is in it, so it goes with everything in it — `recipes` and `plannedMeals` say how much).
+     */
+    public record HouseholdOutcome(
+            UUID householdId, String name, String outcome, String newOwnerName, long recipes, long plannedMeals) {
+    }
 }

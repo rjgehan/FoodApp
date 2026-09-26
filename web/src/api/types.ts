@@ -382,6 +382,20 @@ export interface AdminUserRow {
   households: { householdId: string; name: string; role: HouseholdRole }[];
 }
 
+/** What deleting an account does to each house it is in; see AdminDtos.HouseholdOutcome. */
+export interface AdminAccountDeletion {
+  userId: string;
+  displayName: string;
+  households: {
+    householdId: string;
+    name: string;
+    outcome: 'LEAVES' | 'HANDS_OVER' | 'DELETES_HOUSEHOLD';
+    newOwnerName: string | null;
+    recipes: number;
+    plannedMeals: number;
+  }[];
+}
+
 export interface AdminRecipeRow {
   id: string;
   name: string;

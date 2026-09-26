@@ -6,6 +6,8 @@ import com.gehan.mealplanner.domain.HouseholdMember;
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.RecipeCategory;
 import com.gehan.mealplanner.domain.User;
+import com.gehan.mealplanner.dto.AdminDtos.AccountDeletion;
+import com.gehan.mealplanner.dto.AdminDtos.HouseholdOutcome;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
@@ -157,15 +159,96 @@ public class HouseholdService {
         // An ownerless household could never be renamed again, so the longest-standing member
         // inherits it rather than leaving everyone stuck.
         if (leaving.getRole() == HouseholdRole.OWNER) {
-            remaining.stream()
-                    .min(Comparator.comparing(HouseholdMember::getJoinedAt))
-                    .ifPresent(m -> {
-                        m.setRole(HouseholdRole.OWNER);
-                        memberRepository.save(m);
-                    });
+            HouseholdMember heir = nextOwner(remaining);
+            heir.setRole(HouseholdRole.OWNER);
+            memberRepository.save(heir);
         }
 
         memberRepository.delete(leaving);
+    }
+
+    /** Who a house passes to when its owner goes: whoever has been in it longest. */
+    private static HouseholdMember nextOwner(List<HouseholdMember> remaining) {
+        return remaining.stream().min(Comparator.comparing(HouseholdMember::getJoinedAt)).orElseThrow();
+    }
+
+    /**
+     * What deleting this account would do, without doing it — the admin page shows it before
+     * asking. Worked out by {@link #outcomeOfDeleting}, the same rule deleteAccount acts on, so
+     * what it says is what happens.
+     */
+    @Transactional(readOnly = true)
+    public AccountDeletion accountDeletionPreview(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such account."));
+        List<HouseholdOutcome> outcomes = memberRepository.findByUserId(userId).stream()
+                .map(this::outcomeOfDeleting)
+                .sorted(Comparator.comparing(HouseholdOutcome::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        return new AccountDeletion(user.getId(), user.getDisplayName(), outcomes);
+    }
+
+    /**
+     * Deletes an account for good — the admin's tidy-up for accounts nobody uses. Each house it
+     * is in is dealt with the way its own people would: it leaves where others remain (handing
+     * the house on if it was theirs), and a house with nobody else in it is deleted outright,
+     * since an empty house is one nobody can ever open again.
+     *
+     * Each house is locked and looked at again here rather than trusted from the preview, so
+     * somebody joining in between turns a "delete the house" into a "leave it" instead of
+     * taking the newcomer's house away with it.
+     *
+     * Then what still names the account: the reset links for it or made by it go (a link its
+     * maker can no longer vouch for would not work anyway), and a tick on the grocery list
+     * forgets who made it. Invites it made stay — the house's link is everyone's, and the page
+     * names the house's owner as the inviter.
+     */
+    @Transactional
+    public AccountDeletion deleteAccount(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such account."));
+        List<HouseholdOutcome> done = new java.util.ArrayList<>();
+        for (HouseholdMember member : memberRepository.findByUserId(userId)) {
+            UUID householdId = member.getHousehold().getId();
+            householdRepository.lockById(householdId);
+            HouseholdOutcome outcome = outcomeOfDeleting(member);
+            if ("DELETES_HOUSEHOLD".equals(outcome.outcome())) {
+                delete(householdId, userId);
+            } else {
+                leave(householdId, userId);
+            }
+            done.add(outcome);
+        }
+        memberRepository.flush();
+
+        jdbc.update("UPDATE grocery_list_items SET checked_by_user_id = NULL WHERE checked_by_user_id = ?", userId);
+        jdbc.update("DELETE FROM password_resets WHERE user_id = ? OR created_by = ?", userId, userId);
+        // In SQL like the rest: delete() above removes a whole house's rows in SQL, so the session
+        // still holds their membership pointing at this user, and deleting the user through JPA
+        // would have Hibernate refuse to leave that membership pointing at nothing.
+        jdbc.update("DELETE FROM users WHERE id = ?", userId);
+
+        done.sort(Comparator.comparing(HouseholdOutcome::name, String.CASE_INSENSITIVE_ORDER));
+        return new AccountDeletion(userId, user.getDisplayName(), done);
+    }
+
+    private HouseholdOutcome outcomeOfDeleting(HouseholdMember member) {
+        Household household = member.getHousehold();
+        List<HouseholdMember> others = memberRepository.findByHouseholdId(household.getId()).stream()
+                .filter(m -> !m.getId().equals(member.getId()))
+                .toList();
+        if (others.isEmpty()) {
+            long recipes = jdbc.queryForObject(
+                    "SELECT count(*) FROM recipes WHERE household_id = ?", Long.class, household.getId());
+            long meals = jdbc.queryForObject(
+                    "SELECT count(*) FROM meal_plan_entries WHERE household_id = ?", Long.class, household.getId());
+            return new HouseholdOutcome(household.getId(), household.getName(), "DELETES_HOUSEHOLD", null, recipes, meals);
+        }
+        if (member.getRole() == HouseholdRole.OWNER) {
+            return new HouseholdOutcome(household.getId(), household.getName(), "HANDS_OVER",
+                    nextOwner(others).getUser().getDisplayName(), 0, 0);
+        }
+        return new HouseholdOutcome(household.getId(), household.getName(), "LEAVES", null, 0, 0);
     }
 
     /**

@@ -62,7 +62,7 @@ test('the admin gets in from Settings and reads a household down to one of its r
 
   // Recipes, narrowed to one household.
   await page.goto('/admin?tab=recipes');
-  await page.getByRole('combobox', { name: 'Household' }).selectOption({ label: hh.name });
+  await page.getByRole('combobox', { name: 'Household', exact: true }).selectOption({ label: hh.name });
   await expect(page.getByRole('list', { name: 'Recipes', exact: true }).getByText(recipeName)).toBeVisible();
 });
 
@@ -115,4 +115,19 @@ test('the admin signed in with their PIN is sent home like anybody else', async 
   await page.getByRole('button', { name: 'Your account' }).click();
   await expect(sheet(page).getByRole('link', { name: 'Household settings' })).toBeVisible();
   await expect(sheet(page).getByRole('link', { name: /^Admin/ })).toHaveCount(0);
+});
+
+test('the admin deletes an account from People, after being told what happens', async ({ page }) => {
+  const hh = await newHousehold();
+  const person = await newMember(hh.id);
+  await signIn(page, await adminByPassword(), hh.id);
+  await page.goto(`/admin?tab=people&q=${encodeURIComponent(person.email)}`);
+
+  await page.getByRole('button', { name: `Delete ${person.displayName}` }).click();
+  await expect(sheet(page).getByText('they leave; everyone else stays.')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('admin-delete.png') });
+  await sheet(page).getByRole('button', { name: 'Delete account' }).click();
+
+  await expect(page.getByRole('status')).toHaveText(`Deleted ${person.displayName}.`);
+  await expect(page.getByText('Nobody matches that.')).toBeVisible();
 });
