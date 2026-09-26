@@ -40,6 +40,29 @@ public class User {
     @Column(nullable = false)
     private String displayName;
 
+    /**
+     * What this person signs in with from now on, trimmed and lowercased on the way in so that
+     * "Ryan@Gmail.com " and "ryan@gmail.com" are one address. Null until they add one — every
+     * account made before email sign-in starts without. One account per address is enforced by
+     * a unique index on lower(email) (see SchemaTouchUps), not only by the code that checks first.
+     */
+    @Column(length = 254)
+    private String email;
+
+    /**
+     * BCrypt hash of the sign-in password. A column of its own: "password_hash" was taken long
+     * ago by the PIN (see pinHash), and an account keeps both while the PIN screens are still on.
+     */
+    @Column(name = "login_password_hash")
+    private String passwordHash;
+
+    /**
+     * The household they were last looking at, so signing in lands there rather than in
+     * whichever house they happened to join first. No foreign key on purpose: deleting a
+     * household is ordered SQL that knows nothing of this, and a stale id is simply ignored.
+     */
+    private UUID lastHouseholdId;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

@@ -1,6 +1,8 @@
 package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.AuthDtos.AuthResponse;
+import com.gehan.mealplanner.dto.AuthDtos.EmailLoginRequest;
+import com.gehan.mealplanner.dto.AuthDtos.UsePasswordResetRequest;
 import com.gehan.mealplanner.dto.AuthDtos.LandingResponse;
 import com.gehan.mealplanner.dto.AuthDtos.LoginRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
@@ -20,6 +22,9 @@ import java.util.UUID;
 /**
  * All of this is deliberately unauthenticated — it is what the login screen draws before anyone
  * has signed in. There is no self-registration: new accounts are made from inside a household.
+ *
+ * The name-and-PIN endpoints (/households/{id}/users, /users/{username}, /login, /pin) answer
+ * 410 once app.auth.legacy-pin-login is off; email sign-in is always on.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -49,6 +54,17 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/login/email")
+    public AuthResponse loginWithEmail(@Valid @RequestBody EmailLoginRequest request) {
+        return authService.loginWithEmail(request);
+    }
+
+    /** The other half of an owner's reset link (see PasswordResetController). Signs them in. */
+    @PostMapping("/password-reset")
+    public AuthResponse usePasswordReset(@Valid @RequestBody UsePasswordResetRequest request) {
+        return authService.usePasswordReset(request);
     }
 
     @PostMapping("/pin")

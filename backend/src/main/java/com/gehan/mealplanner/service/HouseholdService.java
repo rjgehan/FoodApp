@@ -170,7 +170,7 @@ public class HouseholdService {
 
     private MemberResponse toMemberResponse(User user, HouseholdRole role) {
         return new MemberResponse(user.getId(), user.getUsername(), user.getDisplayName(),
-                role, user.getPinHash() != null);
+                role, user.getPinHash() != null, user.getEmail() != null, user.getPasswordHash() != null);
     }
 
     /**
@@ -305,15 +305,6 @@ public class HouseholdService {
                 .displayName(AuthService.displayNameOr(request.displayName(), username))
                 .build());
         return toMemberResponse(user, null);
-    }
-
-    /** Who you are, for a form that needs to show your current username back to you. */
-    @Transactional(readOnly = true)
-    public MemberResponse me(UUID userId) {
-        return toMemberResponse(
-                userRepository.findById(userId)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED)),
-                null);
     }
 
     /** Renames you. The username has to stay unique, since it is what you sign in with. */

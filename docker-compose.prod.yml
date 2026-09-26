@@ -43,6 +43,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Set to false in .env once everyone signs in with an email (see DEPLOY.md).
+      LEGACY_PIN_LOGIN: ${LEGACY_PIN_LOGIN:-true}
       # Do not keep other people's captions on a server the internet can reach.
       MEALPLANNER_IMPORT_LOG: "off"
     # No published port. The frontend's nginx proxies /api and /ws to this container over the

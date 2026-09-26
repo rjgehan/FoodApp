@@ -1,6 +1,8 @@
 package com.gehan.mealplanner.web;
 
+import com.gehan.mealplanner.service.AccountService;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -34,6 +36,20 @@ public class ApiExceptionHandler {
                 .findFirst()
                 .orElse("That request wasn't valid.");
         return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST.value(), message));
+    }
+
+    /**
+     * A backstop for the one-account-per-email index. The services flush and translate this
+     * themselves, but should a lost race surface at commit instead, it still reads as the
+     * sentence the person can act on rather than a 500. Anything else stays a 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleIntegrity(DataIntegrityViolationException ex) {
+        if (AccountService.isEmailTaken(ex)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(body(HttpStatus.CONFLICT.value(), AccountService.EMAIL_TAKEN));
+        }
+        throw ex;
     }
 
     private static Map<String, Object> body(int status, String message) {

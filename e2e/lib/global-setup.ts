@@ -1,4 +1,4 @@
-import { ADMIN_PIN, ADMIN_USER, API_URL, call, login } from './api';
+import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_PIN, ADMIN_USER, API_URL, call, login } from './api';
 
 /**
  * Makes sure there is an account to build every test on. On a fresh database that means running
@@ -12,14 +12,30 @@ export default async function globalSetup() {
 
   const landing = await call('GET', '/api/auth/landing');
   if (landing.needsSetup) {
+    // Both ways in: the suite signs in by PIN, and the email tests need an account that has one.
     await call('POST', '/api/auth/setup', {
-      body: { householdName: 'E2E Home', username: ADMIN_USER, displayName: 'E2E Admin', pin: ADMIN_PIN },
+      body: {
+        householdName: 'E2E Home',
+        username: ADMIN_USER,
+        displayName: 'E2E Admin',
+        pin: ADMIN_PIN,
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+      },
     });
     return;
   }
 
   try {
-    await login(ADMIN_USER, ADMIN_PIN);
+    const session = await login(ADMIN_USER, ADMIN_PIN);
+    // A database set up before email sign-in existed: give the admin its email now.
+    const me = await call('GET', '/api/users/me', { token: session.token });
+    if (!me.hasPassword) {
+      await call('PUT', '/api/users/me/credentials', {
+        token: session.token,
+        body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+      });
+    }
   } catch (e) {
     throw new Error(
       `The database already has accounts but no "${ADMIN_USER}" with PIN ${ADMIN_PIN}. ` +

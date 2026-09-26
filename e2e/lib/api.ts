@@ -6,6 +6,8 @@ export const API_URL = process.env.API_URL ?? 'http://localhost:8080';
 export const INTEGRATION_KEY = process.env.INTEGRATION_API_KEY ?? 'e2e-integration-key';
 export const ADMIN_USER = process.env.E2E_USER ?? 'e2e-admin';
 export const ADMIN_PIN = process.env.E2E_PIN ?? '1234';
+export const ADMIN_EMAIL = process.env.E2E_EMAIL ?? 'e2e-admin@example.com';
+export const ADMIN_PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-admin-password';
 
 export class ApiError extends Error {
   status: number;
@@ -57,6 +59,9 @@ export type Session = { token: string; userId: string; displayName: string };
 
 export const login = (username: string, pin: string): Promise<Session> =>
   call('POST', '/api/auth/login', { body: { username, pin } });
+
+export const loginWithEmail = (email: string, password: string): Promise<Session & { lastHouseholdId: string | null }> =>
+  call('POST', '/api/auth/login/email', { body: { email, password } });
 
 let adminSession: Session | undefined;
 

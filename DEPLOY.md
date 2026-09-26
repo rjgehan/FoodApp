@@ -141,6 +141,38 @@ If a call fails the app answers 502 and the items stay where they were, to be mo
 wrong key, a model your account cannot reach, or a reply that ignored the schema all land there.
 The backend log carries the actual reason.
 
+## Signing in: email and password, and retiring the PIN screens
+
+Everyone signs in with an email and a password. Accounts from before that still have a PIN, and
+the app asks each of them for an email and password the next time they open it ("Not now" puts
+it off until the app is next opened). Until everyone has moved over, the old way in — pick the
+house, tap your name, type the PIN — is still there as a link under the sign-in form.
+
+Household settings → Who's here shows **No email yet** beside anyone who has not added one, and
+**Hasn't signed in yet** beside an account nobody has ever got into.
+When nobody shows either any more, turn the PIN screens off — `LEGACY_PIN_LOGIN=false` in `.env`
+(docker-compose.prod.yml passes it through), then `docker compose up -d backend`.
+
+With it off, the sign-in page stops listing households and people to anyone who loads it, the
+"Sign in with your name and PIN" link disappears from the web and the phone, and the PIN
+endpoints (`/api/auth/login`, `/api/auth/pin`, `/api/auth/households/{id}/users`,
+`/api/auth/users/{username}`) answer **410 Gone**. Nothing is deleted — set it back to `true`
+(the default) and they return.
+
+| Variable | Default | |
+|---|---|---|
+| `LEGACY_PIN_LOGIN` | `true` | `false` retires the name-and-PIN sign-in |
+| `AUTH_MAX_PIN_ATTEMPTS` | `5` | wrong PINs or passwords before a lockout (per name / per email) |
+| `AUTH_LOCKOUT_MINUTES` | `15` | how long the lockout lasts |
+
+**Forgotten passwords** are reset by the household's owner — there is no email sending. Owner →
+Household settings → Who's here → ••• → Reset password makes a one-time link (with a QR code) that
+works for 24 hours; opening it sets a new password and signs them in. An owner can only do this for
+someone whose every household is one they own (and who owns none): anyone can make a household and
+add an existing account to it, so that alone is not a reason to hand out a way in. Someone in two
+families' houses changes their own password from Settings. Emails are one account each, enforced
+by a unique index on `lower(email)`.
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and
@@ -152,4 +184,5 @@ The backend log carries the actual reason.
 - **Recipe images are served unauthenticated** at `/api/images/{uuid}`. An `<img>` tag cannot
   send a bearer token, so the random UUID is what keeps them private — like an unlisted link.
 - **First run creates the first account.** Open the app and it offers first-time setup:
-  a household and its owner. After that, accounts are made from inside the app.
+  your name, email, password and a household name. After that, accounts are made from inside
+  the app.

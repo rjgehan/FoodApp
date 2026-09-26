@@ -12,6 +12,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByUsername(String username);
 
     List<User> findByUsernameIgnoreCase(String username);
+
+    /** Emails are stored lowercased, so an exact match is the case-insensitive one. */
+    Optional<User> findByEmail(String email);
     boolean existsByUsernameIgnoreCase(String username);
 
     /**

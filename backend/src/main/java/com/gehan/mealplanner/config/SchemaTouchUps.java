@@ -192,6 +192,25 @@ public class SchemaTouchUps {
     }
 
     /**
+     * One account per email address, held by the database rather than only by the code that
+     * checks first — two sign-ups racing for the same address would both pass a check. On
+     * lower(email) so that a row written some other way than through the app (which already
+     * lowercases) still cannot sneak a "Ryan@" in beside a "ryan@". Emails are new with this
+     * column, so there are no duplicates to fold first. AccountService.EMAIL_INDEX names it.
+     */
+    @Bean
+    @Order(0)
+    public ApplicationRunner oneAccountPerEmail(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uk_users_email_lower ON users (lower(email))");
+            } catch (Exception e) {
+                log.warn("Could not make emails unique: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
      * The unit box used to send "" for no unit, and planned items send nothing at all — so the
      * same "eggs" could sit on the list twice, once per spelling of empty. Empty is null now.
      */

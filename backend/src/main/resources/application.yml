@@ -61,3 +61,7 @@ app:
     # Small trusted app: a username plus a 4-digit PIN, throttled instead of made complex.
     max-pin-attempts: ${AUTH_MAX_PIN_ATTEMPTS:5}
     lockout-minutes: ${AUTH_LOCKOUT_MINUTES:15}
+    # The name-and-PIN sign-in screens, kept while people move to email and password. Turn off
+    # once Household settings shows an email for everyone: the roster stops being public and
+    # the PIN endpoints answer 410. See DEPLOY.md.
+    legacy-pin-login: ${LEGACY_PIN_LOGIN:true}
