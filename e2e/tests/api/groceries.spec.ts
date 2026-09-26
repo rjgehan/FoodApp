@@ -28,6 +28,23 @@ test('planned meals add up, scaled to the servings planned', async () => {
   expect(Number(find(list, 'garlic').quantity)).toBe(8);
 });
 
+test('an ingredient with no amount goes on as "some", however many are coming', async () => {
+  const hh = await newHousehold();
+  const eggs = await newRecipe(hh.id, 'Seasoned Eggs', [
+    { name: 'eggs', qty: 2 },
+    { name: 'salt and pepper', qty: null },
+  ], { servings: 1 });
+  expect(eggs.ingredients.find((i: any) => i.ingredientName === 'salt and pepper').quantity).toBeNull();
+
+  await plan(hh.id, isoDate(1), 'BREAKFAST', { recipeId: eggs.id, servings: 3 });
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  const list = await groceries(hh.id);
+  expect(list).toHaveLength(2);
+  expect(Number(find(list, 'eggs').quantity)).toBe(6);
+  expect(find(list, 'salt and pepper').quantity).toBeNull();
+});
+
 test('a planned meal with no servings uses the household default', async () => {
   const hh = await newHousehold();
   const owner = await admin();

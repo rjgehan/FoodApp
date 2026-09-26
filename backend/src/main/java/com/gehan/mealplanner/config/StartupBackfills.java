@@ -147,4 +147,31 @@ public class StartupBackfills {
             }
         };
     }
+
+    /**
+     * Grocery rows from before "asked for" was kept. A row somebody typed has the name they typed,
+     * and a row no planned meal has a share in can only be there because somebody put it there —
+     * a meal's row always carries its share, and goes when the last one does. Marking both keeps
+     * a "salt" typed last week on the list when a meal with salt to taste leaves the plan.
+     */
+    @Bean
+    public ApplicationRunner markGroceryRowsAskedFor(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int marked = jdbc.update("""
+                        UPDATE grocery_list_items gli
+                        SET asked_for = true
+                        WHERE NOT gli.asked_for
+                          AND (gli.custom_name IS NOT NULL
+                               OR NOT EXISTS (SELECT 1 FROM grocery_list_item_meals m
+                                              WHERE m.grocery_list_item_id = gli.id))
+                        """);
+                if (marked > 0) {
+                    log.info("Marked {} grocery rows as asked for by hand", marked);
+                }
+            } catch (Exception e) {
+                log.warn("Could not mark grocery rows as asked for: {}", e.getMessage());
+            }
+        };
+    }
 }

@@ -164,9 +164,8 @@ export default function RecipeForm({
         // about links, so leaving one out removes it rather than being taken as "unchanged".
         links: fromDraftLinks(links),
         ...filing,
-        ingredients: ingredients
-          .filter((i) => i.ingredientName.trim())
-          .map((i) => ({ ...i, quantity: i.quantity ?? 1 })),
+        // A blank amount goes as none — "salt and pepper" is "some", not 1 of it.
+        ingredients: ingredients.filter((i) => i.ingredientName.trim()),
       };
       onSaved(
         editing

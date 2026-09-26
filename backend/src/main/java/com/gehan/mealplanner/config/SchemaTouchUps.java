@@ -58,6 +58,22 @@ public class SchemaTouchUps {
     }
 
     /**
+     * A recipe's ingredient can be saved with no amount now — "salt and pepper" is "some", not
+     * 1 — so recipe_ingredients.quantity has to become nullable on databases created when every
+     * ingredient needed a number.
+     */
+    @Bean
+    public ApplicationRunner relaxRecipeIngredientQuantityConstraint(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                jdbc.execute("ALTER TABLE recipe_ingredients ALTER COLUMN quantity DROP NOT NULL");
+            } catch (Exception e) {
+                log.warn("Could not relax recipe_ingredients.quantity nullability: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
      * The cupboard briefly tracked Have/Low/Out. A database started on that version has NOT NULL
      * status and updated_at columns that nothing writes any more, so every new cupboard item would
      * fail on them. IF EXISTS makes this a no-op everywhere else.

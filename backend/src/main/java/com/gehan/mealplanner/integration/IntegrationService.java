@@ -145,7 +145,8 @@ public class IntegrationService {
             String quantity = formatQuantity(i.getQuantity());
             String unit = i.getUnit() == null ? "" : i.getUnit();
             String name = i.getIngredient().getName();
-            String text = (quantity + " " + unit).trim();
+            // No amount is "some": the line reads "salt and pepper", not "null salt and pepper".
+            String text = ((quantity == null ? "" : quantity) + " " + unit).trim();
             text = (text.isEmpty() ? name : text + " " + name) + (i.getNotes() == null ? "" : ", " + i.getNotes())
                     + (i.isOptional() ? " (optional)" : "");
             return new IngredientLine(name, quantity, i.getUnit(), i.getNotes(), i.isOptional(), text);

@@ -18,7 +18,8 @@ public class RecipeDtos {
 
     public record RecipeIngredientRequest(
             @NotBlank @Size(max = 200) String ingredientName,
-            @NotNull @PositiveOrZero BigDecimal quantity,
+            /** Null for no amount — "salt and pepper" — which the app shows and shops as "some". */
+            @PositiveOrZero BigDecimal quantity,
             @Size(max = 40) String unit,
             String notes,
             /**

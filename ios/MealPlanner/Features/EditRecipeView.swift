@@ -169,7 +169,7 @@ struct EditRecipeView: View {
                 Section {
                     ForEach($ingredients) { $row in
                         HStack(spacing: 8) {
-                            TextField("1", text: $row.amount)
+                            TextField("qty", text: $row.amount)
                                 .keyboardType(.decimalPad)
                                 .frame(width: 48)
                             TextField("unit", text: $row.unit)
@@ -296,9 +296,14 @@ struct EditRecipeView: View {
             .map { row in
                 var out: [String: Any] = [
                     "ingredientName": row.name.trimmingCharacters(in: .whitespaces),
-                    "quantity": Double(row.amount.replacingOccurrences(of: ",", with: ".")) ?? 1,
                     "optional": row.optional,
                 ]
+                // A blank amount is left out, which the server keeps as none: "salt and pepper"
+                // is "some", not 1 of it. "1,5", "1/2" and "1½" are read the way the rest of the
+                // phone reads them.
+                if let amount = Amount.quantity(row.amount) {
+                    out["quantity"] = amount
+                }
                 let unit = row.unit.trimmingCharacters(in: .whitespaces)
                 if !unit.isEmpty { out["unit"] = unit }
                 if let notes = row.notes, !notes.isEmpty { out["notes"] = notes }

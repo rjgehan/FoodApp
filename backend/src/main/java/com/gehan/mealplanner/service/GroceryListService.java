@@ -129,6 +129,7 @@ public class GroceryListService {
                         .household(household)
                         .quantity(request.quantity())
                         .unit(unit)
+                        .askedFor(true)
                         .build());
 
         GroceryListItemResponse response = toItemResponse(item, context(householdId));
@@ -144,6 +145,9 @@ public class GroceryListService {
      * "2 l" and "1 gallon" — stay two rows, as a planned meal's would, rather than one number
      * that is wrong. Unticked rows only: adding to something already in the cart would hide the
      * new need behind a tick.
+     *
+     * Whichever row it lands on is marked as asked for, so a meal leaving the plan later does
+     * not take it off — see {@link #takeShare}.
      */
     private GroceryListItem addTo(Household household, Ingredient ingredient, BigDecimal quantity, String unit,
                                   String typedName) {
@@ -157,12 +161,12 @@ public class GroceryListService {
 
         if (quantity == null) {
             if (!waiting.isEmpty()) {
-                return sameUnit.orElse(waiting.get(0));
+                return askedFor(sameUnit.orElse(waiting.get(0)));
             }
         } else if (sameUnit.isPresent()) {
             GroceryListItem row = sameUnit.get();
             row.setQuantity(row.getQuantity() == null ? quantity : row.getQuantity().add(quantity));
-            return groceryListItemRepository.save(row);
+            return askedFor(row);
         } else {
             Optional<GroceryListItem> noAmount = waiting.stream()
                     .filter(row -> row.getQuantity() == null && row.getUnit() == null)
@@ -170,7 +174,7 @@ public class GroceryListService {
             if (noAmount.isPresent()) {
                 noAmount.get().setQuantity(quantity);
                 noAmount.get().setUnit(unit);
-                return groceryListItemRepository.save(noAmount.get());
+                return askedFor(noAmount.get());
             }
         }
         return groceryListItemRepository.save(GroceryListItem.builder()
@@ -179,7 +183,13 @@ public class GroceryListService {
                 .customName(typedName)
                 .quantity(quantity)
                 .unit(unit)
+                .askedFor(true)
                 .build());
+    }
+
+    private GroceryListItem askedFor(GroceryListItem row) {
+        row.setAskedFor(true);
+        return groceryListItemRepository.save(row);
     }
 
     /**
@@ -196,13 +206,17 @@ public class GroceryListService {
     }
 
     private void ensureOnList(Household household, Ingredient ingredient) {
-        if (!groceryListItemRepository
-                .findByHouseholdIdAndIngredientIdAndCheckedFalse(household.getId(), ingredient.getId()).isEmpty()) {
+        List<GroceryListItem> waiting = groceryListItemRepository
+                .findByHouseholdIdAndIngredientIdAndCheckedFalse(household.getId(), ingredient.getId());
+        if (!waiting.isEmpty()) {
+            // Already there for a meal, maybe — now it is wanted whatever the meal does.
+            askedFor(waiting.get(0));
             return;
         }
         GroceryListItem item = groceryListItemRepository.save(GroceryListItem.builder()
                 .household(household)
                 .ingredient(ingredient)
+                .askedFor(true)
                 .build());
         eventPublisher.itemChanged(household.getId(), toItemResponse(item, context(household.getId())));
     }
@@ -450,7 +464,8 @@ public class GroceryListService {
         for (Need need : needs.values()) {
             BigDecimal was = already.remove(need.key());
             if (was == null) {
-                // Even an amount of nothing — "salt, to taste" saved as 0 — goes on the list.
+                // Even an amount of nothing — "salt, to taste", saved with no amount or as 0 —
+                // goes on the list.
                 addShare(household, entry.getId(), need, need.quantity(), changes);
                 added.put(need.key(), need.quantity());
             } else if (need.quantity().compareTo(was) > 0) {
@@ -491,6 +506,10 @@ public class GroceryListService {
      * same ingredient twice in one unit — garlic for the sauce and for the marinade — is one need.
      * Rounded to the hundredths the list keeps, so what is remembered is exactly what was added.
      *
+     * No amount — "salt and pepper" — is "some" whatever the servings, and is counted as a
+     * share of nothing: it still goes on the list, with no number beside it, and an amount of
+     * the same thing in the same unit from elsewhere in the recipe is what the list shows.
+     *
      * Things the cupboard says you have still go on — flagged, not skipped, because having some
      * paprika does not mean having enough. Staples you always have are left off entirely. An
      * optional ingredient only goes on if this occurrence's plan asked for it — see
@@ -507,7 +526,8 @@ public class GroceryListService {
                 .filter(ri -> !ctx.isStaple(ri.getIngredient()))
                 .filter(ri -> !ri.isOptional() || includedOptionalIngredientIds.contains(ri.getId()))
                 .forEach(ri -> {
-                    Need need = new Need(ri.getIngredient(), blankToNull(ri.getUnit()), ri.getQuantity().multiply(factor));
+                    BigDecimal quantity = ri.getQuantity() == null ? BigDecimal.ZERO : ri.getQuantity().multiply(factor);
+                    Need need = new Need(ri.getIngredient(), blankToNull(ri.getUnit()), quantity);
                     needs.merge(need.key(), need,
                             (a, b) -> new Need(a.ingredient(), a.unit(), a.quantity().add(b.quantity())));
                 });
@@ -531,7 +551,10 @@ public class GroceryListService {
                     changes.rows.add(fresh);
                     return fresh;
                 });
-        row.setQuantity(row.getQuantity() == null ? amount : row.getQuantity().add(amount));
+        // "Some salt" adds no number: a row with none keeps none, rather than asking for "0".
+        if (amount.signum() > 0) {
+            row.setQuantity(row.getQuantity() == null ? amount : row.getQuantity().add(amount));
+        }
         row.getFromMeals().merge(entryId, amount, BigDecimal::add);
         changes.save(row);
     }
@@ -543,8 +566,10 @@ public class GroceryListService {
      *
      * A row's share that comes down to nothing is let go too, rather than kept at 0: the meal's
      * record of what it added is on the entry, not here. A row left with nothing on it — no
-     * meal's share and no amount — goes, instead of staying on the list as something to buy
-     * that nobody needs.
+     * meal's share, no amount, and nobody who asked for it by hand — goes, instead of staying on
+     * the list as something to buy that nobody needs. One that is still wanted but has no number
+     * left — the rest is "some salt" from another meal, or a "salt" somebody typed — says "some"
+     * rather than "0 salt".
      */
     private BigDecimal takeShare(UUID entryId, UnitKey key, BigDecimal amount, boolean gone, ListChanges changes) {
         BigDecimal left = amount;
@@ -555,14 +580,19 @@ public class GroceryListService {
             }
             BigDecimal take = share.min(left);
             left = left.subtract(take);
-            BigDecimal quantity = row.getQuantity() == null ? BigDecimal.ZERO : row.getQuantity();
-            row.setQuantity(quantity.subtract(take).max(BigDecimal.ZERO));
+            // A share of "some" takes nothing off, so a row with no number keeps having none.
+            if (take.signum() > 0) {
+                BigDecimal quantity = row.getQuantity() == null ? BigDecimal.ZERO : row.getQuantity();
+                BigDecimal rest = quantity.subtract(take);
+                row.setQuantity(rest.signum() > 0 ? rest : null);
+            }
             if (share.subtract(take).signum() <= 0) {
                 row.getFromMeals().remove(entryId);
             } else {
                 row.getFromMeals().put(entryId, share.subtract(take));
             }
-            if (row.getFromMeals().isEmpty() && row.getQuantity().signum() <= 0) {
+            if (row.getFromMeals().isEmpty() && !row.isAskedFor()
+                    && (row.getQuantity() == null || row.getQuantity().signum() <= 0)) {
                 changes.delete(row);
             } else {
                 changes.save(row);

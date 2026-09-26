@@ -60,6 +60,19 @@ public class GroceryListItem {
     @Builder.Default
     private Map<UUID, BigDecimal> fromMeals = new HashMap<>();
 
+    /**
+     * Somebody put this on the list themselves — typed it, pressed Buy again, or added a planned
+     * single item — rather than it being here only for planned meals. A typed "salt" and a
+     * meal's "salt, to taste" both have no amount, so without this a meal taken off the plan
+     * would take the salt somebody asked for with it. Only the server reads it.
+     *
+     * The column carries its own default: Hibernate adds new columns to a table that already has
+     * rows, and a bare NOT NULL there fails.
+     */
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private boolean askedFor = false;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean checked = false;

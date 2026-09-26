@@ -22,7 +22,6 @@ test('pasting an ordinary recipe fills the form', async ({ page }) => {
 });
 
 test('a blank amount is saved as "some", not as 1', async ({ page }) => {
-  test.fail(true, 'KNOWN BUG: RecipeForm turns a blank quantity into 1 — "1 Salt and pepper to taste"');
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
@@ -30,8 +29,11 @@ test('a blank amount is saved as "some", not as 1', async ({ page }) => {
   await page.getByPlaceholder('ingredient').first().fill('salt and pepper');
   await page.getByRole('button', { name: 'Save recipe' }).click();
   await expect(page.getByRole('heading', { name: 'Seasoned Eggs' })).toBeVisible();
+  // Shown with no number beside it, and saved as no amount at all rather than some other
+  // number standing in for one.
+  await expect(page.getByRole('listitem').filter({ hasText: 'salt and pepper' })).toHaveText('salt and pepper');
   const recipes = await call('GET', `/api/households/${hh.id}/recipes`, { token: hh.owner.token });
-  expect(Number(recipes[0].ingredients[0].quantity)).not.toBe(1);
+  expect(recipes[0].ingredients[0].quantity).toBeNull();
 });
 
 test('typing a unit and pressing Return keeps what was typed', async ({ page }) => {

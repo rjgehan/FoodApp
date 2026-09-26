@@ -722,9 +722,10 @@ struct SharedRecipeView: View {
                 guard !row.name.isEmpty else { return nil }
                 var out: [String: Any] = [
                     "ingredientName": row.name,
-                    "quantity": row.quantity ?? 1,
                     "optional": row.optional,
                 ]
+                // No amount on the line — "salt and pepper" — is sent as none, not 1.
+                if let quantity = row.quantity { out["quantity"] = quantity }
                 if let unit = row.unit { out["unit"] = unit }
                 if let notes = row.notes { out["notes"] = notes }
                 return out
@@ -759,9 +760,10 @@ struct SharedRecipeView: View {
                 guard !row.name.isEmpty else { return nil }
                 var out: [String: Any] = [
                     "ingredientName": row.name,
-                    "quantity": row.quantity ?? 1,
                     "optional": row.optional,
                 ]
+                // No amount on the line — "salt and pepper" — is sent as none, not 1.
+                if let quantity = row.quantity { out["quantity"] = quantity }
                 if let unit = row.unit { out["unit"] = unit }
                 if let notes = row.notes { out["notes"] = notes }
                 return out

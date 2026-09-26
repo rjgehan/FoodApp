@@ -142,7 +142,8 @@ export async function legacyMember(householdId: string, pin: string | null = '43
   return { ...(await login(username, pin)), username };
 }
 
-export type IngredientInput = { name: string; qty: number; unit?: string; optional?: boolean };
+/** `qty: null` is an ingredient with no amount — "salt and pepper". */
+export type IngredientInput = { name: string; qty: number | null; unit?: string; optional?: boolean };
 
 export async function newRecipe(
   householdId: string,

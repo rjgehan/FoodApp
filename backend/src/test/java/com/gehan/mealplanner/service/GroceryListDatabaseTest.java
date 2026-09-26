@@ -261,6 +261,132 @@ class GroceryListDatabaseTest {
         assertThat(amountOf("beans")).isEqualByComparingTo("2");
     }
 
+    // --- No amount ---
+
+    @Test
+    void anIngredientWithNoAmountIsSavedWithNone() {
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt and pepper"), need("eggs", "4", null));
+
+        assertThat(eggs.ingredients()).extracting(i -> i.quantity() == null ? null : i.quantity().stripTrailingZeros())
+                .containsExactly(null, new BigDecimal("4"));
+    }
+
+    @Test
+    void noAmountGoesOnAsSomeWhateverTheServingsAndComesOffWithTheMeal() {
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt and pepper"), need("eggs", "4", null));
+        UUID entry = plan(eggs, MONDAY, 8);
+
+        addWeek();
+        assertThat(amountOf("salt and pepper")).isNull();
+        assertThat(amountOf("eggs")).isEqualByComparingTo("16");
+
+        addWeek();
+        servings(entry, 2);
+        addWeek();
+        assertThat(amountOf("salt and pepper")).isNull();
+        assertThat(amountOf("eggs")).isEqualByComparingTo("4");
+        assertThat(list()).hasSize(2);
+
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+        assertThat(find("salt and pepper")).isNull();
+    }
+
+    @Test
+    void noAmountFromAMealLeavesTheAmountTypedByHand() {
+        add("pepper", "2", null);
+        RecipeResponse soup = recipe("Soup", 4, some("pepper"));
+        plan(soup, MONDAY, 8);
+
+        addWeek();
+
+        assertThat(list()).hasSize(1);
+        assertThat(amountOf("pepper")).isEqualByComparingTo("2");
+    }
+
+    @Test
+    void noAmountFromAMealLeavesWhatWasTypedByHandWhenItGoes() {
+        add("salt", "1", null);
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt"));
+        UUID entry = plan(eggs, MONDAY, 2);
+        addWeek();
+        assertThat(amountOf("salt")).isEqualByComparingTo("1");
+
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+        assertThat(amountOf("salt")).isEqualByComparingTo("1");
+    }
+
+    @Test
+    void someTypedByHandStaysWhenAMealWithSomeJoinsItAndGoes() {
+        add("salt", null, null);
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt"));
+        UUID entry = plan(eggs, MONDAY, 2);
+        addWeek();
+        assertThat(list()).hasSize(1);
+
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+
+        assertThat(find("salt")).isNotNull();
+        assertThat(amountOf("salt")).isNull();
+    }
+
+    @Test
+    void someTypedByHandAfterAMealWithSomeStaysWhenTheMealGoes() {
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt"));
+        UUID entry = plan(eggs, MONDAY, 2);
+        addWeek();
+        add("salt", null, null);
+        assertThat(list()).hasSize(1);
+
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+
+        assertThat(find("salt")).isNotNull();
+        assertThat(amountOf("salt")).isNull();
+    }
+
+    @Test
+    void someTypedByHandAfterAMealWithAnAmountIsSomeWhenTheMealGoes() {
+        RecipeResponse soup = recipe("Soup", 2, need("salt", "2", null));
+        UUID entry = plan(soup, MONDAY, 2);
+        addWeek();
+        add("salt", null, null);
+
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+
+        assertThat(find("salt")).isNotNull();
+        assertThat(amountOf("salt")).isNull();
+    }
+
+    @Test
+    void theAmountGoingWithItsMealLeavesSomeNotZero() {
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt"));
+        RecipeResponse soup = recipe("Soup", 2, need("salt", "2", null));
+        UUID eggsEntry = plan(eggs, MONDAY, 2);
+        UUID soupEntry = plan(soup, MONDAY.plusDays(1), 2);
+        addWeek();
+        assertThat(amountOf("salt")).isEqualByComparingTo("2");
+
+        mealPlanService.update(soupEntry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+        assertThat(find("salt")).isNotNull();
+        assertThat(amountOf("salt")).isNull();
+
+        mealPlanService.update(eggsEntry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "toast-" + tag, null, null, null, null, null));
+        addWeek();
+        assertThat(find("salt")).isNull();
+    }
+
     // --- Typing things in ---
 
     @Test
@@ -337,6 +463,10 @@ class GroceryListDatabaseTest {
 
     private RecipeIngredientRequest need(String name, String quantity, String unit) {
         return new RecipeIngredientRequest(name + "-" + tag, new BigDecimal(quantity), unit, null, false);
+    }
+
+    private RecipeIngredientRequest some(String name) {
+        return new RecipeIngredientRequest(name + "-" + tag, null, null, null, false);
     }
 
     private RecipeIngredientRequest optional(String name, String quantity, String unit) {

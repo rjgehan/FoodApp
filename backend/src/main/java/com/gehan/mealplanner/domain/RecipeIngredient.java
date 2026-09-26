@@ -31,7 +31,12 @@ public class RecipeIngredient {
     @JoinColumn(name = "ingredient_id", nullable = false)
     private Ingredient ingredient;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    /**
+     * Null means no amount was given — "salt and pepper", "oil for frying" — which reads as
+     * "some", not as 1. Older rows were saved as 1 by forms that had no way to say nothing; a
+     * database made before this was nullable is relaxed by SchemaTouchUps.
+     */
+    @Column(precision = 10, scale = 2)
     private BigDecimal quantity;
 
     private String unit;

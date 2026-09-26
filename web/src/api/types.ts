@@ -149,7 +149,8 @@ export interface HouseholdMember {
 
 export interface RecipeIngredientInput {
   ingredientName: string;
-  quantity: number;
+  /** Null for no amount — "salt and pepper" — shown and shopped as "some". */
+  quantity: number | null;
   unit: string;
   notes?: string;
   /** Something a cook might skip — chosen per occasion when the recipe is planned. */
@@ -159,7 +160,8 @@ export interface RecipeIngredientInput {
 export interface RecipeIngredient {
   id: string;
   ingredientName: string;
-  quantity: number;
+  /** Null when the recipe gives no amount. */
+  quantity: number | null;
   unit: string;
   notes: string | null;
   optional: boolean;
@@ -227,7 +229,7 @@ export interface PublicRecipe {
 
 export interface PublicIngredient {
   ingredientName: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
   notes: string | null;
   optional: boolean;
