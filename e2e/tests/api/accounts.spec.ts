@@ -245,6 +245,29 @@ test.describe('nobody can take over somebody else\'s account', () => {
     expect((await loginWithEmail(victimEmail, 'victim-password')).userId).toBe(victim.userId);
   });
 
+  // Somebody left in no house is the easy target: a house of the attacker's own would be the
+  // only one they are in. Both ways of ending up there — the house deleted, or walking out of it.
+  for (const howTheyLeft of ['their house was deleted', 'they left their only house'] as const) {
+    test(`nor when ${howTheyLeft} and they are in no house at all`, async () => {
+      const theirs = await newHousehold();
+      const victim = await newMember(theirs.id);
+      const victimEmail = address('homeless');
+      await call('PUT', '/api/users/me/credentials', { token: victim.token, body: { email: victimEmail, password: 'victim-password' } });
+      if (howTheyLeft === 'their house was deleted') {
+        await call('DELETE', `/api/households/${theirs.id}`, { token: theirs.owner.token });
+      } else {
+        await call('DELETE', `/api/households/${theirs.id}/members/me`, { token: victim.token });
+      }
+      expect(await call('GET', '/api/households', { token: victim.token })).toEqual([]);
+
+      const attacker = await newMember((await newHousehold()).id);
+      const den = await call('POST', '/api/households', { token: attacker.token, body: { name: unique('Den') } });
+      await call('POST', `/api/households/${den.id}/members`, { token: attacker.token, body: { username: victim.username } });
+      expect(await statusOf('POST', `/api/households/${den.id}/members/${victim.userId}/password-reset`, { token: attacker.token })).toBe(403);
+      expect((await loginWithEmail(victimEmail, 'victim-password')).userId).toBe(victim.userId);
+    });
+  }
+
   test('a reset link cannot move an account to another email', async () => {
     const hh = await newHousehold();
     const m = await newMember(hh.id);

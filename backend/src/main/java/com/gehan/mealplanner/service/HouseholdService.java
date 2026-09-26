@@ -130,6 +130,7 @@ public class HouseholdService {
                 .household(household)
                 .user(newMember)
                 .role(HouseholdRole.MEMBER)
+                .addedWithoutAsking(true)
                 .build());
 
         return toMemberResponse(newMember, member.getRole());

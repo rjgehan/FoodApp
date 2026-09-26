@@ -10,6 +10,7 @@ import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UsePasswordResetRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.AddMemberRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.CreateUserRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
@@ -63,10 +64,18 @@ class AccountDatabaseTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         owner = userRepository.save(User.builder()
                 .username("acct-owner-" + tag).displayName("Owner").pinHash(passwordEncoder.encode("1234")).build());
-        member = userRepository.save(User.builder()
-                .username("acct-member-" + tag).displayName("Member").pinHash(passwordEncoder.encode("4321")).build());
         householdId = householdService.create(owner.getId(), new CreateHouseholdRequest("Accounts IT")).id();
-        householdService.addMember(householdId, owner.getId(), new AddMemberRequest(member.getUsername()));
+        // Given their account in this house, the way the owner can vouch for them — not pulled
+        // in by username, which never can be.
+        member = newAccountIn(householdId, "acct-member-" + tag);
+        member.setDisplayName("Member");
+        member.setPinHash(passwordEncoder.encode("4321"));
+        member = userRepository.save(member);
+    }
+
+    private User newAccountIn(UUID household, String username) {
+        UUID id = householdService.createUser(household, owner.getId(), new CreateUserRequest(username, null)).userId();
+        return userRepository.findById(id).orElseThrow();
     }
 
     private String email(String who) {
@@ -227,9 +236,7 @@ class AccountDatabaseTest {
 
     @Test
     void anAccountWithAPasswordCannotBeGivenAPinByAStranger() {
-        User passwordOnly = userRepository.save(User.builder()
-                .username("acct-pwonly-" + tag).displayName("Password only").build());
-        householdService.addMember(householdId, owner.getId(), new AddMemberRequest(passwordOnly.getUsername()));
+        User passwordOnly = newAccountIn(householdId, "acct-pwonly-" + tag);
         PasswordResetLinkResponse link = accountService.createPasswordReset(householdId, owner.getId(), passwordOnly.getId());
         authService.usePasswordReset(new UsePasswordResetRequest(link.token(), "their-own-pw", email("pwonly")));
 
@@ -258,6 +265,28 @@ class AccountDatabaseTest {
         // And the real owner cannot reset them now either: they are somebody else's too.
         assertThatThrownBy(() -> accountService.createPasswordReset(householdId, owner.getId(), member.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
+    }
+
+    @Test
+    void anAccountLeftInNoHouseCannotBePulledIntoAnotherAndReset() {
+        // Their house is deleted, so they are in none. Adding them to a house of your own would
+        // make it everything they are in — which must still not let you reset them.
+        accountService.updateCredentials(member.getId(), new CredentialsRequest(email("homeless"), "their-password", null));
+        PasswordResetLinkResponse before = accountService.createPasswordReset(householdId, owner.getId(), member.getId());
+        householdService.delete(householdId, owner.getId());
+        assertThat(memberRepository.findByUserId(member.getId())).isEmpty();
+
+        User attacker = userRepository.save(User.builder()
+                .username("acct-taker-" + tag).displayName("Taker").pinHash(passwordEncoder.encode("9999")).build());
+        UUID den = householdService.create(attacker.getId(), new CreateHouseholdRequest("Den IT")).id();
+        householdService.addMember(den, attacker.getId(), new AddMemberRequest(member.getUsername()));
+
+        assertThatThrownBy(() -> accountService.createPasswordReset(den, attacker.getId(), member.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
+        // Nor does a link the old owner made before the house went come back to life.
+        assertThat(accountService.describeReset(before.token()).valid()).isFalse();
+        assertThat(authService.loginWithEmail(new EmailLoginRequest(email("homeless"), "their-password")).userId())
+                .isEqualTo(member.getId());
     }
 
     @Test

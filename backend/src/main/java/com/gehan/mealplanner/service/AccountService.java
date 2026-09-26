@@ -286,6 +286,10 @@ public class AccountService {
         }
         HouseholdMember member = memberRepository.findByHouseholdIdAndUserId(householdId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "They aren't in this household."));
+        if (member.wasAddedWithoutAsking()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "They were added with an account they already had, so they change their password themselves, from Settings.");
+        }
         if (!vouchesFor(ownerId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "They're in another household too, so they change their password themselves, from Settings.");
@@ -315,10 +319,16 @@ public class AccountService {
      * does not ask that person. So the owner has to own every house the person is in, and the
      * person must own none — then the only people this account is shared with are the owner's.
      * Someone in two families' houses changes their own password; nobody else can.
+     *
+     * Nor does a membership count that the person never agreed to. An account left in no house
+     * — theirs was deleted, or they walked out of it — would otherwise pass the moment a stranger
+     * added it to a house of their own by username, since that house is then all it is in. So
+     * none of their memberships may be one somebody pulled their existing account into.
      */
     private boolean vouchesFor(UUID ownerId, UUID userId) {
         List<HouseholdMember> theirs = memberRepository.findByUserId(userId);
         return !theirs.isEmpty() && theirs.stream().allMatch(m -> m.getRole() != HouseholdRole.OWNER
+                && !m.wasAddedWithoutAsking()
                 && memberRepository.findByHouseholdIdAndUserId(m.getHousehold().getId(), ownerId)
                         .map(mine -> mine.getRole() == HouseholdRole.OWNER)
                         .orElse(false));
