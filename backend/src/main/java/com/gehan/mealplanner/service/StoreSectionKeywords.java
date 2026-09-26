@@ -14,8 +14,8 @@ import static com.gehan.mealplanner.domain.StoreSection.*;
 
 /**
  * A free first pass at which aisle something is in. It covers the few hundred things most lists
- * are made of, so the Gemini sort — twenty requests a day, shared with the recipe writer — only
- * ever sees what this could not place.
+ * are made of, so the Gemini sort — twenty requests a day — only ever sees what this could not
+ * place.
  *
  * Three passes, most specific first. Phrases, because "ice cream" and "peanut butter" are not
  * cream or butter. Then words that describe the form, because "frozen peas" are in Frozen and

@@ -108,11 +108,15 @@ To see what the container really received (rather than what you typed):
 docker exec mealplanner-backend printenv DB_PASSWORD | tr -d '\n' | md5sum
 ```
 
-## Optional: have recipes written for you
+## Optional: sort the grocery list into aisles
 
-Set `GEMINI_API_KEY` and the recipe page gains a **Write it for me** button — a name and a
-serving count, and the form comes back filled in. Leave it unset and the button never appears;
-nothing else changes.
+Set `GEMINI_API_KEY` and the grocery list gains a **✨ Sort into aisles** action: one request
+places everything the built-in keyword list could not. Leave it unset and the action never
+appears; nothing else changes.
+
+(The same key used to power a "Write it for me" recipe writer. That is gone — the Paste tab
+takes a recipe from whatever AI you already use — but the variable names below keep their
+`RECIPE_AI_` prefix so an existing `.env` still works.)
 
 ```yaml
 services:
@@ -121,22 +125,21 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
 ```
 
-Get a key from aistudio.google.com. Gemini has a free tier that comfortably covers a household's
-recipe habit; past it, a recipe costs a fraction of a cent. The call is made by the backend,
-never the browser: a key in the frontend bundle is readable by anyone who opens devtools, and
-the key goes in the `x-goog-api-key` header rather than the query string so it stays out of
-access logs.
+Get a key from aistudio.google.com. Gemini's free tier is twenty requests a day, which covers
+sorting comfortably. The call is made by the backend, never the browser: a key in the frontend
+bundle is readable by anyone who opens devtools, and the key goes in the `x-goog-api-key` header
+rather than the query string so it stays out of access logs.
 
 | Variable | Default | |
 |---|---|---|
 | `GEMINI_API_KEY` | *(unset — feature hidden)* | turns it on |
 | `RECIPE_AI_MODEL` | `gemini-3.6-flash` | any model your key can reach |
-| `RECIPE_AI_MAX_TOKENS` | `2000` | plenty for a recipe |
+| `RECIPE_AI_MAX_TOKENS` | `2000` | the floor; a long list is given more |
 | `RECIPE_AI_BASE_URL` | Google's endpoint | only for pointing at a stub |
 
-If a call fails the app answers 502 and tells you to write it out yourself — a wrong key, a
-model your account cannot reach, or a reply that ignored the schema all land there. The backend
-log carries the actual reason.
+If a call fails the app answers 502 and the items stay where they were, to be moved by hand — a
+wrong key, a model your account cannot reach, or a reply that ignored the schema all land there.
+The backend log carries the actual reason.
 
 ## Things worth knowing
 

@@ -52,7 +52,7 @@ start() {
     # shellcheck disable=SC1091
     source "$ROOT_DIR/.env"
     set +a
-    [[ -n "${GEMINI_API_KEY:-}" ]] && echo "Recipe writer: on"
+    [[ -n "${GEMINI_API_KEY:-}" ]] && echo "AI aisle sorting: on"
   fi
 
   echo "Starting Postgres + Redis..."

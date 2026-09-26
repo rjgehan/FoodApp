@@ -43,7 +43,7 @@ app:
     # signed out after a month of not using it, not a day after signing in.
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:43200}
   ai:
-    # Writing a recipe from a name. Unset means the feature is hidden entirely.
+    # Sorting the grocery list into aisles. Unset means the feature is hidden entirely.
     api-key: ${GEMINI_API_KEY:}
     model: ${RECIPE_AI_MODEL:gemini-3.6-flash}
     max-tokens: ${RECIPE_AI_MAX_TOKENS:2000}

@@ -25,8 +25,8 @@ import java.util.UUID;
  * Asks Gemini which of a household's own grocery categories each of a batch of items belongs in —
  * all of them in ONE request.
  *
- * The key allows twenty requests a day, shared with the recipe writer, so this is only ever
- * called from the Sort button, never per item or in the background. A category still carrying its
+ * The key allows twenty requests a day, so this is only ever called from the Sort button, never
+ * per item or in the background. A category still carrying its
  * {@code seededFrom} link gets the original canonical description alongside its current name, so
  * a household that only renamed things gets the same grounding as before; a brand new category is
  * classified by its name alone.

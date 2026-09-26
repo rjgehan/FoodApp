@@ -95,7 +95,7 @@ public class RecipeImportService {
             .build();
 
     public GeneratedRecipe fromUrl(String rawUrl) {
-        URI uri = safeUri(rawUrl);
+        URI uri = safeUri(linkIn(rawUrl));
         // An import that fails should leave a trace: without one, "the server said 422" is
         // all anybody has to go on.
         ImportLog.Entry entry = journal.begin(uri);
@@ -185,7 +185,7 @@ public class RecipeImportService {
         if (recipe == null) {
             throw new ResponseStatusException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
-                    "That page does not publish its recipe in a way this can read. Copy the recipe and paste it instead.");
+                    "That page does not publish its recipe in a way this can read. Copy its ingredients and steps into Paste, or type it out.");
         }
         return toDraft(recipe, uri.toString());
     }
@@ -910,6 +910,62 @@ public class RecipeImportService {
         return -1;
     }
 
+    /** The first web address in a piece of text, up to the first space. */
+    private static final Pattern LINK_IN_TEXT = Pattern.compile("https?://\\S+", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The link in whatever was pasted into "From a link".
+     *
+     * A share sheet hands over "Check out this recipe! https://vm.tiktok.com/ZM…/", and people
+     * type "tiktok.com/@cook/…" the way they would into a browser. Both are plainly a link, so
+     * the one inside is taken and a bare address gets https:// — the same as a recipe's own
+     * links. Anything else goes through untouched for safeUri to refuse in a sentence.
+     */
+    static String linkIn(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        Matcher inside = LINK_IN_TEXT.matcher(text);
+        if (inside.find()) {
+            String link = inside.group();
+            // A link pasted on its own is taken whole: "…/Pasta_(food)" and "…/best-soup!" are
+            // real addresses. Only one inside a sentence can have picked up its full stop.
+            if (inside.start() == 0 && inside.end() == text.length()) {
+                return link;
+            }
+            return trimSentenceEnd(link);
+        }
+        if (!text.contains(" ")) {
+            try {
+                String normalized = WebLinks.normalize(text);
+                if (normalized != null) {
+                    return normalized;
+                }
+            } catch (ResponseStatusException notALink) {
+                // Said properly by safeUri, which knows the ways a link can be wrong.
+            }
+        }
+        return text;
+    }
+
+    /**
+     * A sentence's full stop or closing quote is not part of the address it follows. A closing
+     * bracket is only the sentence's when the link has no opening one of its own to match it —
+     * "(https://example.com/soup)" loses it, "https://en.wikipedia.org/wiki/Pasta_(food)" keeps it.
+     */
+    private static String trimSentenceEnd(String link) {
+        String trimmed = link;
+        while (!trimmed.isEmpty()) {
+            char last = trimmed.charAt(trimmed.length() - 1);
+            boolean punctuation = ".,;:!?]}'\"”’>".indexOf(last) >= 0;
+            boolean strayBracket = last == ')'
+                    && trimmed.chars().filter(c -> c == ')').count() > trimmed.chars().filter(c -> c == '(').count();
+            if (!punctuation && !strayBracket) {
+                break;
+            }
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
     /**
      * This server sits on a home network, so a link is not automatically safe to fetch: an
      * address like 192.168.1.1 or localhost would make the server reach its own neighbours.
@@ -975,7 +1031,7 @@ public class RecipeImportService {
                 // Bot protection. The phone's share sheet still works on these, because
                 // Safari is already on the page as a person.
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                        "That site will not let this server read it. Copy the recipe and paste it instead.");
+                        "That site will not let this server read it. Copy its ingredients and steps into Paste, or type it out.");
             }
             if (response.statusCode() >= 400) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,

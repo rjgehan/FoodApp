@@ -28,7 +28,7 @@ npm run screens          # screens-output/screens.pdf
   means it got fixed — remove the marker. Never "fix" a red run by adding one without saying so.
 - `npm run reset` replaces the backend the user started with `./dev.sh`, and it blanks the
   Gemini key. When finished, restore their normal backend: kill :8080 and run `./dev.sh start`.
-- **Gemini has a 20-requests/day quota.** Never press ✨ Sort or "Write it for me", and never
+- **Gemini has a 20-requests/day quota.** Never press ✨ Sort, and never
   run the backend with the key during tests.
 
 ## Phone size

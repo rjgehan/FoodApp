@@ -3,10 +3,11 @@ package com.gehan.mealplanner.ai;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Writing a recipe from a name and a serving count, via Google's Gemini API.
+ * The Gemini key, which sorts a grocery list into aisles (StoreSectionAi).
  *
  * Unset key means the feature is simply absent — the button does not appear and the endpoint
- * answers 503. Same shape as the integration API: a thing you turn on deliberately.
+ * answers 503. Same shape as the integration API: a thing you turn on deliberately. The names
+ * still say "recipe" because the key first wrote recipes, and a deployed .env keeps working.
  */
 @ConfigurationProperties(prefix = "app.ai")
 public record RecipeAiProperties(String apiKey, String model, int maxTokens, String baseUrl) {
