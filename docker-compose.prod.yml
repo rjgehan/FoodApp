@@ -48,6 +48,8 @@ services:
       # Who can open the read-only /admin pages: both must match (see DEPLOY.md). Empty = nobody.
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       ADMIN_USERNAMES: ${ADMIN_USERNAMES:-}
+      # The beta's ideas board. Set to false in .env when the beta is over (see DEPLOY.md).
+      IDEAS_BOARD: ${IDEAS_BOARD:-true}
       # Do not keep other people's captions on a server the internet can reach.
       MEALPLANNER_IMPORT_LOG: "off"
     # No published port. The frontend's nginx proxies /api and /ws to this container over the

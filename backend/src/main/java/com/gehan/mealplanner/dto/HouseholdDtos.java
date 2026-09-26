@@ -77,11 +77,12 @@ public class HouseholdDtos {
     /**
      * You, as the settings screen and the "add an email" prompt need you. `admin` is whether the
      * admin pages will open for you — decided on the server (AdminAccess); the app only uses it
-     * to show the way in.
+     * to show the way in. `ideasBoard` is whether the beta's ideas board is open (IDEAS_BOARD):
+     * the apps only show its button when it is, and an app from before the board never asks.
      */
     public record MeResponse(
             UUID userId, String username, String displayName, boolean pinSet,
-            String email, boolean hasPassword, UUID lastHouseholdId, boolean admin) {
+            String email, boolean hasPassword, UUID lastHouseholdId, boolean admin, boolean ideasBoard) {
 
         /**
          * The admin pages only open for a session that began with a password, so an admin
@@ -90,7 +91,7 @@ public class HouseholdDtos {
          */
         public MeResponse forSession(boolean signedInWithPassword) {
             return signedInWithPassword || !admin ? this
-                    : new MeResponse(userId, username, displayName, pinSet, email, hasPassword, lastHouseholdId, false);
+                    : new MeResponse(userId, username, displayName, pinSet, email, hasPassword, lastHouseholdId, false, ideasBoard);
         }
     }
 

@@ -202,6 +202,9 @@ public class HouseholdService {
      * maker can no longer vouch for would not work anyway), and a tick on the grocery list
      * forgets who made it. Invites it made stay — the house's link is everyone's, and the page
      * names the house's owner as the inviter.
+     *
+     * On the ideas board their votes go, and their ideas stay, from Someone: other people have
+     * voted for those, and still want them.
      */
     @Transactional
     public AccountDeletion deleteAccount(UUID userId) {
@@ -223,6 +226,8 @@ public class HouseholdService {
 
         jdbc.update("UPDATE grocery_list_items SET checked_by_user_id = NULL WHERE checked_by_user_id = ?", userId);
         jdbc.update("DELETE FROM password_resets WHERE user_id = ? OR created_by = ?", userId, userId);
+        jdbc.update("DELETE FROM idea_votes WHERE user_id = ?", userId);
+        jdbc.update("UPDATE ideas SET author_id = NULL WHERE author_id = ?", userId);
         // In SQL like the rest: delete() above removes a whole house's rows in SQL, so the session
         // still holds their membership pointing at this user, and deleting the user through JPA
         // would have Hibernate refuse to leave that membership pointing at nothing.

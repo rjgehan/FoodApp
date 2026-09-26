@@ -202,3 +202,18 @@ export const AlertIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 9.5v4.5M12 17.2v.1" />
   </Icon>
 );
+
+/** A bright idea — the ideas board. */
+export const LightbulbIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M9.2 17.5h5.6M10 20.5h4" />
+    <path d="M12 3a6 6 0 0 0-3.5 10.9c.5.4.8 1 .8 1.6v.5h5.4v-.5c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z" />
+  </Icon>
+);
+
+/** An upvote. Outlined until it is yours, then filled — pass fill="currentColor". */
+export const UpvoteIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 4.5 19 12.5h-4.2V19.5H9.2V12.5H5z" />
+  </Icon>
+);

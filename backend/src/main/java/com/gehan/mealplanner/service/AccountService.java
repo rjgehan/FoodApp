@@ -58,6 +58,7 @@ public class AccountService {
     private final SignInAttemptLimiter attemptLimiter;
     private final HouseholdService householdService;
     private final AdminAccess adminAccess;
+    private final IdeaService ideaService;
 
     public AccountService(UserRepository userRepository,
                           HouseholdMemberRepository memberRepository,
@@ -65,7 +66,8 @@ public class AccountService {
                           PasswordEncoder passwordEncoder,
                           SignInAttemptLimiter attemptLimiter,
                           HouseholdService householdService,
-                          AdminAccess adminAccess) {
+                          AdminAccess adminAccess,
+                          IdeaService ideaService) {
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
         this.resetRepository = resetRepository;
@@ -73,6 +75,7 @@ public class AccountService {
         this.attemptLimiter = attemptLimiter;
         this.householdService = householdService;
         this.adminAccess = adminAccess;
+        this.ideaService = ideaService;
     }
 
     // --- You ---------------------------------------------------------------------------------
@@ -425,6 +428,6 @@ public class AccountService {
     private MeResponse toMe(User user) {
         return new MeResponse(user.getId(), user.getUsername(), user.getDisplayName(),
                 user.getPinHash() != null, user.getEmail(), user.getPasswordHash() != null,
-                lastHouseholdOf(user), adminAccess.isAdmin(user));
+                lastHouseholdOf(user), adminAccess.isAdmin(user), ideaService.enabled());
     }
 }

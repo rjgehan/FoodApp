@@ -17,6 +17,26 @@ export interface Me {
   lastHouseholdId: string | null;
   /** Whether the admin pages open for you. The server decides; this only shows the way in. */
   admin: boolean;
+  /** Whether the beta's ideas board is open (IDEAS_BOARD on the server). Absent means no. */
+  ideasBoard?: boolean;
+}
+
+export type IdeaStatus = 'OPEN' | 'PLANNED' | 'DONE' | 'NOT_DOING';
+
+/** One card on the ideas board, as you see it — from /api/ideas. */
+export interface Idea {
+  id: string;
+  title: string;
+  details: string | null;
+  status: IdeaStatus;
+  /** "Someone" once the account that suggested it has been deleted. */
+  authorName: string;
+  /** Yours: you can reword it or take it back. */
+  mine: boolean;
+  voteCount: number;
+  votedByMe: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
