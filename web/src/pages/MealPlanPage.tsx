@@ -772,8 +772,10 @@ function DaySheet({
             <li key={meal} className="py-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-muted">{titleCase(meal)}</span>
-                {/* A side goes with something cooked; a night out or a single food takes none. */}
-                {(dishes.length === 0 || dishes.some((d) => d.recipeId)) && (
+                {/* A side goes with something cooked; a night out or a single food takes none.
+                    A shared recipe its owners deleted may still be cooked from memory, so it
+                    counts as cooked — as it does on the phone. */}
+                {(dishes.length === 0 || dishes.some((d) => d.recipeId || d.recipeDeleted)) && (
                   <Button size="sm" variant="ghost" onClick={() => setPicking({ meal, entryId: null })}>
                     <PlusIcon className="h-4 w-4" />
                     {dishes.length ? 'Add side' : 'Add'}
@@ -808,6 +810,12 @@ function DaySheet({
 
                         {open && (
                           <div className="space-y-1 pb-3">
+                          {entry.recipeDeleted && (
+                            <p className="text-sm text-muted">
+                              The household that shared this recipe has deleted it, so there is
+                              nothing to open. Change it to something else, or remove it.
+                            </p>
+                          )}
                           <div className="flex flex-wrap items-center gap-2">
                             {entry.recipeId && (
                               <Link to={entry.needsIngredients ? `/recipes/${entry.recipeId}/edit` : `/recipes/${entry.recipeId}`}>
@@ -951,6 +959,9 @@ function MealPhoto({
 
 /** The second line under a planned dish: what it means for the shopping. */
 function EntryDetail({ entry }: { entry: MealPlanEntry }) {
+  if (entry.recipeDeleted) {
+    return <span className="block text-sm text-accent">Recipe was deleted</span>;
+  }
   if (entry.recipeId && entry.needsIngredients) {
     return <span className="block text-sm text-accent">No ingredients yet</span>;
   }

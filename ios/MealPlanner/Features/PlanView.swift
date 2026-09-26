@@ -407,10 +407,11 @@ struct DaySheet: View {
         // before you could see what was on the day.
         .presentationDetents([.large])
         #if DEBUG
-        // With -mp_debug_expand 1, the first recipe on the day opens its actions straight away.
+        // With -mp_debug_expand 1, the first recipe on the day opens its actions straight away —
+        // one its owners deleted counts, so that state can be screenshotted too.
         .onAppear {
             if UserDefaults.standard.bool(forKey: "mp_debug_expand") {
-                expanded = meals.first { $0.recipeId != nil }?.id
+                expanded = meals.first { $0.recipeId != nil || $0.recipeDeleted == true }?.id
             }
         }
         #endif
@@ -447,7 +448,8 @@ struct DaySheet: View {
                     if let detail = detail(for: entry) {
                         Text(detail)
                             .font(.subheadline)
-                            .foregroundStyle(entry.needsIngredients == true ? Palette.accent : .secondary)
+                            .foregroundStyle(entry.needsIngredients == true || entry.recipeDeleted == true
+                                             ? Palette.accent : .secondary)
                     }
                 }
                 Spacer(minLength: 8)
@@ -470,6 +472,7 @@ struct DaySheet: View {
 
     /// The second line under a dish: what it means for the cooking or the shopping.
     private func detail(for entry: MealPlanEntry) -> String? {
+        if entry.recipeDeleted == true { return "Recipe was deleted" }
         if entry.recipeId != nil {
             if entry.needsIngredients == true { return "No ingredients yet" }
             let servings = servingsDraft[entry.id] ?? entry.servings
@@ -486,6 +489,11 @@ struct DaySheet: View {
     /// What can be done with a planned dish, one row each so every one is a full-width target.
     @ViewBuilder
     private func actions(for entry: MealPlanEntry) -> some View {
+        if entry.recipeDeleted == true {
+            Text("The household that shared this recipe has deleted it, so there is nothing to open. Change it to something else, or remove it.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
         if let recipeId = entry.recipeId {
             // A recipe that is only a name has nothing to look at yet, so this goes straight
             // to the editor instead, as the web's "Add ingredients" does.

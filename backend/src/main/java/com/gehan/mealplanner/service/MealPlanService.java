@@ -119,6 +119,12 @@ public class MealPlanService {
         householdService.assertMember(householdId, requesterId);
 
         // Swapping one kind for another clears the others, so an entry is only ever one thing.
+        // A deleted recipe's name is one of those things: once the slot holds something else,
+        // "was deleted" is no longer about it.
+        String itemName = blankToNull(request.itemName());
+        if (request.recipeId() != null || request.placeId() != null || itemName != null) {
+            entry.setDeletedRecipeName(null);
+        }
         if (request.recipeId() != null) {
             entry.setRecipe(requireRecipe(request.recipeId()));
             entry.setPlace(null);
@@ -129,7 +135,6 @@ public class MealPlanService {
             entry.setRecipe(null);
             entry.setItem(null);
         }
-        String itemName = blankToNull(request.itemName());
         if (itemName != null) {
             entry.setItem(ingredientService.findOrCreate(itemName, null));
             entry.setRecipe(null);
@@ -194,7 +199,7 @@ public class MealPlanService {
                 entry.getDate(),
                 entry.getMealType(),
                 recipe != null ? recipe.getId() : null,
-                recipe != null ? recipe.getName() : null,
+                recipe != null ? recipe.getName() : entry.getDeletedRecipeName(),
                 recipe != null && recipe.getIngredients().isEmpty(),
                 entry.getPlace() != null ? entry.getPlace().getId() : null,
                 entry.getPlace() != null ? entry.getPlace().getName() : null,
@@ -204,6 +209,7 @@ public class MealPlanService {
                 entry.getTime(),
                 entry.getServings(),
                 entry.getNotes(),
-                List.copyOf(entry.getIncludedOptionalIngredientIds()));
+                List.copyOf(entry.getIncludedOptionalIngredientIds()),
+                recipe == null && entry.getDeletedRecipeName() != null);
     }
 }

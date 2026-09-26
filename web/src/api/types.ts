@@ -258,6 +258,11 @@ export interface MealPlanEntry {
   notes: string | null;
   /** Which of the recipe's optional ingredients were chosen for this occurrence. */
   includedOptionalIngredientIds: string[];
+  /**
+   * The household that shared this recipe has deleted it. The meal stays on the plan under its
+   * old `recipeName`, with no `recipeId` to open. Optional because an older server never sends it.
+   */
+  recipeDeleted?: boolean;
 }
 
 /** Somewhere you eat instead of cooking. Only the name is required. */

@@ -171,12 +171,16 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
     let notes: String?
     /// Which of the recipe's optional ingredients are being bought this time.
     let includedOptionalIngredientIds: [UUID]?
+    /// The household that shared this recipe has deleted it. The meal stays on the plan under
+    /// its old `recipeName`, with no `recipeId` to open. Optional because an older server did
+    /// not send it.
+    let recipeDeleted: Bool?
 
     /// Everything past the basics defaults, so the sample data does not have to spell it out.
     init(id: UUID, date: String, mealType: MealType, recipeId: UUID?, recipeName: String?,
          needsIngredients: Bool? = nil, placeId: UUID? = nil, placeName: String?, itemName: String?,
          inCupboard: Bool? = nil, runningLow: Bool? = nil, time: String?, servings: Int?,
-         notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil) {
+         notes: String? = nil, includedOptionalIngredientIds: [UUID]? = nil, recipeDeleted: Bool? = nil) {
         self.id = id
         self.date = date
         self.mealType = mealType
@@ -192,6 +196,7 @@ struct MealPlanEntry: Codable, Identifiable, Hashable {
         self.servings = servings
         self.notes = notes
         self.includedOptionalIngredientIds = includedOptionalIngredientIds
+        self.recipeDeleted = recipeDeleted
     }
 
     /** What the web calls entryLabel: a meal is a recipe, a place, or a bare item. */

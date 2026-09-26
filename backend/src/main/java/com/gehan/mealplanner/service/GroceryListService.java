@@ -434,6 +434,13 @@ public class GroceryListService {
      */
     private void addRecipe(Household household, MealPlanEntry entry, Context ctx, ListChanges changes,
                            Map<UnitKey, BigDecimal> already) {
+        // A shared recipe its owners deleted: the meal is still planned and may well still be
+        // cooked from memory, so what it put on the list stays. Nothing is known to add, and
+        // taking the leeks back off because somebody else tidied their recipes would be a
+        // surprise at the shop. Changing the slot to something else settles up as usual.
+        if (entry.getRecipe() == null && entry.getDeletedRecipeName() != null) {
+            return;
+        }
         Map<UnitKey, Need> needs = entry.getRecipe() == null ? Map.of() : needs(entry.getRecipe(),
                 entry.getServings() != null ? entry.getServings() : household.getDefaultServings(),
                 entry.getIncludedOptionalIngredientIds(), ctx);

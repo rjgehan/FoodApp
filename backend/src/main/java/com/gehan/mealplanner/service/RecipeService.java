@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.domain.Household;
+import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.Recipe;
 import com.gehan.mealplanner.domain.RecipeCategory;
 import com.gehan.mealplanner.domain.RecipeFiling;
@@ -661,12 +662,25 @@ public class RecipeService {
         householdService.assertMember(recipe.getHousehold().getId(), requesterId);
 
         // Everything that points at this recipe has to go first, or the delete fails on a
-        // foreign key. Planned meals included: a slot naming a recipe that no longer exists
-        // would be a row with nothing in it — invisible in the app, still in the database.
+        // foreign key. This household's own planned meals go with it: whoever is deleting it
+        // was told so, and it is their plan. Another household that planned it — shared with
+        // them, or kept from Explore — was told nothing, so their meal stays on the plan under
+        // its name and marked as deleted, rather than silently leaving a gap in their week.
+        UUID ownerId = recipe.getHousehold().getId();
+        for (MealPlanEntry entry : mealPlanEntryRepository.findByRecipeId(recipeId)) {
+            if (entry.getHousehold().getId().equals(ownerId)) {
+                mealPlanEntryRepository.delete(entry);
+            } else {
+                entry.setRecipe(null);
+                entry.setDeletedRecipeName(recipe.getName());
+                // Chosen from this recipe's ingredients, which are about to go too.
+                entry.getIncludedOptionalIngredientIds().clear();
+            }
+        }
+        mealPlanEntryRepository.flush();
         shareRepository.deleteByRecipeId(recipeId);
         filingRepository.deleteByRecipeId(recipeId);
         linkRepository.deleteByRecipeId(recipeId);
-        mealPlanEntryRepository.deleteByRecipeId(recipeId);
         recipeRepository.delete(recipe);
     }
 

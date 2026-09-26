@@ -65,18 +65,32 @@ test('sharing with a household lets them file it but not edit it', async () => {
 });
 
 test('deleting a shared recipe tells the other household, not just removes their plans', async () => {
-  test.fail(true, 'KNOWN ISSUE: the other household’s planned meal silently disappears');
   const mine = await newHousehold();
   const theirs = await newHousehold();
   const owner = await admin();
   const r = await newRecipe(mine.id, 'Borrowed Soup', [{ name: 'leek', qty: 2 }]);
   await call('PUT', `/api/recipes/${r.id}/shares`, { token: owner.token, body: { householdIds: [theirs.id] } });
+  await plan(mine.id, isoDate(2), 'LUNCH', { recipeId: r.id });
   await plan(theirs.id, isoDate(2), 'LUNCH', { recipeId: r.id });
   await call('DELETE', `/api/recipes/${r.id}`, { token: owner.token });
   const theirPlan = await call('GET', `/api/households/${theirs.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(7)}`, { token: owner.token });
-  // The desired behaviour is up for design (keep a copy? leave a named placeholder?); what should
-  // not happen is the lunch vanishing with no trace.
+  // What should not happen is the lunch vanishing with no trace. It stays as a named placeholder
+  // marked as deleted — with no recipe id, so nothing tries to open a recipe that is gone. The
+  // name rides in recipeName, so an older phone that has never heard of recipeDeleted still shows it.
   expect(theirPlan.length).toBe(1);
+  expect(theirPlan[0]).toMatchObject({
+    date: isoDate(2), mealType: 'LUNCH', recipeId: null, recipeName: 'Borrowed Soup', recipeDeleted: true,
+  });
+  // The household that deleted it was told its own meals go with it, and they do.
+  const ownPlan = await call('GET', `/api/households/${mine.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(7)}`, { token: owner.token });
+  expect(ownPlan).toEqual([]);
+
+  // Changing the placeholder makes it an ordinary meal again.
+  const other = await newRecipe(theirs.id, 'Own Soup', [{ name: 'carrot', qty: 3 }]);
+  const changed = await call('PATCH', `/api/households/${theirs.id}/meal-plan/entries/${theirPlan[0].id}`, {
+    token: owner.token, body: { recipeId: other.id },
+  });
+  expect(changed).toMatchObject({ recipeId: other.id, recipeName: 'Own Soup', recipeDeleted: false });
 });
 
 test('share targets are only your other households', async () => {

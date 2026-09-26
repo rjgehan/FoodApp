@@ -13,8 +13,11 @@ public interface MealPlanEntryRepository extends JpaRepository<MealPlanEntry, UU
     /** Used when a place is deleted, so the plan never points at something that is gone. */
     void deleteByPlaceId(UUID placeId);
 
-    /** The same for a deleted recipe. */
-    void deleteByRecipeId(UUID recipeId);
+    /**
+     * Every meal, in any household, planned with a recipe — for deleting it, which removes the
+     * owner's own meals and leaves the others' marked as deleted.
+     */
+    List<MealPlanEntry> findByRecipeId(UUID recipeId);
 
     long countByRecipeId(UUID recipeId);
 

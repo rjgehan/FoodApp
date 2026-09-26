@@ -71,10 +71,17 @@ test('deleting a household takes its recipes off other households’ shelves', a
 
   await call('DELETE', `/api/households/${mine.id}`, { token: owner.token });
 
-  // The other household survives; the night it had planned with that recipe does not.
+  // The other household survives, and so does the night it had planned with that recipe: it
+  // stays under the recipe's name, marked as deleted, exactly as when the one recipe is deleted
+  // (sharing.spec). It used to vanish, which is the silent gap in somebody's week that the
+  // single-recipe delete no longer leaves either.
   const left = await call('GET', `/api/households/${theirs.id}/meal-plan?start=${isoDate(4)}&end=${isoDate(4)}`,
     { token: owner.token });
-  expect(left).toEqual([]);
+  expect(left).toHaveLength(1);
+  expect(left[0]).toMatchObject({ recipeId: null, recipeName: 'Shared Then Gone', recipeDeleted: true });
+  // Off their shelf all the same.
+  const shelf = await call('GET', `/api/households/${theirs.id}/recipes`, { token: owner.token });
+  expect(JSON.stringify(shelf)).not.toContain(r.id);
   expect(await statusOf('GET', `/api/households/${theirs.id}/recipes`, { token: owner.token })).toBeLessThan(300);
 });
 

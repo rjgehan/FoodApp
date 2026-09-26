@@ -2,10 +2,15 @@ package com.gehan.mealplanner.service;
 
 import com.gehan.mealplanner.domain.HouseholdMember;
 import com.gehan.mealplanner.domain.HouseholdRole;
+import com.gehan.mealplanner.domain.MealType;
 import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.domain.StoredImage;
 import com.gehan.mealplanner.domain.User;
+import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
+import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
+import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
+import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
@@ -16,6 +21,7 @@ import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.StoredImageRepository;
 import com.gehan.mealplanner.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,7 +40,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Sharing against the real database: a recipe only goes between houses the sharer is in, a share
  * somebody else made is never undone by accident, and a copy saved from a public link stands on
- * its own. Rolled back after each test.
+ * its own, and deleting a shared recipe leaves the other house's meal on its plan. Rolled back after
+ * each test.
  */
 @SpringBootTest
 @Transactional
@@ -42,10 +50,13 @@ class SharingDatabaseTest {
     @Autowired RecipeService recipeService;
     @Autowired RecipeLinkService linkService;
     @Autowired HouseholdService householdService;
+    @Autowired MealPlanService mealPlanService;
+    @Autowired GroceryListService groceryListService;
     @Autowired UserRepository userRepository;
     @Autowired HouseholdRepository householdRepository;
     @Autowired HouseholdMemberRepository memberRepository;
     @Autowired StoredImageRepository imageRepository;
+    @Autowired EntityManager entityManager;
 
     private User me;
     private User partner;
@@ -202,5 +213,79 @@ class SharingDatabaseTest {
         linkService.revoke(id, me.getId());
         assertThatThrownBy(() -> recipeService.saveFromLink(token, cabin, me.getId()))
                 .satisfies(e -> assertThat(status(e)).isEqualTo(404));
+    }
+
+    @Test
+    void deletingASharedRecipeKeepsTheOtherHousesMealMarkedDeleted() {
+        LocalDate tuesday = LocalDate.of(2031, 3, 4);
+        UUID id = recipe(home, soup(null, null)).id();
+        recipeService.updateShares(id, me.getId(), new UpdateSharesRequest(List.of(cabin)));
+        mealPlanService.add(home, me.getId(), new AddMealPlanEntryRequest(
+                tuesday, MealType.LUNCH, id, null, null, null, 4, null, null));
+        MealPlanEntryResponse theirs = mealPlanService.add(cabin, me.getId(), new AddMealPlanEntryRequest(
+                tuesday, MealType.LUNCH, id, null, null, null, 4, null, null));
+        groceryListService.addAllPlannedToList(cabin, me.getId(), tuesday, tuesday);
+
+        recipeService.delete(id, me.getId());
+
+        // The house that deleted it was told its own meals go, and they do.
+        assertThat(mealPlanService.listRange(home, me.getId(), tuesday, tuesday)).isEmpty();
+        // The house it was shared with keeps its lunch, by name, marked as deleted.
+        List<MealPlanEntryResponse> cabinPlan = mealPlanService.listRange(cabin, me.getId(), tuesday, tuesday);
+        assertThat(cabinPlan).hasSize(1);
+        MealPlanEntryResponse kept = cabinPlan.get(0);
+        assertThat(kept.id()).isEqualTo(theirs.id());
+        assertThat(kept.recipeId()).isNull();
+        assertThat(kept.recipeName()).isEqualTo("Leek soup");
+        assertThat(kept.recipeDeleted()).isTrue();
+
+        // Catching the list up with the plan leaves the leeks it already added alone: the lunch
+        // may still be cooked from memory.
+        groceryListService.addAllPlannedToList(cabin, me.getId(), tuesday, tuesday);
+        assertThat(leeks(cabin)).isEqualByComparingTo("3");
+
+        // Changing it to something else is an ordinary slot again, and settles up as usual.
+        MealPlanEntryResponse changed = mealPlanService.update(kept.id(), me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "bread", null, null, null, null, null));
+        assertThat(changed.recipeDeleted()).isFalse();
+        assertThat(changed.recipeName()).isNull();
+        assertThat(changed.itemName()).isEqualTo("bread");
+        groceryListService.addAllPlannedToList(cabin, me.getId(), tuesday, tuesday);
+        assertThat(leeks(cabin)).isNull();
+    }
+
+    @Test
+    void deletingTheWholeHouseThatSharedItKeepsTheOtherHousesMealToo() {
+        LocalDate tuesday = LocalDate.of(2031, 3, 4);
+        UUID id = recipe(home, soup(null, null)).id();
+        recipeService.updateShares(id, me.getId(), new UpdateSharesRequest(List.of(cabin)));
+        MealPlanEntryResponse theirs = mealPlanService.add(cabin, me.getId(), new AddMealPlanEntryRequest(
+                tuesday, MealType.LUNCH, id, null, null, null, 4, null, null));
+        groceryListService.addAllPlannedToList(cabin, me.getId(), tuesday, tuesday);
+        // The household delete is plain SQL, so what JPA is holding has to reach the database
+        // first, and be forgotten afterwards.
+        entityManager.flush();
+
+        householdService.delete(home, me.getId());
+        entityManager.clear();
+
+        // The same outcome as deleting just the recipe: the lunch stays, by name, marked deleted,
+        // and the leeks it put on the list stay with it.
+        List<MealPlanEntryResponse> cabinPlan = mealPlanService.listRange(cabin, me.getId(), tuesday, tuesday);
+        assertThat(cabinPlan).hasSize(1);
+        MealPlanEntryResponse kept = cabinPlan.get(0);
+        assertThat(kept.id()).isEqualTo(theirs.id());
+        assertThat(kept.recipeId()).isNull();
+        assertThat(kept.recipeName()).isEqualTo("Leek soup");
+        assertThat(kept.recipeDeleted()).isTrue();
+        assertThat(kept.includedOptionalIngredientIds()).isEmpty();
+        assertThat(leeks(cabin)).isEqualByComparingTo("3");
+    }
+
+    private BigDecimal leeks(UUID householdId) {
+        return groceryListService.listItems(householdId, me.getId()).stream()
+                .filter(i -> i.name().equals("leek"))
+                .map(GroceryListItemResponse::quantity)
+                .findFirst().orElse(null);
     }
 }

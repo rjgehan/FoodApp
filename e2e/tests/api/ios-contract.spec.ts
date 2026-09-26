@@ -32,7 +32,7 @@ test('the day sheet: plan with extras, step the servings, change the dish, remov
   expect(entry.servings).toBe(3);
   expect(entry.includedOptionalIngredientIds).toEqual([parsley]);
   // Every field the phone's MealPlanEntry decodes is there.
-  for (const key of ['needsIngredients', 'placeId', 'inCupboard', 'runningLow', 'notes']) {
+  for (const key of ['needsIngredients', 'placeId', 'inCupboard', 'runningLow', 'notes', 'recipeDeleted']) {
     expect(entry).toHaveProperty(key);
   }
 

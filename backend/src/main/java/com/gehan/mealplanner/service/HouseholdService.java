@@ -217,9 +217,10 @@ public class HouseholdService {
      * item goes.
      *
      * It reaches past this household where it has to. A recipe published here and kept by
-     * another house is still owned here, so the filings that put it on their shelf go too, and
-     * so do any meals they had planned with it. There is no version of deleting a recipe that
-     * leaves somebody else's plan pointing at it.
+     * another house is still owned here, so the filings that put it on their shelf go too. Their
+     * meals planned with it are the exception: nobody asked them, so the meal stays on their plan
+     * under the recipe's name, marked as deleted, just as it does when the one recipe is deleted.
+     * Nothing is left pointing at a recipe that is gone.
      *
      * Written as ordered SQL rather than left to JPA: none of the foreign keys cascade, several
      * of the tables are join tables with no entity of their own, and the ones that reach in from
@@ -249,6 +250,14 @@ public class HouseholdService {
                 + "SELECT id FROM meal_plan_entries WHERE household_id" + ours
                 + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere + ")",
                 householdId, householdId, householdId);
+        // Another household's meal made with one of our recipes stays on their plan under its
+        // name, marked as deleted, as RecipeService.delete does for a single recipe — otherwise
+        // the same lunch would vanish or stay depending on how the owners tidied up. What it
+        // already put on their list stays too. Done before the recipes go, while the name is there.
+        jdbc.update("UPDATE meal_plan_entries e SET deleted_recipe_name ="
+                + " (SELECT r.name FROM recipes r WHERE r.id = e.recipe_id), recipe_id = NULL"
+                + " WHERE e.household_id <> ? AND e.recipe_id IN " + recipesHere,
+                householdId, householdId);
         jdbc.update("DELETE FROM meal_plan_entry_groceries WHERE entry_id IN ("
                 + "SELECT id FROM meal_plan_entries WHERE household_id" + ours
                 + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere + ")",

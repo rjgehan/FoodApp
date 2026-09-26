@@ -75,6 +75,13 @@ public class MealPlanDtos {
             Integer servings,
             String notes,
             /** Which of the recipe's optional ingredients were chosen for this occurrence. */
-            List<UUID> includedOptionalIngredientIds) {
+            List<UUID> includedOptionalIngredientIds,
+            /**
+             * The household that shared this recipe has deleted it. The entry stays so the meal
+             * does not vanish without a word: recipeName still carries its name and recipeId is
+             * null. An older app that does not know this field shows it as a meal by that name
+             * with nothing to open, which is still better than a gap.
+             */
+            boolean recipeDeleted) {
     }
 }

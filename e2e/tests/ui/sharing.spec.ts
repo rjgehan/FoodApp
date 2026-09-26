@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, inviteToken, newHousehold, newMember, newRecipe } from '../../lib/api';
-import { fromMenu, sheet, signIn } from '../../lib/ui';
+import { admin, call, inviteToken, isoDate, newHousehold, newMember, newRecipe, plan } from '../../lib/api';
+import { calendarDay, fromMenu, sheet, signIn } from '../../lib/ui';
 
 /**
  * Sharing at iPhone size: the Share sheet offers only the other houses you are in, and a public
@@ -157,4 +157,31 @@ test('saving from a link turned off while it was open says so', async ({ page })
 
   await page.getByRole('button', { name: 'Save to my recipes' }).click();
   await expect(page.getByText(/This link has been turned off/)).toBeVisible();
+});
+
+test('a shared recipe deleted by its owners stays on the other plan, marked as deleted', async ({ page }) => {
+  const owners = await newHousehold();
+  const theirs = await newHousehold();
+  const owner = await admin();
+  const r = await newRecipe(owners.id, 'Borrowed Soup', [{ name: 'leek', qty: 2 }]);
+  await call('PUT', `/api/recipes/${r.id}/shares`, { token: owner.token, body: { householdIds: [theirs.id] } });
+  await plan(theirs.id, isoDate(0), 'LUNCH', { recipeId: r.id });
+  await call('DELETE', `/api/recipes/${r.id}`, { token: owner.token });
+
+  await signIn(page, theirs.owner, theirs.id);
+  await page.goto('/meal-plan');
+  await (await calendarDay(page, new Date())).click();
+  const day = sheet(page);
+  await expect(day.getByText('Borrowed Soup')).toBeVisible();
+  await expect(day.getByText('Recipe was deleted')).toBeVisible();
+  // It may still be cooked from memory, so bread can still go next to it.
+  await expect(day.getByRole('button', { name: 'Add side' })).toBeVisible();
+
+  // Opened, it says what happened and offers what can still be done — nothing to view.
+  await day.getByText('Borrowed Soup').click();
+  await expect(day.getByText(/The household that shared this recipe has deleted it/)).toBeVisible();
+  await expect(day.getByRole('button', { name: 'View recipe' })).toHaveCount(0);
+  await expect(day.getByRole('button', { name: 'Change' })).toBeVisible();
+  await expect(day.getByRole('button', { name: 'Remove' })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('deleted-shared-recipe.png') });
 });

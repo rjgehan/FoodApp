@@ -50,6 +50,14 @@ public class MealPlanEntry {
     @JoinColumn(name = "recipe_id")
     private Recipe recipe;
 
+    /**
+     * What {@link #recipe} was called, kept when another household deletes a recipe it had
+     * shared with this one. Their Tuesday lunch stays on the plan under its old name, marked as
+     * deleted, so they find out when they look at the week rather than finding a gap where it
+     * was. Null on every other entry, and cleared as soon as the slot is changed to something else.
+     */
+    private String deletedRecipeName;
+
     /** Set instead of {@link #recipe} when the plan is to eat out rather than cook. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id")

@@ -105,6 +105,13 @@ public class IntegrationService {
             return new PlannedItem("ITEM", entry.getItem().getName(), entry.getTime(), null, entry.getNotes(),
                     null, null, null, null, null, null);
         }
+        // A shared recipe its owners deleted is still what this household means to eat. It goes
+        // out as an ITEM — a name with nothing to open — rather than a new kind that a dashboard
+        // switching on `kind` has never seen, or a RECIPE with no recipe behind it.
+        if (entry.getDeletedRecipeName() != null) {
+            return new PlannedItem("ITEM", entry.getDeletedRecipeName(), entry.getTime(), null, entry.getNotes(),
+                    null, null, null, null, null, null);
+        }
         return new PlannedItem(null, null, null, null, null, null, null, null, null, null, null);
     }
 

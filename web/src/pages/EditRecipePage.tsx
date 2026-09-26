@@ -77,8 +77,12 @@ export default function EditRecipePage() {
         {confirming ? (
           <div className="space-y-3">
             <p className="text-sm text-muted">
-              This removes “{recipe.name}” for good, takes it off any planned meals, and stops any
+              This removes “{recipe.name}” for good, takes it off your planned meals, and stops any
               share link working. It can't be undone.
+              {/* The other houses are not asked, so they are at least not surprised: their meals
+                  stay on their plan, marked as deleted, instead of disappearing. */}
+              {(recipe.sharedWith.length > 0 || recipe.published) &&
+                ' Anyone else who planned it keeps the meal on their plan, marked as deleted.'}
             </p>
             <div className="flex gap-2">
               <Button variant="danger" className="flex-1" disabled={deleting} onClick={remove}>
