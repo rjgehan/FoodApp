@@ -64,6 +64,9 @@ reads it; `-mp_debug_paste "<text>"` fills Paste (and `-mp_debug_autoparse 1` re
 `-mp_debug_rules 1` shows Paste as a phone without Apple Intelligence sees it: the format
 warning and the rules-only reader.
 
+`-mp_debug_screen share -mp_debug_recipe <recipe-uuid>` opens that recipe from the server with its
+Share sheet up (the public link, your other households, Explore).
+
 `-mp_debug_screen household -mp_debug_scroll people` opens Who's here, with the Invite someone
 section; add `-mp_debug_expand 1` to open a password reset link for the first other person, or
 `-mp_debug_expand remove` to ask to remove them (sign in as the owner).
@@ -108,6 +111,16 @@ set-a-new-password form.
 Universal links (tapping an invite link in Messages and landing in the app) need an Associated
 Domains entitlement, which a free personal team cannot sign. Until the paid account arrives, a
 tapped link opens the web, which handles it completely; scanning the code in the app works today.
+
+## Sharing a recipe
+
+A recipe's ⋯ Share (owner's household only) mirrors the web sheet: the public link
+(`<server>/r/<token>`: create, copy, share, QR, turn off after a confirmation), switches for your
+other households, and an In Explore switch. A `/r/<token>` link coming the other way, shared into
+the app from Safari or Messages or pasted into New recipe → From a link, is not sent to the
+importer (it would find the web app's empty page): it is saved as a copy into the open household
+through `POST /api/public/recipes/{token}/save`, the same call as the web page's "Save to my
+recipes". Tapping such a link outside the app opens the web page, which does the same.
 
 ## Food icons
 

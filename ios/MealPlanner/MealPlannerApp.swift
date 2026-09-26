@@ -164,6 +164,14 @@ struct RootView: View {
                     RecipeDetailView(recipe: SampleData.recipes[0], session: session)
                 }
             }
+            // -mp_debug_screen share -mp_debug_recipe <uuid>: that recipe, from the server, with
+            // its Share sheet open.
+            .sheet(isPresented: Binding(
+                get: { debugSheet == "share" },
+                set: { if !$0 { debugSheet = nil } }
+            )) {
+                DebugRecipeDetail(session: session)
+            }
             // Settings is behind the avatar now, which a screenshot run cannot tap.
             .sheet(isPresented: Binding(
                 get: { debugSheet == "settings" },
@@ -336,3 +344,32 @@ struct SettingsView: View {
 #Preview("Settings") {
     SettingsView(session: .preview)
 }
+
+#if DEBUG
+/// A real recipe by id (-mp_debug_recipe), for screenshot runs that need the server's answers —
+/// the Share sheet's households, say — rather than sample data.
+private struct DebugRecipeDetail: View {
+    var session: Session
+    @State private var recipe: Recipe?
+    @State private var failed = false
+
+    var body: some View {
+        NavigationStack {
+            if let recipe {
+                RecipeDetailView(recipe: recipe, session: session)
+            } else if failed {
+                Text("No recipe for -mp_debug_recipe.").foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            guard let raw = UserDefaults.standard.string(forKey: "mp_debug_recipe"),
+                  let id = UUID(uuidString: raw),
+                  let found = try? await APIClient.shared.recipe(id, household: session.household?.id)
+            else { failed = true; return }
+            recipe = found
+        }
+    }
+}
+#endif

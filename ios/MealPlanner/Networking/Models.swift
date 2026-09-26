@@ -278,6 +278,10 @@ struct Recipe: Codable, Identifiable, Hashable {
     /// The first link that is not a video, and the first that is: all an older server knows.
     var sourceUrl: String? = nil
     var videoUrl: String? = nil
+    /// In Explore, where every household on the server can find it. Only the owner changes it.
+    var published: Bool? = nil
+    /// The households it is shared with. Only meaningful to the household that owns it.
+    var sharedWith: [UUID]? = nil
 
     /// The links to show and to edit, from the list when the server sends one.
     var allLinks: [SourceLink] {
@@ -292,6 +296,21 @@ struct Recipe: Codable, Identifiable, Hashable {
         if total > 0 { parts.append("\(total) min") }
         return parts.joined(separator: " · ")
     }
+}
+
+/// One of your other households, and whether this recipe is shared with it — the Share sheet's
+/// switches. The server only ever lists houses the person asking is in.
+struct ShareTarget: Codable, Identifiable, Hashable {
+    let householdId: UUID
+    let name: String
+    var shared: Bool
+
+    var id: UUID { householdId }
+}
+
+/// A recipe's public link. A nil token means it has none.
+struct RecipeLinkToken: Codable, Hashable {
+    let token: String?
 }
 
 /// Somewhere a recipe lives on the web. Always http(s) once the server has it; a nil label

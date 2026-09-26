@@ -9,6 +9,7 @@ struct RecipeDetailView: View {
     @State private var planned: String?
     @State private var editing = false
     @State private var changingPhoto = false
+    @State private var sharing = false
 
     /// One step per line, the way it was written.
     private var steps: [String] {
@@ -135,13 +136,28 @@ struct RecipeDetailView: View {
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Only the household that owns a recipe can change it; a shared one is read-only.
+            // Only the household that owns a recipe can change it — or hand it on; a shared one
+            // is read-only.
             if !recipe.shared {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Share", systemImage: "square.and.arrow.up") { sharing = true }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { editing = true }
                 }
             }
         }
+        .sheet(isPresented: $sharing) {
+            RecipeShareSheet(recipe: $recipe)
+        }
+        #if DEBUG
+        // -mp_debug_screen share opens this recipe's Share sheet, for screenshot runs.
+        .task {
+            if UserDefaults.standard.string(forKey: "mp_debug_screen") == "share", !recipe.shared {
+                sharing = true
+            }
+        }
+        #endif
         .sheet(isPresented: $changingPhoto) {
             CoverPhotoSheet(recipe: recipe, session: session) { saved in
                 recipe = saved

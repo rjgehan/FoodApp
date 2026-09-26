@@ -411,6 +411,44 @@ actor APIClient {
             "DELETE", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)")
     }
 
+    // MARK: - Sharing a recipe
+
+    /// Your other households, and which already have it. Only yours are ever listed.
+    func shareTargets(recipe: UUID) async throws -> [ShareTarget] {
+        try await get("/api/recipes/\(recipe.uuidString)/share-targets")
+    }
+
+    /// Which of your households it is shared with. Shares into houses you are not in stay put.
+    func setShares(recipe: UUID, households: [UUID]) async throws -> Recipe {
+        try await send("PUT", "/api/recipes/\(recipe.uuidString)/shares",
+                       body: ["householdIds": households.map(\.uuidString)])
+    }
+
+    func publicLink(recipe: UUID) async throws -> RecipeLinkToken {
+        try await get("/api/recipes/\(recipe.uuidString)/link")
+    }
+
+    /// Makes the link, or hands back the one there is.
+    func createPublicLink(recipe: UUID) async throws -> RecipeLinkToken {
+        try await send("POST", "/api/recipes/\(recipe.uuidString)/link", body: [:])
+    }
+
+    /// Anyone still holding the link gets "not valid" from now on.
+    func revokePublicLink(recipe: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/recipes/\(recipe.uuidString)/link")
+    }
+
+    func setPublished(recipe: UUID, published: Bool) async throws -> Recipe {
+        try await send("PUT", "/api/recipes/\(recipe.uuidString)/published", body: ["published": published])
+    }
+
+    /// Keeps a copy of a recipe somebody sent as a public link, in one of your households.
+    func saveSharedRecipe(token: String, household: UUID) async throws -> Recipe {
+        let escaped = token.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? token
+        return try await send("POST", "/api/public/recipes/\(escaped)/save",
+                              body: ["householdId": household.uuidString])
+    }
+
     func explore(household: UUID) async throws -> [Recipe] {
         try await get("/api/households/\(household.uuidString)/explore")
     }

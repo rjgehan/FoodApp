@@ -169,7 +169,8 @@ struct NewRecipeView: View {
                 ) { saved in finish(saved) }
             }
             shown(.link) {
-                FromALinkPage(session: session, link: handedLink, active: mode == .link, busy: $reading) { draft = $0 }
+                FromALinkPage(session: session, link: handedLink, active: mode == .link, busy: $reading,
+                              onRead: { draft = $0 }, onSaved: finish)
             }
             shown(.paste) {
                 PastePage(busy: $reading) { draft = $0 } onLink: { link in
@@ -209,6 +210,8 @@ struct FromALinkPage: View {
     var active: Bool
     @Binding var busy: Bool
     var onRead: (RecipeDraft) -> Void
+    /// A recipe from one of this app's own public links, already saved as a copy.
+    var onSaved: ((Recipe) -> Void)? = nil
 
     @State private var link: String
     @State private var readingSince: Date?
@@ -216,12 +219,13 @@ struct FromALinkPage: View {
     @FocusState private var focused: Bool
 
     init(session: Session?, link: String = "", active: Bool = true, busy: Binding<Bool> = .constant(false),
-         onRead: @escaping (RecipeDraft) -> Void) {
+         onRead: @escaping (RecipeDraft) -> Void, onSaved: ((Recipe) -> Void)? = nil) {
         self.session = session
         self.handed = link
         self.active = active
         _busy = busy
         self.onRead = onRead
+        self.onSaved = onSaved
         _link = State(initialValue: link)
     }
 
@@ -306,6 +310,12 @@ struct FromALinkPage: View {
             // As typed: the server finds the link in a pasted share-sheet sentence and puts
             // https:// on "tiktok.com/…", the same for the phone and the web.
             let typed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Somebody's Meal Planner link is the web app's page, which the importer would find
+            // empty: it is saved as a copy, pictures and all, as the web page's Save does.
+            if let onSaved, let token = SharedRecipeLink.token(in: typed) {
+                onSaved(try await SharedRecipeLink.save(token: token, household: household))
+                return
+            }
             let imported = try await APIClient.shared.importRecipe(household: household, url: typed)
             onRead(RecipeDraft(imported: imported, link: typed))
         } catch {

@@ -146,6 +146,8 @@ struct SharedRecipeView: View {
     /// Kept so the model's rewrite can be undone — it is a guess about wording, and the
     /// steps underneath it are the ones the cook actually said.
     @State private var spokenSteps: [String]?
+    /// A recipe sent as one of this app's own public links, saved as a copy — to open from here.
+    @State private var copy: Recipe?
 
     #if canImport(FoundationModels)
     @State private var parsedStore: Any?
@@ -187,6 +189,20 @@ struct SharedRecipeView: View {
             }
             if let error {
                 Section { Text(error).foregroundStyle(.red) }
+            }
+
+            if let copy {
+                Section {
+                    NavigationLink {
+                        RecipeDetailView(recipe: copy, session: session)
+                    } label: {
+                        Label(copy.name, systemImage: "checkmark.circle.fill")
+                    }
+                } header: {
+                    Text("Saved to \(session.household?.name ?? "your recipes")")
+                } footer: {
+                    Text("A copy of your own: it stays as it is if they change theirs or turn the link off.")
+                }
             }
 
             if let fromPage {
@@ -296,6 +312,12 @@ struct SharedRecipeView: View {
             #if DEBUG
             if let diagnostic { await session.noteShare(diagnostic) }
             #endif
+            // A page of this app's own, shared from Safari: its words would be read as a recipe
+            // otherwise, and saved as a new one with none of its pictures.
+            if copy == nil, error == nil, let token = SharedRecipeLink.token(in: link) {
+                await saveCopy(token)
+                return
+            }
             if let structured, fromPage == nil {
                 fromPage = structured
                 note = "Read straight from the page's own recipe data — nothing was guessed."
@@ -315,6 +337,27 @@ struct SharedRecipeView: View {
             if UserDefaults.standard.bool(forKey: "mp_debug_autoparse") { await parse() }
         }
         #endif
+    }
+
+    /**
+     One of this app's own public links (/r/…), which somebody sent. It is not a recipe page the
+     importer could read — it is the web app's — so it is saved as a copy, pictures and all, the
+     same as that page's "Save to my recipes", into the household the app is on.
+    */
+    private func saveCopy(_ token: String) async {
+        guard let household = session.household?.id else { return }
+        busy = true
+        error = nil
+        saved = nil
+        defer { busy = false }
+        note = "A recipe shared from Meal Planner. Saving a copy…"
+        do {
+            copy = try await SharedRecipeLink.save(token: token, household: household)
+            note = nil
+        } catch {
+            note = nil
+            self.error = error.localizedDescription
+        }
     }
 
     /// Asks the server to read a link. It knows about structured data and about TikTok, and
@@ -611,6 +654,10 @@ struct SharedRecipeView: View {
     // MARK: - Reading
 
     private func parse() async {
+        if let token = SharedRecipeLink.token(in: text) {
+            await saveCopy(token)
+            return
+        }
         #if canImport(FoundationModels)
         guard #available(iOS 26.0, *) else {
             error = "Needs iOS 26."
