@@ -74,6 +74,12 @@ enum RecipeText {
      chatty line before or after — and the editor is where anything it gets wrong is fixed.
     */
     static func parse(_ raw: String) throws -> RecipeDraft {
+        try read(raw).draft
+    }
+
+    /// The reader behind `parse`, which also counts the ingredients that came in the question's
+    /// "qty | unit | name" layout, so `answer` can tell an answer from a page that has a "|" in it.
+    private static func read(_ raw: String) throws -> (draft: RecipeDraft, piped: Int) {
         var text = raw.replacingOccurrences(of: "\r", with: "")
         // If the reply came in a code block, what matters is inside it.
         if let fenced = text.firstMatch(of: fence), let inside = fenced.output[1].substring {
@@ -88,6 +94,7 @@ enum RecipeText {
         var firstLine = ""
         var ingredients: [RecipeDraft.Ingredient] = []
         var steps: [String] = []
+        var piped = 0
         var part: Part = .header
 
         for rawLine in text.components(separatedBy: "\n") {
@@ -121,7 +128,12 @@ enum RecipeText {
                 let item = stripMarker(line)
                 // "For the sauce:" — a heading inside the list, not an ingredient.
                 if item.isEmpty || item.hasSuffix(":") { continue }
-                ingredients.append(ingredient(item))
+                if let split = pipedIngredient(item) {
+                    piped += 1
+                    ingredients.append(split)
+                } else {
+                    ingredients.append(RecipeDraft.Ingredient(line: item))
+                }
             case .steps:
                 let step = stripMarker(line)
                 if !step.isEmpty { steps.append(step) }
@@ -136,7 +148,7 @@ enum RecipeText {
             throw ParseError(message: "Couldn’t find any ingredients — they should be under an “Ingredients:” line.")
         }
 
-        return RecipeDraft(
+        let draft = RecipeDraft(
             name: name,
             description: description,
             servings: servings ?? 4,
@@ -145,32 +157,40 @@ enum RecipeText {
             instructions: steps.joined(separator: "\n"),
             ingredients: ingredients
         )
+        return (draft, piped)
     }
 
     private enum Part { case header, ingredients, steps }
 
     /**
-     A paste that is an answer to the question — its ingredients in the "2 | cup | flour" layout
-     under an Ingredients line — read by rule. Nil for anything else. The rules read that layout
-     exactly, so the phone's model is not asked to guess at what is already plain.
+     A paste that is an answer to the question — most of its ingredients in the "2 | cup | flour"
+     layout under an Ingredients line — read by rule. Nil for anything else. The rules read that
+     layout exactly, so the phone's model is not asked to guess at what is already plain.
+
+     A "|" somewhere in the paste is not enough: a copied recipe page has them in its breadcrumbs,
+     its "Title | Site" line and its "US Customary | Metric" switch, and the rules would take the
+     page's menu for the name and its buttons for ingredients. Those pages are the model's job.
     */
     static func answer(_ raw: String) -> RecipeDraft? {
-        guard raw.contains("|"), let draft = try? parse(raw) else { return nil }
+        guard raw.contains("|"), let (draft, piped) = try? read(raw),
+              piped * 2 > draft.ingredients.count else { return nil }
         return draft
     }
 
     /// "2 | cup | flour", "3 | | eggs", or plain "2 cups flour" — whichever came back. Also used
     /// for the on-device model's lines, which it copies as written, pipes and all.
     static func ingredient(_ item: String) -> RecipeDraft.Ingredient {
-        if item.contains("|") {
-            let parts = item.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-            // "qty | unit | name", or "qty | name" with the unit left out altogether.
-            let unit = parts.count >= 3 ? parts[1] : ""
-            let name = parts.count >= 3 ? parts[2...].joined(separator: " ") : (parts.count > 1 ? parts[1] : "")
-            if !name.isEmpty {
-                return RecipeDraft.Ingredient(quantity: Amount.quantity(parts[0]), unit: unit, name: name)
-            }
-        }
-        return RecipeDraft.Ingredient(line: item)
+        pipedIngredient(item) ?? RecipeDraft.Ingredient(line: item)
+    }
+
+    /// "qty | unit | name", or "qty | name" with the unit left out altogether. Nil when the line
+    /// is not in that layout, or its pipes leave no name.
+    private static func pipedIngredient(_ item: String) -> RecipeDraft.Ingredient? {
+        guard item.contains("|") else { return nil }
+        let parts = item.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+        let unit = parts.count >= 3 ? parts[1] : ""
+        let name = parts.count >= 3 ? parts[2...].joined(separator: " ") : (parts.count > 1 ? parts[1] : "")
+        guard !name.isEmpty else { return nil }
+        return RecipeDraft.Ingredient(quantity: Amount.quantity(parts[0]), unit: unit, name: name)
     }
 }
