@@ -15,11 +15,16 @@ test('sign in from the tap-your-name screen with the keypad', async ({ page }) =
     .find((m: any) => m.username.startsWith('pad')).username;
 
   await page.goto('/');
+  // Email and password come first now; the name-and-PIN screens are a link underneath.
+  await page.getByText('Sign in with your name and PIN').click();
   await page.getByRole('button', { name: new RegExp(hh.name) }).click();
   await page.getByRole('button', { name: username }).click();
   await expect(page.getByText('Pick a 4-digit PIN')).toBeVisible();
   for (const d of '24682468') await page.getByRole('button', { name: d, exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plan' })).toBeVisible();
+  // Exact: the sign-in screen's own "Meal Planner" heading would otherwise match before it has gone.
+  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  // A PIN-only account is asked to move to email and password straight away.
+  await expect(sheet(page).getByRole('heading', { name: 'Add an email and password' })).toBeVisible();
 });
 
 test('plan a recipe for next Tuesday from the Plan tab', async ({ page }) => {

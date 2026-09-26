@@ -10,18 +10,26 @@ interface Session {
 
 interface SetupInput {
   householdName: string;
-  username: string;
-  displayName?: string;
-  pin: string;
+  displayName: string;
+  email: string;
+  password: string;
 }
 
 interface AuthContextValue {
   session: Session | null;
   /** True when the server ended the session, as opposed to you pressing Log out. */
   expired: boolean;
-  login: (username: string, pin: string) => Promise<void>;
+  /** The sign-in everyone is moving to. */
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  /**
+   * The older name-and-PIN sign-in. `householdId` is the house they tapped to find their name,
+   * which is the house they meant to open.
+   */
+  login: (username: string, pin: string, householdId?: string) => Promise<void>;
   /** First sign-in for an account someone else created: choosing the PIN also signs you in. */
-  setInitialPin: (username: string, pin: string) => Promise<void>;
+  setInitialPin: (username: string, pin: string, householdId?: string) => Promise<void>;
+  /** For anything else that hands back a session — a password reset link, say. */
+  signInWith: (auth: AuthResponse) => void;
   /** Only reachable on a completely empty install — creates the first household and its owner. */
   setup: (input: SetupInput) => Promise<void>;
   logout: () => void;
@@ -30,6 +38,12 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * sessionStorage, so "Not now" lasts until the app is next opened: a closed tab or a relaunched
+ * home-screen app starts a new session and asks again.
+ */
+export const CREDENTIALS_PROMPT_DISMISSED = 'mp_credentialsPromptDismissed';
 
 /** Tokens last 30 days; swapping at most once a day keeps a used session alive indefinitely. */
 const REFRESH_AFTER_SECONDS = 24 * 60 * 60;
@@ -46,10 +60,24 @@ function storeSession(auth: AuthResponse) {
   localStorage.setItem('mp_displayName', auth.displayName);
 }
 
+/**
+ * Which household a fresh sign-in opens: the one the server remembers them in, else the one
+ * they tapped on the way to their name, else none — and the household list picks the first.
+ * This used to be left alone, so the previous person's house (or the first you ever joined)
+ * was what you landed in, whichever house you had just signed in through.
+ */
+function storeActiveHousehold(auth: AuthResponse, pickedHouseholdId?: string) {
+  const id = auth.lastHouseholdId ?? pickedHouseholdId;
+  if (id) localStorage.setItem('mp_activeHouseholdId', id);
+  else localStorage.removeItem('mp_activeHouseholdId');
+}
+
+/** Everything that belongs to whoever was signed in, including the house they were looking at. */
 function clearSession() {
   localStorage.removeItem('mp_token');
   localStorage.removeItem('mp_userId');
   localStorage.removeItem('mp_displayName');
+  localStorage.removeItem('mp_activeHouseholdId');
 }
 
 /** When the token was issued, in seconds. Read from the token itself — nothing to keep in sync. */
@@ -66,18 +94,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(loadSession);
   const [expired, setExpired] = useState(false);
 
-  const signIn = useCallback((auth: AuthResponse) => {
+  const signIn = useCallback((auth: AuthResponse, pickedHouseholdId?: string) => {
     storeSession(auth);
+    storeActiveHousehold(auth, pickedHouseholdId);
+    // "Not now" on the add-an-email prompt lasts until the next sign-in, not past it.
+    try {
+      sessionStorage.removeItem(CREDENTIALS_PROMPT_DISMISSED);
+    } catch {
+      // Storage blocked: the prompt simply shows again, which is fine.
+    }
     setExpired(false);
     setSession({ userId: auth.userId, displayName: auth.displayName });
   }, []);
 
-  const login = useCallback(async (username: string, pin: string) => {
-    signIn(await api<AuthResponse>('POST', '/api/auth/login', { username, pin }));
+  const loginWithEmail = useCallback(async (email: string, password: string) => {
+    signIn(await api<AuthResponse>('POST', '/api/auth/login/email', { email, password }));
   }, [signIn]);
 
-  const setInitialPin = useCallback(async (username: string, pin: string) => {
-    signIn(await api<AuthResponse>('POST', '/api/auth/pin', { username, pin }));
+  const login = useCallback(async (username: string, pin: string, householdId?: string) => {
+    signIn(await api<AuthResponse>('POST', '/api/auth/login', { username, pin, householdId }), householdId);
+  }, [signIn]);
+
+  const setInitialPin = useCallback(async (username: string, pin: string, householdId?: string) => {
+    signIn(await api<AuthResponse>('POST', '/api/auth/pin', { username, pin, householdId }), householdId);
   }, [signIn]);
 
   const setup = useCallback(async (input: SetupInput) => {
@@ -129,8 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const value = useMemo(
-    () => ({ session, expired, login, setInitialPin, setup, logout, setDisplayName }),
-    [session, expired, login, setInitialPin, setup, logout, setDisplayName],
+    () => ({ session, expired, loginWithEmail, login, setInitialPin, signInWith: signIn, setup, logout, setDisplayName }),
+    [session, expired, loginWithEmail, login, setInitialPin, signIn, setup, logout, setDisplayName],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

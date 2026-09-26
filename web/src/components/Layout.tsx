@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
 import { CardInSheetProvider, cx, Sheet } from './ui';
 import ProfileCard from './ProfileCard';
+import CredentialsPrompt from './CredentialsPrompt';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
@@ -153,6 +154,8 @@ export default function Layout({ children }: { children: ReactNode }) {
             </CardInSheetProvider>
           </Sheet>
         )}
+
+        <CredentialsPrompt />
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
         <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-1 md:pb-10">{children}</main>

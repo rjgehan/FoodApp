@@ -2,6 +2,27 @@ export interface AuthResponse {
   token: string;
   userId: string;
   displayName: string;
+  /** The household they were last in, if they still are — where signing in should land. */
+  lastHouseholdId?: string | null;
+}
+
+/** You, from GET /api/users/me. `email` and `hasPassword` decide whether to ask for them. */
+export interface Me {
+  userId: string;
+  username: string;
+  displayName: string;
+  pinSet: boolean;
+  email: string | null;
+  hasPassword: boolean;
+  lastHouseholdId: string | null;
+}
+
+/** What a password reset link says about itself before it is used. */
+export interface PasswordResetInfo {
+  valid: boolean;
+  displayName: string | null;
+  /** False means the form has to ask for an email too, or the new password has nothing to go with. */
+  hasEmail: boolean;
 }
 
 export interface UserSummary {
@@ -23,6 +44,11 @@ export interface LandingResponse {
   households: HouseholdSummary[];
   /** Accounts in no household yet. They still need somewhere to tap. */
   unassigned: UserSummary[];
+  /**
+   * Whether the name-and-PIN screens are still on. Absent from an older server, which only
+   * had those, so treat absent as on.
+   */
+  legacyPinLogin?: boolean;
 }
 
 /** Top level of the catalog — the drawer a recipe is filed in. */
@@ -91,6 +117,9 @@ export interface HouseholdMember {
   displayName: string;
   role: HouseholdRole;
   pinSet: boolean;
+  /** Whether they have added an email yet — the owner's cue for when the PIN screens can go. */
+  hasEmail?: boolean;
+  hasPassword?: boolean;
 }
 
 export interface RecipeIngredientInput {

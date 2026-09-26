@@ -16,6 +16,7 @@ import MealPlanPage from './pages/MealPlanPage';
 import GroceryListPage from './pages/GroceryListPage';
 import CupboardPage from './pages/CupboardPage';
 import PublicRecipePage from './pages/PublicRecipePage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 export default function App() {
   const { session } = useAuth();
@@ -30,6 +31,15 @@ export default function App() {
     return (
       <Routes>
         <Route path="/r/:token" element={<PublicRecipePage />} />
+      </Routes>
+    );
+  }
+
+  // A reset link is opened by someone who cannot sign in — that is why they were sent it.
+  if (pathname.startsWith('/reset/')) {
+    return (
+      <Routes>
+        <Route path="/reset/:token" element={<ResetPasswordPage />} />
       </Routes>
     );
   }

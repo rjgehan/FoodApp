@@ -163,6 +163,8 @@ test('a place menu link typed without https:// is accepted or explained', async 
 
 test('username sign-in turns off iOS auto-capitalisation', async ({ page }) => {
   await page.goto('/');
+  // Behind the email form now, with the rest of the name-and-PIN screens.
+  await page.getByText('Sign in with your name and PIN').click();
   await page.getByText('Sign in with a username instead').click();
   await expect(page.locator('input').first()).toHaveAttribute('autocapitalize', /none|off/);
 });

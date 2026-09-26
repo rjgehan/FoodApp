@@ -5,18 +5,26 @@ import type { HouseholdSummary, LandingResponse, UserSummary } from '../api/type
 import { Button, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
 import Keypad, { PinDots } from '../components/Keypad';
 import { PIN_LENGTH } from '../auth/pin';
+import { PASSWORD_MIN, PASSWORD_RULE } from '../auth/password';
 
-type Step = 'household' | 'user' | 'username' | 'setup-form' | 'pin' | 'pin-confirm';
+/*
+ * Email and password first. The name-and-PIN screens are the older way in, kept behind a link
+ * while everyone adds an email, and gone entirely once the server turns them off.
+ */
+type Step = 'email' | 'household' | 'user' | 'username' | 'setup-form' | 'pin' | 'pin-confirm';
 
 /** What finishing the keypad actually does. 'claim' is a first-ever sign-in choosing a PIN. */
-type Mode = 'login' | 'claim' | 'setup';
+type Mode = 'login' | 'claim';
 
 export default function LoginPage() {
-  const { login, setInitialPin, setup, expired } = useAuth();
+  const { login, loginWithEmail, setInitialPin, setup, expired } = useAuth();
 
   const [landing, setLanding] = useState<LandingResponse | null>(null);
-  const [step, setStep] = useState<Step>('household');
+  const [step, setStep] = useState<Step>('email');
   const [mode, setMode] = useState<Mode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
 
   const [household, setHousehold] = useState<HouseholdSummary | null>(null);
   const [users, setUsers] = useState<UserSummary[] | null>(null);
@@ -35,13 +43,10 @@ export default function LoginPage() {
     api<LandingResponse>('GET', '/api/auth/landing')
       .then((data) => {
         setLanding(data);
-        // An empty install has nothing to tap, so go straight to making the first account.
-        if (data.needsSetup) {
-          setMode('setup');
-          setStep('setup-form');
-        }
+        // An empty install has nobody to sign in as, so go straight to making the first account.
+        if (data.needsSetup) setStep('setup-form');
       })
-      .catch(() => setLanding({ needsSetup: false, households: [], unassigned: [] }));
+      .catch(() => setLanding({ needsSetup: false, households: [], unassigned: [], legacyPinLogin: true }));
   }, []);
 
   /** Clear the entered PIN with a bit of visible feedback before the dots empty out. */
@@ -77,11 +82,7 @@ export default function LoginPage() {
     submitting.current = true;
     setBusy(true);
     const request =
-      mode === 'login'
-        ? login(username, pin)
-        : mode === 'claim'
-          ? setInitialPin(username, pin)
-          : setup({ householdName, username, pin });
+      mode === 'login' ? login(username, pin, household?.id) : setInitialPin(username, pin, household?.id);
 
     request
       .catch((err) => {
@@ -89,13 +90,26 @@ export default function LoginPage() {
           setFirstPin('');
           setStep('pin');
         }
-        reject(describeError(err));
+        reject(describeError(err, 'pin'));
       })
       .finally(() => {
         submitting.current = false;
         setBusy(false);
       });
-  }, [pin, step, mode, username, householdName, firstPin, shake, login, setInitialPin, setup]);
+  }, [pin, step, mode, username, household, firstPin, shake, login, setInitialPin]);
+
+  async function onEmailSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !password || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await loginWithEmail(email.trim(), password);
+    } catch (err) {
+      setError(describeError(err, 'email'));
+      setBusy(false);
+    }
+  }
 
   async function openHousehold(picked: HouseholdSummary) {
     setHousehold(picked);
@@ -130,23 +144,32 @@ export default function LoginPage() {
     try {
       chooseUser(await api<UserSummary>('GET', `/api/auth/users/${encodeURIComponent(name)}`));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, 'pin'));
     } finally {
       setBusy(false);
     }
   }
 
-  function onSetupSubmit(e: FormEvent) {
+  async function onSetupSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!householdName.trim() || !username.trim()) return;
-    setHouseholdName(householdName.trim());
-    setUsername(username.trim());
-    setLabel(username.trim());
-    setMode('setup');
-    setPin('');
-    setFirstPin('');
+    if (!householdName.trim() || !displayName.trim() || !email.trim() || busy) return;
+    if (password.length < PASSWORD_MIN) {
+      setError(PASSWORD_RULE);
+      return;
+    }
+    setBusy(true);
     setError(null);
-    setStep('pin');
+    try {
+      await setup({
+        householdName: householdName.trim(),
+        displayName: displayName.trim(),
+        email: email.trim(),
+        password,
+      });
+    } catch (err) {
+      setError(describeError(err, 'email'));
+      setBusy(false);
+    }
   }
 
   function back() {
@@ -156,15 +179,15 @@ export default function LoginPage() {
     setShake(false);
 
     if (step === 'pin' || step === 'pin-confirm') {
-      if (mode === 'setup') setStep('setup-form');
-      else if (household) setStep('user');
+      if (household) setStep('user');
       else setStep('username');
       return;
     }
     setUsername('');
     setHousehold(null);
     setMode('login');
-    setStep('household');
+    // Back from the first PIN screen is back to email and password, where everyone starts.
+    setStep(step === 'household' ? 'email' : 'household');
   }
 
   return (
@@ -182,6 +205,60 @@ export default function LoginPage() {
 
         {landing === null && <p className="text-center text-sm text-muted">Loading…</p>}
 
+        {landing !== null && step === 'email' && (
+          <form onSubmit={onEmailSubmit} className="space-y-3">
+            <Field label="Email">
+              <Input
+                aria-label="Email"
+                autoFocus
+                required
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                {...usernameInputProps}
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
+              />
+            </Field>
+            <Field label="Password">
+              <Input
+                aria-label="Password"
+                required
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+              />
+            </Field>
+            {error && <ErrorText>{error}</ErrorText>}
+            <Button type="submit" disabled={busy || !email.trim() || !password} full size="lg">
+              {busy ? 'Signing in…' : 'Sign in'}
+            </Button>
+            {/* There is no email sending, so the way back in is a person, not a link. */}
+            <p className="pt-1 text-center text-xs text-muted">
+              Forgot your password? The owner of your household can make you a reset link.
+            </p>
+            {landing.legacyPinLogin !== false && (
+              <div className="pt-3">
+                <TextLink
+                  onClick={() => {
+                    setError(null);
+                    setStep('household');
+                  }}
+                >
+                  Sign in with your name and PIN
+                </TextLink>
+              </div>
+            )}
+          </form>
+        )}
+
         {landing !== null && step === 'household' && (
           <HouseholdStep
             households={landing.households}
@@ -193,6 +270,7 @@ export default function LoginPage() {
               setError(null);
               setStep('username');
             }}
+            onBack={back}
             error={error}
           />
         )}
@@ -227,27 +305,57 @@ export default function LoginPage() {
             <p className="text-center text-sm text-muted">
               Nobody's here yet. Make the first household and your own account.
             </p>
+            <Field label="Your name">
+              <Input
+                aria-label="Your name"
+                autoFocus
+                required
+                autoComplete="name"
+                placeholder="Ryan"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </Field>
+            <Field label="Email" hint="What you'll sign in with.">
+              <Input
+                aria-label="Email"
+                required
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                {...usernameInputProps}
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
+              />
+            </Field>
+            <Field label="Password" hint={PASSWORD_RULE}>
+              <Input
+                aria-label="Password"
+                required
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+              />
+            </Field>
             <Field label="Household name">
               <Input
-                autoFocus
+                aria-label="Household name"
                 required
                 placeholder="Gehan House"
                 value={householdName}
                 onChange={(e) => setHouseholdName(e.target.value)}
               />
             </Field>
-            <Field label="Your name">
-              <Input
-                required
-                placeholder="ryan"
-                {...usernameInputProps}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </Field>
             {error && <ErrorText>{error}</ErrorText>}
-            <Button type="submit" full size="lg">
-              Continue
+            <Button type="submit" disabled={busy} full size="lg">
+              {busy ? 'Setting up…' : 'Get started'}
             </Button>
           </form>
         )}
@@ -282,6 +390,7 @@ function HouseholdStep({
   onPick,
   onPickUser,
   onUseUsername,
+  onBack,
   error,
 }: {
   households: HouseholdSummary[];
@@ -289,10 +398,20 @@ function HouseholdStep({
   onPick: (h: HouseholdSummary) => void;
   onPickUser: (u: UserSummary) => void;
   onUseUsername: () => void;
+  onBack: () => void;
   error: string | null;
 }) {
   return (
     <div className="space-y-4">
+      {/* At the top, not after the houses: the list is every house on the server, and on a
+          phone the way back should not be a scroll away. */}
+      <button
+        type="button"
+        onClick={onBack}
+        className="-mt-3 flex min-h-touch items-center gap-1 text-sm font-medium text-muted"
+      >
+        <span aria-hidden="true">‹</span> Use email and password
+      </button>
       <p className="text-center text-sm text-muted">
         {households.length ? 'Which house?' : 'No households yet.'}
       </p>
@@ -403,13 +522,13 @@ function Tile({
 function pinTitle(mode: Mode, step: Step, label: string): string {
   if (mode === 'login') return label;
   if (step === 'pin-confirm') return 'Enter it again';
-  return mode === 'setup' ? 'Choose a PIN' : `Welcome, ${label}`;
+  return `Welcome, ${label}`;
 }
 
 function pinSubtitle(mode: Mode, step: Step): string {
   if (mode === 'login') return 'Enter your PIN';
   if (step === 'pin-confirm') return 'Just to be sure';
-  return mode === 'setup' ? `${PIN_LENGTH} digits, that's it` : `Pick a ${PIN_LENGTH}-digit PIN to use from now on`;
+  return `Pick a ${PIN_LENGTH}-digit PIN to use from now on`;
 }
 
 function TextLink({ children, onClick }: { children: ReactNode; onClick: () => void }) {
@@ -420,10 +539,10 @@ function TextLink({ children, onClick }: { children: ReactNode; onClick: () => v
   );
 }
 
-function describeError(err: unknown): string {
+function describeError(err: unknown, via: 'email' | 'pin'): string {
   if (!(err instanceof ApiError)) return 'Cannot reach the server.';
   const body = err.body as { message?: string } | null;
-  if (err.status === 401) return 'That PIN is not right.';
-  if (err.status === 404) return 'No account with that name.';
+  if (err.status === 401) return via === 'pin' ? 'That PIN is not right.' : 'Incorrect email or password.';
+  if (err.status === 404 && via === 'pin') return 'No account with that name.';
   return body?.message ?? 'Something went wrong.';
 }

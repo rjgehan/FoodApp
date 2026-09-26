@@ -48,10 +48,19 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [groceryCategories, setGroceryCategories] = useState<GroceryCategory[]>([]);
 
-  const setActiveHouseholdId = useCallback((id: string) => {
+  const showHousehold = useCallback((id: string) => {
     localStorage.setItem('mp_activeHouseholdId', id);
     setActiveHouseholdIdState(id);
   }, []);
+
+  /**
+   * Someone chose this house, so the server remembers it and the next sign-in — on this device
+   * or another — opens it. Best effort: failing to remember is not worth an error on screen.
+   */
+  const setActiveHouseholdId = useCallback((id: string) => {
+    showHousehold(id);
+    api('PUT', '/api/users/me/active-household', { householdId: id }).catch(() => {});
+  }, [showHousehold]);
 
   const refresh = useCallback(async () => {
     if (!session) return;
@@ -61,7 +70,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       setHouseholds(list);
       if (!list.some((h) => h.id === activeHouseholdId)) {
         if (list.length) {
-          setActiveHouseholdId(list[0].id);
+          // A fallback, not a choice, so it is not remembered as one.
+          showHousehold(list[0].id);
         } else {
           localStorage.removeItem('mp_activeHouseholdId');
           setActiveHouseholdIdState(null);
@@ -70,7 +80,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [session, activeHouseholdId, setActiveHouseholdId]);
+  }, [session, activeHouseholdId, showHousehold]);
 
   useEffect(() => {
     if (session) refresh();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { RecipeSection } from '../api/types';
 import type { HouseholdMember, Place } from '../api/types';
@@ -8,6 +8,7 @@ import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
 import IconPicker from '../components/IconPicker';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
 import {
+  ActionMenu,
   Badge,
   Button,
   Card,
@@ -27,6 +28,7 @@ import PlaceActions from '../components/PlaceActions';
 import { PageTitle } from '../components/PageTitle';
 import ImagePicker from '../components/ImagePicker';
 import ProfileCard from '../components/ProfileCard';
+import LinkHandout from '../components/LinkHandout';
 
 export default function HouseholdPage() {
   const { households, activeHousehold } = useHousehold();
@@ -316,7 +318,7 @@ function AddSomeone({ householdId, onDone }: { householdId: string; onDone: () =
           onDone={onDone}
           path="users"
           label="Their username"
-          hint="They join this household and pick a PIN the first time they sign in."
+          hint="They join this household. To get in the first time, they tap “Sign in with your name and PIN” and choose one — or send them a reset link from ••• by their name."
           action="Create"
           fallbackError="Could not create that account"
         />
@@ -859,7 +861,11 @@ function ManageCategorySheet({
 }
 
 function MembersCard({ householdId }: { householdId: string }) {
+  const { activeHousehold } = useHousehold();
+  const { session } = useAuth();
   const [members, setMembers] = useState<HouseholdMember[]>([]);
+  const [resetting, setResetting] = useState<HouseholdMember | null>(null);
+  const isOwner = activeHousehold?.role === 'OWNER';
 
   async function refresh() {
     setMembers(await api<HouseholdMember[]>('GET', `/api/households/${householdId}/members`));
@@ -886,17 +892,86 @@ function MembersCard({ householdId }: { householdId: string }) {
               <span className="block truncate font-medium">{m.displayName}</span>
               <span className="block truncate text-sm text-muted">{m.username}</span>
             </span>
-            {m.pinSet ? (
-              m.role === 'OWNER' && <Badge>Owner</Badge>
+            {m.role === 'OWNER' && <Badge>Owner</Badge>}
+            {/* Somebody who has never got in at all is a different job for the owner from somebody
+                who just has not added an email — the first needs telling how, or a reset link. */}
+            {!m.pinSet && !m.hasPassword ? (
+              <Badge tone="accent">Hasn't signed in yet</Badge>
             ) : (
-              <Badge tone="accent">Needs a PIN</Badge>
+              // The owner's cue: once nobody here shows this, the PIN screens can be switched off.
+              m.hasEmail === false && <Badge tone="accent">No email yet</Badge>
+            )}
+            {isOwner && m.userId !== session?.userId && (
+              <ActionMenu
+                label={`More for ${m.displayName}`}
+                title={m.displayName}
+                className="-mr-2"
+                items={[{ label: 'Reset password', onSelect: () => setResetting(m) }]}
+              />
             )}
           </li>
         ))}
       </ul>
 
       <AddSomeone householdId={householdId} onDone={refresh} />
+
+      {resetting && (
+        <ResetPasswordSheet householdId={householdId} member={resetting} onClose={() => setResetting(null)} />
+      )}
     </Card>
+  );
+}
+
+/**
+ * A forgotten password, without email: the owner makes a one-time link and hands it over — a
+ * text, or the QR code held up in the kitchen. Opening the sheet makes the link, and any link
+ * made for them before stops working.
+ */
+function ResetPasswordSheet({
+  householdId,
+  member,
+  onClose,
+}: {
+  householdId: string;
+  member: HouseholdMember;
+  onClose: () => void;
+}) {
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Exactly one request per opening. Each new link retires the one before, so a second request
+  // (React runs effects twice in development) could leave the link on screen already dead.
+  const requested = useRef(false);
+
+  useEffect(() => {
+    if (requested.current) return;
+    requested.current = true;
+    api<{ token: string; expiresAt: string }>(
+      'POST',
+      `/api/households/${householdId}/members/${member.userId}/password-reset`,
+    )
+      .then((link) => setToken(link.token))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not make a reset link.'));
+  }, [householdId, member.userId]);
+
+  // The name is in the sentence below; a long one in the title would push "password" off the end.
+  return (
+    <Sheet title="Reset password" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-[0.9375rem] text-muted">
+          Send {member.displayName} this link, or let them scan the code. It lets them choose a new
+          password{member.hasEmail === false ? ' and add their email' : ''}, then signs them in. It
+          works once, for 24 hours.
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
+        {!token && !error && <p className="text-sm text-muted">Making a link…</p>}
+        {token && (
+          <LinkHandout
+            url={`${window.location.origin}/reset/${token}`}
+            shareTitle="Reset your Meal Planner password"
+          />
+        )}
+      </div>
+    </Sheet>
   );
 }
 

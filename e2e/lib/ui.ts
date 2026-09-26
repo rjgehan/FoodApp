@@ -2,19 +2,29 @@ import type { Locator, Page } from '@playwright/test';
 import type { Session } from './api';
 
 /**
- * Signs a page in by writing the same keys the app itself stores after the PIN pad, so UI tests
+ * Signs a page in by writing the same keys the app itself stores after signing in, so UI tests
  * that are not about signing in skip it.
+ *
+ * Most accounts the suite makes have only a PIN, so the app would open on its "add an email and
+ * password" prompt. That is answered "Not now" up front unless a test is about the prompt.
  */
-export async function signIn(page: Page, session: Session, householdId: string) {
+export async function signIn(
+  page: Page,
+  session: Session,
+  householdId: string,
+  { credentialsPrompt = false }: { credentialsPrompt?: boolean } = {},
+) {
   await page.goto('/');
   await page.evaluate(
-    ([s, hh]) => {
+    ([s, hh, prompt]) => {
       localStorage.setItem('mp_token', s.token);
       localStorage.setItem('mp_userId', s.userId);
       localStorage.setItem('mp_displayName', s.displayName);
       localStorage.setItem('mp_activeHouseholdId', hh);
+      if (prompt) sessionStorage.removeItem('mp_credentialsPromptDismissed');
+      else sessionStorage.setItem('mp_credentialsPromptDismissed', '1');
     },
-    [session, householdId] as const,
+    [session, householdId, credentialsPrompt] as const,
   );
 }
 

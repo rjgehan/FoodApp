@@ -159,6 +159,8 @@ test('capture every screen', async ({ page }) => {
   group = 'Sign in';
   await step('landing', async () => {
     await page.goto('/');
+    await shot(page, 'Sign in', 'Email and password first; the PIN screens are a link underneath.');
+    await page.getByText('Sign in with your name and PIN').click();
     await shot(page, 'Which house?', 'Every household on the server is listed here, before signing in.');
     await page.getByRole('button', { name: /Gehan House/ }).last().click();
     await shot(page, 'Tap your name');
@@ -167,6 +169,7 @@ test('capture every screen', async ({ page }) => {
   });
   await step('username', async () => {
     await page.goto('/');
+    await page.getByText('Sign in with your name and PIN').click();
     await page.getByText('Sign in with a username instead').click();
     await shot(page, 'Sign in with a username', 'No autocapitalize="none" — iOS will type "Ryan".');
   });
