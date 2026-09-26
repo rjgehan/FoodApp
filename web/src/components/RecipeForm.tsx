@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, imageUrl } from '../api/client';
+import { Link } from 'react-router-dom';
+import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection, SourceLink } from '../api/types';
 import UnitInput from './UnitInput';
 import { Button, Chip, ErrorText, Field, IconButton, Input, NumberInput, Textarea } from './ui';
@@ -133,6 +134,7 @@ export default function RecipeForm({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<{ id: string; name: string } | null>(null);
 
   function updateIngredient(index: number, patch: Partial<DraftIngredient>) {
     setIngredients((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -158,9 +160,15 @@ export default function RecipeForm({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    await save(false);
+  }
+
+  /** `anotherCopy`: the household already has it and a second one is meant. */
+  async function save(anotherCopy: boolean) {
     if (!name.trim()) return;
     setSaving(true);
     setError(null);
+    setDuplicate(null);
     try {
       const payload = {
         name: name.trim(),
@@ -181,9 +189,20 @@ export default function RecipeForm({
       onSaved(
         editing
           ? await api<Recipe>('PUT', `/api/recipes/${recipe.id}`, payload)
-          : await api<Recipe>('POST', `/api/households/${householdId}/recipes`, payload),
+          : await api<Recipe>(
+              'POST',
+              `/api/households/${householdId}/recipes${anotherCopy ? '?allowDuplicate=true' : ''}`,
+              payload,
+            ),
       );
     } catch (err) {
+      // Already in the catalog — the same link or the same name. Say which, rather than a bare
+      // refusal, and let a second copy through when that is what's meant.
+      const body = err instanceof ApiError ? (err.body as { existingRecipeId?: string; existingName?: string }) : null;
+      if (err instanceof ApiError && err.status === 409 && body?.existingRecipeId) {
+        setDuplicate({ id: body.existingRecipeId, name: body.existingName ?? name.trim() });
+        return;
+      }
       // A link the server will not keep is the likeliest reason, and it says which in a sentence.
       setError(err instanceof Error ? err.message : 'Could not save the recipe.');
     } finally {
@@ -347,6 +366,24 @@ export default function RecipeForm({
       </section>
 
       {error && <ErrorText>{error}</ErrorText>}
+      {duplicate && (
+        <div role="alert" className="space-y-3 rounded-xl bg-secondary-soft p-4 text-[0.9375rem]">
+          <p>
+            You already have <span className="font-medium">“{duplicate.name}”</span> in your recipes.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={`/recipes/${duplicate.id}`}
+              className="flex h-9 items-center rounded-[10px] bg-accent px-3 text-[0.9375rem] font-medium text-accent-ink"
+            >
+              Open it
+            </Link>
+            <Button variant="secondary" size="sm" disabled={saving} onClick={() => save(true)}>
+              Save another copy
+            </Button>
+          </div>
+        </div>
+      )}
       <Button type="submit" full size="lg" disabled={saving || !name.trim()}>
         {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}
       </Button>

@@ -61,11 +61,18 @@ public class RecipeController {
         this.importLog = importLog;
     }
 
+    /**
+     * A recipe the household already has — the same link or the same name — is refused with 409
+     * and which one it is, unless `allowDuplicate` says a second copy is meant. A share sheet
+     * tapped eight times made eight of the same recipe before this.
+     */
     @PostMapping("/api/households/{householdId}/recipes")
     public ResponseEntity<RecipeResponse> create(@AuthenticationPrincipal UUID userId,
                                                   @PathVariable UUID householdId,
+                                                  @RequestParam(defaultValue = "false") boolean allowDuplicate,
                                                   @Valid @RequestBody RecipeRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(recipeService.create(householdId, userId, request));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(recipeService.create(householdId, userId, request, !allowDuplicate));
     }
 
     @GetMapping("/api/households/{householdId}/recipes")

@@ -66,9 +66,24 @@ extension Notification.Name {
     static let recipesChanged = Notification.Name("mp.recipesChanged")
 }
 
+/// The recipe a new one would duplicate, from a 409 on create.
+struct DuplicateRecipe: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+}
+
 struct APIError: LocalizedError {
     let status: Int
     let body: String
+
+    /// Set when a new recipe was refused because the household already has it.
+    var duplicateRecipe: DuplicateRecipe? {
+        struct Body: Decodable { let existingRecipeId: UUID?; let existingName: String? }
+        guard status == 409, let data = body.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(Body.self, from: data),
+              let id = decoded.existingRecipeId else { return nil }
+        return DuplicateRecipe(id: id, name: decoded.existingName ?? "that recipe")
+    }
 
     /// Every error from the API arrives as {"status":…,"message":…}, and that message is
     /// written for a person to act on. The old guard here rejected any body starting with
@@ -444,8 +459,12 @@ actor APIClient {
     }
 
     @discardableResult
-    func createRecipe(household: UUID, body: [String: Any]) async throws -> Recipe {
-        try await send("POST", "/api/households/\(household.uuidString)/recipes", body: body)
+    /// A recipe the household already has — the same link or the same name — comes back as a
+    /// 409 carrying which one (APIError.duplicateRecipe), unless `allowDuplicate` says a second
+    /// copy is meant.
+    func createRecipe(household: UUID, body: [String: Any], allowDuplicate: Bool = false) async throws -> Recipe {
+        try await send("POST", "/api/households/\(household.uuidString)/recipes\(allowDuplicate ? "?allowDuplicate=true" : "")",
+                       body: body)
     }
 
     func recipeCategories(household: UUID) async throws -> [RecipeCategory] {

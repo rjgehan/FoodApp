@@ -21,6 +21,15 @@ import java.util.Objects;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    /** The usual body, plus which recipe it already is, so the app can offer to open that one. */
+    @ExceptionHandler(com.gehan.mealplanner.service.DuplicateRecipeException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicate(com.gehan.mealplanner.service.DuplicateRecipeException ex) {
+        Map<String, Object> body = body(HttpStatus.CONFLICT.value(), ex.getReason());
+        body.put("existingRecipeId", ex.getExistingRecipeId());
+        body.put("existingName", ex.getExistingName());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleStatus(ResponseStatusException ex) {
         int status = ex.getStatusCode().value();

@@ -174,8 +174,8 @@ class SharingDatabaseTest {
         assertThat(copied.getHousehold().getId()).isEqualTo(partnersOther);
         assertThat(copied.getData()).containsExactly(1, 2, 3);
 
-        // Saving again is a second copy; the original is untouched.
-        assertThat(recipeService.saveFromLink(token, partnersOther, partner.getId()).id()).isNotEqualTo(copy.id());
+        // Saving again gives back that copy rather than a second one; the original is untouched.
+        assertThat(recipeService.saveFromLink(token, partnersOther, partner.getId()).id()).isEqualTo(copy.id());
         assertThat(recipeService.get(original.id(), home, me.getId()).description()).isEqualTo("Thick and green");
     }
 

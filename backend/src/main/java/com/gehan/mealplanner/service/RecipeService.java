@@ -47,6 +47,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -120,7 +121,24 @@ public class RecipeService {
 
     @Transactional
     public RecipeResponse create(UUID householdId, UUID requesterId, RecipeRequest request) {
+        return create(householdId, requesterId, request, false);
+    }
+
+    /** `refuseDuplicate`: throw DuplicateRecipeException when the household already has it. */
+    @Transactional
+    public RecipeResponse create(UUID householdId, UUID requesterId, RecipeRequest request, boolean refuseDuplicate) {
         householdService.assertMember(householdId, requesterId);
+        if (refuseDuplicate) {
+            // Under the household's lock, so two taps racing each other cannot both get past it.
+            householdRepository.lockById(householdId);
+            List<String> links = new ArrayList<>();
+            if (request.links() != null) request.links().forEach(l -> links.add(l.url()));
+            if (request.sourceUrl() != null) links.add(request.sourceUrl());
+            if (request.videoUrl() != null) links.add(request.videoUrl());
+            alreadyHave(householdId, request.name(), links).ifPresent(r -> {
+                throw new DuplicateRecipeException(r.getId(), r.getName());
+            });
+        }
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
 
@@ -548,6 +566,21 @@ public class RecipeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "That link isn't valid."))
                 .getRecipe();
 
+        // Saved already — tapping Save twice, or opening the same link again — is the copy that
+        // is already there, not another one. The household's own recipe counts too.
+        householdRepository.lockById(householdId);
+        if (source.getHousehold().getId().equals(householdId)) {
+            return toResponse(source, filingRepository.findByHouseholdIdAndRecipeId(householdId, source.getId())
+                    .orElse(null), householdId);
+        }
+        Optional<Recipe> already = alreadyHave(householdId, source.getName(),
+                SourceLinks.of(source).stream().map(SourceLink::url).toList());
+        if (already.isPresent()) {
+            Recipe mine = already.get();
+            return toResponse(mine, filingRepository.findByHouseholdIdAndRecipeId(householdId, mine.getId())
+                    .orElse(null), householdId);
+        }
+
         Recipe copy = Recipe.builder()
                 .household(household)
                 .name(source.getName())
@@ -692,6 +725,28 @@ public class RecipeService {
         filingRepository.deleteByRecipeId(recipeId);
         linkRepository.deleteByRecipeId(recipeId);
         recipeRepository.delete(recipe);
+    }
+
+    /**
+     * A recipe this household already has that is the same one: any link in common (give or take
+     * http, www. and a trailing slash — SavedLinks.same), or the same name, ignoring case and the
+     * spaces around it. A link match wins, since two different recipes rarely share a page.
+     */
+    Optional<Recipe> alreadyHave(UUID householdId, String name, List<String> links) {
+        List<Recipe> ours = recipeRepository.findByHouseholdId(householdId);
+        List<String> wanted = links.stream().filter(l -> l != null && !l.isBlank()).toList();
+        if (!wanted.isEmpty()) {
+            for (Recipe recipe : ours) {
+                for (SourceLink link : SourceLinks.of(recipe)) {
+                    if (wanted.stream().anyMatch(w -> SavedLinks.same(w, link.url()))) {
+                        return Optional.of(recipe);
+                    }
+                }
+            }
+        }
+        String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) return Optional.empty();
+        return ours.stream().filter(r -> r.getName() != null && r.getName().trim().equalsIgnoreCase(trimmed)).findFirst();
     }
 
     @Transactional(readOnly = true)

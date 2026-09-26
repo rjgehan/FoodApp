@@ -196,3 +196,22 @@ test('group card buttons are big enough to tap', async ({ page }) => {
   const box = await btn.boundingBox();
   expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(44);
 });
+
+test('saving a recipe the house already has says so, and a second copy is one tap', async ({ page }) => {
+  const hh = await newHousehold();
+  const first = await newRecipe(hh.id, 'Banana Bread', [{ name: 'bananas', qty: 3 }]);
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/new');
+  await page.getByPlaceholder('Recipe name').fill('banana bread');
+  await page.getByRole('button', { name: 'Save recipe' }).click();
+
+  const warning = page.getByRole('alert');
+  await expect(warning).toContainText('You already have “Banana Bread”');
+  await expect(warning.getByRole('link', { name: 'Open it' })).toHaveAttribute('href', `/recipes/${first.id}`);
+  await page.screenshot({ path: test.info().outputPath('duplicate.png') });
+
+  await warning.getByRole('button', { name: 'Save another copy' }).click();
+  await expect(page).not.toHaveURL(/\/recipes\/new/);
+  const all = await call('GET', `/api/households/${hh.id}/recipes`, { token: (await admin()).token });
+  expect(all.filter((r: any) => r.name.toLowerCase() === 'banana bread')).toHaveLength(2);
+});

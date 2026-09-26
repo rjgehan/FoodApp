@@ -37,6 +37,8 @@ struct EditRecipeView: View {
     @State private var newGroup = ""
     @State private var busy = false
     @State private var error: String?
+    /// The household already has this one: which, so the question can name it.
+    @State private var duplicate: DuplicateRecipe?
     /// Where a draft came from and what to check, said above the form.
     private let draftNote: String?
     /// The saved link this new recipe is being made from: saving it takes the link off Saved
@@ -225,6 +227,16 @@ struct EditRecipeView: View {
         .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
         .task { await loadGroups() }
         .onChange(of: section) { _, next in moveToDrawer(next) }
+        .confirmationDialog(
+            "You already have “\(duplicate?.name ?? "")”",
+            isPresented: Binding(get: { duplicate != nil }, set: { if !$0 { duplicate = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Save another copy") { Task { await save(anotherCopy: true) } }
+            Button("Don't save", role: .cancel) { duplicate = nil }
+        } message: {
+            Text("It's already in your recipes — the same link or the same name.")
+        }
         .navigationTitle(recipe == nil ? "New recipe" : "Edit recipe")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -289,7 +301,7 @@ struct EditRecipeView: View {
         }
     }
 
-    private func save() async {
+    private func save(anotherCopy: Bool = false) async {
         busy = true
         defer { busy = false }
 
@@ -347,7 +359,8 @@ struct EditRecipeView: View {
             if let recipe {
                 saved = try await APIClient.shared.updateRecipe(recipe, body: body)
             } else if let household = session?.household?.id {
-                saved = try await APIClient.shared.createRecipe(household: household, body: body)
+                saved = try await APIClient.shared.createRecipe(household: household, body: body,
+                                                                allowDuplicate: anotherCopy)
             } else {
                 error = "No household to save it to."
                 return
@@ -356,6 +369,8 @@ struct EditRecipeView: View {
             // Embedded, the screen around it closes itself — a dismiss here would only pop back
             // to the link or the paste it came from.
             if !embedded { dismiss() }
+        } catch let apiError as APIError where apiError.duplicateRecipe != nil {
+            duplicate = apiError.duplicateRecipe
         } catch {
             self.error = error.localizedDescription
         }

@@ -139,6 +139,12 @@ struct SharedRecipeView: View {
     @State private var note: String?
     @State private var error: String?
     @State private var saved: String?
+    /// A save on its way: the button goes quiet so a second tap cannot make a second recipe.
+    @State private var savingRecipe = false
+    /// The household already has this one — asked about before a second copy is made.
+    @State private var duplicate: DuplicateRecipe?
+    /// Which way in was being saved when that question came up, to finish it the same way.
+    @State private var retry: (() async -> Void)?
     @State private var fromPage: StructuredRecipe?
     @State private var tidying = false
     /// Which line is being read, so a slow pass looks like progress and not a hang.
@@ -307,10 +313,14 @@ struct SharedRecipeView: View {
                     }
                 }
                 Section {
-                    Button("Save to this household", systemImage: "square.and.arrow.down") {
+                    // Once only: tapped again it used to save the same recipe again, eight times
+                    // for somebody who wasn't sure the first tap had worked.
+                    Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
+                           systemImage: saved != nil ? "checkmark" : "square.and.arrow.down") {
                         Task { await savePage(fromPage) }
                     }
                     .buttonStyle(.borderless)
+                    .disabled(savingRecipe || saved != nil)
                     // Read fine, but only the link is wanted for now.
                     if linkToKeep != nil, kept == nil, saved == nil {
                         Button(keeping ? "Saving…" : "Just save it as a link", systemImage: "link") {
@@ -353,16 +363,31 @@ struct SharedRecipeView: View {
                     }
                 }
                 Section {
-                    Button("Save to this household", systemImage: "square.and.arrow.down") {
+                    Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
+                           systemImage: saved != nil ? "checkmark" : "square.and.arrow.down") {
                         Task { await save(parsed) }
                     }
                     .buttonStyle(.borderless)
+                    .disabled(savingRecipe || saved != nil)
                     if let saved {
                         Text(saved).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
             }
             #endif
+        }
+        .confirmationDialog(
+            "You already have “\(duplicate?.name ?? "")”",
+            isPresented: Binding(get: { duplicate != nil }, set: { if !$0 { duplicate = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Save another copy") { Task { await retry?() } }
+            Button("Don't save", role: .cancel) {
+                duplicate = nil
+                saved = "Not saved — it's already in your recipes."
+            }
+        } message: {
+            Text("It's already in your recipes — the same link or the same name.")
         }
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
@@ -781,8 +806,10 @@ struct SharedRecipeView: View {
         #endif
     }
 
-    private func savePage(_ recipe: StructuredRecipe) async {
-        guard let household = session.household?.id else { return }
+    private func savePage(_ recipe: StructuredRecipe, anotherCopy: Bool = false) async {
+        guard let household = session.household?.id, !savingRecipe else { return }
+        savingRecipe = true
+        defer { savingRecipe = false }
         var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
@@ -814,8 +841,12 @@ struct SharedRecipeView: View {
             body["coverImageId"] = cover.uuidString
         }
         do {
-            let created = try await APIClient.shared.createRecipe(household: household, body: body)
+            let created = try await APIClient.shared.createRecipe(household: household, body: body,
+                                                                  allowDuplicate: anotherCopy)
             saved = "Saved as \(created.name)"
+        } catch let apiError as APIError where apiError.duplicateRecipe != nil {
+            retry = { await savePage(recipe, anotherCopy: true) }
+            duplicate = apiError.duplicateRecipe
         } catch {
             self.error = error.localizedDescription
         }
@@ -823,8 +854,10 @@ struct SharedRecipeView: View {
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
-    private func save(_ recipe: ParsedRecipe) async {
-        guard let household = session.household?.id else { return }
+    private func save(_ recipe: ParsedRecipe, anotherCopy: Bool = false) async {
+        guard let household = session.household?.id, !savingRecipe else { return }
+        savingRecipe = true
+        defer { savingRecipe = false }
         var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
@@ -854,8 +887,12 @@ struct SharedRecipeView: View {
             body["links"] = [["url": link, "label": NSNull()]]
         }
         do {
-            let created = try await APIClient.shared.createRecipe(household: household, body: body)
+            let created = try await APIClient.shared.createRecipe(household: household, body: body,
+                                                                  allowDuplicate: anotherCopy)
             saved = "Saved as \(created.name)"
+        } catch let apiError as APIError where apiError.duplicateRecipe != nil {
+            retry = { await save(recipe, anotherCopy: true) }
+            duplicate = apiError.duplicateRecipe
         } catch {
             self.error = error.localizedDescription
         }

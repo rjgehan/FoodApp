@@ -200,9 +200,9 @@ test('a public link can be saved as a copy in your own household', async () => {
   expect(original.description).toBe('Grandma’s');
   expect(original.coverImageId).toBe(r.coverImageId);
 
-  // Saving twice makes a second copy.
+  // Saving twice gives back the copy already saved, rather than making another.
   const again = await call('POST', path, { token: cook.token, body: { householdId: b } });
-  expect(again.id).not.toBe(copy.id);
+  expect(again.id).toBe(copy.id);
 
   // A revoked link saves nothing.
   await call('DELETE', `/api/recipes/${r.id}/link`, { token: owner.token });
@@ -227,8 +227,11 @@ test('publishing answers with the recipe still in its drawer and groups', async 
 });
 
 test('a copy of a copy says where it came from once', async () => {
-  const { a, b, cook } = await inTwoHouses();
+  const { a, b, c, cook } = await inTwoHouses();
   const owner = await admin();
+  // A third house for the copy of the copy: saving it back into A, which has the original, now
+  // just gives back the original.
+  await call('POST', `/api/invites/${await inviteToken(c)}/accept`, { token: cook.token });
   const r = await newRecipe(a, 'Mum’s Lasagna', [{ name: 'noodles', qty: 1, unit: 'box' }], {
     description: 'Mum’s Sunday lasagna.',
   });
@@ -237,6 +240,9 @@ test('a copy of a copy says where it came from once', async () => {
   });
   expect(first.description).toBe('Mum’s Sunday lasagna · Saved from a shared link');
   const { token } = await call('POST', `/api/recipes/${first.id}/link`, { token: cook.token });
-  const second = await call('POST', `/api/public/recipes/${token}/save`, { token: cook.token, body: { householdId: a } });
+  const second = await call('POST', `/api/public/recipes/${token}/save`, { token: cook.token, body: { householdId: c } });
   expect(second.description).toBe('Mum’s Sunday lasagna · Saved from a shared link');
+  // ...and back into A it is A's own recipe, not a third copy.
+  const home = await call('POST', `/api/public/recipes/${token}/save`, { token: cook.token, body: { householdId: a } });
+  expect(home.id).toBe(r.id);
 });
