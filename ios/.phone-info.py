@@ -40,7 +40,8 @@ phones = [
     d for d in devices
     if d.get("hardwareProperties", {}).get("platform") == "iOS"
     # Newer devicectl says "reality": "simulated" and leaves isSimulated empty; check both.
-    and d.get("hardwareProperties", {}).get("reality", "physical") == "physical"
+    # ...and a phone plugged in for the first time has no "reality" yet at all.
+    and (d.get("hardwareProperties", {}).get("reality") or "physical") == "physical"
     and not d.get("hardwareProperties", {}).get("isSimulated")
     and (not wanted or wanted in (d.get("deviceProperties", {}).get("name") or "").lower())
 ]
