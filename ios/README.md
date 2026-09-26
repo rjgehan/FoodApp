@@ -23,6 +23,23 @@ cd ios
 
 Or open `MealPlanner.xcodeproj` in Xcode and press ⌘R.
 
+## Updating everybody's phone
+
+```bash
+cd ios
+./update-phones.sh            # every phone paired with this Mac
+./update-phones.sh jen        # just the ones whose names contain "jen"
+```
+
+It finds every paired iPhone, reaches each one over Wi-Fi if it can (or the cable if it is
+plugged in), builds once and installs on all of them without opening the app. Anything it could
+not reach is listed at the end with the reason — plug those in, unlock them, and run it again.
+
+A free personal team's builds stop opening after seven days, so run it at least once a week.
+Wi-Fi needs the phone on the same network as this Mac and to have been plugged in once since it
+was paired. A phone new to the team has to be plugged in the first time, with
+`./preview.sh --phone <name>`, so it gets registered.
+
 ## Looking at every screen
 
 Two ways, both without a backend:
