@@ -265,6 +265,39 @@ export interface MealPlanEntry {
    * old `recipeName`, with no `recipeId` to open. Optional because an older server never sends it.
    */
   recipeDeleted?: boolean;
+  /**
+   * A saved link planned as the meal: open it to cook. Adds nothing to Groceries. The server
+   * also sends its name as `recipeName`, for apps from before saved links. All optional because
+   * an older server never sends them.
+   */
+  savedLinkId?: string | null;
+  savedLinkName?: string | null;
+  savedLinkUrl?: string | null;
+  savedLinkSource?: SavedLinkSource | null;
+  savedLinkImageId?: string | null;
+}
+
+export type SavedLinkSource = 'TIKTOK' | 'INSTAGRAM' | 'WEB';
+
+/**
+ * A recipe kept as just a link — a TikTok, a Reel, a website — with a name and a picture. The
+ * household's, unless `personal` ("Just me"), which only whoever saved it sees.
+ */
+export interface SavedLink {
+  id: string;
+  url: string;
+  name: string;
+  source: SavedLinkSource;
+  coverImageId: string | null;
+  /** The drawer it would go in, for filtering. */
+  section: RecipeSection | null;
+  personal: boolean;
+  /** You saved it — the only one who can make it "Just me". */
+  mine: boolean;
+  savedByName: string | null;
+  createdAt: string;
+  /** On a save only: it was already there, and that one was updated. */
+  alreadySaved: boolean;
 }
 
 /** Somewhere you eat instead of cooking. Only the name is required. */

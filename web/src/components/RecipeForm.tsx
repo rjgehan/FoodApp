@@ -50,6 +50,7 @@ export default function RecipeForm({
   draft,
   section,
   groups,
+  savedLinkId,
   onSaved,
 }: {
   householdId: string;
@@ -60,6 +61,11 @@ export default function RecipeForm({
   section?: RecipeSection;
   /** Groups a new recipe starts in — the one you were looking at when you pressed Add recipe. */
   groups?: string[];
+  /**
+   * The saved link this new recipe is being made from. Saving takes the link off Saved links,
+   * and moves any meal planned with it over to the recipe.
+   */
+  savedLinkId?: string;
   onSaved: (recipe: Recipe) => void;
 }) {
   // `recipe` means "this already exists, save over it"; `draft` only seeds the fields.
@@ -170,6 +176,7 @@ export default function RecipeForm({
         ...filing,
         // A blank amount goes as none — "salt and pepper" is "some", not 1 of it.
         ingredients: ingredients.filter((i) => i.ingredientName.trim()),
+        ...(savedLinkId && !editing ? { savedLinkId } : {}),
       };
       onSaved(
         editing

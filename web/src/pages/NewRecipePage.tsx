@@ -1,18 +1,31 @@
 import { useEffect, useState } from 'react';
 import NoHousehold from '../components/NoHousehold';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RecipeCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import RecipeForm from '../components/RecipeForm';
+import RecipeForm, { type RecipeDraft } from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
 import { PasteFromAi } from '../components/RecipePaste';
 import { Button, Card, cx } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import { SECTION_OPTIONS, sectionSlug } from '../utils/recipeMeta';
+import { SAVED_LINKS_PATH } from '../utils/savedLinks';
 
 type Mode = 'type' | 'link' | 'paste';
+
+/**
+ * Handed over by Saved links: the link being made into a recipe, and what to start the form
+ * from — what an import read off it, or just its name, the link and its picture.
+ */
+export interface FromSavedLink {
+  savedLinkId: string;
+  name: string;
+  draft: RecipeDraft;
+  /** The steps were pieced together from what is said in the video. */
+  spoken?: boolean;
+}
 
 /**
  * Three ways in: type it out yourself (the normal one), read it off a link — a TikTok, a Reel or
@@ -26,6 +39,12 @@ export default function NewRecipePage() {
   const { activeHouseholdId } = useHousehold();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const location = useLocation();
+  // Read once, when the page opens: it is where this recipe started, not something to follow.
+  const [fromLink] = useState<FromSavedLink | null>(() => {
+    const state = location.state as { fromSavedLink?: FromSavedLink } | null;
+    return state?.fromSavedLink ?? null;
+  });
   const [mode, setMode] = useState<Mode>('type');
   /** A link pasted into Paste, carried over to From a link. */
   const [handedLink, setHandedLink] = useState('');
@@ -58,9 +77,36 @@ export default function NewRecipePage() {
 
   const done = (id: string) => navigate(`/recipes/${id}`, { replace: true });
   // Back to the drawer or group it was started from, not to the front of the catalog.
-  const backTo = section
-    ? `/recipes/section/${sectionSlug(section)}${groupId ? `?group=${encodeURIComponent(groupId)}` : ''}`
-    : '/recipes';
+  const backTo = fromLink
+    ? SAVED_LINKS_PATH
+    : section
+      ? `/recipes/section/${sectionSlug(section)}${groupId ? `?group=${encodeURIComponent(groupId)}` : ''}`
+      : '/recipes';
+
+  if (fromLink) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="-ml-3" onClick={() => navigate(backTo)}>
+          <ChevronLeftIcon className="h-5 w-5" />
+          Saved links
+        </Button>
+        <PageTitle title="New recipe" />
+        <p className="rounded-xl bg-accent-soft px-3 py-2.5 text-sm text-ink" role="note">
+          {fromLink.spoken
+            ? 'The steps were pieced together from what’s said in the video. Give them a read, then save — '
+            : 'Made from your saved link. Fill in what it needs, then save — '}
+          “{fromLink.name}” comes off Saved links once it’s a recipe.
+        </p>
+        <RecipeForm
+          householdId={activeHouseholdId}
+          draft={fromLink.draft}
+          section={section}
+          savedLinkId={fromLink.savedLinkId}
+          onSaved={(r) => done(r.id)}
+        />
+      </div>
+    );
+  }
   const modes: { value: Mode; label: string }[] = [
     { value: 'type', label: 'Type it out' },
     { value: 'link', label: 'From a link' },

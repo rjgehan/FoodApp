@@ -7,6 +7,7 @@ import HouseholdPage from './pages/HouseholdPage';
 import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeSectionPage from './pages/RecipeSectionPage';
+import SavedLinksPage from './pages/SavedLinksPage';
 import ExplorePage from './pages/ExplorePage';
 import ExploreRecipesPage from './pages/ExploreRecipesPage';
 import ExploreSoonPage from './pages/ExploreSoonPage';
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />
+          <Route path="/recipes/saved-links" element={<SavedLinksPage />} />
           <Route path="/recipes/:recipeId" element={<RecipeDetailPage />} />
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
