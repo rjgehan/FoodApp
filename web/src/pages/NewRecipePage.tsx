@@ -4,19 +4,19 @@ import { api } from '../api/client';
 import type { RecipeCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import RecipeForm from '../components/RecipeForm';
-import { WriteForMe } from '../components/RecipeWriter';
-import { PasteFromChatGpt } from '../components/RecipePaste';
-import { useAiAvailable } from '../utils/useAiAvailable';
+import { FromALink } from '../components/RecipeFromLink';
+import { PasteFromAi } from '../components/RecipePaste';
 import { Button, Card, cx, EmptyState } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import { SECTION_OPTIONS, sectionSlug } from '../utils/recipeMeta';
 
-type Mode = 'type' | 'paste' | 'write';
+type Mode = 'type' | 'link' | 'paste';
 
 /**
- * Three ways in: type it out yourself (the normal one), paste a recipe from ChatGPT or anywhere
- * else, or have it written. All three end in the same form, checked before it is saved.
+ * Three ways in: type it out yourself (the normal one), read it off a link — a TikTok, a Reel or
+ * a recipe site — or paste one an AI wrote in the layout the app can read. All three end in the
+ * same form, checked before it is saved.
  *
  * Opened from inside a drawer or a group (`?section=DINNER&group=<id>`), every way in starts
  * filed there — the drawer picked and the group ticked, and both still yours to change.
@@ -26,7 +26,8 @@ export default function NewRecipePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [mode, setMode] = useState<Mode>('type');
-  const writerAvailable = useAiAvailable();
+  /** A link pasted into Paste, carried over to From a link. */
+  const [handedLink, setHandedLink] = useState('');
 
   const section = SECTION_OPTIONS.find((s) => s.value === params.get('section'))?.value;
   const groupId = params.get('group');
@@ -61,9 +62,8 @@ export default function NewRecipePage() {
     : '/recipes';
   const modes: { value: Mode; label: string }[] = [
     { value: 'type', label: 'Type it out' },
+    { value: 'link', label: 'From a link' },
     { value: 'paste', label: 'Paste' },
-    // Only when a key is set up — a button that can only fail is worse than none.
-    ...(writerAvailable ? [{ value: 'write' as Mode, label: '✨ Write it for me' }] : []),
   ];
 
   return (
@@ -95,12 +95,37 @@ export default function NewRecipePage() {
 
       {groups === undefined ? (
         <p className="py-8 text-center text-sm text-muted">Loading…</p>
-      ) : mode === 'write' ? (
-        <WriteForMe householdId={activeHouseholdId} section={section} groups={groups} onSaved={(r) => done(r.id)} />
-      ) : mode === 'paste' ? (
-        <PasteFromChatGpt householdId={activeHouseholdId} section={section} groups={groups} onSaved={(r) => done(r.id)} />
       ) : (
-        <RecipeForm householdId={activeHouseholdId} section={section} groups={groups} onSaved={(r) => done(r.id)} />
+        /*
+         * All three stay mounted and only the chosen one shows, so a stray tap on another tab
+         * does not throw away a half-typed recipe, a paste, or a link's draft not saved yet.
+         */
+        modes.map((m) => (
+          <div key={m.value} role="tabpanel" aria-label={m.label} hidden={mode !== m.value}>
+            {m.value === 'link' ? (
+              <FromALink
+                householdId={activeHouseholdId}
+                link={handedLink}
+                section={section}
+                groups={groups}
+                onSaved={(r) => done(r.id)}
+              />
+            ) : m.value === 'paste' ? (
+              <PasteFromAi
+                householdId={activeHouseholdId}
+                section={section}
+                groups={groups}
+                onLink={(link) => {
+                  setHandedLink(link);
+                  setMode('link');
+                }}
+                onSaved={(r) => done(r.id)}
+              />
+            ) : (
+              <RecipeForm householdId={activeHouseholdId} section={section} groups={groups} onSaved={(r) => done(r.id)} />
+            )}
+          </div>
+        ))
       )}
     </div>
   );

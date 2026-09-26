@@ -243,7 +243,14 @@ actor APIClient {
 
     /// Reads a recipe off a link: the page's own structured data, or TikTok's caption.
     func importRecipe(household: UUID, url: String) async throws -> ImportedRecipe {
-        try await send("POST", "/api/households/\(household.uuidString)/recipes/import", body: ["url": url])
+        var req = request(method: "POST", path: "/api/households/\(household.uuidString)/recipes/import",
+                          authorized: true)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["url": url])
+        // A video can mean the page, then its caption, then what is said in it — each fetched by
+        // the server with a twenty-second allowance. Fifteen seconds gave up on ones that worked.
+        req.timeoutInterval = 90
+        return try await perform(req)
     }
 
     /// Writes what a share sheet handed over into the server's import log. Plain text

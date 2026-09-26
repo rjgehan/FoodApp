@@ -16,7 +16,7 @@ struct RecipesView: View {
     @State private var error: String?
     @State private var switchingHousehold = false
     @State private var showingAccount = false
-    @State private var writingOne = false
+    @State private var addingOne = false
     #if DEBUG
     /// `-mp_debug_drawer dinner` opens that drawer on launch, for screenshot runs.
     @State private var debugDrawer: RecipeSection? = UserDefaults.standard.string(forKey: "mp_debug_drawer")
@@ -85,19 +85,23 @@ struct RecipesView: View {
             .onChange(of: showingAccount) { _, open in
                 if !open { Task { await loadIcons() } }
             }
-            // Until now a recipe could only arrive on the phone by being pasted or shared
-            // in. Some of them are just written down.
+            // The web's three ways in: type it out, from a link, or paste one.
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Write one down", systemImage: "plus") { writingOne = true }
+                    Button("New recipe", systemImage: "plus") { addingOne = true }
                 }
             }
-            .sheet(isPresented: $writingOne) {
-                EditRecipeView(recipe: nil, session: session) { saved in
+            .sheet(isPresented: $addingOne) {
+                NewRecipeView(session: session) { saved in
                     recipes.insert(saved, at: 0)
                 }
             }
             #if DEBUG
+            // -mp_debug_screen new opens New recipe, for screenshot runs (with -mp_debug_new
+            // link|paste to open it on that way in).
+            .task {
+                if UserDefaults.standard.string(forKey: "mp_debug_screen") == "new" { addingOne = true }
+            }
             .navigationDestination(item: $debugDrawer) { section in
                 DrawerView(section: section, parent: nil, recipes: recipes, categories: categories, session: session,
                            onChanged: { await load() })
@@ -253,9 +257,9 @@ struct DrawerView: View {
             EditGroupsView(section: section, parent: parent, groups: children, session: session, onChanged: onChanged)
         }
         .sheet(isPresented: $addingRecipe) {
-            // The drawer picked and the group ticked, both still changeable in the form.
-            EditRecipeView(
-                recipe: nil,
+            // All three ways in, each with the drawer picked and the group ticked, both still
+            // changeable in the editor.
+            NewRecipeView(
                 session: session,
                 initialSection: section,
                 initialGroups: parent.map { [$0.name] } ?? debugGroups

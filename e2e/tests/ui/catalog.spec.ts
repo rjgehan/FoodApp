@@ -40,7 +40,8 @@ test('the paste tab starts filed in the drawer it was opened from too', async ({
   await page.getByRole('tab', { name: 'Paste' }).click();
   await page.getByPlaceholder(/Name:/).fill('Porridge\n\nIngredients\n1 cup oats\n\nInstructions\nCook it.');
   await page.getByRole('button', { name: 'Read it' }).click();
-  await expect(page.getByPlaceholder('Recipe name')).toHaveValue('Porridge');
+  // Scoped to the tab on screen: Type it out is still there behind it, hidden, with its own form.
+  await expect(page.getByRole('tabpanel').getByPlaceholder('Recipe name')).toHaveValue('Porridge');
   await expect(page.getByRole('button', { name: 'Breakfast', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 

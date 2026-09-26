@@ -271,6 +271,8 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'New recipe — type it out', '', { full: true });
     await page.getByPlaceholder('unit').first().click();
     await shot(page, 'Unit picker');
+    await page.getByRole('tab', { name: 'From a link' }).click();
+    await shot(page, 'New recipe — from a link', '', { full: true });
     await page.getByRole('tab', { name: 'Paste' }).click();
     await shot(page, 'New recipe — paste', '', { full: true });
   });

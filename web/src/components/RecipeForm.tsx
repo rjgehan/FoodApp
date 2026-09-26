@@ -20,7 +20,7 @@ export interface DraftIngredient {
 
 export const emptyIngredient: DraftIngredient = { ingredientName: '', quantity: null, unit: '', optional: false };
 
-/** What the recipe writer hands back: fields to start from, with no saved recipe behind them. */
+/** A recipe read off a link or a paste: fields to start from, with no saved recipe behind them. */
 export interface RecipeDraft {
   name: string;
   description: string | null;
@@ -52,7 +52,7 @@ export default function RecipeForm({
 }: {
   householdId: string;
   recipe?: Recipe;
-  /** Starting values with nothing saved behind them — a written-for-you recipe, say. */
+  /** Starting values with nothing saved behind them — a recipe read off a link, say. */
   draft?: RecipeDraft;
   /** Where a new recipe is filed to begin with — Breakfast, when made from the breakfast slot. */
   section?: RecipeSection;

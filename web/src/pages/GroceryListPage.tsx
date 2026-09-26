@@ -430,9 +430,9 @@ function ItemRow({
 }
 
 /**
- * The one place the app spends an AI request on the list, so it asks first. The key allows twenty
- * a day, shared with the recipe writer — and sorting a half-written list means paying again for
- * whatever gets added after, so the question is about timing as much as cost.
+ * The one place the app spends an AI request, so it asks first. The key allows twenty a day — and
+ * sorting a half-written list means paying again for whatever gets added after, so the question
+ * is about timing as much as cost.
  */
 function SortSheet({
   householdId,
@@ -465,7 +465,7 @@ function SortSheet({
       <div className="space-y-4">
         <p className="text-muted">
           Sorting puts the {count} {count === 1 ? 'item' : 'items'} the app couldn't place into aisles, using one of
-          your 20 AI requests for today — the same ones “Write it for me” uses. Add everything first and sort once:
+          your 20 AI requests for today. Add everything first and sort once:
           anything added afterwards would need another request.
         </p>
         {error && <ErrorText>{error}</ErrorText>}

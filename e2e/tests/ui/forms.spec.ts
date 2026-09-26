@@ -12,11 +12,13 @@ test('pasting an ordinary recipe fills the form', async ({ page }) => {
   );
   await page.getByRole('button', { name: 'Read it' }).click();
 
-  await expect(page.getByPlaceholder('Recipe name')).toHaveValue('Chicken Parmesan');
-  const qty = page.getByPlaceholder('qty');
+  // Scoped to the tab on screen: Type it out is still there behind it, hidden, with its own form.
+  const form = page.getByRole('tabpanel');
+  await expect(form.getByPlaceholder('Recipe name')).toHaveValue('Chicken Parmesan');
+  const qty = form.getByPlaceholder('qty');
   await expect(qty.nth(1)).toHaveValue('1.5');
-  await expect(page.getByPlaceholder('ingredient').nth(1)).toHaveValue('marinara sauce');
-  await expect(page.getByPlaceholder('One step per line.')).toHaveValue('Fry it.\nBake it.');
+  await expect(form.getByPlaceholder('ingredient').nth(1)).toHaveValue('marinara sauce');
+  await expect(form.getByPlaceholder('One step per line.')).toHaveValue('Fry it.\nBake it.');
 });
 
 test('a blank amount is saved as "some", not as 1', async ({ page }) => {

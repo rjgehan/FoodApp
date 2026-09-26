@@ -4,7 +4,7 @@ import { parseQuantity, splitAmount } from './amount';
 export class RecipeParseError extends Error {}
 
 /**
- * The question to paste into ChatGPT. It asks for a fixed layout because that is the easiest
+ * The question to paste into an AI chat. It asks for a fixed layout because that is the easiest
  * thing to read back — but the parser below no longer depends on the reply following it to the
  * letter, so there is no begging the model not to use bold or numbered lists.
  *
@@ -59,7 +59,7 @@ function stripMarker(line: string): string {
 }
 
 /**
- * Reads a recipe pasted from ChatGPT — or from anywhere — into the recipe form's shape. It
+ * Reads a recipe pasted from an AI chat — or from anywhere — into the recipe form's shape. It
  * takes what it can find and ignores the rest: code fences, bold, bullets of any kind, numbered
  * steps, a chatty line before or after. The recipe goes into the form, not straight into the
  * catalog, so anything it gets wrong is fixed there before saving.

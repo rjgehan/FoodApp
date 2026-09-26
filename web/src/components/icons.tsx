@@ -194,3 +194,11 @@ export const NoneIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M6.5 17.5l11-11" />
   </Icon>
 );
+
+/** A warning triangle, for the one thing on a screen you need to know before using it. */
+export const AlertIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M10.3 4.3 2.6 17.6A2 2 0 0 0 4.3 20.6h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z" />
+    <path d="M12 9.5v4.5M12 17.2v.1" />
+  </Icon>
+);

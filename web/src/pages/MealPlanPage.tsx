@@ -5,12 +5,11 @@ import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSectio
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
 import { useOnResume } from '../utils/useOnResume';
-import { useAiAvailable } from '../utils/useAiAvailable';
 import PlaceActions from '../components/PlaceActions';
 import { PageTitle } from '../components/PageTitle';
 import RecipeForm from '../components/RecipeForm';
-import { WriteForMe } from '../components/RecipeWriter';
-import { PasteFromChatGpt } from '../components/RecipePaste';
+import { FromALink } from '../components/RecipeFromLink';
+import { PasteFromAi } from '../components/RecipePaste';
 import { Button, Card, CheckCircle, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
 import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, StoreIcon } from '../components/icons';
 
@@ -1267,11 +1266,12 @@ function NewRecipeFromPlan({
   servings: number;
   onSaved: (recipe: Recipe) => void;
 }) {
-  const [mode, setMode] = useState<'choose' | 'write' | 'paste' | 'assisted'>('choose');
+  const [mode, setMode] = useState<'choose' | 'write' | 'link' | 'paste'>('choose');
   const [name, setName] = useState(initialName);
+  /** A link pasted into the AI paste, carried over to From a link. */
+  const [handedLink, setHandedLink] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const writerAvailable = useAiAvailable();
 
   async function saveNameOnly() {
     setBusy(true);
@@ -1292,46 +1292,51 @@ function NewRecipeFromPlan({
     }
   }
 
-  if (mode === 'write') {
+  if (mode !== 'choose') {
     return (
-      <RecipeForm
-        householdId={householdId}
-        section={section}
-        draft={{
-          name: name.trim(),
-          description: null,
-          instructions: null,
-          prepTimeMinutes: null,
-          cookTimeMinutes: null,
-          servings,
-          ingredients: [],
-        }}
-        onSaved={onSaved}
-      />
-    );
-  }
-
-  if (mode === 'paste') {
-    return (
-      <PasteFromChatGpt
-        householdId={householdId}
-        initialName={name.trim()}
-        initialServings={servings}
-        section={section}
-        onSaved={onSaved}
-      />
-    );
-  }
-
-  if (mode === 'assisted') {
-    return (
-      <WriteForMe
-        householdId={householdId}
-        initialName={name.trim()}
-        initialServings={servings}
-        section={section}
-        onSaved={onSaved}
-      />
+      <div className="space-y-3">
+        {/* A mis-tap on the choices should not mean closing the sheet and finding the dish again. */}
+        <Button variant="ghost" size="sm" className="-ml-3" onClick={() => setMode('choose')}>
+          <ChevronLeftIcon className="h-5 w-5" />
+          Back
+        </Button>
+        {mode === 'write' ? (
+          <RecipeForm
+            householdId={householdId}
+            section={section}
+            draft={{
+              name: name.trim(),
+              description: null,
+              instructions: null,
+              prepTimeMinutes: null,
+              cookTimeMinutes: null,
+              servings,
+              ingredients: [],
+            }}
+            onSaved={onSaved}
+          />
+        ) : mode === 'link' ? (
+          <FromALink
+            householdId={householdId}
+            link={handedLink}
+            initialServings={servings}
+            section={section}
+            onSaved={onSaved}
+          />
+        ) : (
+          <PasteFromAi
+            householdId={householdId}
+            initialName={name.trim()}
+            initialServings={servings}
+            section={section}
+            onLink={(link) => {
+              setHandedLink(link);
+              setMode('link');
+            }}
+            onSaved={onSaved}
+          />
+        )}
+      </div>
     );
   }
 
@@ -1352,14 +1357,12 @@ function NewRecipeFromPlan({
       <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('write')}>
         Write out the recipe
       </Button>
-      <Button full variant="secondary" disabled={busy} onClick={() => setMode('paste')}>
-        Paste from ChatGPT
+      <Button full variant="secondary" disabled={busy} onClick={() => setMode('link')}>
+        From a link
       </Button>
-      {writerAvailable && (
-        <Button full variant="secondary" disabled={busy || !name.trim()} onClick={() => setMode('assisted')}>
-          ✨ Write it for me
-        </Button>
-      )}
+      <Button full variant="secondary" disabled={busy} onClick={() => setMode('paste')}>
+        Paste from an AI
+      </Button>
     </div>
   );
 }

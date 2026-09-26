@@ -129,6 +129,15 @@ struct Amount {
         notes = tail
     }
 
+    /// A whole box as a number — "1 1/2", "1/2", "1.5", "1,5", "1½", "½" — or nil when it is
+    /// anything else. The web's `parseQuantity`, for the "2 | cup | flour" answers the paste
+    /// question asks for, where the amount arrives on its own.
+    static func quantity(_ raw: String) -> Double? {
+        var words = raw.trimmingCharacters(in: .whitespaces).split(separator: " ").map(String.init)
+        guard let value = leadingNumber(&words), words.isEmpty else { return nil }
+        return value
+    }
+
     /// Takes the amount off the front of the words, handling "2", "1.5", "1/3", "1 1/2", "½"
     /// and "1½". Returns nil and leaves the words alone when there is no number.
     private static func leadingNumber(_ words: inout [String]) -> Double? {

@@ -1,24 +1,26 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError } from '../api/client';
 import type { Recipe, RecipeSection } from '../api/types';
 import RecipeForm, { type RecipeDraft } from './RecipeForm';
 import { Button, Card, ErrorText, Field, Input, NumberInput, Textarea } from './ui';
+import { AlertIcon } from './icons';
 import { buildRecipePrompt, parseRecipeText, RecipeParseError } from '../utils/recipeParser';
 
 /**
- * The ChatGPT round trip, kept alongside "Write it for me": copy a question, ask ChatGPT, paste
- * the answer back. It costs none of the app's twenty AI requests a day, and it reads any recipe
- * text, not only ChatGPT's — a recipe copied from a website works the same way.
+ * The AI round trip: copy a question, ask whichever AI you already use, paste the answer back.
+ * It costs the app nothing, and no one is tied to a particular chatbot — the question works in
+ * any of them.
  *
- * What comes back goes into the ordinary form to be checked, the same as a written-for-you
- * recipe, rather than straight into the catalog.
+ * The reader is rules, not a model, so it needs the layout the question asks for; the box says
+ * so up front rather than after a paste of a whole web page has failed. What it reads goes into
+ * the ordinary form to be checked, not straight into the catalog.
  */
-export function PasteFromChatGpt({
+export function PasteFromAi({
   householdId,
   initialName = '',
   initialServings = 4,
   section,
   groups,
+  onLink,
   onSaved,
 }: {
   householdId: string;
@@ -28,6 +30,8 @@ export function PasteFromChatGpt({
   section?: RecipeSection;
   /** Groups the recipe starts in — see RecipeForm. */
   groups?: string[];
+  /** A paste that is only a link, for From a link to read. Without it, the paste is told where to go. */
+  onLink?: (link: string) => void;
   onSaved: (recipe: Recipe) => void;
 }) {
   const [dish, setDish] = useState(initialName);
@@ -36,8 +40,6 @@ export function PasteFromChatGpt({
   const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
-  const [link, setLink] = useState('');
-  const [importing, setImporting] = useState(false);
 
   const prompt = buildRecipePrompt(dish.trim(), servings ?? 4);
 
@@ -52,30 +54,16 @@ export function PasteFromChatGpt({
     }
   }
 
-  /**
-   * A link needs no reading at all. Nearly every recipe site publishes its own ingredient and
-   * step lists as structured data, and the server reads that — instantly, exactly, and without
-   * spending one of the twenty AI requests a day.
-   */
-  async function importLink(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setImporting(true);
-    try {
-      const imported = await api<RecipeDraft>('POST', `/api/households/${householdId}/recipes/import`, {
-        url: link.trim(),
-      });
-      setDraft({ ...imported, servings: imported.servings || servings || 4 });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Couldn’t read that page.');
-    } finally {
-      setImporting(false);
-    }
-  }
-
   function read(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    // A link on its own is not a recipe to read, but it is one to fetch — the same as the phone.
+    const pasted = text.trim();
+    if (/^https?:\/\/\S+$/i.test(pasted)) {
+      if (onLink) onLink(pasted);
+      else setError('That’s a link — use From a link to read it.');
+      return;
+    }
     try {
       const parsed = parseRecipeText(text);
       // The serving count you asked for wins over whatever the reply claims.
@@ -87,61 +75,40 @@ export function PasteFromChatGpt({
 
   if (draft) {
     return (
-      <div className="space-y-4">
-        <Card>
-          <p className="text-sm text-muted">Here’s what came through — check the amounts, change anything, then save it.</p>
-          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setDraft(null)}>
-            Paste again
-          </Button>
-        </Card>
-        {/* Keyed on the name so reading a second paste really does replace the fields. */}
-        <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} groups={groups} onSaved={onSaved} />
-      </div>
+      <DraftToCheck
+        householdId={householdId}
+        draft={draft}
+        section={section}
+        groups={groups}
+        again="Paste again"
+        onAgain={() => setDraft(null)}
+        onSaved={onSaved}
+      />
     );
   }
 
   return (
     <div className="space-y-4">
-      <form onSubmit={importLink}>
-        <Card title="From a link">
-          <div className="space-y-3">
-            <Input
-              type="url"
-              inputMode="url"
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              placeholder="https://…"
-              aria-label="A link to a recipe"
-            />
-            <Button type="submit" full disabled={!link.trim() || importing}>
-              {importing ? 'Reading the page…' : 'Get the recipe'}
-            </Button>
-            <p className="text-sm text-muted">
-              Reads the recipe the site publishes about itself, so the amounts are exactly theirs. Costs
-              none of the day’s AI requests.
-            </p>
-          </div>
-        </Card>
-      </form>
-
-      <Card title="Or ask ChatGPT">
+      <Card title="Ask an AI">
         <div className="space-y-3">
-          <Field label="What do you want to make?" hint="Optional — leave it blank and name it in ChatGPT.">
-            <Input value={dish} onChange={(e) => setDish(e.target.value)} placeholder="Chicken parmesan" />
+          <p className="text-sm text-muted">
+            Copy this question into whichever AI you use, then paste its answer below.
+          </p>
+          <Field label="What do you want to make?" hint="Optional — leave it blank and name it in the AI chat.">
+            {/* Field's label is only a caption, so the box names itself. */}
+            <Input
+              value={dish}
+              onChange={(e) => setDish(e.target.value)}
+              placeholder="Chicken parmesan"
+              aria-label="What do you want to make?"
+            />
           </Field>
           <Field label="Serves">
             <NumberInput min={1} className="w-24" value={servings} onChange={setServings} />
           </Field>
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={copyPrompt}>
-              {copied === 'yes' ? 'Copied' : 'Copy the question'}
-            </Button>
-            <a href={`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`} target="_blank" rel="noreferrer noopener">
-              <Button type="button" variant="secondary">
-                Open ChatGPT
-              </Button>
-            </a>
-          </div>
+          <Button type="button" variant="secondary" full onClick={copyPrompt}>
+            {copied === 'yes' ? 'Copied' : 'Copy the question'}
+          </Button>
           {copied === 'failed' && (
             <div className="space-y-1">
               <p className="text-sm text-muted">Couldn’t copy it on this connection — select the text and copy it yourself.</p>
@@ -152,8 +119,9 @@ export function PasteFromChatGpt({
       </Card>
 
       <form onSubmit={read}>
-        <Card title="Or paste a recipe">
+        <Card title="Paste the answer">
           <div className="space-y-3">
+            <FormatWarning />
             <Textarea
               rows={10}
               value={text}
@@ -165,12 +133,73 @@ export function PasteFromChatGpt({
             <Button type="submit" full disabled={!text.trim()}>
               Read it
             </Button>
-            <p className="text-sm text-muted">
-              Any recipe text works, not just ChatGPT’s. You’ll see it in the form before anything is saved.
-            </p>
+            <p className="text-sm text-muted">You’ll see it in the form before anything is saved.</p>
           </div>
         </Card>
       </form>
+    </div>
+  );
+}
+
+/**
+ * What `parseRecipeText` really needs, said before the paste rather than after it fails: a name
+ * at the top, an "Ingredients" heading on a line of its own, and the steps under an
+ * "Instructions" (or Method, Steps, Directions) heading. Bullets, numbering and bold are fine.
+ */
+function FormatWarning() {
+  return (
+    <div role="note" className="flex gap-2.5 rounded-xl bg-accent-soft px-3 py-2.5 text-sm text-ink">
+      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+      <div className="space-y-1">
+        <p className="font-medium">You can’t paste just anything here.</p>
+        <p>
+          It only reads a recipe laid out the way the question asks: the name at the top, a line saying
+          “Ingredients” with one ingredient per line under it, then a line saying “Instructions” with the steps.
+          A recipe written as a paragraph won’t come through, and one copied off a website needs those two
+          headings — or use From a link for the website itself.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A recipe read from somewhere, in the ordinary form to be checked before it is saved. Shared by
+ * Paste and From a link, so both end on the same screen.
+ */
+export function DraftToCheck({
+  householdId,
+  draft,
+  section,
+  groups,
+  again,
+  note,
+  onAgain,
+  onSaved,
+}: {
+  householdId: string;
+  draft: RecipeDraft;
+  section?: RecipeSection;
+  groups?: string[];
+  /** The button that goes back for another try: "Paste again", "Try another link". */
+  again: string;
+  /** What to check first, when there is something in particular; otherwise the usual line. */
+  note?: string;
+  onAgain: () => void;
+  onSaved: (recipe: Recipe) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <Card>
+        <p className="text-sm text-muted">
+          {note ?? 'Here’s what came through — check the amounts, change anything, then save it.'}
+        </p>
+        <Button variant="ghost" size="sm" className="mt-2" onClick={onAgain}>
+          {again}
+        </Button>
+      </Card>
+      {/* Keyed on the name so reading a second one really does replace the fields. */}
+      <RecipeForm key={draft.name} householdId={householdId} draft={draft} section={section} groups={groups} onSaved={onSaved} />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import FoundationModels
 #endif
 
 /*
- Paste a recipe from anywhere — a website, a message, ChatGPT — and get the structured thing
+ Paste a recipe from anywhere — a website, a message, an AI chat — and get the structured thing
  the app stores: a name, servings, ingredients with amounts, and steps.
 
  This is extraction, not invention, which is what a 3B on-device model is actually good at. The
@@ -41,6 +41,29 @@ struct ParsedRecipe {
 
     @Guide(description: "The method, one entry per step, in order.")
     var steps: [String]
+}
+
+/// The on-device read of a pasted recipe, shared by the share sheet's screen and New recipe ›
+/// Paste so the two read a paste the same way.
+@available(iOS 26.0, *)
+enum OnDeviceRecipe {
+    /// Whether the model is on this phone and ready now — not merely whether the OS has it.
+    static var isReady: Bool { SystemLanguageModel.default.availability == .available }
+
+    static func read(_ text: String) async throws -> ParsedRecipe {
+        let model = LanguageModelSession(instructions: instructions)
+        return try await model.respond(to: text, generating: ParsedRecipe.self).content
+    }
+
+    private static let instructions = """
+        You turn a pasted recipe into structured data.
+
+        Copy, do not interpret. Each ingredient line comes across exactly as written, \
+        including its amount — do not convert fractions, do not split off the unit, do \
+        not tidy the wording. Keep the steps as written. Never invent an ingredient, a \
+        step or a time. If the text is not a recipe, return an empty name and no \
+        ingredients rather than making something up.
+        """
 }
 
 /*
@@ -560,7 +583,7 @@ struct SharedRecipeView: View {
     /// The generic "operation couldn't be completed" hides the one failure that actually
     /// happens: availability says the model is there, but its weights are not on this
     /// machine. That is the normal state of the Simulator.
-    private static func explain(_ error: Error) -> String {
+    static func explain(_ error: Error) -> String {
         let nsError = error as NSError
         let text = "\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"
         if nsError.domain.contains("UnifiedAsset") || nsError.localizedDescription.contains("modelcatalog") {
@@ -612,29 +635,18 @@ struct SharedRecipeView: View {
 
         let started = Date()
         do {
-            let model = LanguageModelSession(
-                instructions: """
-                You turn a pasted recipe into structured data.
-
-                Copy, do not interpret. Each ingredient line comes across exactly as written, \
-                including its amount — do not convert fractions, do not split off the unit, do \
-                not tidy the wording. Keep the steps as written. Never invent an ingredient, a \
-                step or a time. If the text is not a recipe, return an empty name and no \
-                ingredients rather than making something up.
-                """
-            )
-            let reply = try await model.respond(to: input, generating: ParsedRecipe.self)
-            parsedStore = reply.content
+            let reply = try await OnDeviceRecipe.read(input)
+            parsedStore = reply
             let seconds = Date().timeIntervalSince(started)
             note = String(
                 format: "Read %d characters → %d ingredients, %d steps in %.1f s%@",
                 input.count,
-                reply.content.ingredientLines.count,
-                reply.content.steps.count,
+                reply.ingredientLines.count,
+                reply.steps.count,
                 seconds,
                 trimmed ? " · cut to \(Self.limit) characters" : ""
             )
-            if reply.content.ingredientLines.isEmpty {
+            if reply.ingredientLines.isEmpty {
                 error = "No recipe found in that text — nothing was invented to fill the gap."
             }
         } catch let failure as LanguageModelSession.GenerationError {

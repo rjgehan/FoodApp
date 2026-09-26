@@ -57,6 +57,12 @@ group, and `-mp_debug_scroll filing` to scroll to the drawer and groups), and `-
 groups` its group editor. `-mp_debug_screen household -mp_debug_scroll icons` opens Recipe icons,
 and `-mp_debug_expand 1` its picker for Dinner.
 
+`-mp_debug_tab recipes -mp_debug_screen new` opens New recipe; add `-mp_debug_new link` or
+`-mp_debug_new paste` to open it on that way in. `-mp_debug_link "<url>"` fills From a link and
+reads it; `-mp_debug_paste "<text>"` fills Paste (and `-mp_debug_autoparse 1` reads it).
+`-mp_debug_rules 1` shows Paste as a phone without Apple Intelligence sees it: the format
+warning and the rules-only reader.
+
 Both hooks are inside `#if DEBUG`, so a release build has neither.
 
 ## Food icons

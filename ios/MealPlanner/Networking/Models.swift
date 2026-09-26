@@ -289,7 +289,7 @@ struct RecipeCategory: Codable, Identifiable, Hashable {
     var iconKey: String? = nil
 }
 
-/// A draft read off a link by the server — the same shape "write it for me" returns.
+/// A draft read off a link by the server, to be checked in the editor before it is saved.
 struct ImportedRecipe: Codable {
     let name: String
     let description: String?
