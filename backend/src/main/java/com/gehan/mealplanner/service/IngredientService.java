@@ -83,7 +83,8 @@ public class IngredientService {
         return moved;
     }
 
-    private String normalize(String name) {
+    /** The one spelling two names share when they are the same ingredient: "Salt " and "salt". */
+    static String normalize(String name) {
         return name.trim().toLowerCase();
     }
 }

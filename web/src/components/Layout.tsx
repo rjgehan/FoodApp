@@ -7,6 +7,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { CardInSheetProvider, cx, Sheet } from './ui';
 import ProfileCard from './ProfileCard';
 import CredentialsPrompt from './CredentialsPrompt';
+import StartCupboardSheet from './StartCupboardSheet';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
@@ -40,7 +41,15 @@ const navItems = [
 export default function Layout({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
-  const { households, activeHouseholdId, setActiveHouseholdId, lostHousehold, dismissLostHousehold } = useHousehold();
+  const {
+    households,
+    activeHouseholdId,
+    setActiveHouseholdId,
+    lostHousehold,
+    dismissLostHousehold,
+    starterCupboardFor,
+    dismissStarterCupboard,
+  } = useHousehold();
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -195,6 +204,13 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
 
         <CredentialsPrompt />
+
+        {/* A household made a moment ago, wherever it was made: fill its cupboard before anything
+            else. Here rather than on the page that made it, because the first-run setup has no
+            page to come back to. */}
+        {starterCupboardFor && households.some((h) => h.id === starterCupboardFor) && (
+          <StartCupboardSheet householdId={starterCupboardFor} first onClose={dismissStarterCupboard} />
+        )}
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
         <main className={cx('mx-auto w-full px-4 pb-28 pt-1 md:pb-10', wide ? 'max-w-6xl' : 'max-w-3xl')}>

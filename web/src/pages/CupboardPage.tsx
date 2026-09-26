@@ -6,12 +6,27 @@ import type { CupboardItem, GroceryCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { groupByCategory } from '../utils/storeSections';
-import { Button, Card, CheckCircle, cx, EmptyState, ErrorText, Field, Input, NumberInput, Select, Sheet } from '../components/ui';
+import {
+  ActionMenu,
+  Button,
+  Card,
+  CheckCircle,
+  cx,
+  EmptyState,
+  ErrorText,
+  Field,
+  Input,
+  NumberInput,
+  Select,
+  Sheet,
+} from '../components/ui';
 import { BarcodeIcon, PlusIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
 import UnitInput from '../components/UnitInput';
 import ScanToCupboard from '../components/ScanToCupboard';
+import StartCupboardSheet from '../components/StartCupboardSheet';
+import CopyCupboardSheet from '../components/CopyCupboardSheet';
 
 /* The rows hold the card's 16px padding, so the separators start and stop where the padding does. */
 const CARD_ROW_INSET = { '--row-inset': '1rem', '--row-inset-end': '1rem' } as CSSProperties;
@@ -29,12 +44,14 @@ function byName(a: CupboardItem, b: CupboardItem) {
  * which is what you do most. Tapping an item opens it for editing.
  */
 export default function CupboardPage() {
-  const { activeHouseholdId, groceryCategories } = useHousehold();
+  const { activeHouseholdId, activeHousehold, households, groceryCategories } = useHousehold();
   const [items, setItems] = useState<CupboardItem[] | null>(null);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CupboardItem | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [filling, setFilling] = useState<'starters' | 'copy' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -84,6 +101,11 @@ export default function CupboardPage() {
     }
   }
 
+  function announce(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 5000);
+  }
+
   async function setRunningLow(item: CupboardItem, runningLow: boolean) {
     if (item.runningLow === runningLow) return;
     replace({ ...item, runningLow });
@@ -116,6 +138,7 @@ export default function CupboardPage() {
   const exact = all.some((i) => i.name.toLowerCase() === q);
   const groups = groupByCategory(shown, groceryCategories);
   const low = all.filter((i) => i.runningLow).length;
+  const otherHouseholds = households.filter((h) => h.id !== activeHouseholdId);
 
   return (
     <div className="space-y-4">
@@ -128,7 +151,17 @@ export default function CupboardPage() {
                 .filter(Boolean)
                 .join(' · ')
         }
-      />
+      >
+        <ActionMenu
+          label="Cupboard options"
+          items={[
+            { label: 'Start with the basics…', onSelect: () => setFilling('starters') },
+            // Only for somebody with a second house to fill, which is almost nobody — so it is
+            // not even offered otherwise.
+            otherHouseholds.length > 0 && { label: 'Copy from another household…', onSelect: () => setFilling('copy') },
+          ]}
+        />
+      </PageTitle>
 
       {/* One box: type to check whether you have something, and if you don't, add it. The
           camera answers the same question without the typing, which is the one that matters
@@ -161,16 +194,30 @@ export default function CupboardPage() {
         )}
       </form>
 
+      {notice && (
+        <p role="status" className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">
+          {notice}
+        </p>
+      )}
+
       {items === null ? (
         <p className="py-6 text-center text-[0.9375rem] text-muted">Loading…</p>
       ) : all.length === 0 ? (
-        <EmptyState>
-          Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
-          <Link to="/grocery-list" className="font-medium text-accent">
-            Groceries
-          </Link>{' '}
-          and what you bought lands here — or add things above.
-        </EmptyState>
+        <div>
+          <EmptyState>
+            Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
+            <Link to="/grocery-list" className="font-medium text-accent">
+              Groceries
+            </Link>{' '}
+            and what you bought lands here — or add things above.
+          </EmptyState>
+          {/* A new house's cupboard is the one that is empty, and ticking a list beats typing it. */}
+          <div className="-mt-2 flex justify-center">
+            <Button variant="secondary" onClick={() => setFilling('starters')}>
+              Start with the basics
+            </Button>
+          </div>
+        </div>
       ) : shown.length === 0 ? (
         <EmptyState>Not in the cupboard.</EmptyState>
       ) : (
@@ -238,6 +285,34 @@ export default function CupboardPage() {
           items={all}
           onAdded={replace}
           onClose={() => setScanning(false)}
+        />
+      )}
+
+      {filling === 'starters' && (
+        <StartCupboardSheet
+          householdId={activeHouseholdId}
+          onAdded={(added) => {
+            announce(added === 0 ? 'All of those were here already.' : `Added ${added} to the cupboard.`);
+            load().catch(() => {});
+          }}
+          onClose={() => setFilling(null)}
+        />
+      )}
+
+      {filling === 'copy' && (
+        <CopyCupboardSheet
+          householdId={activeHouseholdId}
+          householdName={activeHousehold?.name ?? 'this household'}
+          others={otherHouseholds}
+          items={all}
+          onCopied={(copied, skipped) => {
+            announce(
+              `Copied ${copied} ${copied === 1 ? 'item' : 'items'}` +
+                (skipped ? `; ${skipped} ${skipped === 1 ? 'was' : 'were'} already here.` : '.'),
+            );
+            load().catch(() => {});
+          }}
+          onClose={() => setFilling(null)}
         />
       )}
 

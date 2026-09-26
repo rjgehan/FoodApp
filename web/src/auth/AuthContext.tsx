@@ -45,6 +45,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  */
 export const CREDENTIALS_PROMPT_DISMISSED = 'mp_credentialsPromptDismissed';
 
+/**
+ * Where the first-run setup leaves the new household's id, so its empty cupboard is offered the
+ * starter list: the household provider that offers it does not exist until the session does.
+ * sessionStorage, so a reload in the middle still offers it and a later visit does not.
+ */
+export const START_CUPBOARD_KEY = 'mp_startCupboard';
+
 /** Tokens last 30 days; swapping at most once a day keeps a used session alive indefinitely. */
 const REFRESH_AFTER_SECONDS = 24 * 60 * 60;
 
@@ -120,7 +127,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signIn]);
 
   const setup = useCallback(async (input: SetupInput) => {
-    signIn(await api<AuthResponse>('POST', '/api/auth/setup', input));
+    const auth = await api<AuthResponse>('POST', '/api/auth/setup', input);
+    try {
+      if (auth.lastHouseholdId) sessionStorage.setItem(START_CUPBOARD_KEY, auth.lastHouseholdId);
+    } catch {
+      // Storage blocked: no starter list this once, and it is still on the Cupboard's •••.
+    }
+    signIn(auth);
   }, [signIn]);
 
   const logout = useCallback(() => {

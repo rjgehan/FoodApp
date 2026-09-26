@@ -134,6 +134,13 @@ export interface CupboardItem {
   unit: string | null;
 }
 
+/** One group of the common things a kitchen starts with. The list itself lives on the server. */
+export interface StarterGroup {
+  name: string;
+  /** `have`: in this cupboard already. */
+  items: { name: string; have: boolean }[];
+}
+
 export type HouseholdRole = 'OWNER' | 'MEMBER';
 
 export interface HouseholdMember {
