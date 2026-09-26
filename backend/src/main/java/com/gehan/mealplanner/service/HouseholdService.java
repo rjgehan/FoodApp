@@ -309,8 +309,12 @@ public class HouseholdService {
         return toMemberResponse(saved, null);
     }
 
+    public boolean isMember(UUID householdId, UUID userId) {
+        return memberRepository.existsByHouseholdIdAndUserId(householdId, userId);
+    }
+
     public void assertMember(UUID householdId, UUID userId) {
-        if (!memberRepository.existsByHouseholdIdAndUserId(householdId, userId)) {
+        if (!isMember(householdId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this household");
         }
     }

@@ -181,11 +181,18 @@ public class RecipeDtos {
     public record MoveRecipesRequest(@NotNull List<UUID> recipeIds, UUID fromCategoryId) {
     }
 
-    /** Replaces the set of households this recipe is shared with. An empty list unshares it. */
     public record PublishRequest(boolean published) {
     }
 
+    /**
+     * Which of your own households this recipe is shared with. One of yours left out is
+     * unshared; a share into a household you are not in is left alone whether it is listed or not.
+     */
     public record UpdateSharesRequest(List<UUID> householdIds) {
+    }
+
+    /** Where to keep a copy of a recipe opened from a public link: one of your households. */
+    public record SaveSharedRecipeRequest(@NotNull UUID householdId) {
     }
 
     /** A household you could share with, and whether this recipe already is. */

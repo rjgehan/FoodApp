@@ -77,6 +77,8 @@ public class RecipeLinkService {
     /**
      * The only unauthenticated read in the app besides image bytes. Everything household-shaped
      * — who owns it, who else it is shared with, how it is filed — is left out on purpose.
+     * (A signed-in person who saves a copy gets it in the same drawer — Breakfast, Dinner — since
+     * that is the kind of meal it is; the groups, which are the sender's own, never leave.)
      */
     @Transactional(readOnly = true)
     public PublicRecipeResponse view(String token) {

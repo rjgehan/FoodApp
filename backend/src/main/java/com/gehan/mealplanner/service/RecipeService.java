@@ -9,6 +9,7 @@ import com.gehan.mealplanner.domain.RecipeSection;
 import com.gehan.mealplanner.domain.SectionIcon;
 import com.gehan.mealplanner.domain.RecipeShare;
 import com.gehan.mealplanner.domain.StoredImage;
+import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.CreateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.MoveRecipesRequest;
@@ -42,6 +43,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
@@ -413,7 +415,14 @@ public class RecipeService {
         return image;
     }
 
-    /** Which households this recipe could go to, and where it already is. Owner only. */
+    /**
+     * Which households this recipe could go to, and where it already is. Owner only.
+     *
+     * Only the houses the person asking is in, less the one that owns it. Sharing is handing a
+     * recipe from one of your houses to another of yours; it used to list every household on
+     * the server, which put the names of strangers' houses in front of anybody with a recipe.
+     * Somebody outside all your houses gets the public link instead.
+     */
     @Transactional(readOnly = true)
     public List<ShareTargetResponse> shareTargets(UUID recipeId, UUID requesterId) {
         Recipe recipe = recipeRepository.findById(recipeId)
@@ -421,18 +430,26 @@ public class RecipeService {
         UUID ownerId = recipe.getHousehold().getId();
         householdService.assertMember(ownerId, requesterId);
 
-        Set<UUID> already = shareRepository.findByRecipeId(recipeId).stream()
-                .map(sh -> sh.getHousehold().getId())
-                .collect(Collectors.toSet());
+        Set<UUID> already = sharedWith(recipeId);
 
-        return householdRepository.findAll().stream()
-                .filter(h -> !h.getId().equals(ownerId))
-                .sorted(Comparator.comparing(Household::getName, String.CASE_INSENSITIVE_ORDER))
-                .map(h -> new ShareTargetResponse(h.getId(), h.getName(), already.contains(h.getId())))
+        return householdService.listForUser(requesterId).stream()
+                .filter(h -> !h.id().equals(ownerId))
+                .sorted(Comparator.comparing(HouseholdResponse::name, String.CASE_INSENSITIVE_ORDER))
+                .map(h -> new ShareTargetResponse(h.id(), h.name(), already.contains(h.id())))
                 .toList();
     }
 
-    /** Only the owning household decides who a recipe goes to. */
+    /**
+     * Sets which of your own houses this recipe is shared with. Only the owning household
+     * decides who a recipe goes to.
+     *
+     * A share into a house you are not in was made by somebody else in the owning house — the
+     * one who is in it — and is not yours to undo: you cannot see that house to know what taking
+     * it away would do there. So shares are only added or removed among the asker's own houses,
+     * and every other one is left exactly as it was, whether the request mentions it or not.
+     * Mentioning one that is already there is allowed (an app from before this sends the whole
+     * list back); asking to share into a house you are not in is refused.
+     */
     @Transactional
     public RecipeResponse updateShares(UUID recipeId, UUID requesterId, UpdateSharesRequest request) {
         Recipe recipe = recipeRepository.findById(recipeId)
@@ -440,18 +457,139 @@ public class RecipeService {
         UUID ownerId = recipe.getHousehold().getId();
         householdService.assertMember(ownerId, requesterId);
 
-        shareRepository.deleteAll(shareRepository.findByRecipeId(recipeId));
+        Set<UUID> wanted = new LinkedHashSet<>();
         if (request.householdIds() != null) {
-            for (UUID targetId : request.householdIds()) {
-                if (targetId == null || targetId.equals(ownerId)) {
-                    continue;
-                }
+            request.householdIds().stream()
+                    .filter(id -> id != null && !id.equals(ownerId))
+                    .forEach(wanted::add);
+        }
+        List<RecipeShare> existing = shareRepository.findByRecipeId(recipeId);
+        Set<UUID> already = existing.stream().map(sh -> sh.getHousehold().getId()).collect(Collectors.toSet());
+
+        // Checked before anything changes, so a refused request leaves every share as it was.
+        for (UUID targetId : wanted) {
+            if (!already.contains(targetId) && !householdService.isMember(targetId, requesterId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "You can only share with a household you're in.");
+            }
+        }
+
+        for (RecipeShare share : existing) {
+            UUID target = share.getHousehold().getId();
+            if (!wanted.contains(target) && householdService.isMember(target, requesterId)) {
+                shareRepository.delete(share);
+            }
+        }
+        for (UUID targetId : wanted) {
+            if (!already.contains(targetId)) {
                 Household target = householdRepository.findById(targetId)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
                 shareRepository.save(RecipeShare.builder().recipe(recipe).household(target).build());
             }
         }
+        shareRepository.flush();
         return toResponse(recipe, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
+    }
+
+    private Set<UUID> sharedWith(UUID recipeId) {
+        return shareRepository.findByRecipeId(recipeId).stream()
+                .map(sh -> sh.getHousehold().getId())
+                .collect(Collectors.toSet());
+    }
+
+    /** What a copy kept from a public link says about where it came from. */
+    static final String SAVED_FROM_LINK = "Saved from a shared link";
+
+    /**
+     * Keeps a copy of a recipe somebody sent as a public link, in one of your own houses.
+     *
+     * A copy rather than a share: the link is how a recipe reaches somebody outside every house
+     * the sender is in, so there is no house-to-house share to make — and a copy stays theirs
+     * when the sender edits the recipe, deletes it, or revokes the link. It carries what the link
+     * shows — the name, method, ingredients, links and pictures — plus which drawer it goes in,
+     * and never the house it came from, which the link has kept to itself all along. The description says it was
+     * saved from a link, since that is all the saver was told.
+     *
+     * The pictures are copied too, not pointed at. A picture belongs to one house: the owning
+     * house can delete it, deleting that house deletes all of them, and a recipe may only wear
+     * its own house's pictures — so a copy leaning on the sender's would lose them the day the
+     * sender tidied up.
+     *
+     * Saving the same link twice makes two copies, the same as typing it in twice would. The
+     * app goes straight to the new one, so nobody is left wondering which is which.
+     */
+    @Transactional
+    public RecipeResponse saveFromLink(String token, UUID householdId, UUID requesterId) {
+        householdService.assertMember(householdId, requesterId);
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        Recipe source = linkRepository.findByToken(token)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "That link isn't valid."))
+                .getRecipe();
+
+        Recipe copy = Recipe.builder()
+                .household(household)
+                .name(source.getName())
+                .description(savedFromLink(source.getDescription()))
+                .instructions(source.getInstructions())
+                .prepTimeMinutes(source.getPrepTimeMinutes())
+                .cookTimeMinutes(source.getCookTimeMinutes())
+                .servings(source.getServings())
+                .build();
+        SourceLinks.replace(copy, SourceLinks.of(source));
+
+        Map<UUID, StoredImage> copied = new HashMap<>();
+        Function<StoredImage, StoredImage> copyImage = image -> copied.computeIfAbsent(image.getId(),
+                id -> imageRepository.save(StoredImage.builder()
+                        .household(household)
+                        .contentType(image.getContentType())
+                        .byteSize(image.getByteSize())
+                        .data(image.getData())
+                        .build()));
+        if (source.getCoverImage() != null) {
+            copy.setCoverImage(copyImage.apply(source.getCoverImage()));
+        }
+        source.getPhotos().forEach(photo -> copy.getPhotos().add(copyImage.apply(photo)));
+
+        source.getIngredients().forEach(i -> copy.getIngredients().add(RecipeIngredient.builder()
+                .recipe(copy)
+                .ingredient(i.getIngredient())
+                .quantity(i.getQuantity())
+                .unit(i.getUnit())
+                .notes(i.getNotes())
+                .optional(i.isOptional())
+                .build()));
+
+        Recipe saved = recipeRepository.save(copy);
+        // In the same drawer the sender keeps it in — Dinner stays Dinner — but in none of their
+        // groups, which are named for a kitchen the saver has never seen. The drawer says what
+        // kind of meal it is, not anything about the sender's house, so it is the one piece of
+        // filing a copy carries (the public page itself still shows none of it).
+        RecipeSection section = filingRepository
+                .findByHouseholdIdAndRecipeId(source.getHousehold().getId(), source.getId())
+                .map(RecipeFiling::getSection)
+                .orElse(null);
+        RecipeFiling filing = upsertFiling(household, saved, section, List.of());
+        return toResponse(saved, filing, householdId);
+    }
+
+    /**
+     * The description with where it came from on the end. A copy of a copy says it once: the
+     * saver of a saved recipe was told no more than the first saver was.
+     */
+    static String savedFromLink(String description) {
+        if (description == null || description.isBlank()) {
+            return SAVED_FROM_LINK + ".";
+        }
+        String text = description.trim();
+        if (text.endsWith(SAVED_FROM_LINK) || text.endsWith(SAVED_FROM_LINK + ".")) {
+            return text;
+        }
+        // "Mum's Sunday lasagna." reads badly with " · Saved…" after its full stop.
+        if (text.endsWith(".") && !text.endsWith("..")) {
+            text = text.substring(0, text.length() - 1);
+        }
+        return text + " · " + SAVED_FROM_LINK;
     }
 
     private boolean isVisibleTo(Recipe recipe, UUID householdId) {
@@ -479,7 +617,11 @@ public class RecipeService {
         recipe.setPublished(published);
         recipe.setPublishedAt(published ? Instant.now() : null);
         Recipe saved = recipeRepository.save(recipe);
-        return toResponse(saved, null, recipe.getHousehold().getId());
+        // With the owner's filing, as every other answer about its own recipe is: an app that
+        // puts this straight back on screen would otherwise show it in no drawer and no group,
+        // and the next edit would save it that way.
+        UUID ownerId = recipe.getHousehold().getId();
+        return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
     }
 
     /**
