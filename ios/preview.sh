@@ -147,7 +147,9 @@ name=$(xcrun simctl list devices | grep "$udid" | sed -E 's/^\s+(.*) \([0-9A-F-]
 echo "Simulator: $name"
 
 xcrun simctl boot "$udid" 2>/dev/null || true
-open -a Simulator --args -CurrentDeviceUDID "$udid" 2>/dev/null || open -a Simulator
+# The window is a nicety: without Simulator.app (or with no screen) the build, install and a
+# --shot all still work, so a missing window must not stop the script under `set -e`.
+open -a Simulator --args -CurrentDeviceUDID "$udid" 2>/dev/null || open -a Simulator 2>/dev/null || true
 
 echo "Building…"
 xcodebuild \
