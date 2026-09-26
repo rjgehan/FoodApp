@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, groceries, find, isoDate, newHousehold, newRecipe, plan } from '../../lib/api';
+import { admin, call, groceries, find, isoDate, legacyMember, newHousehold, newRecipe, plan } from '../../lib/api';
 import { calendarDay, sheet, signIn, tab, tapRowStart } from '../../lib/ui';
 
 /**
@@ -9,10 +9,8 @@ import { calendarDay, sheet, signIn, tab, tapRowStart } from '../../lib/ui';
 
 test('sign in from the tap-your-name screen with the keypad', async ({ page }) => {
   const hh = await newHousehold();
-  const owner = await admin();
-  await call('POST', `/api/households/${hh.id}/users`, { token: owner.token, body: { username: `pad${Date.now()}` } });
-  const username = (await call('GET', `/api/households/${hh.id}/members`, { token: owner.token }))
-    .find((m: any) => m.username.startsWith('pad')).username;
+  // Made for them before invite links, and never signed into: they choose a PIN on the keypad.
+  const { username } = await legacyMember(hh.id, null);
 
   await page.goto('/');
   // Email and password come first now; the name-and-PIN screens are a link underneath.

@@ -38,7 +38,7 @@ const navItems = [
 export default function Layout({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
-  const { households, activeHouseholdId, setActiveHouseholdId } = useHousehold();
+  const { households, activeHouseholdId, setActiveHouseholdId, lostHousehold, dismissLostHousehold } = useHousehold();
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -158,7 +158,22 @@ export default function Layout({ children }: { children: ReactNode }) {
         <CredentialsPrompt />
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
-        <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-1 md:pb-10">{children}</main>
+        <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-1 md:pb-10">
+          {/* Taken out of the house they were in, and moved to another of theirs: said once, so
+              the switch does not look like the app losing its place. With no house left, the
+              pages' own empty state says it instead. */}
+          {lostHousehold && activeName && (
+            <div role="status" className="mb-3 flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent">
+              <p className="flex-1 font-medium">
+                You're no longer in “{lostHousehold}”, so you're looking at “{activeName}”.
+              </p>
+              <button type="button" onClick={dismissLostHousehold} className="-my-1 font-semibold">
+                OK
+              </button>
+            </div>
+          )}
+          {children}
+        </main>
 
         <nav className="material-bar edge-top fixed inset-x-0 bottom-0 z-20 pb-safe md:hidden">
           <div className="mx-auto flex max-w-3xl">

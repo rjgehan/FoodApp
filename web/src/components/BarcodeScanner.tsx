@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReadInputBarcodeFormat } from 'zxing-wasm/reader';
+import { cx } from './ui';
 
 /**
- * The camera, pointed at a barcode, until it reads one.
+ * The camera, pointed at a barcode — or, for an invite, a QR code — until it reads one.
  *
  * Two ways to read it. Chrome and Android have `BarcodeDetector` built in — free, instant, and
  * using the phone's own hardware. Safari does not, and Safari is what this app is mostly opened
  * in, so there is a fallback: a WebAssembly build of ZXing, fetched only at the moment somebody
  * actually scans something. Nobody who never scans pays for it.
  *
- * Only the four formats groceries use. Letting it look for QR codes as well makes every frame
- * slower and finds nothing, because tins do not have QR codes on them.
+ * Only the formats the job needs: the four groceries use, or QR codes alone. Letting a grocery
+ * scan look for QR codes as well makes every frame slower and finds nothing, because tins do not
+ * have QR codes on them — and the other way round, a QR scan has no use for a tin's barcode.
  */
 
-const GROCERY_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'] as const;
+export type ScanKind = 'grocery' | 'qr';
+
+const FORMATS: Record<ScanKind, { native: readonly string[]; zxing: ReadInputBarcodeFormat[] }> = {
+  grocery: { native: ['ean_13', 'ean_8', 'upc_a', 'upc_e'], zxing: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E'] },
+  qr: { native: ['qr_code'], zxing: ['QRCode'] },
+};
 
 /** Every quarter second. Faster wastes battery; slower feels like it is not trying. */
 const BETWEEN_LOOKS_MS = 250;
@@ -22,9 +30,11 @@ type Reader = (bitmap: ImageData) => Promise<string | null>;
 export default function BarcodeScanner({
   onFound,
   onError,
+  kind = 'grocery',
 }: {
   onFound: (barcode: string) => void;
   onError: (message: string) => void;
+  kind?: ScanKind;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [starting, setStarting] = useState(true);
@@ -68,7 +78,7 @@ export default function BarcodeScanner({
 
       let read: Reader;
       try {
-        read = await reader();
+        read = await reader(kind);
       } catch {
         failed.current('Could not load the barcode reader.');
         return;
@@ -117,6 +127,8 @@ export default function BarcodeScanner({
       window.clearTimeout(timer);
       stop();
     };
+    // The kind is fixed for the life of a scanner; a new kind is a new scanner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -129,13 +141,19 @@ export default function BarcodeScanner({
         // iOS refuses to play an inline video that is not also muted and silent.
         aria-label="Camera"
       />
-      {/* A window to aim through. Barcodes are wide and short, so the window is too. */}
+      {/* A window to aim through. Barcodes are wide and short, so their window is too; a QR
+          code is square. */}
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="h-24 w-4/5 rounded-xl border-2 border-white/90 shadow-[0_0_0_100vmax_rgba(0,0,0,0.35)]" />
+        <div
+          className={cx(
+            'rounded-xl border-2 border-white/90 shadow-[0_0_0_100vmax_rgba(0,0,0,0.35)]',
+            kind === 'qr' ? 'aspect-square w-3/5' : 'h-24 w-4/5',
+          )}
+        />
       </div>
       <p className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4
                     text-center text-sm text-white">
-        {starting ? 'Starting the camera…' : 'Point at the barcode'}
+        {starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at the barcode'}
       </p>
     </div>
   );
@@ -146,11 +164,11 @@ export default function BarcodeScanner({
  * function on purpose: it is a WebAssembly payload, and it should not be in the bundle that
  * loads when somebody opens the grocery list.
  */
-async function reader(): Promise<Reader> {
+async function reader(kind: ScanKind): Promise<Reader> {
   const Native = (window as unknown as { BarcodeDetector?: BarcodeDetectorish }).BarcodeDetector;
   if (Native) {
     const supported = await Native.getSupportedFormats?.();
-    const formats = GROCERY_FORMATS.filter((f) => !supported || supported.includes(f));
+    const formats = FORMATS[kind].native.filter((f) => !supported || supported.includes(f));
     if (formats.length > 0) {
       const detector = new Native({ formats });
       return async (bitmap) => {
@@ -166,7 +184,7 @@ async function reader(): Promise<Reader> {
   prepareZXingModule({ overrides: { locateFile: () => wasmUrl } });
   return async (bitmap) => {
     const hits = await readBarcodes(bitmap, {
-      formats: ['EAN-13', 'EAN-8', 'UPC-A', 'UPC-E'],
+      formats: FORMATS[kind].zxing,
       tryHarder: true,
     });
     const good = hits.find((hit) => hit.isValid && hit.text);

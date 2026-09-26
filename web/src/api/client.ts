@@ -53,6 +53,17 @@ export function onSignedOut(handler: (() => void) | null) {
 }
 
 /**
+ * What to do when a household turns you away. HouseholdContext registers it: being taken out of
+ * a house by its owner shows up on your phone as exactly this, the next time it asks for
+ * anything there, and the answer is to fetch your list of houses again and fall back to another.
+ */
+let forbiddenHandler: (() => void) | null = null;
+
+export function onHouseholdForbidden(handler: (() => void) | null) {
+  forbiddenHandler = handler;
+}
+
+/**
  * A 401 on a request that carried a token means the token is no good any more. Before this, the
  * app kept showing you as signed in while the server quietly refused every change, and the only
  * way out was signing out by hand. The sign-in endpoints are excluded: a wrong PIN is also a 401.
@@ -60,6 +71,7 @@ export function onSignedOut(handler: (() => void) | null) {
 function noticeSignedOut(status: number, sentToken: boolean, path: string) {
   const signInCall = path.startsWith('/api/auth/') && path !== '/api/auth/refresh';
   if (status === 401 && sentToken && !signInCall) signedOutHandler?.();
+  if (status === 403 && sentToken && path.startsWith('/api/households/')) forbiddenHandler?.();
 }
 
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {

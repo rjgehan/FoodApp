@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import NoHousehold from '../components/NoHousehold';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection } from '../api/types';
@@ -79,7 +80,7 @@ export default function RecipeSectionPage() {
   if (!activeHouseholdId) {
     return (
       <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
+        <NoHousehold />
       </Card>
     );
   }

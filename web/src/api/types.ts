@@ -17,6 +17,29 @@ export interface Me {
   lastHouseholdId: string | null;
 }
 
+/**
+ * What an invite link says to whoever opens it, before they sign in. Everything but `valid` is
+ * null when the link does not work.
+ */
+export interface InviteInfo {
+  valid: boolean;
+  householdName: string | null;
+  invitedByName: string | null;
+  memberCount: number | null;
+}
+
+/** Whether the signed-in person is in an invite's house already — and if so, which it is. */
+export interface InviteStanding {
+  alreadyMember: boolean;
+  householdId: string | null;
+}
+
+/** A household's invite link, from GET /api/households/{id}/invite. */
+export interface InviteLink {
+  token: string;
+  expiresAt: string;
+}
+
 /** What a password reset link says about itself before it is used. */
 export interface PasswordResetInfo {
   valid: boolean;

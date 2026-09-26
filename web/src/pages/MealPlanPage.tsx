@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection } from '../api/types';
@@ -141,7 +142,7 @@ export default function MealPlanPage() {
   if (!activeHouseholdId) {
     return (
       <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
+        <NoHousehold />
       </Card>
     );
   }

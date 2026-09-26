@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, imageUrl } from '../api/client';
 import type { RecipeSection } from '../api/types';
-import type { HouseholdMember, Place } from '../api/types';
+import type { HouseholdMember, InviteLink, Place } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
@@ -12,7 +12,6 @@ import {
   Badge,
   Button,
   Card,
-  Chip,
   EmptyState,
   ErrorText,
   Field,
@@ -29,11 +28,16 @@ import { PageTitle } from '../components/PageTitle';
 import ImagePicker from '../components/ImagePicker';
 import ProfileCard from '../components/ProfileCard';
 import LinkHandout from '../components/LinkHandout';
+import BarcodeScanner from '../components/BarcodeScanner';
+import { inviteUrl, parseAppLink } from '../utils/appLinks';
+import { useNavigate } from 'react-router-dom';
 
 export default function HouseholdPage() {
   const { households, activeHousehold } = useHousehold();
   const { session } = useAuth();
   const [justCreated, setJustCreated] = useState<string | null>(null);
+  // Taking somebody out replaces the invite link, so the Invite card fetches it again.
+  const [linkGeneration, setLinkGeneration] = useState(0);
 
   function announce(name: string) {
     setJustCreated(name);
@@ -49,15 +53,30 @@ export default function HouseholdPage() {
         </div>
       )}
 
-      {/* Nobody in a household yet: making one is the only thing to do here. */}
+      {/* Nobody in a household yet: join one somebody sent, or make your own. */}
       {households.length === 0 && (
-        <Card title="Create a household">
-          <NewHouseholdForm onCreated={announce} />
-        </Card>
+        <>
+          <Card title="Join a household">
+            <JoinHouseholdForm />
+          </Card>
+          <Card title="Or start your own">
+            <NewHouseholdForm onCreated={announce} />
+          </Card>
+        </>
       )}
 
-      {/* The two things people come here for stay on the page… */}
-      {activeHousehold && <MembersCard householdId={activeHousehold.id} />}
+      {/* The things people come here for stay on the page… */}
+      {activeHousehold && (
+        <MembersCard householdId={activeHousehold.id} onRemoved={() => setLinkGeneration((n) => n + 1)} />
+      )}
+      {activeHousehold && (
+        <InviteCard
+          key={linkGeneration}
+          householdId={activeHousehold.id}
+          name={activeHousehold.name}
+          isOwner={activeHousehold.role === 'OWNER'}
+        />
+      )}
       {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
 
       {/* …and everything set once and rarely touched is a row that opens on its own. */}
@@ -78,6 +97,9 @@ export default function HouseholdPage() {
           <SheetRow label="You" detail={session?.displayName}>
             {() => <ProfileCard />}
           </SheetRow>
+          {households.length > 0 && (
+            <SheetRow label="Join a household">{() => <JoinHouseholdForm />}</SheetRow>
+          )}
           {households.length > 0 && (
             <SheetRow label="Start another household">
               {(close) => (
@@ -215,131 +237,6 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
 }
 
 /**
- * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
- * card exists to fill in the details afterwards — the menu link and the phone number.
- */
-/**
- * An account that joins no household — for someone who will have their own, or who you just
- * want to be able to share recipes with. They pick a PIN the first time they sign in, and until
- * then they show on the login screen under "Not in a house yet".
- */
-function LooseAccountForm() {
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const name = username.trim();
-    if (!name) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api('POST', '/api/users', { username: name, displayName: displayName.trim() || null });
-      setMade(displayName.trim() || name);
-      setUsername('');
-      setDisplayName('');
-      setTimeout(() => setMade(null), 4000);
-    } catch (err) {
-      setError(
-        err instanceof ApiError && err.status === 409
-          ? 'Someone already uses that name.'
-          : 'Could not add them.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div>
-      {made && (
-        <div className="mb-3 rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
-          “{made}” added. They'll see their name on the sign-in screen.
-        </div>
-      )}
-      <form onSubmit={onSubmit} className="space-y-3">
-        <p className="text-sm text-muted">
-          An account that isn't in any household. They can start their own, or you can invite
-          them to yours later.
-        </p>
-        <Field label="Username">
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="grandad" {...usernameInputProps} />
-        </Field>
-        <Field label="Name" hint="Optional — what they're called on screen.">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Grandad" />
-        </Field>
-        {error && <ErrorText>{error}</ErrorText>}
-        <Button type="submit" variant="secondary" full disabled={busy || !username.trim()}>
-          Add them
-        </Button>
-      </form>
-    </div>
-  );
-}
-
-/**
- * Three ways to get someone in, behind one button. They used to be three forms open on the page
- * at once — a lot of boxes for something done a few times a year.
- */
-function AddSomeone({ householdId, onDone }: { householdId: string; onDone: () => Promise<void> }) {
-  const [mode, setMode] = useState<'new' | 'invite' | 'loose' | null>(null);
-
-  if (!mode) {
-    return (
-      <Button variant="ghost" size="sm" className="-ml-3 mt-1" onClick={() => setMode('new')}>
-        <PlusIcon className="h-4 w-4" />
-        Add someone
-      </Button>
-    );
-  }
-
-  return (
-    <div className="mt-3 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Chip active={mode === 'new'} onClick={() => setMode('new')}>
-          New to the app
-        </Chip>
-        <Chip active={mode === 'invite'} onClick={() => setMode('invite')}>
-          Has an account
-        </Chip>
-        <Chip active={mode === 'loose'} onClick={() => setMode('loose')}>
-          Account only
-        </Chip>
-        <Button size="sm" variant="ghost" onClick={() => setMode(null)}>
-          Cancel
-        </Button>
-      </div>
-      {mode === 'new' && (
-        <AddPersonForm
-          householdId={householdId}
-          onDone={onDone}
-          path="users"
-          label="Their username"
-          hint="They join this household. To get in the first time, they tap “Sign in with your name and PIN” and choose one — or send them a reset link from ••• by their name."
-          action="Create"
-          fallbackError="Could not create that account"
-        />
-      )}
-      {mode === 'invite' && (
-        <AddPersonForm
-          householdId={householdId}
-          onDone={onDone}
-          path="members"
-          label="Their username"
-          hint="Anyone who already has an account, including people in another household."
-          action="Invite"
-          fallbackError="Could not add member"
-        />
-      )}
-      {mode === 'loose' && <LooseAccountForm />}
-    </div>
-  );
-}
-
-/**
  * The way out, which is two different doors depending on who else is here.
  *
  * With other people in the house, leaving is small: you lose your access and everything stays
@@ -421,6 +318,10 @@ function LeaveCard({ householdId, name, alone }: { householdId: string; name: st
   );
 }
 
+/**
+ * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
+ * card exists to fill in the details afterwards — the menu link and the phone number.
+ */
 function PlacesCard({ householdId }: { householdId: string }) {
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [editing, setEditing] = useState<Place | null>(null);
@@ -860,11 +761,12 @@ function ManageCategorySheet({
   );
 }
 
-function MembersCard({ householdId }: { householdId: string }) {
+function MembersCard({ householdId, onRemoved }: { householdId: string; onRemoved: () => void }) {
   const { activeHousehold } = useHousehold();
   const { session } = useAuth();
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [resetting, setResetting] = useState<HouseholdMember | null>(null);
+  const [removing, setRemoving] = useState<HouseholdMember | null>(null);
   const isOwner = activeHousehold?.role === 'OWNER';
 
   async function refresh() {
@@ -906,17 +808,30 @@ function MembersCard({ householdId }: { householdId: string }) {
                 label={`More for ${m.displayName}`}
                 title={m.displayName}
                 className="-mr-2"
-                items={[{ label: 'Reset password', onSelect: () => setResetting(m) }]}
+                items={[
+                  { label: 'Reset password', onSelect: () => setResetting(m) },
+                  { label: 'Remove from household', tone: 'danger', onSelect: () => setRemoving(m) },
+                ]}
               />
             )}
           </li>
         ))}
       </ul>
 
-      <AddSomeone householdId={householdId} onDone={refresh} />
-
       {resetting && (
         <ResetPasswordSheet householdId={householdId} member={resetting} onClose={() => setResetting(null)} />
+      )}
+      {removing && (
+        <RemoveMemberSheet
+          householdId={householdId}
+          householdName={activeHousehold?.name ?? 'this household'}
+          member={removing}
+          onClose={() => setRemoving(null)}
+          onRemoved={async () => {
+            onRemoved();
+            await refresh();
+          }}
+        />
       )}
     </Card>
   );
@@ -976,65 +891,250 @@ function ResetPasswordSheet({
 }
 
 /**
- * Both ways of gaining a member take just a username, so they share a form. "users" creates a
- * brand new account here; "members" pulls in one that already exists, including from another house.
+ * The owner takes somebody out. Asked first, in the app's own sheet: it is quick to do and it
+ * cannot be undone from here. The invite link is replaced at the same time — they have seen it,
+ * as everyone in the house has — so getting back in takes a new link somebody chooses to send.
  */
-function AddPersonForm({
+function RemoveMemberSheet({
   householdId,
-  onDone,
-  path,
-  label,
-  hint,
-  action,
-  fallbackError,
+  householdName,
+  member,
+  onClose,
+  onRemoved,
 }: {
   householdId: string;
-  onDone: () => Promise<void>;
-  path: 'users' | 'members';
-  label: string;
-  hint: string;
-  action: string;
-  fallbackError: string;
+  householdName: string;
+  member: HouseholdMember;
+  onClose: () => void;
+  onRemoved: () => Promise<void>;
 }) {
-  const [username, setUsername] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const { refresh } = useHousehold();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!username.trim()) return;
-    setError(null);
+  async function remove() {
     setBusy(true);
+    setError(null);
     try {
-      await api('POST', `/api/households/${householdId}/${path}`, { username: username.trim() });
-      setUsername('');
-      await onDone();
+      await api('DELETE', `/api/households/${householdId}/members/${member.userId}`);
+      await onRemoved();
+      // The household list carries how many are in it, which decides between Leave and Delete.
+      await refresh();
+      onClose();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? (err.body as { message?: string })?.message ?? fallbackError : fallbackError,
-      );
-    } finally {
+      setError(err instanceof ApiError ? err.message : 'Could not remove them.');
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <Field label={label} hint={hint}>
+    <Sheet title={`Remove ${member.displayName}?`} onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-[0.9375rem] text-muted">
+          {member.displayName} loses access to “{householdName}” straight away. Everything they
+          added stays here. The invite link is replaced too, so the one they have stops working —
+          they can only come back if somebody sends them the new one.
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
         <div className="flex gap-2">
-          <Input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="username"
-            aria-label={label}
-            {...usernameInputProps}
-          />
-          <Button type="submit" variant="secondary" disabled={busy || !username.trim()}>
-            {action}
+          <Button variant="danger" className="flex-1" disabled={busy} onClick={remove}>
+            {busy ? 'Removing…' : 'Remove'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
           </Button>
         </div>
-      </Field>
-      {error && <div className="mt-2"><ErrorText>{error}</ErrorText></div>}
-    </form>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * How anybody new gets in: the household's invite link, sent as a message or held up as a QR
+ * code for someone across the room. Whoever opens it makes an account (or signs in) and joins —
+ * nobody is put in a house without saying yes. Anyone here can hand it out; only the owner can
+ * throw it away and make a new one, since that breaks it for everyone who already has it.
+ */
+function InviteCard({ householdId, name, isOwner }: { householdId: string; name: string; isOwner: boolean }) {
+  const [link, setLink] = useState<InviteLink | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setLink(await api<InviteLink>('GET', `/api/households/${householdId}/invite`));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not get the invite link.');
+    }
+  }, [householdId]);
+
+  useEffect(() => {
+    setLink(null);
+    load();
+  }, [load]);
+
+  async function replace() {
+    setBusy(true);
+    try {
+      await api('DELETE', `/api/households/${householdId}/invite`);
+      setLink(null);
+      await load();
+      setConfirming(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not make a new link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const until = link
+    ? new Date(link.expiresAt).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+    : null;
+
+  return (
+    <Card title="Invite someone">
+      <div className="space-y-3">
+        <p className="text-[0.9375rem] text-muted">
+          Send this link to anyone you want in “{name}”, or let them scan the code. They make an
+          account (or sign in) and they're in.
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
+        {!link && !error && <p className="text-sm text-muted">Getting the link…</p>}
+        {link && (
+          <>
+            <LinkHandout url={inviteUrl(link.token)} shareTitle={`Join ${name} on Meal Planner`} qr="toggle" />
+            <p className="text-sm text-muted">
+              Works until {until}. Anyone who has it can join, so send it only to people you mean to.
+            </p>
+          </>
+        )}
+        {isOwner &&
+          link &&
+          (confirming ? (
+            <div className="space-y-3 rounded-xl bg-elevated p-3">
+              <p className="text-sm">
+                The link you have now stops working, for everyone it was sent to. Nobody already
+                in the house is affected.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="danger" size="sm" className="flex-1" disabled={busy} onClick={replace}>
+                  {busy ? 'Making…' : 'Make a new link'}
+                </Button>
+                <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" className="-ml-3" onClick={() => setConfirming(true)}>
+              Make a new link
+            </Button>
+          ))}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Joining somebody else's house from here: paste the link they sent, or scan the code on their
+ * screen where the browser allows the camera. Either way it goes to the invite page, which says
+ * whose house it is before anything happens.
+ */
+function JoinHouseholdForm() {
+  const navigate = useNavigate();
+  const [text, setText] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function open(value: string) {
+    const link = parseAppLink(value);
+    if (!link) {
+      setError("That isn't a Meal Planner invite link. It looks like …/invite/ followed by a long code.");
+      return false;
+    }
+    navigate(`/${link.kind}/${link.token}`);
+    return true;
+  }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (text.trim()) open(text);
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[0.9375rem] text-muted">
+        Someone sent you an invite link, or has the code on their screen? Paste it here, or scan it.
+      </p>
+      <form onSubmit={onSubmit} className="flex gap-2">
+        <Input
+          aria-label="Invite link"
+          placeholder="https://…/invite/…"
+          inputMode="url"
+          {...usernameInputProps}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+        />
+        <Button type="submit" variant="secondary" disabled={!text.trim()}>
+          Open
+        </Button>
+      </form>
+      <Button variant="ghost" size="sm" className="-ml-3" onClick={() => { setError(null); setScanning(true); }}>
+        Scan a QR code
+      </Button>
+      {error && <ErrorText>{error}</ErrorText>}
+      {scanning && (
+        <Sheet title="Scan an invite" onClose={() => setScanning(false)}>
+          <ScanInvite
+            onFound={(value) => {
+              if (open(value)) setScanning(false);
+            }}
+          />
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The camera, looking for an invite QR code. A code that is something else — a menu, a Wi-Fi
+ * password — is said so, and the camera starts again rather than leaving a dead end.
+ */
+function ScanInvite({ onFound }: { onFound: (value: string) => void }) {
+  const [attempt, setAttempt] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  if (cameraError) {
+    return (
+      <div className="space-y-3 py-2">
+        <ErrorText>{cameraError}</ErrorText>
+        <p className="text-sm text-muted">You can still paste the link instead.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <BarcodeScanner
+        key={attempt}
+        kind="qr"
+        onError={setCameraError}
+        onFound={(value) => {
+          if (parseAppLink(value)) {
+            onFound(value);
+          } else {
+            setProblem("That QR code isn't a Meal Planner invite. Point at the code on the Invite card.");
+            setAttempt((n) => n + 1);
+          }
+        }}
+      />
+      {problem ? <ErrorText>{problem}</ErrorText> : <p className="text-center text-sm text-muted">Point your camera at an invite QR code.</p>}
+    </div>
   );
 }

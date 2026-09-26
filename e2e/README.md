@@ -10,7 +10,7 @@ cd e2e
 npm install            # once
 npm run reset          # wipes the LOCAL dev database, restarts the backend with the
                        # integration API on and Gemini off, starts Vite if it isn't running
-npm run seed           # optional: a lived-in "Test House" to click around (maya / 5678)
+npm run seed           # optional: a lived-in "Test House" to click around (maya@example.com / maya-password)
 npm test               # API + iPhone UI, ~2 minutes
 npm run screens        # screen inventory → screens-output/screens.pdf
 npm run report         # open the last HTML report
@@ -27,7 +27,9 @@ Uses the Chrome already installed (`channel: 'chrome'`), so there's no Playwrigh
 | File | What |
 | --- | --- |
 | `tests/api/auth.spec.ts` | First PIN, lockout, PIN format, setup closed, token refresh, username case |
-| `tests/api/authz.spec.ts` | An outsider against every household endpoint; live-update subscriptions |
+| `tests/api/authz.spec.ts` | An outsider against every household endpoint; no adding people without asking; live-update subscriptions |
+| `tests/api/invites.spec.ts` | Invite links: one per house, what a stranger sees, joining, signing up, expiry; the owner removing someone |
+| `tests/ui/invites.spec.ts` | Handing out the link, making an account from it, joining signed in or by PIN, Join a household, Remove |
 | `tests/api/groceries.spec.ts` | Plan → list maths, scaling, optional extras, staples, cupboard flags, put-away, validation |
 | `tests/api/integration.spec.ts` | The home-dashboard API: key, shapes, ranges, category filter, grocery writes |
 | `tests/api/sharing.spec.ts` | Share links, sharing with a household, deleting a shared recipe |
@@ -50,6 +52,9 @@ grep -rn "KNOWN" tests/
 
 - Arrange with the API (`lib/api.ts`: `newHousehold`, `newMember`, `newRecipe`, `plan`, …), then
   click only through the part the test is about. Every test makes its own household.
+- `newMember` joins through the household's invite link with an email and password, as everyone
+  new does. `legacyMember` writes an account the way they were made before invite links — a PIN,
+  or none yet — straight into the local database (`lib/db.ts`), for tests of the PIN screens.
 - `signIn(page, session, householdId)` skips the keypad.
 - Rows near the bottom sit under the tab bar; use `tapRowStart` / `swipeLeft` from `lib/ui.ts`,
   which scroll first.
@@ -66,7 +71,7 @@ Write down every pause, wrong tap, and "where's the…". Stop a task after two m
 Set up with `npm run reset && npm run seed`, then open the app on the phone
 (`./dev.sh start` prints the address for other devices).
 
-1. You're in Test House. Sign in as **maya** (PIN 5678).
+1. You're in Test House. Sign in as **maya@example.com** (password maya-password).
 2. Add **Chicken Parmesan** to dinner **next Tuesday**.
 3. Next week you're having friends over on Friday — plan Steak Tacos for **8 people**.
 4. Get everything for next week's dinners onto the shopping list.

@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
-import { call, loginWithEmail, newHousehold, newMember, unique } from '../../lib/api';
-import { sheet, signIn } from '../../lib/ui';
+import { expect, test } from '@playwright/test';
+import { call, inviteToken, legacyMember, loginWithEmail, newHousehold, unique } from '../../lib/api';
+import { headerHousehold, sheet, signIn } from '../../lib/ui';
 
 /**
  * Email and password sign-in at iPhone size: the new front door, the prompt that moves PIN
@@ -9,20 +9,12 @@ import { sheet, signIn } from '../../lib/ui';
 
 const address = (who: string) => `${unique(who).toLowerCase()}@example.com`;
 
-/** The household name in the header, top left. A select when there are several. */
-async function headerHousehold(page: Page): Promise<string> {
-  const picker = page.getByLabel('Active household');
-  if (await picker.count()) {
-    return picker.evaluate((el: HTMLSelectElement) => el.selectedOptions[0]?.textContent ?? '');
-  }
-  return (await page.locator('header span.truncate').first().textContent()) ?? '';
-}
 
 test('email and password sign in, landing in the household you were last in', async ({ page }) => {
   const first = await newHousehold();
   const second = await newHousehold();
-  const m = await newMember(first.id);
-  await call('POST', `/api/households/${second.id}/members`, { token: second.owner.token, body: { username: m.username } });
+  const m = await legacyMember(first.id);
+  await call('POST', `/api/invites/${await inviteToken(second.id)}/accept`, { token: m.token });
   const email = address('front');
   await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email, password: 'front-door-pw' } });
   await call('PUT', '/api/users/me/active-household', { token: m.token, body: { householdId: second.id } });
@@ -48,8 +40,10 @@ test('email and password sign in, landing in the household you were last in', as
 test('the name-and-PIN screens open the household you tapped, not the first you joined', async ({ page }) => {
   const first = await newHousehold();
   const second = await newHousehold();
-  const m = await newMember(first.id, '1357');
-  await call('POST', `/api/households/${second.id}/members`, { token: second.owner.token, body: { username: m.username } });
+  const m = await legacyMember(first.id, '1357');
+  await call('POST', `/api/invites/${await inviteToken(second.id)}/accept`, { token: m.token });
+  // Joining opens the new house next time; put it back, so it is the tap that decides.
+  await call('PUT', '/api/users/me/active-household', { token: m.token, body: { householdId: first.id } });
 
   await page.goto('/');
   await page.getByText('Sign in with your name and PIN').click();
@@ -62,7 +56,7 @@ test('the name-and-PIN screens open the household you tapped, not the first you 
 
 test('a PIN account is asked for an email and password, and can put it off until next time', async ({ page, browser }) => {
   const hh = await newHousehold();
-  const m = await newMember(hh.id);
+  const m = await legacyMember(hh.id);
   await signIn(page, m, hh.id, { credentialsPrompt: true });
   await page.goto('/meal-plan');
 
@@ -100,10 +94,10 @@ test('a PIN account is asked for an email and password, and can put it off until
 
 test('an email someone else has is refused in the prompt with a sentence', async ({ page }) => {
   const hh = await newHousehold();
-  const taken = await newMember(hh.id);
+  const taken = await legacyMember(hh.id);
   const email = address('dupe');
   await call('PUT', '/api/users/me/credentials', { token: taken.token, body: { email, password: 'first-owner' } });
-  const m = await newMember(hh.id);
+  const m = await legacyMember(hh.id);
   await signIn(page, m, hh.id, { credentialsPrompt: true });
   await page.goto('/meal-plan');
   const form = sheet(page);
@@ -116,7 +110,7 @@ test('an email someone else has is refused in the prompt with a sentence', async
 
 test('you can change your email and password from Settings', async ({ page }) => {
   const hh = await newHousehold();
-  const m = await newMember(hh.id);
+  const m = await legacyMember(hh.id);
   const email = address('settings');
   await call('PUT', '/api/users/me/credentials', { token: m.token, body: { email, password: 'old-password' } });
   await signIn(page, m, hh.id);
@@ -135,11 +129,8 @@ test('you can change your email and password from Settings', async ({ page }) =>
 
 test('the owner sees who has no email yet, and hands out a reset link that signs them in', async ({ page, browser }) => {
   const hh = await newHousehold();
-  const m = await newMember(hh.id);
-  const never = await call('POST', `/api/households/${hh.id}/users`, {
-    token: hh.owner.token,
-    body: { username: unique('never').toLowerCase() },
-  });
+  const m = await legacyMember(hh.id);
+  const never = await legacyMember(hh.id, null);
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
 

@@ -28,6 +28,19 @@ export async function signIn(
   );
 }
 
+/**
+ * The household name in the header, top left — a select when there are several, plain text when
+ * there is one. Read in one go: checking for the select and then reading it could straddle the
+ * moment the list changes (being removed from a house, say), and then wait on a select that is gone.
+ */
+export async function headerHousehold(page: Page): Promise<string> {
+  return page.locator('header').first().evaluate((header) => {
+    const picker = header.querySelector<HTMLSelectElement>('select[aria-label="Active household"]');
+    if (picker) return picker.selectedOptions[0]?.textContent ?? '';
+    return header.querySelector('span.truncate')?.textContent ?? '';
+  });
+}
+
 /** The bottom tab bar. `.last()` because the header on wide screens has the same links. */
 export const tab = (page: Page, name: string) => page.getByRole('link', { name, exact: true }).last();
 

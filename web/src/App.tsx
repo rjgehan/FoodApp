@@ -17,6 +17,7 @@ import GroceryListPage from './pages/GroceryListPage';
 import CupboardPage from './pages/CupboardPage';
 import PublicRecipePage from './pages/PublicRecipePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import InvitePage from './pages/InvitePage';
 
 export default function App() {
   const { session } = useAuth();
@@ -47,6 +48,8 @@ export default function App() {
   if (!session) {
     return (
       <Routes>
+        {/* A new person's first sight of the app: no nav bar, just who invited them and why. */}
+        <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="*" element={<LoginPage />} />
       </Routes>
     );
@@ -59,6 +62,7 @@ export default function App() {
           {/* No home screen: the week's plan is where the day starts. */}
           <Route path="/" element={<Navigate to="/meal-plan" replace />} />
           <Route path="/household" element={<HouseholdPage />} />
+          <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />

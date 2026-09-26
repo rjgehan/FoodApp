@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import NoHousehold from '../components/NoHousehold';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RecipeCategory } from '../api/types';
@@ -6,7 +7,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import RecipeForm from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
 import { PasteFromAi } from '../components/RecipePaste';
-import { Button, Card, cx, EmptyState } from '../components/ui';
+import { Button, Card, cx } from '../components/ui';
 import { ChevronLeftIcon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
 import { SECTION_OPTIONS, sectionSlug } from '../utils/recipeMeta';
@@ -50,7 +51,7 @@ export default function NewRecipePage() {
   if (!activeHouseholdId) {
     return (
       <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
+        <NoHousehold />
       </Card>
     );
   }

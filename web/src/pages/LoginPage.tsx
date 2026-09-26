@@ -16,11 +16,25 @@ type Step = 'email' | 'household' | 'user' | 'username' | 'setup-form' | 'pin' |
 /** What finishing the keypad actually does. 'claim' is a first-ever sign-in choosing a PIN. */
 type Mode = 'login' | 'claim';
 
-export default function LoginPage() {
+export default function LoginPage({
+  startWithPin = false,
+  notice,
+  exit,
+}: {
+  /** Straight to the name-and-PIN screens — an invite page's "Sign in with your name and PIN". */
+  startWithPin?: boolean;
+  /** Said above everything else: "Sign in to join Gehan House". */
+  notice?: ReactNode;
+  /**
+   * Where back from the first PIN screen goes, when that is not this page's own email sign-in —
+   * an invite page, whose other ways in are what somebody who tapped the wrong one wants.
+   */
+  exit?: { label: string; onBack: () => void };
+} = {}) {
   const { login, loginWithEmail, setInitialPin, setup, expired } = useAuth();
 
   const [landing, setLanding] = useState<LandingResponse | null>(null);
-  const [step, setStep] = useState<Step>('email');
+  const [step, setStep] = useState<Step>(startWithPin ? 'household' : 'email');
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -183,6 +197,10 @@ export default function LoginPage() {
       else setStep('username');
       return;
     }
+    if (step === 'household' && exit) {
+      exit.onBack();
+      return;
+    }
     setUsername('');
     setHousehold(null);
     setMode('login');
@@ -195,6 +213,12 @@ export default function LoginPage() {
       <div className="w-full max-w-xs">
         <h1 className="mb-1 text-center text-3xl font-semibold tracking-tight">Meal Planner</h1>
         <p className="mb-7 text-center text-sm text-muted">Who’s cooking?</p>
+
+        {notice && (
+          <p className="mb-5 rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent">
+            {notice}
+          </p>
+        )}
 
         {/* Said out loud, so being bounced here does not look like the app forgot you at random. */}
         {expired && (
@@ -244,6 +268,10 @@ export default function LoginPage() {
             <p className="pt-1 text-center text-xs text-muted">
               Forgot your password? The owner of your household can make you a reset link.
             </p>
+            {/* No open sign-up: a new account starts from somebody's invite link. */}
+            <p className="text-center text-xs text-muted">
+              New here? Ask someone in your household to send you an invite link.
+            </p>
             {landing.legacyPinLogin !== false && (
               <div className="pt-3">
                 <TextLink
@@ -271,6 +299,7 @@ export default function LoginPage() {
               setStep('username');
             }}
             onBack={back}
+            backLabel={exit?.label}
             error={error}
           />
         )}
@@ -391,6 +420,7 @@ function HouseholdStep({
   onPickUser,
   onUseUsername,
   onBack,
+  backLabel = 'Use email and password',
   error,
 }: {
   households: HouseholdSummary[];
@@ -399,6 +429,7 @@ function HouseholdStep({
   onPickUser: (u: UserSummary) => void;
   onUseUsername: () => void;
   onBack: () => void;
+  backLabel?: string;
   error: string | null;
 }) {
   return (
@@ -410,7 +441,7 @@ function HouseholdStep({
         onClick={onBack}
         className="-mt-3 flex min-h-touch items-center gap-1 text-sm font-medium text-muted"
       >
-        <span aria-hidden="true">‹</span> Use email and password
+        <span aria-hidden="true">‹</span> {backLabel}
       </button>
       <p className="text-center text-sm text-muted">
         {households.length ? 'Which house?' : 'No households yet.'}

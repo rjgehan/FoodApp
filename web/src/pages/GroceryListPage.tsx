@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
@@ -167,7 +168,7 @@ export default function GroceryListPage() {
   }
 
   if (!activeHouseholdId) {
-    return <EmptyState>Create or select a household first.</EmptyState>;
+    return <NoHousehold />;
   }
 
   const toBuy = items.filter((i) => !i.checked);

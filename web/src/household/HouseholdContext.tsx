@@ -4,10 +4,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { api } from '../api/client';
+import { api, onHouseholdForbidden } from '../api/client';
 import type { GroceryCategory, Household } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useOnResume } from '../utils/useOnResume';
@@ -35,6 +36,12 @@ interface HouseholdContextValue {
   /** Every category's id, in the new order. */
   reorderGroceryCategories: (order: string[]) => Promise<void>;
   deleteGroceryCategory: (id: string) => Promise<void>;
+  /**
+   * The name of the house they were looking at when they turned out not to be in it any more —
+   * taken out by its owner, or it was deleted — until they have seen it said. Null otherwise.
+   */
+  lostHousehold: string | null;
+  dismissLostHousehold: () => void;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
@@ -47,6 +54,9 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(false);
   const [groceryCategories, setGroceryCategories] = useState<GroceryCategory[]>([]);
+  const [lostHousehold, setLostHousehold] = useState<string | null>(null);
+  const householdsRef = useRef(households);
+  householdsRef.current = households;
 
   const showHousehold = useCallback((id: string) => {
     localStorage.setItem('mp_activeHouseholdId', id);
@@ -59,16 +69,24 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
    */
   const setActiveHouseholdId = useCallback((id: string) => {
     showHousehold(id);
+    // A house they chose, so whatever they were told about one they lost has been dealt with.
+    setLostHousehold(null);
     api('PUT', '/api/users/me/active-household', { householdId: id }).catch(() => {});
   }, [showHousehold]);
 
-  const refresh = useCallback(async () => {
+  /**
+   * `noticeLoss` for the refreshes that find out somebody else's doing — a 403, coming back to
+   * the app — rather than ones after leaving or deleting a house yourself, which need no telling.
+   */
+  const reload = useCallback(async (noticeLoss: boolean) => {
     if (!session) return;
     setLoading(true);
     try {
       const list = await api<Household[]>('GET', '/api/households');
       setHouseholds(list);
       if (!list.some((h) => h.id === activeHouseholdId)) {
+        const gone = householdsRef.current.find((h) => h.id === activeHouseholdId);
+        if (noticeLoss && gone) setLostHousehold(gone.name);
         if (list.length) {
           // A fallback, not a choice, so it is not remembered as one.
           showHousehold(list[0].id);
@@ -82,11 +100,34 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     }
   }, [session, activeHouseholdId, showHousehold]);
 
+  const refresh = useCallback(() => reload(false), [reload]);
+  const dismissLostHousehold = useCallback(() => setLostHousehold(null), []);
+
   useEffect(() => {
     if (session) refresh();
-    else setHouseholds([]);
+    else {
+      setHouseholds([]);
+      setLostHousehold(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  /*
+   * A 403 from a household is how being removed from it arrives. Refreshing the list drops the
+   * house and falls back to another (or to none, and the pages say how to join one). At most
+   * every few seconds: a page that fires several requests at once gets several 403s back.
+   */
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    let last = 0;
+    onHouseholdForbidden(() => {
+      if (Date.now() - last < 3000) return;
+      last = Date.now();
+      reloadRef.current(true).catch(() => {});
+    });
+    return () => onHouseholdForbidden(null);
+  }, []);
 
   const refreshGroceryCategories = useCallback(async () => {
     if (!activeHouseholdId) {
@@ -104,7 +145,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
   // Settings someone changed on another phone — the store order, the planning window.
   useOnResume(() => {
-    if (session) refresh().catch(() => {});
+    if (session) reload(true).catch(() => {});
     refreshGroceryCategories().catch(() => {});
   });
 
@@ -190,6 +231,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       renameGroceryCategory,
       reorderGroceryCategories,
       deleteGroceryCategory,
+      lostHousehold,
+      dismissLostHousehold,
     }),
     [
       households,
@@ -207,6 +250,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       renameGroceryCategory,
       reorderGroceryCategories,
       deleteGroceryCategory,
+      lostHousehold,
+      dismissLostHousehold,
     ],
   );
 

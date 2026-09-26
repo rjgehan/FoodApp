@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { CupboardItem, GroceryCategory } from '../api/types';
@@ -51,7 +52,7 @@ export default function CupboardPage() {
   if (!activeHouseholdId) {
     return (
       <Card>
-        <EmptyState>Create or select a household first.</EmptyState>
+        <NoHousehold />
       </Card>
     );
   }

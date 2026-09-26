@@ -333,10 +333,10 @@ test('capture every screen', async ({ page }) => {
   await step('household', async () => {
     await page.goto('/household');
     await shot(page, 'Household', '', { full: true });
-    await page.getByRole('button', { name: 'Add someone' }).click();
-    await shot(page, 'Add someone');
+    await page.getByRole('button', { name: 'Show QR code' }).click();
+    await shot(page, 'Invite someone — QR code');
   });
-  for (const row of ['Household', 'Store aisles', 'You', 'Start another household']) {
+  for (const row of ['Household', 'Store aisles', 'You', 'Join a household', 'Start another household']) {
     await step(row, async () => {
       await page.goto('/household');
       await page.getByRole('button', { name: new RegExp(`^${row}`) }).last().click();
