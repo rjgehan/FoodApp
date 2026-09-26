@@ -17,11 +17,15 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -113,25 +117,69 @@ public class GroceryListService {
      */
     @Transactional
     public GroceryListItemResponse addItem(UUID householdId, AddItemRequest request) {
-        Household household = householdRepository.findById(householdId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        Household household = locked(householdId);
         String unit = blankToNull(request.unit());
         Ingredient ingredient = request.ingredientName() != null
                 ? ingredientService.findOrCreate(request.ingredientName(), unit)
                 : null;
 
-        GroceryListItem item = GroceryListItem.builder()
-                .household(household)
-                .ingredient(ingredient)
-                .customName(request.ingredientName())
-                .quantity(request.quantity())
-                .unit(unit)
-                .build();
-        item = groceryListItemRepository.save(item);
+        GroceryListItem item = ingredient != null
+                ? addTo(household, ingredient, request.quantity(), unit, request.ingredientName())
+                : groceryListItemRepository.save(GroceryListItem.builder()
+                        .household(household)
+                        .quantity(request.quantity())
+                        .unit(unit)
+                        .build());
 
         GroceryListItemResponse response = toItemResponse(item, context(householdId));
         eventPublisher.itemChanged(householdId, response);
         return response;
+    }
+
+    /**
+     * Something asked for by name goes onto the row already waiting for it, if there is one —
+     * "milk" typed twice, or typed once as "Milk", is one row of milk. Amounts in the same unit
+     * add up. No amount says only "we need some", which a row that is already there says too;
+     * an amount can fill in a row that had none. Two amounts in units that do not add up —
+     * "2 l" and "1 gallon" — stay two rows, as a planned meal's would, rather than one number
+     * that is wrong. Unticked rows only: adding to something already in the cart would hide the
+     * new need behind a tick.
+     */
+    private GroceryListItem addTo(Household household, Ingredient ingredient, BigDecimal quantity, String unit,
+                                  String typedName) {
+        List<GroceryListItem> waiting = groceryListItemRepository
+                .findByHouseholdIdAndIngredientIdAndCheckedFalse(household.getId(), ingredient.getId()).stream()
+                .sorted(Comparator.comparing(GroceryListItem::getCreatedAt))
+                .toList();
+        Optional<GroceryListItem> sameUnit = waiting.stream()
+                .filter(row -> IngredientLine.sameUnit(row.getUnit(), unit))
+                .findFirst();
+
+        if (quantity == null) {
+            if (!waiting.isEmpty()) {
+                return sameUnit.orElse(waiting.get(0));
+            }
+        } else if (sameUnit.isPresent()) {
+            GroceryListItem row = sameUnit.get();
+            row.setQuantity(row.getQuantity() == null ? quantity : row.getQuantity().add(quantity));
+            return groceryListItemRepository.save(row);
+        } else {
+            Optional<GroceryListItem> noAmount = waiting.stream()
+                    .filter(row -> row.getQuantity() == null && row.getUnit() == null)
+                    .findFirst();
+            if (noAmount.isPresent()) {
+                noAmount.get().setQuantity(quantity);
+                noAmount.get().setUnit(unit);
+                return groceryListItemRepository.save(noAmount.get());
+            }
+        }
+        return groceryListItemRepository.save(GroceryListItem.builder()
+                .household(household)
+                .ingredient(ingredient)
+                .customName(typedName)
+                .quantity(quantity)
+                .unit(unit)
+                .build());
     }
 
     /**
@@ -140,7 +188,8 @@ public class GroceryListService {
      */
     @Transactional
     public void ensureOnList(UUID householdId, UUID ingredientId, UUID requesterId) {
-        Household household = requireMember(householdId, requesterId);
+        householdService.assertMember(householdId, requesterId);
+        Household household = locked(householdId);
         Ingredient ingredient = ingredientRepository.findById(ingredientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
         ensureOnList(household, ingredient);
@@ -168,6 +217,7 @@ public class GroceryListService {
     /** `by` is null when nobody in particular did it — a dashboard, say. */
     @Transactional
     public GroceryListItemResponse setChecked(UUID householdId, UUID itemId, boolean checked, User by) {
+        locked(householdId);
         GroceryListItem item = findItem(householdId, itemId);
 
         item.setChecked(checked);
@@ -193,6 +243,7 @@ public class GroceryListService {
 
     @Transactional
     public void removeItem(UUID householdId, UUID itemId) {
+        locked(householdId);
         GroceryListItem item = findItem(householdId, itemId);
         groceryListItemRepository.delete(item);
         eventPublisher.itemRemoved(householdId, itemId);
@@ -202,11 +253,14 @@ public class GroceryListService {
      * "Done shopping": everything named comes off the list, and the `putAway` ones are marked as
      * in the cupboard. Deciding what was for someone else here, at the moment you know, beats
      * deleting it from the cupboard days later. Ids already gone — someone else pressed it on
-     * their phone a second earlier — are skipped rather than failing the whole thing.
+     * their phone a second earlier — are skipped rather than failing the whole thing. The lock
+     * is what makes that true when both presses land together: the second waits for the first
+     * to finish, then finds nothing left to take off, instead of both taking the same row.
      */
     @Transactional
     public void putAway(UUID householdId, UUID requesterId, PutAwayRequest request) {
-        Household household = requireMember(householdId, requesterId);
+        householdService.assertMember(householdId, requesterId);
+        Household household = locked(householdId);
         if (request.leaveOut() != null) {
             request.leaveOut().forEach(id -> takeOff(householdId, id, null));
         }
@@ -220,18 +274,29 @@ public class GroceryListService {
                 .filter(item -> item.getHousehold().getId().equals(householdId))
                 .ifPresent(item -> {
                     if (stockInto != null && item.getIngredient() != null) {
-                        stock(stockInto, item.getIngredient());
+                        stock(stockInto, item);
                     }
                     groceryListItemRepository.delete(item);
                     eventPublisher.itemRemoved(householdId, itemId);
                 });
     }
 
-    /** Just bought: in the cupboard, and no longer running low if it was. */
-    private void stock(Household household, Ingredient ingredient) {
+    /**
+     * Just bought: in the cupboard, and no longer running low if it was. Something the cupboard
+     * counts goes up by what was bought, when the list said how much in the same unit — 1 lb of
+     * chicken and 2 lb bought is 3 lb. Bought without an amount, or in a unit the count is not
+     * kept in, the count stays as it was: a guess would be a number nobody can trust, and the
+     * cupboard's − and + are there to put it right.
+     */
+    private void stock(Household household, GroceryListItem bought) {
+        Ingredient ingredient = bought.getIngredient();
         CupboardItem item = cupboardRepository.findByHouseholdIdAndIngredientId(household.getId(), ingredient.getId())
                 .orElseGet(() -> CupboardItem.builder().household(household).ingredient(ingredient).build());
         item.setRunningLow(false);
+        if (item.getQuantity() != null && bought.getQuantity() != null
+                && IngredientLine.sameUnit(item.getUnit(), bought.getUnit())) {
+            item.setQuantity(item.getQuantity().add(bought.getQuantity()));
+        }
         cupboardRepository.save(item);
     }
 
@@ -239,10 +304,16 @@ public class GroceryListService {
      * One planned entry, on purpose. For a single item this is the only way onto the list —
      * planning eggs for breakfast says nothing about needing to buy eggs, so the week and day
      * buttons leave items alone. Asked for by hand, it goes on even if the cupboard has some.
+     *
+     * Asked for by hand, what counts as already added is what is on the list for the meal right
+     * now, ticked or not. Anything of it bought and put away, or swiped off, since goes back on:
+     * pressing this on one meal says "I want its things", where the week's button only means
+     * "catch the list up with the plan". Pressed twice, the second finds everything there.
      */
     @Transactional
     public List<GroceryListItemResponse> addMealToList(UUID householdId, UUID mealPlanEntryId, UUID requesterId) {
-        Household household = requireMember(householdId, requesterId);
+        householdService.assertMember(householdId, requesterId);
+        Household household = locked(householdId);
 
         MealPlanEntry entry = mealPlanEntryRepository.findById(mealPlanEntryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found"));
@@ -250,37 +321,168 @@ public class GroceryListService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Meal plan entry not found");
         }
         Context ctx = context(householdId);
+        ListChanges changes = new ListChanges(groceryListItemRepository.findByHouseholdId(householdId));
+        addRecipe(household, entry, ctx, changes, onList(entry, changes));
         if (entry.getItem() != null) {
-            return List.of(upsertIngredient(household, entry.getItem(), null, null, ctx));
+            // No amount, so asking twice is still one row of eggs.
+            changes.save(addTo(household, entry.getItem(), null, null, null));
         }
-        return addRecipe(household, entry, ctx);
+        return changes.publish(householdId, ctx);
     }
 
-    /** Adds the meals planned in the date range. Meals only: single items have their own button. */
+    /**
+     * Adds the meals planned in the date range. Meals only: single items have their own button.
+     * Safe to press again, even after shopping: each meal only adds what it needs beyond what it
+     * has added before. See {@link #addRecipe}.
+     */
     @Transactional
     public List<GroceryListItemResponse> addAllPlannedToList(UUID householdId, UUID requesterId,
                                                                LocalDate start, LocalDate end) {
-        Household household = requireMember(householdId, requesterId);
+        householdService.assertMember(householdId, requesterId);
+        Household household = locked(householdId);
         Context ctx = context(householdId);
 
-        return mealPlanEntryRepository
-                .findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end).stream()
-                .flatMap(e -> addRecipe(household, e, ctx).stream())
-                .toList();
+        ListChanges changes = new ListChanges(groceryListItemRepository.findByHouseholdId(householdId));
+        mealPlanEntryRepository.findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
+                .forEach(e -> addRecipe(household, e, ctx, changes, remembered(e)));
+        return changes.publish(householdId, ctx);
     }
 
-    /** A planned recipe's ingredients. Anything else — a night out, a single item — adds nothing here. */
-    private List<GroceryListItemResponse> addRecipe(Household household, MealPlanEntry entry, Context ctx) {
-        if (entry.getRecipe() == null) {
-            return List.of();
+    /** One ingredient in one unit — "cloves of garlic" — which is what a planned meal's share is counted in. */
+    private record Need(Ingredient ingredient, String unit, BigDecimal quantity) {
+        UnitKey key() {
+            return UnitKey.of(ingredient, unit);
         }
-        int wantedServings = entry.getServings() != null ? entry.getServings() : household.getDefaultServings();
-        return upsertFromRecipe(household, entry.getRecipe(), wantedServings, entry.getIncludedOptionalIngredientIds(), ctx);
+    }
+
+    private record UnitKey(UUID ingredientId, String unit) {
+        static UnitKey of(Ingredient ingredient, String unit) {
+            return new UnitKey(ingredient.getId(), IngredientLine.canonicalUnit(unit));
+        }
+
+        boolean matches(GroceryListItem row) {
+            return row.getIngredient() != null && row.getIngredient().getId().equals(ingredientId)
+                    && IngredientLine.sameUnit(row.getUnit(), unit);
+        }
+    }
+
+    /**
+     * The household's list as one request changes it: every row loaded once, and every row
+     * touched sent to the other phones once at the end, however many meals touched it.
+     */
+    private final class ListChanges {
+        final List<GroceryListItem> rows;
+        final Set<GroceryListItem> changed = new LinkedHashSet<>();
+        final List<UUID> removed = new ArrayList<>();
+
+        ListChanges(List<GroceryListItem> rows) {
+            this.rows = rows.stream().sorted(Comparator.comparing(GroceryListItem::getCreatedAt))
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        void save(GroceryListItem row) {
+            changed.add(groceryListItemRepository.save(row));
+        }
+
+        void delete(GroceryListItem row) {
+            rows.remove(row);
+            changed.remove(row);
+            groceryListItemRepository.delete(row);
+            removed.add(row.getId());
+        }
+
+        List<GroceryListItemResponse> publish(UUID householdId, Context ctx) {
+            removed.forEach(id -> eventPublisher.itemRemoved(householdId, id));
+            List<GroceryListItemResponse> responses = changed.stream().map(row -> toItemResponse(row, ctx)).toList();
+            responses.forEach(response -> eventPublisher.itemChanged(householdId, response));
+            return responses;
+        }
+    }
+
+    /** What the week's button has put on the list for this meal before, whatever became of it since. */
+    private static Map<UnitKey, BigDecimal> remembered(MealPlanEntry entry) {
+        Map<UnitKey, BigDecimal> added = new HashMap<>();
+        entry.getAddedToGroceries().forEach(share ->
+                added.merge(new UnitKey(share.getIngredientId(), share.getUnit()), share.getQuantity(), BigDecimal::add));
+        return added;
+    }
+
+    /** What is on the list for this meal right now, ticked rows included. */
+    private static Map<UnitKey, BigDecimal> onList(MealPlanEntry entry, ListChanges changes) {
+        Map<UnitKey, BigDecimal> added = new HashMap<>();
+        for (GroceryListItem row : changes.rows) {
+            BigDecimal share = row.getFromMeals().get(entry.getId());
+            if (share != null && row.getIngredient() != null) {
+                added.merge(UnitKey.of(row.getIngredient(), row.getUnit()), share, BigDecimal::add);
+            }
+        }
+        return added;
+    }
+
+    /**
+     * A planned recipe's ingredients. Anything else — a night out, a single item — adds nothing
+     * here, but does take back what the recipe once in its slot put on the list.
+     *
+     * The list is brought up to what the meal needs now, not added to blindly. {@code already}
+     * is what the meal counts as having added: a meal already added adds nothing again, one
+     * whose servings went up adds only the extra, and one whose servings went down takes the
+     * difference back off. An ingredient the meal no longer uses — an optional one dropped, a
+     * staple now always kept, a different recipe in the slot — comes back off entirely, and its
+     * row goes if nothing else wanted it. Only unticked rows are taken from: what is in the cart
+     * has been bought, so it still counts as added, and turning servings back up later does not
+     * ask for it twice. What the meal ends up counting as added is remembered on the entry.
+     */
+    private void addRecipe(Household household, MealPlanEntry entry, Context ctx, ListChanges changes,
+                           Map<UnitKey, BigDecimal> already) {
+        Map<UnitKey, Need> needs = entry.getRecipe() == null ? Map.of() : needs(entry.getRecipe(),
+                entry.getServings() != null ? entry.getServings() : household.getDefaultServings(),
+                entry.getIncludedOptionalIngredientIds(), ctx);
+
+        Map<UnitKey, BigDecimal> before = new HashMap<>(already);
+        Map<UnitKey, BigDecimal> added = new HashMap<>();
+        for (Need need : needs.values()) {
+            BigDecimal was = already.remove(need.key());
+            if (was == null) {
+                // Even an amount of nothing — "salt, to taste" saved as 0 — goes on the list.
+                addShare(household, entry.getId(), need, need.quantity(), changes);
+                added.put(need.key(), need.quantity());
+            } else if (need.quantity().compareTo(was) > 0) {
+                addShare(household, entry.getId(), need, need.quantity().subtract(was), changes);
+                added.put(need.key(), need.quantity());
+            } else if (need.quantity().compareTo(was) < 0) {
+                BigDecimal taken = takeShare(entry.getId(), need.key(), was.subtract(need.quantity()), false, changes);
+                added.put(need.key(), was.subtract(taken));
+            } else {
+                added.put(need.key(), was);
+            }
+        }
+        // Whatever is left is on the list for this meal but no longer part of it. What of it is
+        // already bought stays counted, in case it becomes part of the meal again.
+        already.forEach((key, share) -> {
+            BigDecimal rest = share.subtract(takeShare(entry.getId(), key, share, true, changes));
+            if (rest.signum() > 0) {
+                added.put(key, rest);
+            }
+        });
+
+        if (!sameAmounts(before, added)) {
+            entry.getAddedToGroceries().clear();
+            added.forEach((key, quantity) ->
+                    entry.getAddedToGroceries().add(new GroceryShare(key.ingredientId(), key.unit(), quantity)));
+        }
+    }
+
+    /** Equal amounts, however many decimal places each was written with. */
+    private static boolean sameAmounts(Map<UnitKey, BigDecimal> a, Map<UnitKey, BigDecimal> b) {
+        return a.keySet().equals(b.keySet())
+                && a.entrySet().stream().allMatch(e -> e.getValue().compareTo(b.get(e.getKey())) == 0);
     }
 
     /**
      * A recipe's ingredient quantities are written for {@code recipe.getServings()} people, so scale each
-     * by (wantedServings / recipe.servings) to get the amount actually needed for this meal.
+     * by (wantedServings / recipe.servings) to get the amount actually needed for this meal. The
+     * same ingredient twice in one unit — garlic for the sauce and for the marinade — is one need.
+     * Rounded to the hundredths the list keeps, so what is remembered is exactly what was added.
      *
      * Things the cupboard says you have still go on — flagged, not skipped, because having some
      * paprika does not mean having enough. Staples you always have are left off entirely. An
@@ -288,40 +490,78 @@ public class GroceryListService {
      * {@link MealPlanEntry#getIncludedOptionalIngredientIds()}, decided once when the meal was
      * planned rather than asked again here.
      */
-    private List<GroceryListItemResponse> upsertFromRecipe(Household household, Recipe recipe, int wantedServings,
-                                                             Set<UUID> includedOptionalIngredientIds, Context ctx) {
+    private Map<UnitKey, Need> needs(Recipe recipe, int wantedServings, Set<UUID> includedOptionalIngredientIds,
+                                     Context ctx) {
         BigDecimal factor = BigDecimal.valueOf(wantedServings)
                 .divide(BigDecimal.valueOf(recipe.getServings()), 4, RoundingMode.HALF_UP);
 
-        return recipe.getIngredients().stream()
+        Map<UnitKey, Need> needs = new LinkedHashMap<>();
+        recipe.getIngredients().stream()
                 .filter(ri -> !ctx.isStaple(ri.getIngredient()))
                 .filter(ri -> !ri.isOptional() || includedOptionalIngredientIds.contains(ri.getId()))
-                .map(ri -> upsertIngredient(household, ri.getIngredient(), ri.getQuantity().multiply(factor),
-                        ri.getUnit(), ctx))
-                .toList();
+                .forEach(ri -> {
+                    Need need = new Need(ri.getIngredient(), blankToNull(ri.getUnit()), ri.getQuantity().multiply(factor));
+                    needs.merge(need.key(), need,
+                            (a, b) -> new Need(a.ingredient(), a.unit(), a.quantity().add(b.quantity())));
+                });
+        needs.replaceAll((key, need) ->
+                new Need(need.ingredient(), need.unit(), need.quantity().setScale(2, RoundingMode.HALF_UP)));
+        return needs;
     }
 
-    /** A null quantity means "some" — a planned single item has no amount, and adds none. */
-    private GroceryListItemResponse upsertIngredient(Household household, Ingredient ingredient,
-                                                       BigDecimal quantity, String unit, Context ctx) {
-        String normalizedUnit = blankToNull(unit);
-        GroceryListItem item = groceryListItemRepository
-                .findByHouseholdIdAndIngredientIdAndUnitAndCheckedFalse(household.getId(), ingredient.getId(), normalizedUnit)
-                .stream().findFirst()
-                .orElseGet(() -> GroceryListItem.builder()
-                        .household(household)
-                        .ingredient(ingredient)
-                        .unit(normalizedUnit)
-                        .build());
+    /** Puts more of something on the list for this meal, on the row already waiting for it if there is one. */
+    private void addShare(Household household, UUID entryId, Need need, BigDecimal amount, ListChanges changes) {
+        UnitKey key = need.key();
+        GroceryListItem row = changes.rows.stream()
+                .filter(r -> !r.isChecked() && key.matches(r))
+                .findFirst()
+                .orElseGet(() -> {
+                    GroceryListItem fresh = GroceryListItem.builder()
+                            .household(household)
+                            .ingredient(need.ingredient())
+                            .unit(need.unit())
+                            .build();
+                    changes.rows.add(fresh);
+                    return fresh;
+                });
+        row.setQuantity(row.getQuantity() == null ? amount : row.getQuantity().add(amount));
+        row.getFromMeals().merge(entryId, amount, BigDecimal::add);
+        changes.save(row);
+    }
 
-        if (quantity != null) {
-            item.setQuantity(item.getQuantity() == null ? quantity : item.getQuantity().add(quantity));
+    /**
+     * Takes up to {@code amount} of this meal's share back off the unticked rows, and says how
+     * much it could take: less, when some of it is in the cart. With {@code gone} the meal no
+     * longer wants the thing at all, so even a share of nothing is let go.
+     *
+     * A row's share that comes down to nothing is let go too, rather than kept at 0: the meal's
+     * record of what it added is on the entry, not here. A row left with nothing on it — no
+     * meal's share and no amount — goes, instead of staying on the list as something to buy
+     * that nobody needs.
+     */
+    private BigDecimal takeShare(UUID entryId, UnitKey key, BigDecimal amount, boolean gone, ListChanges changes) {
+        BigDecimal left = amount;
+        for (GroceryListItem row : List.copyOf(changes.rows)) {
+            BigDecimal share = row.getFromMeals().get(entryId);
+            if ((!gone && left.signum() <= 0) || row.isChecked() || share == null || !key.matches(row)) {
+                continue;
+            }
+            BigDecimal take = share.min(left);
+            left = left.subtract(take);
+            BigDecimal quantity = row.getQuantity() == null ? BigDecimal.ZERO : row.getQuantity();
+            row.setQuantity(quantity.subtract(take).max(BigDecimal.ZERO));
+            if (share.subtract(take).signum() <= 0) {
+                row.getFromMeals().remove(entryId);
+            } else {
+                row.getFromMeals().put(entryId, share.subtract(take));
+            }
+            if (row.getFromMeals().isEmpty() && row.getQuantity().signum() <= 0) {
+                changes.delete(row);
+            } else {
+                changes.save(row);
+            }
         }
-        item = groceryListItemRepository.save(item);
-
-        GroceryListItemResponse response = toItemResponse(item, ctx);
-        eventPublisher.itemChanged(household.getId(), response);
-        return response;
+        return amount.subtract(left);
     }
 
     // --- Categories ---
@@ -400,6 +640,20 @@ public class GroceryListService {
     private Household requireMember(UUID householdId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
         return householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+    }
+
+    /**
+     * The household, locked until this request is done, so changes to its list and cupboard
+     * happen one after another. Two phones in one shop press things at the same moment — both
+     * Done shopping, a double-tapped add — and each of those reads the list, then writes what
+     * it decided. Side by side, both read the same list: both take the same row off (and the
+     * second delete fails), or both find no milk and add a row each. One after the other, the
+     * second sees what the first did. A family's list is small, so the wait is nothing.
+     * Taken before reading any row, or the row read could already be out of date.
+     */
+    private Household locked(UUID householdId) {
+        return householdRepository.lockById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
     }
 

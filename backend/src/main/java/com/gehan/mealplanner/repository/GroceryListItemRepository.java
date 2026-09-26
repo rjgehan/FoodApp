@@ -11,10 +11,8 @@ public interface GroceryListItemRepository extends JpaRepository<GroceryListItem
 
     /**
      * Rows a new need can be added to. Unticked only: adding to something already in the cart
-     * would hide the new need behind a tick. A list, because nothing stops two matching rows.
+     * would hide the new need behind a tick. A list, because the same thing in two units that do
+     * not add up is two rows.
      */
-    List<GroceryListItem> findByHouseholdIdAndIngredientIdAndUnitAndCheckedFalse(
-            UUID householdId, UUID ingredientId, String unit);
-
     List<GroceryListItem> findByHouseholdIdAndIngredientIdAndCheckedFalse(UUID householdId, UUID ingredientId);
 }

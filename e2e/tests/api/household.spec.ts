@@ -131,7 +131,6 @@ test('tampered and unsigned tokens are refused', async () => {
 
 test.describe('two phones at once', () => {
   test('both pressing Done shopping is not an error', async () => {
-    test.fail(true, 'KNOWN BUG: the second put-away of the same item is a 500');
     // A race, so try a few rounds: one clean round proves nothing.
     const hh = await newHousehold();
     const owner = await admin();
@@ -146,7 +145,6 @@ test.describe('two phones at once', () => {
   });
 
   test('a double-tapped add of a brand-new item is not an error', async () => {
-    test.fail(true, 'KNOWN BUG: creating the same new ingredient twice at once hits a unique constraint (500)');
     const hh = await newHousehold();
     const owner = await admin();
     const name = unique('Brand new thing');

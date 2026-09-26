@@ -38,13 +38,52 @@ test('a planned meal with no servings uses the household default', async () => {
 });
 
 test('adding the same week twice does not double the list', async () => {
-  test.fail(true, 'KNOWN BUG: "Add this week to Groceries" adds every quantity again on each press');
   const hh = await newHousehold();
   const r = await newRecipe(hh.id, 'Chili', [{ name: 'beans', qty: 2, unit: 'can' }]);
   await plan(hh.id, isoDate(1), 'DINNER', { recipeId: r.id, servings: 4 });
   await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
   await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
   expect(Number(find(await groceries(hh.id), 'beans').quantity)).toBe(2);
+});
+
+test('adding the week again after shopping brings only a meal planned since', async () => {
+  // The weekly routine: add the week, shop, Done shopping, plan one more dinner, add again.
+  const hh = await newHousehold();
+  const owner = await admin();
+  const chili = await newRecipe(hh.id, 'Chili', [{ name: 'beans', qty: 2, unit: 'can' }]);
+  const pasta = await newRecipe(hh.id, 'Pasta', [{ name: 'penne', qty: 1, unit: 'box' }]);
+  await plan(hh.id, isoDate(1), 'DINNER', { recipeId: chili.id, servings: 4 });
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  const bought = (await groceries(hh.id)).map((i) => i.id);
+  await call('POST', `/api/households/${hh.id}/grocery-list/put-away`, {
+    token: owner.token, body: { putAway: bought, leaveOut: [] },
+  });
+
+  await plan(hh.id, isoDate(3), 'DINNER', { recipeId: pasta.id, servings: 4 });
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+
+  const list = await groceries(hh.id);
+  expect(list).toHaveLength(1);
+  expect(Number(find(list, 'penne').quantity)).toBe(1);
+});
+
+test('adding the week again after changing servings adds or takes off only the difference', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const r = await newRecipe(hh.id, 'Chili', [{ name: 'beans', qty: 2, unit: 'can' }]); // serves 4
+  const entry = await plan(hh.id, isoDate(1), 'DINNER', { recipeId: r.id, servings: 4 });
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  const servings = (n: number) => call('PATCH', `/api/households/${hh.id}/meal-plan/entries/${entry.id}`, {
+    token: owner.token, body: { servings: n },
+  });
+
+  await servings(8);
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  expect(Number(find(await groceries(hh.id), 'beans').quantity)).toBe(4);
+
+  await servings(2);
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  expect(Number(find(await groceries(hh.id), 'beans').quantity)).toBe(1);
 });
 
 test('optional ingredients only go on when chosen for that meal', async () => {
@@ -116,7 +155,6 @@ test('done shopping stocks the cupboard and clears the list', async () => {
 });
 
 test('buying something tracked by amount adds to the amount', async () => {
-  test.fail(true, 'KNOWN GAP: put-away ignores quantities, so a counted item never goes up by itself');
   const hh = await newHousehold();
   const owner = await admin();
   const cup = await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'chicken' } });
@@ -146,7 +184,6 @@ test('cupboard amounts step up and down but never below zero', async () => {
 });
 
 test('manual items with the same name merge', async () => {
-  test.fail(true, 'KNOWN BUG: adding "milk" twice makes two separate rows');
   const hh = await newHousehold();
   const owner = await admin();
   for (const n of ['milk', 'Milk']) {

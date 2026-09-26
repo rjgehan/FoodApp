@@ -73,7 +73,11 @@ public class CupboardService {
                 .toList();
     }
 
-    /** Adding something already in the cupboard says you have it again, no longer running low. */
+    /**
+     * Adding something already in the cupboard says you have it again, no longer running low —
+     * which is also what a double tap on Add comes to: the second waits behind the first, then
+     * finds the item there.
+     */
     @Transactional
     public CupboardItemResponse add(UUID householdId, UUID requesterId, AddCupboardItemRequest request) {
         Household household = requireMember(householdId, requesterId);
@@ -91,7 +95,7 @@ public class CupboardService {
     @Transactional
     public CupboardItemResponse update(UUID householdId, UUID itemId, UUID requesterId,
                                        UpdateCupboardItemRequest request) {
-        householdService.assertMember(householdId, requesterId);
+        requireMember(householdId, requesterId);
         CupboardItem item = findItem(householdId, itemId);
 
         // A rename is a typo fixed or a thing made more specific — "eggs" to "large eggs". It
@@ -140,7 +144,7 @@ public class CupboardService {
     /** Nudges an item already tracking an exact amount up or down — never below zero. */
     @Transactional
     public CupboardItemResponse adjustQuantity(UUID householdId, UUID itemId, UUID requesterId, BigDecimal delta) {
-        householdService.assertMember(householdId, requesterId);
+        requireMember(householdId, requesterId);
         CupboardItem item = findItem(householdId, itemId);
         BigDecimal current = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
         BigDecimal next = current.add(delta);
@@ -155,7 +159,7 @@ public class CupboardService {
     /** Used up, and that is all. */
     @Transactional
     public void remove(UUID householdId, UUID itemId, UUID requesterId) {
-        householdService.assertMember(householdId, requesterId);
+        requireMember(householdId, requesterId);
         cupboardRepository.delete(findItem(householdId, itemId));
     }
 
@@ -165,7 +169,7 @@ public class CupboardService {
      */
     @Transactional
     public void buyAgain(UUID householdId, UUID itemId, UUID requesterId) {
-        householdService.assertMember(householdId, requesterId);
+        requireMember(householdId, requesterId);
         CupboardItem item = findItem(householdId, itemId);
         groceryListService.ensureOnList(householdId, item.getIngredient().getId(), requesterId);
         cupboardRepository.delete(item);
@@ -210,9 +214,16 @@ public class CupboardService {
         return item;
     }
 
+    /**
+     * The household, locked until the change is saved — the same lock the grocery list takes, so
+     * two phones changing the cupboard, or one adding while another presses Done shopping, go
+     * one after the other. Side by side, both could find no "rice" and both add it, and the
+     * second would break the one-row-per-thing rule; or both could count 3 cans down to 2.
+     * Taken before any item is read, so what is read is current.
+     */
     private Household requireMember(UUID householdId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
-        return householdRepository.findById(householdId)
+        return householdRepository.lockById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
     }
 

@@ -249,6 +249,10 @@ public class HouseholdService {
                 + "SELECT id FROM meal_plan_entries WHERE household_id" + ours
                 + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere + ")",
                 householdId, householdId, householdId);
+        jdbc.update("DELETE FROM meal_plan_entry_groceries WHERE entry_id IN ("
+                + "SELECT id FROM meal_plan_entries WHERE household_id" + ours
+                + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere + ")",
+                householdId, householdId, householdId);
         jdbc.update("DELETE FROM meal_plan_entries WHERE household_id" + ours
                 + " OR recipe_id IN " + recipesHere + " OR place_id IN " + placesHere,
                 householdId, householdId, householdId);
@@ -276,6 +280,8 @@ public class HouseholdService {
 
         // The kitchen: what is in it, what is on the list, and where the aisles are.
         jdbc.update("DELETE FROM cupboard_items WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM grocery_list_item_meals WHERE grocery_list_item_id IN ("
+                + "SELECT id FROM grocery_list_items WHERE household_id = ?)", householdId);
         jdbc.update("DELETE FROM grocery_list_items WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM ingredient_sections WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM grocery_categories WHERE household_id = ?", householdId);

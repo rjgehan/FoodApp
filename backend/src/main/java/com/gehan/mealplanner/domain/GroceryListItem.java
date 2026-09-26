@@ -6,9 +6,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -37,6 +40,25 @@ public class GroceryListItem {
 
     private BigDecimal quantity;
     private String unit;
+
+    /**
+     * How much of {@link #quantity} each planned meal put here, by meal plan entry id. It is how
+     * a meal whose servings went down, or that no longer uses something, takes back just its own
+     * part — never what was typed in by hand, which is the rest of the quantity and is not
+     * listed here. It is also what one meal's own "Add to Groceries" counts as already there.
+     *
+     * What the week's button counts as added is kept on the entry instead
+     * ({@link MealPlanEntry#getAddedToGroceries()}), since it has to outlive this row. No
+     * foreign key to the entry: a meal deleted from the plan leaves its share behind as a plain
+     * number, which nothing reads.
+     */
+    @ElementCollection
+    @CollectionTable(name = "grocery_list_item_meals", joinColumns = @JoinColumn(name = "grocery_list_item_id"))
+    @MapKeyColumn(name = "meal_plan_entry_id")
+    @Column(name = "quantity", precision = 38, scale = 2, nullable = false)
+    @BatchSize(size = 100)
+    @Builder.Default
+    private Map<UUID, BigDecimal> fromMeals = new HashMap<>();
 
     @Column(nullable = false)
     @Builder.Default

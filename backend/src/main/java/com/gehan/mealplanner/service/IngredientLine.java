@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -188,6 +189,32 @@ public record IngredientLine(BigDecimal quantity, String unit, String name, Stri
 
         String name = String.join(" ", List.of(words).subList(Math.min(index, words.length), words.length));
         return new IngredientLine(quantity, unit, clean(name), notes.isEmpty() ? null : notes.toString(), optional);
+    }
+
+    /**
+     * The one spelling of a unit, so "cups" and "Cup" count as the same thing when two amounts
+     * are added together; no unit at all is null. Recipes write "T" for a tablespoon and "t" for
+     * a teaspoon, so those two are read before the case is dropped: lowercased, they would be
+     * one unit, and a teaspoon added to a tablespoon would count three times over. A unit this
+     * list does not know is lowercased and loses a plural ending — "Bags" and "bag", "boxes" and
+     * "box" — so what is bought still adds up with what the cupboard counts.
+     */
+    public static String canonicalUnit(String unit) {
+        if (unit == null || unit.isBlank()) return null;
+        String trimmed = unit.trim().replace(".", "");
+        if (trimmed.equals("T") || trimmed.equals("Tb") || trimmed.equals("Tbl")) return "tbsp";
+        if (trimmed.equals("t")) return "tsp";
+        String typed = trimmed.toLowerCase();
+        String known = UNITS.get(typed);
+        if (known != null) return known;
+        if (typed.length() > 3 && typed.matches(".*(ch|sh|x|ss)es")) return typed.substring(0, typed.length() - 2);
+        if (typed.length() > 2 && typed.endsWith("s") && !typed.endsWith("ss")) return typed.substring(0, typed.length() - 1);
+        return typed;
+    }
+
+    /** Whether two amounts can simply be added: the same unit, or both without one. */
+    public static boolean sameUnit(String a, String b) {
+        return Objects.equals(canonicalUnit(a), canonicalUnit(b));
     }
 
     /** Is there something you could buy in here, or only words describing one? */

@@ -10,8 +10,10 @@ import lombok.Setter;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -84,6 +86,22 @@ public class MealPlanEntry {
     @Column(name = "recipe_ingredient_id")
     @Builder.Default
     private Set<UUID> includedOptionalIngredientIds = new HashSet<>();
+
+    /**
+     * What "Add this week to Groceries" has already put on the list for this meal. It is what
+     * makes pressing it again safe: the meal only adds what it needs beyond this — nothing if
+     * nothing changed, the extra if its servings went up.
+     *
+     * Kept here rather than on the list's rows because a row comes and goes — bought and put
+     * away at Done shopping, left out, swiped off — and none of those mean the meal still needs
+     * adding. Planning one more dinner midweek and pressing Add again should bring just that
+     * dinner, not the whole week that is already in the cupboard. A bag with no order: a meal
+     * has a handful of these, and they are rewritten together when it is added.
+     */
+    @ElementCollection
+    @CollectionTable(name = "meal_plan_entry_groceries", joinColumns = @JoinColumn(name = "entry_id"))
+    @Builder.Default
+    private List<GroceryShare> addedToGroceries = new ArrayList<>();
 
     @Column(nullable = false, updatable = false)
     @Builder.Default

@@ -139,4 +139,29 @@ class IngredientLineTest {
         // The multiplication sign, which is what a tidier site writes.
         assertThat(IngredientLine.of("2 \u00D7 400g tins tomatoes").unit()).isEqualTo("can");
     }
+
+    @Test
+    void unitsAddUpOnlyWhenTheyAreTheSameThing() {
+        assertThat(IngredientLine.sameUnit("cups", "Cup")).isTrue();
+        assertThat(IngredientLine.sameUnit("lbs", "lb")).isTrue();
+        assertThat(IngredientLine.sameUnit(null, " ")).isTrue();
+
+        // A tablespoon is three teaspoons, and "T" and "t" are how recipes tell them apart.
+        assertThat(IngredientLine.sameUnit("T", "t")).isFalse();
+        assertThat(IngredientLine.sameUnit("T", "tbsp")).isTrue();
+        assertThat(IngredientLine.sameUnit("t", "tsp")).isTrue();
+
+        // Units the list does not know still match their plural, so buying "2 bags" of flour
+        // adds to the cupboard's "1 bag".
+        assertThat(IngredientLine.sameUnit("bag", "Bags")).isTrue();
+        assertThat(IngredientLine.sameUnit("box", "boxes")).isTrue();
+        assertThat(IngredientLine.sameUnit("glass", "glasses")).isTrue();
+        assertThat(IngredientLine.sameUnit("bag", "box")).isFalse();
+
+        // What a share is remembered under reads back as itself.
+        for (String unit : new String[] {"T", "t", "Bags", "boxes", "glass", "cups", "pcs"}) {
+            String once = IngredientLine.canonicalUnit(unit);
+            assertThat(IngredientLine.canonicalUnit(once)).as(unit).isEqualTo(once);
+        }
+    }
 }
