@@ -100,11 +100,12 @@ export default function Layout({ children }: { children: ReactNode }) {
             <div className={cx('min-w-0 transition-opacity duration-200', compactTitle && 'pointer-events-none opacity-0')}>
               {households.length > 1 ? (
                 // A bare select is the one control every mobile browser renders as a native
-                // picker, which beats anything custom for one-handed use.
+                // picker, which beats anything custom for one-handed use. It gives way to the
+                // buttons on the right on a narrow phone rather than sliding under them.
                 <div className="relative min-w-0">
                   <select
                     aria-label="Active household"
-                    className="press max-w-[60vw] appearance-none truncate rounded-full bg-elevated py-1.5 pl-3 pr-7
+                    className="press max-w-[min(60vw,100%)] appearance-none truncate rounded-full bg-elevated py-1.5 pl-3 pr-7
                                text-[0.9375rem] font-semibold text-ink outline-none"
                     value={activeHouseholdId ?? ''}
                     onChange={(e) => setActiveHouseholdId(e.target.value)}
@@ -118,7 +119,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted">▾</span>
                 </div>
               ) : (
-                <span className="truncate text-[0.9375rem] font-semibold text-muted">{activeName ?? 'Meal Planner'}</span>
+                <span className="block truncate text-[0.9375rem] font-semibold text-muted">{activeName ?? 'Meal Planner'}</span>
               )}
             </div>
 
