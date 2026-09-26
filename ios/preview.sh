@@ -5,6 +5,7 @@
 #   ./preview.sh --shot look.png      # ...and save a screenshot
 #   ./preview.sh --device "iPhone 17 Pro"
 #   ./preview.sh --phone              # the plugged-in iPhone, signed
+#   ./preview.sh --phone ryan         # ...the paired iPhone whose name contains "ryan"
 #
 # Needs Xcode (not just the Command Line Tools), with the licence accepted once:
 #   sudo xcodebuild -license accept && sudo xcodebuild -runFirstLaunch
@@ -18,13 +19,17 @@ SCHEME="MealPlanner"
 DEVICE=""
 SHOT=""
 PHONE=""
+PHONE_NAME=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --device) DEVICE="$2"; shift 2 ;;
     --shot) SHOT="$2"; shift 2 ;;
-    --phone) PHONE=1; shift ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    --phone)
+      PHONE=1; shift
+      # An optional name, for a Mac paired with more than one phone.
+      if [[ $# -gt 0 && "$1" != --* ]]; then PHONE_NAME="$1"; shift; fi ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -46,10 +51,15 @@ if [[ -n "$PHONE" ]]; then
   xcrun devicectl list devices --json-output /tmp/mp-devices.json >/dev/null 2>&1 || true
 
   # devicectl's identifier is not the UDID its table prints, so take it from the JSON.
-  read -r udid state devmode name < <(python3 "$ROOT/.phone-info.py")
+  read -r udid hwudid state devmode name < <(python3 "$ROOT/.phone-info.py" "$PHONE_NAME")
 
   if [[ -z "${udid:-}" || "$udid" == "none" ]]; then
-    echo "No iPhone paired with this Mac. Plug it in, unlock it, and tap Trust." >&2
+    if [[ -n "$PHONE_NAME" ]]; then
+      echo "No paired iPhone has \"$PHONE_NAME\" in its name. These are paired:" >&2
+      xcrun devicectl list devices 2>/dev/null | grep -v -i simulated | tail -n +3 | cut -c1-16 >&2
+    else
+      echo "No iPhone paired with this Mac. Plug it in, unlock it, and tap Trust." >&2
+    fi
     exit 1
   fi
   echo "Phone: ${name:-iPhone} ($udid)"
@@ -79,7 +89,7 @@ if [[ -n "$PHONE" ]]; then
     -project "$ROOT/MealPlanner.xcodeproj" \
     -scheme "$SCHEME" \
     -configuration Debug \
-    -destination "id=$udid" \
+    -destination "id=$hwudid" \
     -derivedDataPath "$ROOT/.build-device" \
     -allowProvisioningUpdates \
     CODE_SIGNING_ALLOWED=YES \
