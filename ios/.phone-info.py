@@ -19,14 +19,21 @@ except Exception:
 
 def reachability(device):
     """Lower is better. devicectl connects lazily, so "disconnected" over a cable or the local
-    network is normal for a phone that is right here; "unavailable" is one that isn't."""
+    network is normal for a phone that is right here; "unavailable" is one that isn't. A cable
+    beats the Wi-Fi: the phone plugged in is the one somebody means, and another paired phone
+    in the house is on the same network all day."""
     connection = device.get("connectionProperties", {})
     tunnel = connection.get("tunnelState")
-    if tunnel == "connected":
+    transport = connection.get("transportType")
+    if tunnel == "connected" and transport == "wired":
         return 0
-    if tunnel == "disconnected" and connection.get("transportType"):
+    if transport == "wired":
         return 1
-    return 2
+    if tunnel == "connected":
+        return 2
+    if tunnel == "disconnected" and transport:
+        return 3
+    return 4
 
 
 phones = [
