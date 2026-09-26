@@ -83,6 +83,8 @@ if [[ -n "$PHONE" ]]; then
   fi
   echo "  team: $TEAM"
 
+  # -allowProvisioningDeviceRegistration adds a phone the team has never seen to it, which Xcode's
+  # own Run button does silently and the command line refuses to without being asked.
   # -allowProvisioningUpdates lets Xcode mint a fresh certificate and profile. A free personal
   # team's profile lasts seven days, so this needs rerunning about weekly.
   xcodebuild \
@@ -92,6 +94,7 @@ if [[ -n "$PHONE" ]]; then
     -destination "id=$hwudid" \
     -derivedDataPath "$ROOT/.build-device" \
     -allowProvisioningUpdates \
+    -allowProvisioningDeviceRegistration \
     CODE_SIGNING_ALLOWED=YES \
     CODE_SIGNING_REQUIRED=YES \
     CODE_SIGN_STYLE=Automatic \
