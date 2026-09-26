@@ -7,6 +7,7 @@ import { useHousehold } from '../household/HouseholdContext';
 import { CardInSheetProvider, cx, Sheet } from './ui';
 import ProfileCard from './ProfileCard';
 import CredentialsPrompt from './CredentialsPrompt';
+import { RestockPrompt } from './Restock';
 import { CompactTitleProvider } from './PageTitle';
 import {
   BookIcon,
@@ -195,6 +196,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
 
         <CredentialsPrompt />
+        {/* "Time to restock?" — here so it asks whichever page the app opens on. */}
+        <RestockPrompt />
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
         <main className={cx('mx-auto w-full px-4 pb-28 pt-1 md:pb-10', wide ? 'max-w-6xl' : 'max-w-3xl')}>

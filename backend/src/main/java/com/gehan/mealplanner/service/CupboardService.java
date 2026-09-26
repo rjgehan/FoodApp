@@ -42,6 +42,7 @@ public class CupboardService {
     private final IngredientService ingredientService;
     private final IngredientSections ingredientSections;
     private final GroceryListService groceryListService;
+    private final RestockClock restockClock;
 
     public CupboardService(CupboardItemRepository cupboardRepository,
                            HouseholdRepository householdRepository,
@@ -50,7 +51,8 @@ public class CupboardService {
                            HouseholdService householdService,
                            IngredientService ingredientService,
                            IngredientSections ingredientSections,
-                           GroceryListService groceryListService) {
+                           GroceryListService groceryListService,
+                           RestockClock restockClock) {
         this.cupboardRepository = cupboardRepository;
         this.householdRepository = householdRepository;
         this.groceryRepository = groceryRepository;
@@ -59,6 +61,7 @@ public class CupboardService {
         this.ingredientService = ingredientService;
         this.ingredientSections = ingredientSections;
         this.groceryListService = groceryListService;
+        this.restockClock = restockClock;
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +79,8 @@ public class CupboardService {
     /**
      * Adding something already in the cupboard says you have it again, no longer running low —
      * which is also what a double tap on Add comes to: the second waits behind the first, then
-     * finds the item there.
+     * finds the item there. Having it again is having bought it, as far as a restock reminder
+     * is concerned, so its clock starts over.
      */
     @Transactional
     public CupboardItemResponse add(UUID householdId, UUID requesterId, AddCupboardItemRequest request) {
@@ -89,6 +93,7 @@ public class CupboardService {
         if (Boolean.TRUE.equals(request.staple())) {
             item.setStaple(true);
         }
+        restockClock.bought(householdId, ingredient.getId());
         return toResponse(cupboardRepository.save(item), householdId);
     }
 
@@ -104,6 +109,7 @@ public class CupboardService {
         if (request.name() != null && !request.name().isBlank()) {
             Ingredient renamed = ingredientService.findOrCreate(request.name(), null);
             if (!renamed.getId().equals(item.getIngredient().getId())) {
+                restockClock.moved(householdId, item.getIngredient().getId(), renamed);
                 var clash = cupboardRepository.findByHouseholdIdAndIngredientId(householdId, renamed.getId());
                 if (clash.isPresent()) {
                     // Renamed into something already here: that is one thing now, not two.

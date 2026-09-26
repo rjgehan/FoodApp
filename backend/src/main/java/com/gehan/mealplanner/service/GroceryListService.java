@@ -44,6 +44,7 @@ public class GroceryListService {
     private final IngredientSections ingredientSections;
     private final StoreSectionAi sectionAi;
     private final GroceryListEventPublisher eventPublisher;
+    private final RestockClock restockClock;
 
     public GroceryListService(GroceryListItemRepository groceryListItemRepository,
                                MealPlanEntryRepository mealPlanEntryRepository,
@@ -55,7 +56,8 @@ public class GroceryListService {
                                IngredientService ingredientService,
                                IngredientSections ingredientSections,
                                StoreSectionAi sectionAi,
-                               GroceryListEventPublisher eventPublisher) {
+                               GroceryListEventPublisher eventPublisher,
+                               RestockClock restockClock) {
         this.groceryListItemRepository = groceryListItemRepository;
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdRepository = householdRepository;
@@ -67,6 +69,7 @@ public class GroceryListService {
         this.ingredientSections = ingredientSections;
         this.sectionAi = sectionAi;
         this.eventPublisher = eventPublisher;
+        this.restockClock = restockClock;
     }
 
     /**
@@ -301,6 +304,9 @@ public class GroceryListService {
      * chicken and 2 lb bought is 3 lb. Bought without an amount, or in a unit the count is not
      * kept in, the count stays as it was: a guess would be a number nobody can trust, and the
      * cupboard's − and + are there to put it right.
+     *
+     * It is also the moment a restock reminder starts counting again. Only here, and not for
+     * what was left out as someone else's: that was bought, but not for this house.
      */
     private void stock(Household household, GroceryListItem bought) {
         Ingredient ingredient = bought.getIngredient();
@@ -312,6 +318,7 @@ public class GroceryListService {
             item.setQuantity(item.getQuantity().add(bought.getQuantity()));
         }
         cupboardRepository.save(item);
+        restockClock.bought(household.getId(), ingredient.getId());
     }
 
     /**

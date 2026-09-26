@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } 
 import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { CupboardItem, GroceryCategory } from '../api/types';
+import type { CupboardItem, GroceryCategory, RestockReminder } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { groupByCategory } from '../utils/storeSections';
@@ -12,6 +12,8 @@ import { PageTitle } from '../components/PageTitle';
 import SwipeRow from '../components/SwipeRow';
 import UnitInput from '../components/UnitInput';
 import ScanToCupboard from '../components/ScanToCupboard';
+import { RestockField, saveRestock, useRestockReminders } from '../components/Restock';
+import { everyTitle } from '../utils/restock';
 
 /* The rows hold the card's 16px padding, so the separators start and stop where the padding does. */
 const CARD_ROW_INSET = { '--row-inset': '1rem', '--row-inset-end': '1rem' } as CSSProperties;
@@ -35,6 +37,7 @@ export default function CupboardPage() {
   const [editing, setEditing] = useState<CupboardItem | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const restock = useRestockReminders(activeHouseholdId);
 
   const load = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -182,7 +185,14 @@ export default function CupboardPage() {
               */}
             <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
               {rows.map((item) => {
-                const detail = [item.staple && 'Always have', item.onList && 'On the list'].filter(Boolean).join(' · ');
+                const reminder = restock.reminders.get(item.ingredientId);
+                const detail = [
+                  item.staple && 'Always have',
+                  item.onList && 'On the list',
+                  reminder && everyTitle(reminder.everyDays),
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
                 // "Always have" means it is never low, so there is nothing to toggle.
                 const trailing = item.quantity != null ? (
                   <QuantityStepper
@@ -246,9 +256,12 @@ export default function CupboardPage() {
           householdId={activeHouseholdId}
           item={editing}
           categories={groceryCategories}
+          reminder={restock.reminders.get(editing.ingredientId) ?? null}
           onClose={() => setEditing(null)}
           onRemove={() => remove(editing)}
           onSaved={(updated) => {
+            // A rename takes its reminder along to the new name, and may have changed it too.
+            restock.reload().catch(() => {});
             // A rename into something already here merges the two, so the old row may be gone.
             setItems((prev) =>
               [...(prev ?? []).filter((i) => i.id !== editing.id && i.id !== updated.id), updated].sort(byName),
@@ -329,6 +342,7 @@ function EditItemSheet({
   householdId,
   item,
   categories,
+  reminder,
   onSaved,
   onRemove,
   onClose,
@@ -336,6 +350,7 @@ function EditItemSheet({
   householdId: string;
   item: CupboardItem;
   categories: GroceryCategory[];
+  reminder: RestockReminder | null;
   onSaved: (updated: CupboardItem) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -346,14 +361,16 @@ function EditItemSheet({
   const [trackQuantity, setTrackQuantity] = useState(item.quantity != null);
   const [quantity, setQuantity] = useState(item.quantity ?? 1);
   const [unit, setUnit] = useState(item.unit ?? '');
+  const [everyDays, setEveryDays] = useState<number | null>(reminder?.everyDays ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const renamed = name.trim() !== item.name;
   const quantityModeChanged = trackQuantity !== (item.quantity != null);
   const quantityValueChanged = trackQuantity && (quantity !== (item.quantity ?? quantity) || unit !== (item.unit ?? ''));
+  const reminderChanged = everyDays !== (reminder?.everyDays ?? null);
   const changed = renamed || categoryId !== item.categoryId || staple !== item.staple
-    || quantityModeChanged || quantityValueChanged;
+    || quantityModeChanged || quantityValueChanged || reminderChanged;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -375,6 +392,10 @@ function EditItemSheet({
       if (categoryId !== item.categoryId) {
         await api('PUT', `/api/households/${householdId}/ingredients/${updated.ingredientId}/category`, { categoryId });
         updated = { ...updated, categoryId, sorted: true };
+      }
+      // Also after the rename, which takes the reminder along to the new ingredient first.
+      if (reminderChanged) {
+        await saveRestock(householdId, updated.ingredientId, everyDays);
       }
       onSaved(updated);
     } catch (err) {
@@ -446,6 +467,9 @@ function EditItemSheet({
             </div>
           </Field>
         )}
+        <Field label="Remind me to buy it" hint="Counted from the last time it was put away. When it's time, the app asks.">
+          <RestockField value={everyDays} onChange={setEveryDays} />
+        </Field>
         {error && <ErrorText>{error}</ErrorText>}
         <div className="flex gap-2">
           <Button type="submit" className="flex-1" disabled={busy || !name.trim() || !changed}>
