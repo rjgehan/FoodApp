@@ -152,7 +152,7 @@ Browsable list, sorted by name.
 |---|---|
 | `q` | Case-insensitive substring of name or description |
 | `section` | `BREAKFAST` `LUNCH` `DINNER` `SNACKS` `DRINKS` `OTHER` |
-| `category` | A sub-category name, e.g. `Main dish`, `Side`, `Veggie` |
+| `category` | A group name, e.g. `Main dish`, `Side`, `Veggie`. Case-insensitive. Also matches recipes filed in any group nested inside it, so `Main dish` still finds a recipe after it has been moved into `Main dish › Beef` |
 
 ```json
 [
@@ -173,6 +173,9 @@ Browsable list, sorted by name.
 
 `section` and `categories` are **per household** — how *that* household filed the recipe. A
 recipe shared from another household has `"section": null` until it is filed.
+
+`categories` lists only the groups the recipe is filed in directly (`["Beef"]`, not
+`["Beef", "Main dish"]`), even when it was found through a parent group.
 
 ### `GET /api/integration/recipes/{recipeId}`
 

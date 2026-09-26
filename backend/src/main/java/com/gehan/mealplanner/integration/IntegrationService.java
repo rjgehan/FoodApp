@@ -17,9 +17,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -124,9 +126,9 @@ public class IntegrationService {
         String q = query == null ? null : query.trim().toLowerCase();
 
         return recipeRepository.findVisibleTo(householdId).stream()
+                .filter(r -> category == null || filedUnder(filings.get(r.getId()), category))
                 .map(r -> summary(r, filings.get(r.getId())))
                 .filter(s -> section == null || s.section() == section)
-                .filter(s -> category == null || s.categories().stream().anyMatch(c -> c.equalsIgnoreCase(category)))
                 .filter(s -> q == null || q.isEmpty()
                         || s.name().toLowerCase().contains(q)
                         || (s.description() != null && s.description().toLowerCase().contains(q)))
@@ -229,6 +231,30 @@ public class IntegrationService {
                 filing == null ? null : filing.getSection(), categories(filing),
                 recipe.getServings(), recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(),
                 totalMinutes(recipe), imageUrl(recipe.getCoverImage()));
+    }
+
+    /**
+     * Filed in the named group, or in any group nested inside it. Splitting Main dish up into
+     * Beef and Chicken moves its recipes down a level, and a dashboard asking for Main dish still
+     * means all of them. `categories` in the response stays the groups the recipe is filed in
+     * directly, as it always has been.
+     */
+    static boolean filedUnder(RecipeFiling filing, String category) {
+        if (filing == null) {
+            return false;
+        }
+        String wanted = category.trim();
+        for (RecipeCategory filed : filing.getCategories()) {
+            // Moving a group inside itself is refused, but a loop left in old data should end
+            // the walk rather than the request.
+            Set<UUID> seen = new HashSet<>();
+            for (RecipeCategory up = filed; up != null && seen.add(up.getId()); up = up.getParent()) {
+                if (up.getName().equalsIgnoreCase(wanted)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private List<String> categories(RecipeFiling filing) {
