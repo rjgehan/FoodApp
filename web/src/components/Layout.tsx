@@ -150,7 +150,8 @@ export default function Layout({ children }: { children: ReactNode }) {
                 {({ isActive }) => (
                   <span
                     className={cx(
-                      'flex h-8 items-center rounded-full pl-[0.4375rem] text-[0.8125rem] font-semibold transition-colors',
+                      'flex h-8 items-center rounded-full pl-[0.4375rem] text-[0.8125rem] font-semibold',
+                      'transition-[padding,background-color,color] duration-200',
                       compactTitle ? 'pr-[0.4375rem]' : 'pr-3',
                       isActive ? 'bg-accent-soft text-accent' : 'bg-elevated text-ink',
                     )}
