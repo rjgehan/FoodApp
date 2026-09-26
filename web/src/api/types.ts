@@ -15,6 +15,8 @@ export interface Me {
   email: string | null;
   hasPassword: boolean;
   lastHouseholdId: string | null;
+  /** Whether the admin pages open for you. The server decides; this only shows the way in. */
+  admin: boolean;
 }
 
 /**
@@ -290,3 +292,109 @@ export interface GroceryListItem {
 export type GroceryListEvent =
   | { householdId: string; type: 'UPSERTED'; item: GroceryListItem; removedItemId: null }
   | { householdId: string; type: 'REMOVED'; item: null; removedItemId: string };
+
+/*
+ * The read-only admin pages (/api/admin/**). Nothing in them is a key to anything: they say
+ * whether an invite, a share link or a password exists, never what it is.
+ */
+
+/** One page of a longer list. `page` counts from 0. */
+export interface AdminPage<T> {
+  items: T[];
+  page: number;
+  size: number;
+  total: number;
+}
+
+export interface AdminOverview {
+  users: number;
+  usersWithEmail: number;
+  usersWithPassword: number;
+  usersWithPin: number;
+  households: number;
+  recipes: number;
+  publishedRecipes: number;
+  shares: number;
+  publicLinks: number;
+  liveInvites: number;
+}
+
+export interface AdminHouseholdRow {
+  id: string;
+  name: string;
+  createdAt: string;
+  memberCount: number;
+  recipeCount: number;
+  ownerName: string | null;
+}
+
+export interface AdminHouseholdMember {
+  userId: string;
+  displayName: string;
+  username: string;
+  email: string | null;
+  role: HouseholdRole;
+  joinedAt: string;
+  hasPassword: boolean;
+  hasPin: boolean;
+  /** Signing in opens this house for them. */
+  lastHousehold: boolean;
+}
+
+export interface AdminHouseholdRecipe {
+  id: string;
+  name: string;
+  section: RecipeSection | null;
+  createdAt: string;
+  published: boolean;
+  /** Names of the houses it is shared with. */
+  sharedWith: string[];
+  hasPublicLink: boolean;
+}
+
+export interface AdminHouseholdDetail {
+  id: string;
+  name: string;
+  createdAt: string;
+  defaultServings: number;
+  planningHorizonDays: number;
+  inviteLive: boolean;
+  members: AdminHouseholdMember[];
+  recipes: AdminHouseholdRecipe[];
+}
+
+export interface AdminUserRow {
+  userId: string;
+  displayName: string;
+  username: string;
+  email: string | null;
+  hasPassword: boolean;
+  hasPin: boolean;
+  admin: boolean;
+  createdAt: string;
+  households: { householdId: string; name: string; role: HouseholdRole }[];
+}
+
+export interface AdminRecipeRow {
+  id: string;
+  name: string;
+  householdId: string;
+  householdName: string;
+  section: RecipeSection | null;
+  groups: string[];
+  createdAt: string;
+  published: boolean;
+  sharedWith: string[];
+  /** How many web links it keeps. */
+  linkCount: number;
+  hasPublicLink: boolean;
+}
+
+export interface AdminRecipeDetail {
+  /** As its own household sees it. `sharedWith` in here is ids; the names are alongside. */
+  recipe: Recipe;
+  householdName: string;
+  createdAt: string;
+  sharedWith: string[];
+  hasPublicLink: boolean;
+}

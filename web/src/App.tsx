@@ -18,6 +18,7 @@ import CupboardPage from './pages/CupboardPage';
 import PublicRecipePage from './pages/PublicRecipePage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import InvitePage from './pages/InvitePage';
+import AdminRoutes from './pages/AdminPage';
 
 export default function App() {
   const { session } = useAuth();
@@ -79,6 +80,9 @@ export default function App() {
           <Route path="/explore/meal-plans" element={<ExploreSoonPage />} />
           {/* Explore used to be a room inside Recipes. Links and bookmarks still work. */}
           <Route path="/recipes/explore" element={<Navigate to="/explore/recipes" replace />} />
+          {/* The server owner's read-only view of everything. Not a tab: reached from Settings,
+              and only shown to the admin (the server turns everyone else away). */}
+          <Route path="/admin/*" element={<AdminRoutes />} />
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

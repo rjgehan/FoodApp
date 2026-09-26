@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { api } from '../api/client';
+import type { Me } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
 import { CardInSheetProvider, cx, Sheet } from './ui';
@@ -42,6 +44,29 @@ export default function Layout({ children }: { children: ReactNode }) {
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const isAdminChecked = useRef<string | null>(null);
+  // The admin pages are tables that want the width of a computer screen, and the bar widens
+  // with them so its tabs still line up with the page.
+  const wide = useLocation().pathname.startsWith('/admin');
+
+  // Only the way in to the admin pages hangs on this; the server decides who gets through them.
+  // Asked again each time Settings opens: adding the admin's email, or renaming yourself, is
+  // done from in there and changes the answer without changing who is signed in.
+  useEffect(() => {
+    if (!session) return;
+    if (showProfile === false && isAdminChecked.current === session.userId) return;
+    isAdminChecked.current = session.userId;
+    let cancelled = false;
+    api<Me>('GET', '/api/users/me')
+      .then((me) => !cancelled && setIsAdmin(me.admin === true))
+      .catch(() => {
+        // Offline: no Admin row this time, which is the safe way to be wrong.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.userId, showProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 2);
@@ -59,7 +84,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             scrolled ? 'material-bar edge-bottom' : 'bg-bg',
           )}
         >
-          <div className="relative mx-auto flex h-12 max-w-3xl items-center gap-2 px-3">
+          <div className={cx('relative mx-auto flex h-12 items-center gap-2 px-3', wide ? 'max-w-6xl' : 'max-w-3xl')}>
             {/* Makes way for the page title once it has shrunk into the bar. */}
             <div className={cx('min-w-0 transition-opacity duration-200', compactTitle && 'pointer-events-none opacity-0')}>
               {households.length > 1 ? (
@@ -116,7 +141,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Wide screens get the tabs up here instead of pinned to the bottom. */}
-          <nav className="mx-auto hidden max-w-3xl gap-1 px-3 pb-2 md:flex">
+          <nav className={cx('mx-auto hidden gap-1 px-3 pb-2 md:flex', wide ? 'max-w-6xl' : 'max-w-3xl')}>
             {navItems.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
@@ -150,6 +175,20 @@ export default function Layout({ children }: { children: ReactNode }) {
                 <span className="font-medium">Household settings</span>
                 <ChevronRightIcon className="h-5 w-5 shrink-0 text-subtle" />
               </NavLink>
+              {isAdmin && (
+                <NavLink
+                  to="/admin"
+                  onClick={() => setShowProfile(false)}
+                  className="press -mt-1 mb-3 flex min-h-touch items-center justify-between gap-3 rounded-xl
+                             bg-elevated px-4 py-3 text-ink"
+                >
+                  <span>
+                    <span className="block font-medium">Admin</span>
+                    <span className="block text-sm text-muted">Every household, person and recipe</span>
+                  </span>
+                  <ChevronRightIcon className="h-5 w-5 shrink-0 text-subtle" />
+                </NavLink>
+              )}
               <ProfileCard />
             </CardInSheetProvider>
           </Sheet>
@@ -158,7 +197,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <CredentialsPrompt />
 
         {/* Bottom padding clears the tab bar plus the home indicator. */}
-        <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-1 md:pb-10">
+        <main className={cx('mx-auto w-full px-4 pb-28 pt-1 md:pb-10', wide ? 'max-w-6xl' : 'max-w-3xl')}>
           {/* Taken out of the house they were in, and moved to another of theirs: said once, so
               the switch does not look like the app losing its place. With no house left, the
               pages' own empty state says it instead. */}
