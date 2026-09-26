@@ -13,6 +13,27 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Meal Planner</title>
+    <!--
+      Your colours and light or dark, before anything is drawn: without this the page paints in
+      the default and then changes once the app has loaded. The app keeps both up to date from
+      then on (src/theme/theme.ts), including following the system when the mode is Auto.
+    -->
+    <script>
+      try {
+        var css = localStorage.getItem('mp_themeCss');
+        if (css) {
+          var style = document.createElement('style');
+          style.id = 'mp-theme';
+          style.textContent = css;
+          document.head.appendChild(style);
+        }
+        var mode = localStorage.getItem('mp_themeMode');
+        document.documentElement.dataset.theme =
+          mode === 'DARK' || (mode !== 'LIGHT' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      } catch (e) {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

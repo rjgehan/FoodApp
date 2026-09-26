@@ -139,7 +139,7 @@ export default function UnitInput({
                 }}
                 className={cx(
                   'flex min-h-touch w-full items-center px-3 text-left',
-                  i === highlight ? 'bg-accent-soft text-accent' : 'text-ink',
+                  i === highlight ? 'bg-secondary-soft text-secondary' : 'text-ink',
                 )}
               >
                 {unit}

@@ -1,3 +1,5 @@
+import type { Theme, ThemeMode } from '../theme/theme';
+
 export interface AuthResponse {
   token: string;
   userId: string;
@@ -17,6 +19,8 @@ export interface Me {
   lastHouseholdId: string | null;
   /** Whether the admin pages open for you. The server decides; this only shows the way in. */
   admin: boolean;
+  /** Your colours. Missing from an older server, which had none. */
+  theme?: Theme;
 }
 
 /**
@@ -380,6 +384,18 @@ export interface AdminUserRow {
   admin: boolean;
   createdAt: string;
   households: { householdId: string; name: string; role: HouseholdRole }[];
+  /** The colours they picked. Missing from an older server. */
+  theme?: Theme;
+}
+
+/** Which colours people pick; see AdminDtos.ThemeUsage. */
+export interface AdminThemeUsage {
+  people: number;
+  /** Never changed anything — counted as Classic in `presets` too. */
+  untouched: number;
+  presets: { key: string; count: number }[];
+  custom: { primary: string; secondary: string; count: number }[];
+  modes: { mode: ThemeMode; count: number }[];
 }
 
 /** What deleting an account does to each house it is in; see AdminDtos.HouseholdOutcome. */

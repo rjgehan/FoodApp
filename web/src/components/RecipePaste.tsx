@@ -148,7 +148,7 @@ export function PasteFromAi({
  */
 function FormatWarning() {
   return (
-    <div role="note" className="flex gap-2.5 rounded-xl bg-accent-soft px-3 py-2.5 text-sm text-ink">
+    <div role="note" className="flex gap-2.5 rounded-xl bg-secondary-soft px-3 py-2.5 text-sm text-ink">
       <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
       <div className="space-y-1">
         <p className="font-medium">You can’t paste just anything here.</p>
