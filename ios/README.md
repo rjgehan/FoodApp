@@ -1,7 +1,8 @@
 # Meal Planner for iOS
 
-A native client for the same backend the web app uses. No new API: it signs in with the PIN
-flow, reads the plan, the groceries and the recipes, and ticks things off.
+A native client for the same backend the web app uses. No new API: it signs in with an email
+and password (or the older PIN flow), reads the plan, the groceries and the recipes, and ticks
+things off.
 
 ## Running it
 
@@ -63,7 +64,25 @@ reads it; `-mp_debug_paste "<text>"` fills Paste (and `-mp_debug_autoparse 1` re
 `-mp_debug_rules 1` shows Paste as a phone without Apple Intelligence sees it: the format
 warning and the rules-only reader.
 
+`-mp_debug_screen household -mp_debug_scroll people` opens Who's here; add `-mp_debug_expand 1`
+to open a password reset link for the first other person (sign in as the owner). A debug launch
+never shows the "add an email and password" prompt on top of a `-mp_debug_screen`, except
+`-mp_debug_screen credentials`, which shows just the prompt.
+
 Both hooks are inside `#if DEBUG`, so a release build has neither.
+
+## Signing in
+
+Email and password, as on the web. The name-and-PIN screens are behind "Sign in with your name
+and PIN" until the server turns them off (`LEGACY_PIN_LOGIN=false`, see DEPLOY.md). After a
+sign-in, and on each launch, someone without an email or password is asked for them; "Not now"
+lasts until the next launch. Settings → Email and password changes them later.
+
+An owner resets a forgotten password from Household → Who's here → ••• → Reset password: a
+one-time link and QR code for `<server>/reset/<token>`, which the person opens on the web. The
+token stays in the Keychain as before; email sign-in adds nothing to what the phone keeps (the
+display name and the open household in UserDefaults, as they always were). The password is
+never stored.
 
 ## Food icons
 

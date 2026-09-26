@@ -4,7 +4,16 @@ import Foundation
 /// without a backend, a household, or a signed-in person. These are shapes, not fixtures: the
 /// e2e suite in `e2e/` is what checks the real thing.
 enum SampleData {
-    static let household = HouseholdSummary(id: UUID(), name: "Gehan House", memberCount: 3)
+    static let household = HouseholdSummary(id: UUID(), name: "Gehan House", memberCount: 3, role: "OWNER")
+
+    /// Someone who still signs in with a PIN — what the add-an-email prompt is for.
+    static let me = Me(userId: UUID(), username: "ryan", displayName: "Ryan", email: nil, hasPassword: false)
+
+    static let members: [HouseholdMember] = [
+        HouseholdMember(userId: me.userId, username: "ryan", displayName: "Ryan", role: "OWNER", pinSet: true, hasEmail: true, hasPassword: true),
+        HouseholdMember(userId: UUID(), username: "maya", displayName: "Maya", role: "MEMBER", pinSet: true, hasEmail: false, hasPassword: false),
+        HouseholdMember(userId: UUID(), username: "grandad", displayName: "Grandad", role: "MEMBER", pinSet: false, hasEmail: false, hasPassword: false),
+    ]
 
     static var plan: [MealPlanEntry] {
         let today = Date()
@@ -148,6 +157,7 @@ extension Session {
         session.token = "preview"
         session.displayName = "Ryan"
         session.household = SampleData.household
+        session.userId = SampleData.me.userId
         return session
     }
 }

@@ -52,6 +52,12 @@ final class Session {
     var household: HouseholdSummary?
     /// Every household this person is in — the switcher in the header needs them all.
     var households: [HouseholdSummary] = []
+    /// Who is signed in, so a list of people can tell which one is you. In memory only — the
+    /// Keychain token is all that is kept — so after a relaunch it is asked for again.
+    var userId: UUID?
+    /// "Not now" on the add-an-email prompt. Kept in memory only, so it lasts until the app
+    /// is next launched — and a fresh sign-in asks again.
+    var credentialsPromptDismissed = false
 
     var isSignedIn: Bool { token != nil && household != nil }
 
@@ -66,6 +72,10 @@ final class Session {
     /// in, on whichever server they signed in to, and someone may have been added to a house.
     func loadHouseholds() async {
         households = (try? await APIClient.shared.myHouseholds()) ?? []
+        // After a relaunch only the token is known: ask who it belongs to.
+        if userId == nil, token != nil, let me = try? await APIClient.shared.me() {
+            userId = me.userId
+        }
         // The sign-in screen's copy of the household has no settings on it; the list's does,
         // and the plan needs the house's usual servings.
         if let current = household, let fresh = households.first(where: { $0.id == current.id }), fresh != current {
@@ -84,6 +94,13 @@ final class Session {
         if let data = try? JSONEncoder().encode(household) {
             UserDefaults.standard.set(data, forKey: Self.householdKey)
         }
+    }
+
+    /// Someone picked this house, so the server remembers it and the next sign-in opens it —
+    /// here or on the web. Best effort: failing to remember is not worth an error on screen.
+    func choose(_ household: HouseholdSummary) {
+        switchTo(household)
+        Task { try? await APIClient.shared.rememberHousehold(household.id) }
     }
 
     static let householdKey = "mp_household"
@@ -121,22 +138,49 @@ final class Session {
         }
     }
 
-    func signIn(_ auth: AuthResponse, household: HouseholdSummary) async {
-        token = auth.token
-        displayName = auth.displayName
-        self.household = household
-        TokenStore.save(auth.token)
-        UserDefaults.standard.set(auth.displayName, forKey: Self.nameKey)
-        if let data = try? JSONEncoder().encode(household) {
-            UserDefaults.standard.set(data, forKey: Self.householdKey)
-        }
+    /**
+     Signs in and opens a household: the one the server remembers them in, else the one they
+     tapped on the name-and-PIN screens, else the first they are in. It used to be whatever the
+     sign-in screen handed over — and email sign-in has no house to hand over at all.
+
+     Returns false, signed out again, when the account is in no household: there is nothing
+     for the tabs to show. Throws, also signed out again, when the list could not be fetched —
+     a dropped connection is not the same news as having no household, and the sign-in screen
+     has to say which it was.
+    */
+    @discardableResult
+    func signIn(_ auth: AuthResponse, household picked: HouseholdSummary? = nil) async throws -> Bool {
         await APIClient.shared.use(token: auth.token)
         /*
          The switcher top left reads this list, and it used to be filled only at launch — so
          after signing in, or signing in again on another server, it held nothing (or the last
          person's houses) and stayed that way until the app was killed and reopened.
         */
-        await loadHouseholds()
+        let mine: [HouseholdSummary]
+        do {
+            mine = try await APIClient.shared.myHouseholds()
+        } catch {
+            await APIClient.shared.use(token: token)
+            throw error
+        }
+        let opening = mine.first { $0.id == auth.lastHouseholdId }
+            ?? mine.first { $0.id == picked?.id }
+            ?? picked
+            ?? mine.first
+        guard let opening else {
+            await APIClient.shared.use(token: token)
+            return false
+        }
+
+        households = mine
+        token = auth.token
+        displayName = auth.displayName
+        userId = auth.userId
+        credentialsPromptDismissed = false
+        TokenStore.save(auth.token)
+        UserDefaults.standard.set(auth.displayName, forKey: Self.nameKey)
+        switchTo(opening)
+        return true
     }
 
     func signOut() async {
@@ -144,6 +188,7 @@ final class Session {
         displayName = nil
         household = nil
         households = []
+        userId = nil
         TokenStore.clear()
         UserDefaults.standard.removeObject(forKey: Self.householdKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)

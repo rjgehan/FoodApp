@@ -118,8 +118,36 @@ actor APIClient {
         try await get("/api/auth/households/\(id.uuidString)/users", authorized: false)
     }
 
-    func logIn(username: String, pin: String) async throws -> AuthResponse {
-        try await send("POST", "/api/auth/login", body: ["username": username, "pin": pin], authorized: false)
+    /// The house they tapped on the way to their name goes with it, so it is the one that opens.
+    func logIn(username: String, pin: String, household: UUID?) async throws -> AuthResponse {
+        var body: [String: Any] = ["username": username, "pin": pin]
+        if let household { body["householdId"] = household.uuidString }
+        return try await send("POST", "/api/auth/login", body: body, authorized: false)
+    }
+
+    func logIn(email: String, password: String) async throws -> AuthResponse {
+        try await send("POST", "/api/auth/login/email", body: ["email": email, "password": password], authorized: false)
+    }
+
+    // MARK: - You
+
+    func me() async throws -> Me {
+        try await get("/api/users/me")
+    }
+
+    /// Adds or changes how you sign in. Nil leaves that one as it is; the current password is
+    /// needed once there is one.
+    func updateCredentials(email: String?, password: String?, currentPassword: String?) async throws -> Me {
+        var body: [String: Any] = [:]
+        if let email { body["email"] = email }
+        if let password { body["password"] = password }
+        if let currentPassword { body["currentPassword"] = currentPassword }
+        return try await send("PUT", "/api/users/me/credentials", body: body)
+    }
+
+    /// The house you just switched to, so the next sign-in — here or on the web — opens it.
+    func rememberHousehold(_ id: UUID) async throws {
+        _ = try await sendNoContent("PUT", "/api/users/me/active-household", body: ["householdId": id.uuidString])
     }
 
     // MARK: - The app
@@ -141,6 +169,15 @@ actor APIClient {
     func updateHouseholdSettings(_ id: UUID, defaultServings: Int, planningHorizonDays: Int) async throws -> HouseholdSummary {
         try await send("PATCH", "/api/households/\(id.uuidString)/settings",
                        body: ["defaultServings": defaultServings, "planningHorizonDays": planningHorizonDays])
+    }
+
+    func members(household: UUID) async throws -> [HouseholdMember] {
+        try await get("/api/households/\(household.uuidString)/members")
+    }
+
+    /// Owner only: a one-time link that lets this person set a new password.
+    func makePasswordReset(household: UUID, user: UUID) async throws -> PasswordResetLink {
+        try await send("POST", "/api/households/\(household.uuidString)/members/\(user.uuidString)/password-reset", body: [:])
     }
 
     /// A new person in this house, with no PIN yet — they choose one the first time they sign in.

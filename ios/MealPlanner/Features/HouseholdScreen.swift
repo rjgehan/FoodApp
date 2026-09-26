@@ -14,7 +14,7 @@ import SwiftUI
 struct HouseholdScreen: View {
     var session: Session
 
-    @State private var people: [UserSummary] = []
+    @State private var people: [HouseholdMember] = []
     @State private var loaded = false
     @State private var leaving = false
     @State private var typedName = ""
@@ -25,6 +25,8 @@ struct HouseholdScreen: View {
     /// -mp_debug_scroll icons (with -mp_debug_screen household) opens Recipe icons, and
     /// -mp_debug_expand 1 its picker for Dinner, for screenshot runs.
     @State private var debugIcons = UserDefaults.standard.string(forKey: "mp_debug_scroll") == "icons"
+    /// -mp_debug_scroll people opens Who's here; with -mp_debug_expand 1, a reset link too.
+    @State private var debugPeople = UserDefaults.standard.string(forKey: "mp_debug_scroll") == "people"
     #endif
 
     private var alone: Bool { people.count <= 1 }
@@ -72,6 +74,7 @@ struct HouseholdScreen: View {
         .task { await load() }
         #if DEBUG
         .navigationDestination(isPresented: $debugIcons) { RecipeIconsScreen(session: session) }
+        .navigationDestination(isPresented: $debugPeople) { PeopleScreen(session: session, people: $people) }
         #endif
         .alert(alone ? "Delete this household" : "Leave this household", isPresented: $leaving) {
             if alone {
@@ -107,7 +110,9 @@ struct HouseholdScreen: View {
 
     private func load() async {
         guard let household = session.household?.id else { loaded = true; return }
-        people = (try? await APIClient.shared.users(inHousehold: household)) ?? []
+        // The members endpoint rather than the sign-in screen's roster, which goes away when the
+        // PIN screens are switched off — and which knows nothing of emails or roles.
+        people = (try? await APIClient.shared.members(household: household)) ?? []
         loaded = true
     }
 
@@ -205,23 +210,60 @@ struct HouseholdBasicsScreen: View {
 
 struct PeopleScreen: View {
     var session: Session
-    @Binding var people: [UserSummary]
+    @Binding var people: [HouseholdMember]
 
     @State private var username = ""
     @State private var displayName = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var resetting: HouseholdMember?
+
+    #if DEBUG
+    /// -mp_debug_expand 1 (with -mp_debug_scroll people) opens a reset link for the first other
+    /// person, for screenshot runs.
+    @State private var debugExpand = UserDefaults.standard.string(forKey: "mp_debug_expand") == "1"
+    #endif
+
+    private var isOwner: Bool { session.household?.isOwner == true }
 
     var body: some View {
         Form {
             Section {
                 ForEach(people) { person in
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(person.shown)
-                        Text(person.username + (person.pinSet ? "" : " · no PIN yet"))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(person.shown)
+                            Text(person.username + (person.role == "OWNER" ? " · owner" : ""))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        // Never signed in is a different job for the owner (tell them how, or send a
+                        // reset link) from no email yet — the cue that the PIN screens can go.
+                        if person.neverSignedIn || person.hasEmail == false {
+                            Text(person.neverSignedIn ? "Hasn't signed in yet" : "No email yet")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Palette.accent)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Palette.accentSoft, in: Capsule())
+                        }
+                        if isOwner && person.userId != session.userId {
+                            Menu {
+                                Button("Reset password", systemImage: "key") { resetting = person }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 32, height: 32)
+                            }
+                            .accessibilityLabel("More for \(person.shown)")
+                        }
                     }
+                }
+            } footer: {
+                if isOwner {
+                    Text("Forgot a password? Reset it from the ••• beside them — you get a link to send.")
                 }
             }
 
@@ -235,8 +277,8 @@ struct PeopleScreen: View {
             } header: {
                 Text("Add someone")
             } footer: {
-                Text("They pick their own four digits the first time they sign in. Nobody here "
-                     + "sets somebody else's PIN.")
+                Text("To get in the first time, they tap “Sign in with your name and PIN” and choose "
+                     + "one — or send them a reset link from the ••• beside them.")
             }
 
             if let error {
@@ -245,6 +287,23 @@ struct PeopleScreen: View {
         }
         .navigationTitle("Who's here")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $resetting) { member in
+            PasswordResetSheet(session: session, member: member)
+        }
+        .task { await reload() }
+        #if DEBUG
+        .onChange(of: people) {
+            if debugExpand, let other = people.first(where: { $0.userId != session.userId }) {
+                debugExpand = false
+                resetting = other
+            }
+        }
+        #endif
+    }
+
+    private func reload() async {
+        guard let household = session.household?.id else { return }
+        if let fresh = try? await APIClient.shared.members(household: household) { people = fresh }
     }
 
     private func add() async {
@@ -258,7 +317,7 @@ struct PeopleScreen: View {
                 displayName: displayName.trimmingCharacters(in: .whitespaces))
             username = ""
             displayName = ""
-            people = (try? await APIClient.shared.users(inHousehold: household)) ?? people
+            await reload()
             error = nil
         } catch {
             self.error = error.localizedDescription

@@ -93,6 +93,9 @@ struct RootView: View {
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
     #endif
 
+    /// Set when the signed-in person still has no email or password: the prompt asking for them.
+    @State private var askingForCredentials: Me?
+
     var body: some View {
         if session.isSignedIn {
             TabView(selection: $tab) {
@@ -120,6 +123,16 @@ struct RootView: View {
              settings must not throw away where you were.
             */
             .id(session.household?.id)
+            // After every sign-in (a new token) and on every launch.
+            .task(id: session.token) { await checkCredentials() }
+            .sheet(isPresented: Binding(
+                get: { askingForCredentials != nil },
+                set: { if !$0 { askingForCredentials = nil } }
+            )) {
+                if let me = askingForCredentials {
+                    CredentialsPrompt(session: session, me: me)
+                }
+            }
             #if DEBUG
             .sheet(isPresented: Binding(
                 get: { debugSheet == "edit" },
@@ -153,6 +166,24 @@ struct RootView: View {
             SignInView(session: session)
         }
     }
+
+    /// Asks for an email and password if they are missing and "Not now" has not been said since
+    /// launch. Quiet on failure: offline is no reason to nag.
+    private func checkCredentials() async {
+        guard session.isSignedIn, !session.credentialsPromptDismissed else { return }
+        #if DEBUG
+        // A screenshot run lands on a particular screen; the prompt would sit on top of it.
+        // -mp_debug_screen credentials shows the prompt itself, from sample data if need be.
+        if let debugSheet {
+            if debugSheet == "credentials" {
+                askingForCredentials = (try? await APIClient.shared.me()) ?? SampleData.me
+            }
+            return
+        }
+        #endif
+        guard let me = try? await APIClient.shared.me(), me.needsCredentials else { return }
+        askingForCredentials = me
+    }
 }
 
 /// Who is signed in, which house, and the way back out. The web has more here; this is the
@@ -170,6 +201,7 @@ struct SettingsView: View {
             List {
                 Section("You") {
                     LabeledContent("Signed in as", value: session.displayName ?? "—")
+                    NavigationLink("Email and password") { CredentialsScreen() }
                 }
                 /*
                  Changeable from here, not only from the sign-in screen.

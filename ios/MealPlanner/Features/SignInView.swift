@@ -1,9 +1,17 @@
 import SwiftUI
 
-/// The same three steps as the web: pick the house, tap your name, tap out four digits. No
-/// email, no password — that is the whole point of the PIN.
+/// Email and password first, as on the web. The older three steps — pick the house, tap your
+/// name, tap out four digits — are behind a link while everyone moves over, and disappear when
+/// the server switches them off.
 struct SignInView: View {
     var session: Session
+
+    @State private var usingPin = false
+    @State private var legacyPinLogin = true
+    @State private var email = ""
+    @State private var password = ""
+    @FocusState private var focus: Field?
+    private enum Field { case email, password }
 
     @State private var households: [HouseholdSummary] = []
     @State private var household: HouseholdSummary?
@@ -18,7 +26,9 @@ struct SignInView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let person, let household {
+                if !usingPin {
+                    emailForm
+                } else if let person, let household {
                     pinPad(for: person, in: household)
                 } else if household != nil {
                     peopleList
@@ -29,7 +39,7 @@ struct SignInView: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                if household != nil {
+                if usingPin {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Back", systemImage: "chevron.left") { stepBack() }
                     }
@@ -59,12 +69,72 @@ struct SignInView: View {
     }
 
     private var title: String {
+        if !usingPin { return "Meal Planner" }
         if person != nil { return "Your PIN" }
         if household != nil { return "Who's this?" }
-        return "Meal Planner"
+        return "Pick your household"
     }
 
     // MARK: - Steps
+
+    private var emailForm: some View {
+        Form {
+            Section {
+                TextField("Email", text: $email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($focus, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit { focus = .password }
+                SecureField("Password", text: $password)
+                    .textContentType(.password)
+                    .focused($focus, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit { Task { await signInWithEmail() } }
+            } footer: {
+                // No email is ever sent, so the way back in is a person rather than a link.
+                Text("Forgot your password? The owner of your household can make you a reset link.")
+            }
+
+            if let error {
+                Section { Text(error).foregroundStyle(.red) }
+            }
+
+            Section {
+                Button {
+                    Task { await signInWithEmail() }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if busy { ProgressView() } else { Text("Sign in").fontWeight(.semibold) }
+                        Spacer()
+                    }
+                }
+                .disabled(busy || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+            }
+
+            if legacyPinLogin {
+                Section {
+                    Button("Sign in with your name and PIN") {
+                        error = nil
+                        usingPin = true
+                    }
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.clear)
+            }
+
+            Section {
+                LabeledContent("Server", value: Config.baseURL)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 
     private var householdList: some View {
         List {
@@ -172,9 +242,11 @@ struct SignInView: View {
         if person != nil {
             person = nil
             pin = ""
-        } else {
+        } else if household != nil {
             household = nil
             people = []
+        } else {
+            usingPin = false
         }
     }
 
@@ -195,7 +267,28 @@ struct SignInView: View {
     private func loadHouseholds() async {
         error = nil
         do {
-            households = try await APIClient.shared.landing().households
+            let landing = try await APIClient.shared.landing()
+            households = landing.households
+            legacyPinLogin = landing.legacyPinLogin ?? true
+            if !legacyPinLogin { usingPin = false }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func signInWithEmail() async {
+        let typed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty, !password.isEmpty, !busy else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let auth = try await APIClient.shared.logIn(email: typed, password: password)
+            if try await session.signIn(auth) {
+                password = ""
+            } else {
+                error = "You're not in a household yet. Ask someone to invite you."
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -214,8 +307,8 @@ struct SignInView: View {
         busy = true
         defer { busy = false }
         do {
-            let auth = try await APIClient.shared.logIn(username: person.username, pin: pin)
-            await session.signIn(auth, household: household)
+            let auth = try await APIClient.shared.logIn(username: person.username, pin: pin, household: household.id)
+            try await session.signIn(auth, household: household)
         } catch {
             self.error = error.localizedDescription
             pin = ""
@@ -223,6 +316,6 @@ struct SignInView: View {
     }
 }
 
-#Preview("Households") {
+#Preview("Sign in") {
     SignInView(session: Session())
 }

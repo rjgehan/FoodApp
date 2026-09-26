@@ -35,7 +35,7 @@ struct HouseholdPicker: View {
         NavigationStack {
             List(session.households) { household in
                 Button {
-                    session.switchTo(household)
+                    session.choose(household)
                     dismiss()
                 } label: {
                     HStack {

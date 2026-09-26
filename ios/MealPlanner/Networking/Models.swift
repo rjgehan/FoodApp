@@ -15,15 +15,21 @@ struct HouseholdSummary: Codable, Identifiable, Hashable {
     /// how many a house cooks for.
     let defaultServings: Int?
     let planningHorizonDays: Int?
+    /// Your role in this house — "OWNER" or "MEMBER". Only /api/households sends it; the owner
+    /// is the one who can reset somebody's password.
+    let role: String?
 
     init(id: UUID, name: String, memberCount: Int? = nil,
-         defaultServings: Int? = nil, planningHorizonDays: Int? = nil) {
+         defaultServings: Int? = nil, planningHorizonDays: Int? = nil, role: String? = nil) {
         self.id = id
         self.name = name
         self.memberCount = memberCount
         self.defaultServings = defaultServings
         self.planningHorizonDays = planningHorizonDays
+        self.role = role
     }
+
+    var isOwner: Bool { role == "OWNER" }
 }
 
 /// Somewhere you eat that is not this kitchen — the pub, the Thai place on the corner.
@@ -49,12 +55,52 @@ struct UserSummary: Codable, Identifiable, Hashable {
 struct LandingResponse: Codable {
     let needsSetup: Bool
     let households: [HouseholdSummary]
+    /// Whether the name-and-PIN screens are still on. An older server does not say, and only
+    /// had those, so nil means yes.
+    let legacyPinLogin: Bool?
 }
 
 struct AuthResponse: Codable {
     let token: String
     let userId: UUID
     let displayName: String?
+    /// The house they were last in, if they still are — where signing in should land.
+    let lastHouseholdId: UUID?
+}
+
+/// You, from /api/users/me: what the "add an email" prompt and Settings need.
+struct Me: Codable, Hashable {
+    let userId: UUID
+    let username: String
+    let displayName: String?
+    let email: String?
+    let hasPassword: Bool
+
+    var needsCredentials: Bool { email == nil || !hasPassword }
+}
+
+/// Someone in a household, from /api/households/{id}/members — which, unlike the sign-in
+/// screen's roster, still works once the PIN screens are switched off.
+struct HouseholdMember: Codable, Identifiable, Hashable {
+    let userId: UUID
+    let username: String
+    let displayName: String?
+    let role: String?
+    let pinSet: Bool
+    /// Absent from an older server, which never had emails.
+    let hasEmail: Bool?
+    let hasPassword: Bool?
+
+    var id: UUID { userId }
+    /// No PIN and no password: the account has never been signed into.
+    var neverSignedIn: Bool { !pinSet && hasPassword != true }
+    var shown: String { displayName ?? username }
+}
+
+/// A one-time link an owner hands to someone who forgot their password.
+struct PasswordResetLink: Codable, Hashable {
+    let token: String
+    let expiresAt: String
 }
 
 enum MealType: String, Codable, CaseIterable, Hashable {
