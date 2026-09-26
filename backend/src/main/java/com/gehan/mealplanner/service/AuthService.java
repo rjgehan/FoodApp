@@ -167,7 +167,7 @@ public class AuthService {
 
         attemptLimiter.recordSuccess(limiterKey);
         rememberPickedHousehold(user, request.householdId());
-        return toAuthResponse(user);
+        return toAuthResponse(user, false);
     }
 
     /**
@@ -194,17 +194,17 @@ public class AuthService {
         }
 
         attemptLimiter.recordSuccess(limiterKey);
-        return toAuthResponse(user);
+        return toAuthResponse(user, true);
     }
 
     /** A forgotten password, set again through the link an owner handed over. Signs them in. */
     public AuthResponse usePasswordReset(UsePasswordResetRequest request) {
-        return toAuthResponse(accountService.useReset(request.token(), request.password(), request.email()));
+        return toAuthResponse(accountService.useReset(request.token(), request.password(), request.email()), true);
     }
 
     /** Somebody new, through an invite link. Signs them straight in, in the house that asked. */
     public AuthResponse signUp(SignupRequest request) {
-        return toAuthResponse(inviteService.signUp(request));
+        return toAuthResponse(inviteService.signUp(request), true);
     }
 
     /**
@@ -239,17 +239,18 @@ public class AuthService {
         }
         user.setPinHash(passwordEncoder.encode(request.pin()));
         rememberPickedHousehold(user, request.householdId());
-        return toAuthResponse(userRepository.save(user));
+        return toAuthResponse(userRepository.save(user), false);
     }
 
     /**
      * A fresh token for someone already signed in. Looked up rather than trusted, because the
-     * account may have gone since — and it picks up a rename made on another device.
+     * account may have gone since — and it picks up a rename made on another device. It keeps
+     * how the session began: refreshing a PIN session does not turn it into a password one.
      */
     @Transactional(readOnly = true)
-    public AuthResponse refresh(UUID userId) {
+    public AuthResponse refresh(UUID userId, boolean byPassword) {
         return userRepository.findById(userId)
-                .map(this::toAuthResponse)
+                .map(user -> toAuthResponse(user, byPassword))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Signed out"));
     }
 
@@ -298,7 +299,7 @@ public class AuthService {
                 new CreateHouseholdRequest(request.householdName().trim())).id();
         owner.setLastHouseholdId(householdId);
 
-        return toAuthResponse(userRepository.save(owner));
+        return toAuthResponse(userRepository.save(owner), withEmail);
     }
 
     public static String displayNameOr(String displayName, String fallback) {
@@ -330,8 +331,8 @@ public class AuthService {
                 user.getPinHash() != null || hasOtherSignIn(user));
     }
 
-    private AuthResponse toAuthResponse(User user) {
-        return new AuthResponse(jwtService.generateToken(user.getId(), user.getUsername()),
+    private AuthResponse toAuthResponse(User user, boolean byPassword) {
+        return new AuthResponse(jwtService.generateToken(user.getId(), user.getUsername(), byPassword),
                 user.getId(), user.getDisplayName(), accountService.lastHouseholdOf(user));
     }
 }

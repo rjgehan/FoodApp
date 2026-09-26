@@ -205,7 +205,7 @@ class AccountDatabaseTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
         // …and one you have left is forgotten.
         householdService.leave(householdId, member.getId());
-        assertThat(authService.refresh(member.getId()).lastHouseholdId()).isNull();
+        assertThat(authService.refresh(member.getId(), true).lastHouseholdId()).isNull();
     }
 
     @Test

@@ -74,10 +74,24 @@ public class HouseholdDtos {
             boolean hasEmail, boolean hasPassword) {
     }
 
-    /** You, as the settings screen and the "add an email" prompt need you. */
+    /**
+     * You, as the settings screen and the "add an email" prompt need you. `admin` is whether the
+     * admin pages will open for you — decided on the server (AdminAccess); the app only uses it
+     * to show the way in.
+     */
     public record MeResponse(
             UUID userId, String username, String displayName, boolean pinSet,
-            String email, boolean hasPassword, UUID lastHouseholdId) {
+            String email, boolean hasPassword, UUID lastHouseholdId, boolean admin) {
+
+        /**
+         * The admin pages only open for a session that began with a password, so an admin
+         * signed in with their PIN is told admin=false and shown no way in to pages that would
+         * turn them away.
+         */
+        public MeResponse forSession(boolean signedInWithPassword) {
+            return signedInWithPassword || !admin ? this
+                    : new MeResponse(userId, username, displayName, pinSet, email, hasPassword, lastHouseholdId, false);
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.security;
 
 import com.gehan.mealplanner.integration.IntegrationAuthFilter;
+import com.gehan.mealplanner.service.AdminAccess;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -11,6 +12,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -25,10 +27,13 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final IntegrationAuthFilter integrationAuthFilter;
+    private final AdminAccess adminAccess;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, IntegrationAuthFilter integrationAuthFilter) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, IntegrationAuthFilter integrationAuthFilter,
+                          AdminAccess adminAccess) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.integrationAuthFilter = integrationAuthFilter;
+        this.adminAccess = adminAccess;
     }
 
     @Bean
@@ -60,7 +65,9 @@ public class SecurityConfig {
                 // key and no user, and the filter answers 401/503 itself rather than falling
                 // through to a login the caller has no way to complete.
                 .addFilterBefore(integrationAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // After the sign-in check, so only signed-in people reach it. See AdminGate.
+                .addFilterAfter(new AdminGate(adminAccess), AuthorizationFilter.class);
 
         return http.build();
     }

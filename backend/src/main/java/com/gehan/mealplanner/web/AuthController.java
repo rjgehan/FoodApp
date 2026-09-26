@@ -9,10 +9,12 @@ import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SetupRequest;
 import com.gehan.mealplanner.dto.AuthDtos.SignupRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UserSummary;
+import com.gehan.mealplanner.security.JwtService;
 import com.gehan.mealplanner.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -79,11 +81,11 @@ public class AuthController {
      * This path is open like the rest of /api/auth, so the signed-in check happens here instead.
      */
     @PostMapping("/refresh")
-    public AuthResponse refresh(@AuthenticationPrincipal UUID userId) {
+    public AuthResponse refresh(@AuthenticationPrincipal UUID userId, Authentication auth) {
         if (userId == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Signed out");
         }
-        return authService.refresh(userId);
+        return authService.refresh(userId, JwtService.signedInWithPassword(auth));
     }
 
     /**

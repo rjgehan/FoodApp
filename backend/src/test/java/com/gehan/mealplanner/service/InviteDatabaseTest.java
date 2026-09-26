@@ -119,7 +119,7 @@ class InviteDatabaseTest {
         // Twice is just being in already.
         assertThat(inviteService.accept(token, stranger.getId()).memberCount()).isEqualTo(2);
         assertThat(inviteRepository.findByToken(token).orElseThrow().getUseCount()).isEqualTo(1);
-        assertThat(authService.refresh(stranger.getId()).lastHouseholdId()).isEqualTo(householdId);
+        assertThat(authService.refresh(stranger.getId(), true).lastHouseholdId()).isEqualTo(householdId);
 
         assertThatThrownBy(() -> inviteService.accept("not-a-real-token", stranger.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class, status(404));
@@ -207,7 +207,7 @@ class InviteDatabaseTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class, status(410));
         assertThat(inviteService.getOrCreate(householdId, owner.getId()).token()).isNotEqualTo(token);
         // The house they were last in is forgotten, so their next sign-in does not aim at it.
-        assertThat(authService.refresh(member.getId()).lastHouseholdId()).isNull();
+        assertThat(authService.refresh(member.getId(), true).lastHouseholdId()).isNull();
         assertThatThrownBy(() -> householdService.assertMember(householdId, member.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class, status(403));
     }

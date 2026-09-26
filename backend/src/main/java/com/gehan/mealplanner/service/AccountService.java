@@ -57,19 +57,22 @@ public class AccountService {
     private final PasswordEncoder passwordEncoder;
     private final SignInAttemptLimiter attemptLimiter;
     private final HouseholdService householdService;
+    private final AdminAccess adminAccess;
 
     public AccountService(UserRepository userRepository,
                           HouseholdMemberRepository memberRepository,
                           PasswordResetRepository resetRepository,
                           PasswordEncoder passwordEncoder,
                           SignInAttemptLimiter attemptLimiter,
-                          HouseholdService householdService) {
+                          HouseholdService householdService,
+                          AdminAccess adminAccess) {
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
         this.resetRepository = resetRepository;
         this.passwordEncoder = passwordEncoder;
         this.attemptLimiter = attemptLimiter;
         this.householdService = householdService;
+        this.adminAccess = adminAccess;
     }
 
     // --- You ---------------------------------------------------------------------------------
@@ -154,11 +157,18 @@ public class AccountService {
      * Puts an address on an account, refusing one that belongs to someone else. The check here
      * gives the friendly answer; the unique index is what actually holds when two requests race,
      * and saveClaimingEmail turns that into the same answer.
+     *
+     * The admin's address is kept for the admin's account (see AdminAccess): whoever typed it in
+     * first would otherwise be half way to the admin pages. Every way an email gets onto an
+     * account comes through here, so this one check covers them all.
      */
     public void claimEmail(User user, String email) {
         String normalised = normaliseEmail(email);
         if (normalised == null || normalised.isEmpty() || normalised.length() > 254 || !EMAIL.matcher(normalised).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That doesn't look like an email address.");
+        }
+        if (adminAccess.isAdminEmail(normalised) && !adminAccess.isAdminUsername(user.getUsername())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, AdminAccess.EMAIL_RESERVED);
         }
         userRepository.findByEmail(normalised)
                 .filter(other -> !other.getId().equals(user.getId()))
@@ -253,6 +263,8 @@ public class AccountService {
      * A username for someone who signs up with an email: the part before the @, tidied into
      * what usernames have always looked like, and numbered if it is taken. Nobody types it any
      * more, but it is still the account's name on the PIN screens and in the member list.
+     * The admin's username counts as taken even while nobody has it, so "ryan@anywhere" signing
+     * up becomes ryan2 rather than half of the admin's key.
      */
     public String usernameFromEmail(String email) {
         String local = normaliseEmail(email);
@@ -265,7 +277,7 @@ public class AccountService {
             base = base.substring(0, 44);
         }
         String candidate = base;
-        for (int n = 2; userRepository.existsByUsernameIgnoreCase(candidate); n++) {
+        for (int n = 2; userRepository.existsByUsernameIgnoreCase(candidate) || adminAccess.isAdminUsername(candidate); n++) {
             candidate = base + n;
         }
         return candidate;
@@ -293,6 +305,12 @@ public class AccountService {
         if (!vouchesFor(ownerId, userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "They're in another household too, so they change their password themselves, from Settings.");
+        }
+        // A reset link is a password sign-in handed to whoever holds it, and on the admin's
+        // account that opens every house on the server, not just this one.
+        if (adminAccess.isAdminUsername(member.getUser().getUsername())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "They change their password themselves, from Settings.");
         }
 
         Instant now = Instant.now();
@@ -361,7 +379,8 @@ public class AccountService {
         User user = reset.getUser();
         // Checked again now, not only when the link was made: if they have since left the
         // owner's house, or joined another, the owner no longer speaks for this account.
-        if (!reset.isLive(now) || !vouchesFor(reset.getCreatedBy(), user.getId())) {
+        if (!reset.isLive(now) || !vouchesFor(reset.getCreatedBy(), user.getId())
+                || adminAccess.isAdminUsername(user.getUsername())) {
             throw new ResponseStatusException(HttpStatus.GONE,
                     "This reset link has been used or has expired. Ask for a new one.");
         }
@@ -406,6 +425,6 @@ public class AccountService {
     private MeResponse toMe(User user) {
         return new MeResponse(user.getId(), user.getUsername(), user.getDisplayName(),
                 user.getPinHash() != null, user.getEmail(), user.getPasswordHash() != null,
-                lastHouseholdOf(user));
+                lastHouseholdOf(user), adminAccess.isAdmin(user));
     }
 }

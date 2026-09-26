@@ -74,6 +74,17 @@ export async function admin(): Promise<Session> {
   return adminSession;
 }
 
+let adminPasswordSession: Session | undefined;
+
+/**
+ * The same account signed in with its email and password: the only kind of session the admin
+ * pages open for. Its PIN session (`admin()`) is turned away from them like anybody else's.
+ */
+export async function adminByPassword(): Promise<Session> {
+  adminPasswordSession ??= await loginWithEmail(ADMIN_EMAIL, ADMIN_PASSWORD);
+  return adminPasswordSession;
+}
+
 let counter = 0;
 /** Unique enough to never collide across runs against the same database. */
 export const unique = (prefix: string) =>

@@ -65,3 +65,10 @@ app:
     # once Household settings shows an email for everyone: the roster stops being public and
     # the PIN endpoints answer 410. See DEPLOY.md.
     legacy-pin-login: ${LEGACY_PIN_LOGIN:true}
+  admin:
+    # Who can open the read-only admin pages (/admin): an account needs its email in the first
+    # list AND its username in the second. Comma-separated, any case. Empty means nobody. The
+    # addresses on the list are also kept for those usernames — nobody else can put one on
+    # their account. See DEPLOY.md.
+    emails: ${ADMIN_EMAILS:}
+    usernames: ${ADMIN_USERNAMES:}

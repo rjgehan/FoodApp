@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Wipes the LOCAL dev database and restarts the backend on the fresh schema, with the
-# integration API switched on so its tests can run. Only ever touches the docker-compose.dev.yml
-# Postgres on this machine — there is no way to point it anywhere else.
+# integration API switched on so its tests can run and the e2e account as the server's admin.
+# Only ever touches the docker-compose.dev.yml Postgres on this machine — there is no way to
+# point it anywhere else.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,6 +35,10 @@ mkdir -p "$ROOT/.dev"
   # Tests must never spend the real Gemini quota.
   export GEMINI_API_KEY=""
   export INTEGRATION_API_KEY="$KEY"
+  # The account every test builds on is the admin, so the admin pages can be tested — and
+  # whatever the local .env names instead is not. The second address is one nobody may claim.
+  export ADMIN_EMAILS="${E2E_EMAIL:-e2e-admin@example.com},e2e-reserved@example.com"
+  export ADMIN_USERNAMES="${E2E_USER:-e2e-admin}"
   nohup ./mvnw -q spring-boot:run >"$LOG" 2>&1 &
 )
 for _ in $(seq 1 120); do

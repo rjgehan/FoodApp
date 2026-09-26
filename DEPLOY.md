@@ -187,6 +187,55 @@ the house has — so they can only come back if somebody sends them the new one.
 open grocery list stops getting live updates straight away. Accounts that only ever had an email
 and password are left off the public name-and-PIN screens.
 
+## The admin pages
+
+`/admin` is a read-only view of the whole server for its owner: counts at the top, then every
+household (with its members and recipes), every account — including ones in no household — and a
+search across every recipe. Nothing on it changes anything. It is where to check that everybody
+has an email and a password before turning `LEGACY_PIN_LOGIN` off.
+
+Who gets in is set on the server, never in the code:
+
+```bash
+# .env — docker-compose.prod.yml passes both through
+ADMIN_EMAILS=rgehan27@gmail.com
+ADMIN_USERNAMES=ryan
+```
+
+then `docker compose up -d backend`. An account is an admin only when its email is in
+`ADMIN_EMAILS` **and** its username is in `ADMIN_USERNAMES` (both comma-separated, any case).
+Emails are typed in by whoever gets there first and never verified, so the address alone could
+be claimed by somebody else; the username is already yours and cannot be taken twice. Set
+`ADMIN_USERNAMES` to the username your account has now (Settings → You → Username).
+
+While those are set, an address in `ADMIN_EMAILS` can only be put on an account whose username
+is in `ADMIN_USERNAMES` — anyone else gets **409 "That email is reserved."** — and a username in
+`ADMIN_USERNAMES` cannot be taken by renaming, or handed out by a sign-up (it becomes `ryan2`).
+On a brand-new server, run first-time setup before setting them, or setup's address is refused.
+
+**The admin pages only open when you signed in with your email and password, not your PIN.**
+A four-digit PIN that the rest of the family may know is fine for your own house, not for every
+house on the server. So, once:
+
+1. Sign in the way you do now and add your email (the one in `ADMIN_EMAILS`) and a password when
+   the app asks, or from Settings → You.
+2. Sign out, and sign back in with that email and password.
+
+Signing in by PIN later still works for everything else; that session just gets no Admin row.
+Nobody can hand out a password-reset link for the admin's account either — change it yourself
+from Settings.
+
+For an admin signed in that way, Settings (your initial, top right) gains an **Admin** row. For
+anyone else the page sends them home and every `/api/admin/**` address answers **404**, as if it
+did not exist.
+The pages never show password or PIN hashes, sign-in tokens, or invite, reset or share-link
+tokens — only whether one exists.
+
+| Variable | Default | |
+|---|---|---|
+| `ADMIN_EMAILS` | *(empty — nobody)* | the admin's sign-in email(s) |
+| `ADMIN_USERNAMES` | *(empty — nobody)* | the admin's username(s) |
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

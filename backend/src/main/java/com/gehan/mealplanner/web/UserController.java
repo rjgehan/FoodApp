@@ -5,10 +5,12 @@ import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
+import com.gehan.mealplanner.security.JwtService;
 import com.gehan.mealplanner.service.AccountService;
 import com.gehan.mealplanner.service.HouseholdService;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -37,15 +39,15 @@ public class UserController {
 
     /** Includes your email and whether you have a password — what the "add an email" prompt checks. */
     @GetMapping("/me")
-    public MeResponse me(@AuthenticationPrincipal UUID userId) {
-        return accountService.me(userId);
+    public MeResponse me(@AuthenticationPrincipal UUID userId, Authentication auth) {
+        return accountService.me(userId).forSession(JwtService.signedInWithPassword(auth));
     }
 
     /** Add or change your email and password. See AccountService.updateCredentials for the rules. */
     @PutMapping("/me/credentials")
-    public MeResponse updateCredentials(@AuthenticationPrincipal UUID userId,
+    public MeResponse updateCredentials(@AuthenticationPrincipal UUID userId, Authentication auth,
                                         @Valid @RequestBody CredentialsRequest request) {
-        return accountService.updateCredentials(userId, request);
+        return accountService.updateCredentials(userId, request).forSession(JwtService.signedInWithPassword(auth));
     }
 
     /** The household you just switched to, remembered for your next sign-in on any device. */

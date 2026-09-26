@@ -36,6 +36,7 @@ public class HouseholdService {
     private final RecipeCategoryRepository categoryRepository;
     private final GroceryCategoryService groceryCategoryService;
     private final HouseholdInviteRepository inviteRepository;
+    private final AdminAccess adminAccess;
     private final JdbcTemplate jdbc;
 
     public HouseholdService(HouseholdRepository householdRepository,
@@ -44,6 +45,7 @@ public class HouseholdService {
                              RecipeCategoryRepository categoryRepository,
                              GroceryCategoryService groceryCategoryService,
                              HouseholdInviteRepository inviteRepository,
+                             AdminAccess adminAccess,
                              JdbcTemplate jdbc) {
         this.householdRepository = householdRepository;
         this.memberRepository = memberRepository;
@@ -51,6 +53,7 @@ public class HouseholdService {
         this.categoryRepository = categoryRepository;
         this.groceryCategoryService = groceryCategoryService;
         this.inviteRepository = inviteRepository;
+        this.adminAccess = adminAccess;
         this.jdbc = jdbc;
     }
 
@@ -296,7 +299,10 @@ public class HouseholdService {
 
         if (request.username() != null && !request.username().isBlank()) {
             String username = request.username().trim();
-            if (!username.equalsIgnoreCase(user.getUsername()) && userRepository.existsByUsernameIgnoreCase(username)) {
+            // The admin's username counts as taken even when nobody has it: it is half of what
+            // opens the admin pages (see AdminAccess), so it is not up for grabs by renaming.
+            if (!username.equalsIgnoreCase(user.getUsername())
+                    && (userRepository.existsByUsernameIgnoreCase(username) || adminAccess.isAdminUsername(username))) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already uses that name.");
             }
             user.setUsername(username);

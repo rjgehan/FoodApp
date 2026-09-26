@@ -234,6 +234,17 @@ public class RecipeService {
     }
 
     /**
+     * The recipe as its own household sees it, filing and all, with no membership check — for
+     * the admin pages only, which have already checked that the reader is the admin.
+     */
+    @Transactional(readOnly = true)
+    public RecipeResponse asItsHouseholdSeesIt(Recipe recipe) {
+        UUID ownerId = recipe.getHousehold().getId();
+        return toResponse(recipe, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipe.getId()).orElse(null),
+                ownerId);
+    }
+
+    /**
      * Moves a recipe into this household's catalog. The recipe itself is untouched, so filing
      * something another household shared with you neither needs nor grants edit rights over it.
      */
