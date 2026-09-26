@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { api, onHouseholdForbidden } from '../api/client';
 import type { GroceryCategory, Household } from '../api/types';
-import { useAuth } from '../auth/AuthContext';
+import { START_CUPBOARD_KEY, useAuth } from '../auth/AuthContext';
 import { useOnResume } from '../utils/useOnResume';
 
 interface HouseholdSettings {
@@ -42,6 +42,29 @@ interface HouseholdContextValue {
    */
   lostHousehold: string | null;
   dismissLostHousehold: () => void;
+  /**
+   * A household made a moment ago, whose empty cupboard is to be offered the starter list —
+   * until it has been filled or skipped. Null otherwise.
+   */
+  starterCupboardFor: string | null;
+  dismissStarterCupboard: () => void;
+}
+
+function readStarterCupboard(): string | null {
+  try {
+    return sessionStorage.getItem(START_CUPBOARD_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStarterCupboard(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(START_CUPBOARD_KEY, id);
+    else sessionStorage.removeItem(START_CUPBOARD_KEY);
+  } catch {
+    // Storage blocked: the offer lasts as long as the page, which is most of the point anyway.
+  }
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
@@ -55,6 +78,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [groceryCategories, setGroceryCategories] = useState<GroceryCategory[]>([]);
   const [lostHousehold, setLostHousehold] = useState<string | null>(null);
+  const [starterCupboardFor, setStarterCupboardFor] = useState<string | null>(readStarterCupboard);
   const householdsRef = useRef(households);
   householdsRef.current = households;
 
@@ -102,6 +126,12 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => reload(false), [reload]);
   const dismissLostHousehold = useCallback(() => setLostHousehold(null), []);
+
+  const offerStarterCupboard = useCallback((id: string | null) => {
+    writeStarterCupboard(id);
+    setStarterCupboardFor(id);
+  }, []);
+  const dismissStarterCupboard = useCallback(() => offerStarterCupboard(null), [offerStarterCupboard]);
 
   useEffect(() => {
     if (session) refresh();
@@ -154,8 +184,10 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const household = await api<Household>('POST', '/api/households', { name });
       await refresh();
       setActiveHouseholdId(household.id);
+      // A new house has an empty cupboard, and most of what goes in it is the same everywhere.
+      offerStarterCupboard(household.id);
     },
-    [refresh, setActiveHouseholdId],
+    [refresh, setActiveHouseholdId, offerStarterCupboard],
   );
 
   const renameHousehold = useCallback(
@@ -233,6 +265,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       deleteGroceryCategory,
       lostHousehold,
       dismissLostHousehold,
+      starterCupboardFor,
+      dismissStarterCupboard,
     }),
     [
       households,
@@ -252,6 +286,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       deleteGroceryCategory,
       lostHousehold,
       dismissLostHousehold,
+      starterCupboardFor,
+      dismissStarterCupboard,
     ],
   );
 

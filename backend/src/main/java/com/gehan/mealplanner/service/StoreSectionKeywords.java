@@ -43,7 +43,7 @@ final class StoreSectionKeywords {
     static {
         phrases(FROZEN, "ice cream", "frozen yogurt", "ice pop", "tater tot", "french fry", "fish stick");
         phrases(DRY_GOODS, "peanut butter", "almond butter", "bread crumb", "coconut milk", "rolled oat",
-                "cream of mushroom", "cream of chicken");
+                "cream of mushroom", "cream of chicken", "cooking spray");
         phrases(BAKING, "baking soda", "baking powder", "chocolate chip", "sweetened condensed milk", "evaporated milk",
                 "pie filling", "brown sugar", "powdered sugar", "cocoa powder", "cake mix", "brownie mix", "pie crust",
                 "food coloring", "graham cracker", "baking chocolate");
@@ -175,6 +175,10 @@ final class StoreSectionKeywords {
 
     /** Good enough English plurals for grocery words: berries, tomatoes, peaches, eggs. */
     private static String singular(String word) {
+        // Bay leaves, loaves of bread: the -ves plurals are few enough to name.
+        if (word.equals("leaves") || word.equals("loaves")) {
+            return word.substring(0, word.length() - 3) + "f";
+        }
         if (word.length() > 4 && word.endsWith("ies")) {
             return word.substring(0, word.length() - 3) + "y";
         }

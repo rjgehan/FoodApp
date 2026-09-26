@@ -16,6 +16,10 @@ struct CupboardView: View {
     @State private var switchingHousehold = false
     @State private var showingAccount = false
     @State private var scanning = false
+    @State private var startingWithBasics = false
+    @State private var copying = false
+    /// What filling the cupboard in one go just did, said for a moment.
+    @State private var notice: String?
 
     private var shown: [CupboardItem] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -49,6 +53,19 @@ struct CupboardView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .listRowBackground(Color.clear)
+                }
+                // A new house's cupboard is the one that is empty, and ticking a list beats typing it.
+                if items.isEmpty {
+                    Section {
+                        Button("Start with the basics", systemImage: "checklist") { startingWithBasics = true }
+                    }
+                }
+                if let notice {
+                    Section {
+                        Label(notice, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Palette.success)
+                            .font(.subheadline)
+                    }
                 }
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
@@ -84,6 +101,32 @@ struct CupboardView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Scan a barcode", systemImage: "barcode.viewfinder") { scanning = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("Cupboard options", systemImage: "ellipsis.circle") {
+                        Button("Start with the basics…", systemImage: "checklist") { startingWithBasics = true }
+                        // Only for somebody with a second house to fill, which is almost nobody —
+                        // so it is not even offered otherwise.
+                        if session.households.count > 1 {
+                            Button("Copy from another household…", systemImage: "square.on.square") { copying = true }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $startingWithBasics) {
+                if let household = session.household?.id {
+                    StartCupboardSheet(household: household) { added in
+                        announce(added == 0 ? "All of those were here already." : "Added \(added) to the cupboard.")
+                        await load()
+                    }
+                }
+            }
+            .sheet(isPresented: $copying) {
+                CopyCupboardSheet(session: session, items: items) { result in
+                    let copied = "Copied \(result.copied) \(result.copied == 1 ? "item" : "items")"
+                    announce(result.skipped == 0 ? copied + "."
+                        : copied + "; \(result.skipped) \(result.skipped == 1 ? "was" : "were") already here.")
+                    await load()
                 }
             }
             .sheet(isPresented: $scanning) {
@@ -192,6 +235,14 @@ struct CupboardView: View {
         } catch {
             self.error = error.localizedDescription
             await load()
+        }
+    }
+
+    private func announce(_ message: String) {
+        withAnimation { notice = message }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation { if notice == message { notice = nil } }
         }
     }
 

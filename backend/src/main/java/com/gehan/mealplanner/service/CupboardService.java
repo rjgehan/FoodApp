@@ -7,7 +7,11 @@ import com.gehan.mealplanner.domain.GroceryListItem;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.AddStartersResponse;
+import com.gehan.mealplanner.dto.CupboardDtos.CopyCupboardResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
+import com.gehan.mealplanner.dto.CupboardDtos.StarterGroup;
+import com.gehan.mealplanner.dto.CupboardDtos.StarterItem;
 import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
 import com.gehan.mealplanner.repository.BlacklistedIngredientRepository;
 import com.gehan.mealplanner.repository.CupboardItemRepository;
@@ -20,10 +24,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -173,6 +179,110 @@ public class CupboardService {
         CupboardItem item = findItem(householdId, itemId);
         groceryListService.ensureOnList(householdId, item.getIngredient().getId(), requesterId);
         cupboardRepository.delete(item);
+    }
+
+    /** The starter list, each thing marked if this cupboard already has it. */
+    @Transactional(readOnly = true)
+    public List<StarterGroup> starters(UUID householdId, UUID requesterId) {
+        householdService.assertMember(householdId, requesterId);
+        Set<String> here = namesHere(householdId);
+        return StarterCupboard.GROUPS.stream()
+                .map(g -> new StarterGroup(g.name(), g.items().stream()
+                        .map(name -> new StarterItem(name, here.contains(IngredientService.normalize(name))))
+                        .toList()))
+                .toList();
+    }
+
+    /**
+     * Many things at once, ticked on the starter list — one request, so a new house is filled
+     * in a moment rather than a name at a time. Anything already here is left exactly as it is:
+     * ticking "rice" says you have some, not that the rice you marked low is fine again.
+     * Otherwise each goes in the way one typed into the cupboard does, and lands in the same
+     * aisle.
+     */
+    @Transactional
+    public AddStartersResponse addStarters(UUID householdId, UUID requesterId, List<String> names) {
+        Household household = requireMember(householdId, requesterId);
+        Set<String> here = namesHere(householdId);
+        int added = 0;
+        int skipped = 0;
+        for (String name : names) {
+            String normalized = IngredientService.normalize(name);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            // Also true of a name sent twice: the second finds the first.
+            if (!here.add(normalized)) {
+                skipped++;
+                continue;
+            }
+            Ingredient ingredient = ingredientService.findOrCreate(name, null);
+            cupboardRepository.save(CupboardItem.builder().household(household).ingredient(ingredient).build());
+            added++;
+        }
+        return new AddStartersResponse(added, skipped);
+    }
+
+    /**
+     * Everything in another of your households' cupboards, copied into this one — for somebody
+     * with two houses setting up the second, once. Only what this cupboard does not have yet
+     * comes across, with its amount, whether it is low and whether it is always had; what is
+     * here already is left alone. The aisle comes too, when the other house moved it into an
+     * aisle this one also has by that name; otherwise it goes wherever this house would put it.
+     *
+     * You have to be in both. Only this household is locked: the other is only read.
+     */
+    @Transactional
+    public CopyCupboardResponse copyFrom(UUID householdId, UUID sourceHouseholdId, UUID requesterId) {
+        if (householdId.equals(sourceHouseholdId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That's this household's own cupboard.");
+        }
+        householdService.assertMember(sourceHouseholdId, requesterId);
+        Household household = requireMember(householdId, requesterId);
+
+        Set<UUID> here = cupboardRepository.findByHouseholdId(householdId).stream()
+                .map(c -> c.getIngredient().getId())
+                .collect(Collectors.toCollection(HashSet::new));
+        Map<UUID, GroceryCategory> theirAisles = ingredientSections.overrides(sourceHouseholdId);
+        Map<UUID, GroceryCategory> ourAisles = ingredientSections.overrides(householdId);
+        List<GroceryCategory> ourCategories = ingredientSections.categories(householdId);
+        Map<String, GroceryCategory> ourCategoriesByName = ourCategories.stream()
+                .collect(Collectors.toMap(c -> c.getName().trim().toLowerCase(), Function.identity(), (a, b) -> a));
+
+        int copied = 0;
+        int skipped = 0;
+        for (CupboardItem theirs : cupboardRepository.findByHouseholdId(sourceHouseholdId)) {
+            Ingredient ingredient = theirs.getIngredient();
+            if (!here.add(ingredient.getId())) {
+                skipped++;
+                continue;
+            }
+            cupboardRepository.save(CupboardItem.builder()
+                    .household(household)
+                    .ingredient(ingredient)
+                    .staple(theirs.isStaple())
+                    .runningLow(theirs.isRunningLow())
+                    .quantity(theirs.getQuantity())
+                    .unit(theirs.getUnit())
+                    .build());
+            copied++;
+
+            GroceryCategory theirAisle = theirAisles.get(ingredient.getId());
+            GroceryCategory sameAisle = theirAisle == null ? null
+                    : ourCategoriesByName.get(theirAisle.getName().trim().toLowerCase());
+            if (sameAisle != null && !ourAisles.containsKey(ingredient.getId())
+                    && IngredientSections.resolve(ingredient, ourAisles, ourCategories) != sameAisle) {
+                ingredientSections.move(household, ingredient, sameAisle);
+            }
+        }
+        return new CopyCupboardResponse(copied, skipped);
+    }
+
+    /** What is in this cupboard, by the spelling ingredients are matched on. */
+    private Set<String> namesHere(UUID householdId) {
+        return cupboardRepository.findByHouseholdId(householdId).stream()
+                .map(c -> c.getIngredient().getNormalizedName())
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     /**

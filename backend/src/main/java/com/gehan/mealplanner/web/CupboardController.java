@@ -1,8 +1,12 @@
 package com.gehan.mealplanner.web;
 
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.AddStartersRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.AddStartersResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.AdjustQuantityRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.CopyCupboardResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
+import com.gehan.mealplanner.dto.CupboardDtos.StarterGroup;
 import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
 import com.gehan.mealplanner.service.CupboardService;
 import jakarta.validation.Valid;
@@ -34,6 +38,28 @@ public class CupboardController {
                                                      @PathVariable UUID householdId,
                                                      @Valid @RequestBody AddCupboardItemRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(cupboardService.add(householdId, userId, request));
+    }
+
+    /** The common things a kitchen starts with, grouped, each marked if it is here already. */
+    @GetMapping("/starters")
+    public List<StarterGroup> starters(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
+        return cupboardService.starters(householdId, userId);
+    }
+
+    /** The ones ticked, all in one go. Anything already in the cupboard is left alone. */
+    @PostMapping("/starters")
+    public AddStartersResponse addStarters(@AuthenticationPrincipal UUID userId,
+                                           @PathVariable UUID householdId,
+                                           @Valid @RequestBody AddStartersRequest request) {
+        return cupboardService.addStarters(householdId, userId, request.names());
+    }
+
+    /** A one-time copy of another of your households' cupboards into this one. */
+    @PostMapping("/copy-from/{sourceHouseholdId}")
+    public CopyCupboardResponse copyFrom(@AuthenticationPrincipal UUID userId,
+                                         @PathVariable UUID householdId,
+                                         @PathVariable UUID sourceHouseholdId) {
+        return cupboardService.copyFrom(householdId, sourceHouseholdId, userId);
     }
 
     @PatchMapping("/{itemId}")

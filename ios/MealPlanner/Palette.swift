@@ -34,6 +34,14 @@ enum Palette {
     /// at low opacity.
     static let accentSoft = dynamic(light: 0xFFEDD5, dark: 0x402008)
 
+    /// Text on the accent — the web's --accent-ink. White on the light orange, near-black on
+    /// the brighter orange dark mode uses, where white would barely read.
+    static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
+
+    /// "You have this" at a whisper — the web's --success-soft, behind something already in
+    /// the cupboard.
+    static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
+
     /**
      Recipe tints, in the web's order so the same recipe is the same colour in both places.
 
