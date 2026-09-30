@@ -28,3 +28,4 @@ xcuserdata/
 *.xcscmblueprint
 DerivedData/
 ios/.build-device/
+ios/.build-release/

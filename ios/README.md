@@ -23,6 +23,19 @@ cd ios
 
 Or open `MealPlanner.xcodeproj` in Xcode and press ⌘R.
 
+## TestFlight
+
+```bash
+cd ios && ./release.sh        # archive a Release build and upload it to App Store Connect
+```
+
+The app is "Gehan Meal Planner" in App Store Connect (bundle id cloud.gehan.mealplanner, team
+5TCCXKJ243). The build number is the commit count, so every upload is higher than the last.
+The internal group "Family" has automatic distribution on: a build reaches everyone in it a few
+minutes after upload, once Apple has processed it — no review for internal testers. To add
+someone: App Store Connect → Users and Access → + (they accept the email invite), then
+TestFlight → Family → Testers → +. Each build works for 90 days; any newer upload replaces it.
+
 ## Updating everybody's phone
 
 ```bash
