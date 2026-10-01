@@ -170,6 +170,9 @@ struct AislesScreen: View {
                         GripDots()
                     }
                     .frame(minHeight: 30)
+                    // The mockup's hairlines run the width of the card, past the numbers.
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in -16 }
+                    .alignmentGuide(.listRowSeparatorTrailing) { d in d.width + 16 }
                     .contentShape(Rectangle())
                     .onTapGesture {
                         renameTo = aisle.name
