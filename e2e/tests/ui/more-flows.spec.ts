@@ -375,18 +375,33 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
   await expect(page).toHaveURL(/\/explore$/);
   await page.getByText('Global recipes').first().click();
   await expect(page).toHaveURL(/\/explore\/recipes$/);
-  await expect(page.getByText(name)).toBeVisible();
-  await expect(page.getByText(`from ${mine.name}`).first()).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search published recipes' }).fill(name);
+  const card = page.getByRole('listitem').filter({ hasText: name });
+  await expect(card).toBeVisible();
+  // Each card says which household published it.
+  await expect(card.getByText(mine.name)).toBeVisible();
 
-  // Keep it: it lands in their own catalog.
-  await page.getByText(name).click();
-  await expect(page.getByText(`Shared by ${mine.name}`).first()).toBeVisible();
+  // Open it: read-only, with where it is from and one thing to do.
+  await card.getByRole('link').click();
+  await expect(page).toHaveURL(new RegExp(`/explore/recipes/${r.id}$`));
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  await expect(page.getByText(`From ${mine.name}`)).toBeVisible();
+  await expect(page.getByText('beans')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to plan' })).toHaveCount(0);
+
+  // Keep it: it lands in their own catalog. The admin is in many households, so it asks which,
+  // with the one on screen ticked to begin with.
   await page.getByRole('button', { name: 'Move into my recipes' }).click();
-  await sheet(page).getByRole('button', { name: 'Move into my recipes' }).click();
+  await expect(sheet(page).getByRole('radio', { name: theirs.name, exact: true })).toHaveAttribute('aria-checked', 'true');
+  await sheet(page).getByRole('button', { name: `Move into ${theirs.name}` }).click();
   await expect(page.getByText('Moved into your recipes')).toBeVisible();
   await expect.poll(async () =>
     (await call('GET', `/api/households/${theirs.id}/recipes`, { token: theirs.owner.token }))
       .some((x: any) => x.id === r.id)).toBe(true);
+  // Kept now: the one button opens it where it lives.
+  await expect(page.getByText('In your Dinner drawer')).toBeVisible();
+  await page.getByRole('button', { name: 'Open in my recipes' }).click();
+  await expect(page).toHaveURL(new RegExp(`/recipes/${r.id}$`));
 });
 
 test('the list copies as plain lines, ready for a Notes checklist', async ({ page, context }) => {

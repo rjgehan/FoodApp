@@ -412,6 +412,27 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'Recipe icon picker');
   });
 
+  // Global recipes is the whole server's: one more house publishes a recipe for it to show.
+  group = 'Explore';
+  const uni = await newHousehold('Uni Flat');
+  const ramen = await newRecipe(uni.id, 'Weeknight Ramen', [
+    { name: 'ramen noodles', qty: 2, unit: 'packs' }, { name: 'miso paste', qty: 1, unit: 'tbsp' },
+    { name: 'soft boiled eggs', qty: 2 }, { name: 'spring onions', qty: 2, optional: true },
+  ], { servings: 2, prepTimeMinutes: 10, cookTimeMinutes: 15, instructions: 'Boil the eggs.\nWhisk the miso into hot stock.\nCook the noodles in it.' });
+  await call('PUT', `/api/recipes/${ramen.id}/published`, { token: T, body: { published: true } });
+  await step('explore', async () => {
+    await page.goto('/explore');
+    await shot(page, 'Explore', 'Three doors: Global recipes, and Nutrition facts and Meal plans, still being built.');
+    await page.goto('/explore/recipes');
+    await shot(page, 'Global recipes', 'What every household here has published. The + moves one into your recipes.');
+    await page.goto(`/explore/recipes/${ramen.id}`);
+    await shot(page, 'A published recipe', 'Read-only, with one thing to do.');
+    await page.getByRole('button', { name: 'Move into my recipes' }).click();
+    await shot(page, 'Move into my recipes', 'Asks which household when you are in more than one.');
+    await page.goto('/explore/nutrition');
+    await shot(page, 'Nutrition facts (coming soon)');
+  });
+
   // The board is the whole server's, so this only looks: nothing is posted to it.
   group = 'Ideas';
   await step('ideas', async () => {
@@ -424,7 +445,7 @@ test('capture every screen', async ({ page }) => {
   // --- Dark mode pass on the main tabs --------------------------------------------------------
   group = 'Dark mode';
   await page.emulateMedia({ colorScheme: 'dark' });
-  for (const [path, title] of [['/meal-plan', 'Plan'], ['/recipes', 'Recipes'], [`/recipes/${parm.id}`, 'Recipe'], ['/grocery-list', 'Groceries'], ['/cupboard', 'Cupboard'], ['/household', 'Household'], ['/ideas', 'Ideas']]) {
+  for (const [path, title] of [['/meal-plan', 'Plan'], ['/recipes', 'Recipes'], [`/recipes/${parm.id}`, 'Recipe'], ['/grocery-list', 'Groceries'], ['/cupboard', 'Cupboard'], ['/household', 'Household'], ['/explore', 'Explore'], ['/ideas', 'Ideas']]) {
     await step(title, async () => {
       await page.goto(path);
       await shot(page, `${title} (dark)`);

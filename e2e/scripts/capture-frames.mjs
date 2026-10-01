@@ -103,7 +103,7 @@ for (const n of [1, 2, 3]) {
 
 // Cook and put away.
 await go('/cupboard', '10-cupboard');
-await go('/recipes/explore', '11-explore');
+await go('/explore/recipes', '11-explore');
 
 // Scrolled into the method, where a recipe earns its keep.
 await page.goto(`/recipes/${hero.id}`);
