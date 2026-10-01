@@ -97,7 +97,7 @@ class ThemeDatabaseTest {
     }
 
     @Test
-    void oldPairsSavedBeforeTheThemesAreMovedOnceAndCountedMeanwhile() {
+    void oldPairsAreReadAsTheThemeTheyBecameAndNeverRewritten() {
         // Rows as an older server left them, written straight to the table.
         User basil = account("theme-basil");
         User graphite = account("theme-graphite");
@@ -105,6 +105,7 @@ class ThemeDatabaseTest {
         User custom = account("theme-own");
         User nobody = account("theme-none");
         userRepository.flush();
+        ThemeUsage before = adminService.themes();
         jdbc.update("UPDATE users SET theme_preset = 'basil', theme_mode = 'DARK' WHERE id = ?", basil.getId());
         jdbc.update("UPDATE users SET theme_preset = 'graphite' WHERE id = ?", graphite.getId());
         jdbc.update("UPDATE users SET theme_preset = 'mocha' WHERE id = ?", mocha.getId());
@@ -113,29 +114,35 @@ class ThemeDatabaseTest {
         // What JPA already holds would hide the rows as they now are.
         entityManager.clear();
 
-        // Before the move, /me and the admin already speak in today's keys.
-        assertThat(accountService.me(basil.getId()).theme().preset()).isEqualTo("matcha");
-        ThemeUsage counted = adminService.themes();
-        assertThat(counted.presets()).extracting(PresetCount::key)
+        // /me and the admin speak in today's keys.
+        assertThat(accountService.me(basil.getId()).theme())
+                .isEqualTo(new ThemeResponse("matcha", null, null, ThemeMode.DARK));
+        assertThat(accountService.me(graphite.getId()).theme().preset()).isEqualTo("nordic");
+        assertThat(accountService.me(mocha.getId()).theme().preset()).isEqualTo("tomato");
+        assertThat(accountService.me(custom.getId()).theme())
+                .isEqualTo(new ThemeResponse("custom", "#0F766E", "#F97316", null));
+        ThemeUsage after = adminService.themes();
+        assertThat(after.presets()).extracting(PresetCount::key)
                 .containsExactly("tomato", "matcha", "blueberry", "brunch", "nordic", "custom");
+        assertThat(count(after, "matcha") - count(before, "matcha")).isEqualTo(1);
+        assertThat(count(after, "nordic") - count(before, "nordic")).isEqualTo(1);
 
-        assertThat(themeSettings.migrateStoredPresets(jdbc)).isGreaterThanOrEqualTo(3);
-        assertThat(stored(basil)).isEqualTo("matcha");
-        assertThat(stored(graphite)).isEqualTo("nordic");
-        assertThat(stored(mocha)).isEqualTo("tomato");
+        // Reading changed nothing that is stored, so the app from before the themes still works.
+        assertThat(stored(basil)).isEqualTo("basil");
+        assertThat(stored(graphite)).isEqualTo("graphite");
+        assertThat(stored(mocha)).isEqualTo("mocha");
         assertThat(stored(custom)).isEqualTo("custom");
         assertThat(stored(nobody)).isNull();
-        assertThat(jdbc.queryForObject("SELECT theme_mode FROM users WHERE id = ?", String.class, basil.getId()))
-                .isEqualTo("DARK");
-        assertThat(jdbc.queryForObject("SELECT theme_primary FROM users WHERE id = ?", String.class, custom.getId()))
-                .isEqualTo("#0F766E");
 
-        // A second run has nothing left to move, and the counts do not change.
-        assertThat(themeSettings.migrateStoredPresets(jdbc)).isZero();
-        ThemeUsage after = adminService.themes();
-        for (String key : ThemeSettings.PRESETS) {
-            assertThat(count(after, key)).as(key).isEqualTo(count(counted, key));
-        }
+        // An old app saving an old key keeps it as sent, and is answered in today's key.
+        assertThat(themeSettings.update(nobody.getId(), new ThemeRequest("ocean", null, null, null)).preset())
+                .isEqualTo("blueberry");
+        userRepository.flush();
+        assertThat(stored(nobody)).isEqualTo("ocean");
+        // Picking one of today's themes is what stores a new key.
+        themeSettings.update(basil.getId(), new ThemeRequest("brunch", null, null, "DARK"));
+        userRepository.flush();
+        assertThat(stored(basil)).isEqualTo("brunch");
     }
 
     private String stored(User user) {

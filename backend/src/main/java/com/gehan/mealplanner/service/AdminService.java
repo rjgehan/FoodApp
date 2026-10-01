@@ -253,7 +253,7 @@ public class AdminService {
             if (preset == null && row[1] == null && row[2] == null && mode == null) {
                 untouched += count;
             }
-            // An old key not moved over yet counts as the theme it became. A key this server does
+            // An old pair's key counts as the theme it became. A key this server does
             // not know (a newer app's, say) is still what they see as far as anyone here can
             // tell, which is the default.
             boolean custom = ThemeSettings.CUSTOM.equals(preset) && row[1] != null && row[2] != null;

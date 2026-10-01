@@ -58,17 +58,22 @@ class ThemeSettingsTest {
     }
 
     @Test
-    void anOldPairIsAcceptedAndStoredAsTheThemeItBecame() {
-        // What old iPhone builds still send.
-        assertThat(check("classic", null, null, null).preset()).isEqualTo("tomato");
-        assertThat(check("mocha", null, null, null).preset()).isEqualTo("tomato");
-        assertThat(check("basil", null, null, null).preset()).isEqualTo("matcha");
-        assertThat(check("lagoon", null, null, null).preset()).isEqualTo("matcha");
-        assertThat(check("ocean", null, null, null).preset()).isEqualTo("blueberry");
-        assertThat(check("blueberry", null, null, null).preset()).isEqualTo("blueberry");
+    void anOldPairIsAcceptedAsSentAndReadAsTheThemeItBecame() {
+        // What old iPhone builds still send. It is stored as sent, so a server from before the
+        // five themes still reads it, and answered as the theme it became.
+        assertThat(check("classic", null, null, null).preset()).isEqualTo("classic");
         assertThat(check("Plum", null, null, "LIGHT"))
-                .isEqualTo(new ThemeResponse("blueberry", null, null, ThemeMode.LIGHT));
-        assertThat(check("graphite", null, null, null).preset()).isEqualTo("nordic");
+                .isEqualTo(new ThemeResponse("plum", null, null, ThemeMode.LIGHT));
+        assertThat(ThemeSettings.current("classic")).isEqualTo("tomato");
+        assertThat(ThemeSettings.current("mocha")).isEqualTo("tomato");
+        assertThat(ThemeSettings.current("basil")).isEqualTo("matcha");
+        assertThat(ThemeSettings.current("lagoon")).isEqualTo("matcha");
+        assertThat(ThemeSettings.current("ocean")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("blueberry")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("plum")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("graphite")).isEqualTo("nordic");
+        assertThat(ThemeSettings.current("custom")).isEqualTo("custom");
+        assertThat(ThemeSettings.current(null)).isNull();
         // Every old key lands on one of today's.
         assertThat(ThemeSettings.PRESETS).containsAll(ThemeSettings.LEGACY_PRESETS.values());
     }

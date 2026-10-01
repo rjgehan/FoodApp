@@ -6,12 +6,10 @@ import com.gehan.mealplanner.dto.HouseholdDtos.ThemeRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.ThemeResponse;
 import com.gehan.mealplanner.repository.UserRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,9 +37,10 @@ public class ThemeSettings {
     public static final String DEFAULT_PRESET = "tomato";
 
     /**
-     * The eight colour pairs that came before the five themes, and the theme each became. Old
-     * iPhone builds still send these, so they are accepted and stored as the new key; rows saved
-     * before the change are moved over once, on start (see {@link #migrateStoredPresets}).
+     * The eight colour pairs that came before the five themes, and the theme each became. Rows
+     * saved before the change still hold them and old iPhone builds still send them, so they are
+     * accepted and stored as sent, and read back as the theme they became (see {@link #current}).
+     * Stored rows are never rewritten: a server without the five themes still reads them.
      */
     public static final Map<String, String> LEGACY_PRESETS = Map.of(
             "classic", "tomato",
@@ -77,28 +76,9 @@ public class ThemeSettings {
     }
 
     /**
-     * Rows saved before the five themes still name one of the old pairs: move each to the theme it
-     * became. Runs on every start and only touches rows with an old key, so a second run finds
-     * nothing to do. Returns how many rows it moved.
-     */
-    @Transactional
-    public int migrateStoredPresets(JdbcTemplate jdbc) {
-        StringBuilder cases = new StringBuilder();
-        List<Object> args = new ArrayList<>();
-        LEGACY_PRESETS.forEach((old, now) -> {
-            cases.append(" WHEN ? THEN ?");
-            args.add(old);
-            args.add(now);
-        });
-        args.addAll(LEGACY_PRESETS.keySet());
-        String in = String.join(",", LEGACY_PRESETS.keySet().stream().map(k -> "?").toList());
-        return jdbc.update("UPDATE users SET theme_preset = CASE theme_preset" + cases + " END"
-                + " WHERE theme_preset IN (" + in + ")", args.toArray());
-    }
-
-    /**
-     * The request tidied into what is stored: a known preset key (an old one turned into the
-     * theme it became), colours as uppercase #RRGGBB, and a mode — or null for any of them.
+     * The request tidied into what is stored: a known preset key (an old one is kept as sent and
+     * read back as the theme it became), colours as uppercase #RRGGBB, and a mode — or null for
+     * any of them.
      *
      * Custom needs its main colour, since there is nothing else to draw it with. The second
      * colour is left over from when custom was a pair: today's apps pick one, so a missing second
@@ -108,8 +88,9 @@ public class ThemeSettings {
     public static ThemeResponse checked(ThemeRequest request) {
         String preset = blankToNull(request.preset());
         if (preset != null) {
-            preset = current(preset.toLowerCase(Locale.ROOT));
-            if (!preset.equals(CUSTOM) && !PRESETS.contains(preset)) {
+            preset = preset.toLowerCase(Locale.ROOT);
+            String now = current(preset);
+            if (!now.equals(CUSTOM) && !PRESETS.contains(now)) {
                 throw badRequest("There's no theme called \"" + request.preset().trim() + "\".");
             }
         }

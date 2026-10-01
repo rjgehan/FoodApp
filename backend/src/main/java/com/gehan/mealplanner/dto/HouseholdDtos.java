@@ -105,8 +105,8 @@ public class HouseholdDtos {
      * Your colours. `preset` is a key from ThemeSettings.PRESETS or "custom"; `primary` and
      * `secondary` are the custom colour as #RRGGBB (the second one is only for old apps, which
      * drew custom as a pair); `mode` is SYSTEM, LIGHT or DARK. Null throughout is the default:
-     * Tomato, following the system. A row still holding an old key, in the moment before the
-     * start-up move reaches it, is answered with the key it became.
+     * Tomato, following the system. A row still holding one of the old pairs' keys is answered
+     * with the theme it became.
      */
     public record ThemeResponse(String preset, String primary, String secondary, ThemeMode mode) {
         public static ThemeResponse of(User user) {
