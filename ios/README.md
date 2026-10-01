@@ -138,6 +138,14 @@ had just been scanned. A debug launch
 never shows the "add an email and password" prompt on top of a `-mp_debug_screen`, except
 `-mp_debug_screen credentials`, which shows just the prompt.
 
+The welcome screens: `-mp_debug_first_run 1` is a phone that has never opened the app (the
+first-run tutorial; `-mp_debug_tutorial_step 2` opens it on "Light or dark?"), and
+`-mp_tutorialSeen 1` one that has. `-mp_debug_link "mealplanner://invite/<token>"` (or
+`…/reset/<token>`) launches as though opened with that link. Signed out, `-mp_debug_screen setup`
+shows first-time setup and `-mp_debug_locked 292` the locked sign-in with that many seconds left.
+Signed in, `-mp_debug_screen public -mp_debug_share_token <token>` opens a recipe's public link
+as though it had been shared into the app.
+
 Both hooks are inside `#if DEBUG`, so a release build has neither.
 
 ## Signing in
@@ -165,9 +173,28 @@ list and moves to another house, or back to the sign-in screen saying why.
 The Scan screen (sign-in → "Have an invite? Scan it", or Household → Join a household) is the
 camera looking for QR codes only, with the torch, a paste-a-link fallback, a plain message for a
 code that is not ours, and an Open Settings button when camera access was refused. It opens
-`/invite/<token>` natively — join if signed in, or make an account; "I already have an account"
-goes back to sign-in and joins on the way in, by email or PIN — and `/reset/<token>` as a native
-set-a-new-password form.
+`/invite/<token>` natively — join if signed in (or, already in it, open it), or make an account;
+"I have an account" signs in right there and joins on the way in, or by PIN from the sign-in
+screen — and `/reset/<token>` as a native set-a-new-password form. A dead link and a server that
+cannot be reached say different things. `mealplanner://invite/<token>` and
+`mealplanner://reset/<token>` open the same screens from outside the app.
+
+## The first-run tutorial
+
+A phone that has never opened the app gets two slides (a phone-framed picture of the app, a
+title, a line), then "Light or dark?" with Match my phone, then the sign-in screen. Somebody who
+opens the app with an invite link sees the invite first, and the tutorial once they have joined.
+Never twice (UserDefaults `mp_tutorialSeen`), and never for somebody already signed in when the
+update arrives. The light or dark answer stays with the phone across sign-outs, and goes on the
+first account signed in afterwards if it has none of its own. The pictures are placeholders in the
+asset catalog, `TutorialPlanPlaceholder` and `TutorialGroceriesPlaceholder` (light and dark): swap
+in real screenshots of the redesigned app under the same names.
+
+## A recipe's public link, shared into the app
+
+A `/r/<token>` link shared in from Safari or Messages opens as the recipe's own page (the
+picture, quick facts, links, ingredients with a servings stepper, the method) with Save to my
+recipes along the bottom; in more than one household it asks which first ("Save a copy to…").
 
 Universal links (tapping an invite link in Messages and landing in the app) need an Associated
 Domains entitlement, which a free personal team cannot sign. Until the paid account arrives, a
@@ -179,7 +206,8 @@ A recipe's ⋯ Share (owner's household only) mirrors the web sheet: the public 
 (`<server>/r/<token>`: create, copy, share, QR, turn off after a confirmation), switches for your
 other households, and an In Explore switch. A `/r/<token>` link coming the other way, shared into
 the app from Safari or Messages or pasted into New recipe → From a link, is not sent to the
-importer (it would find the web app's empty page): it is saved as a copy into the open household
+importer (it would find the web app's empty page). Shared in, it opens as the recipe's own page
+(see above); pasted into From a link, it is saved as a copy into the open household. Both save
 through `POST /api/public/recipes/{token}/save`, the same call as the web page's "Save to my
 recipes". Tapping such a link outside the app opens the web page, which does the same.
 

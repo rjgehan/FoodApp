@@ -13,10 +13,24 @@ struct MealPlannerApp: App {
     @State private var sharedDiagnostic: String?
     /// The page the shared text came from, kept as the saved recipe's link.
     @State private var sharedLink: String?
+    /// An invite or reset link the app was opened with (mealplanner://invite/<token>).
+    @State private var openedLink: AppLink? = {
+        #if DEBUG
+        // -mp_debug_link "mealplanner://invite/<token>": opened with that link, for screenshot runs.
+        return UserDefaults.standard.string(forKey: "mp_debug_link").flatMap(AppLink.parse)
+        #else
+        return nil
+        #endif
+    }()
+
+    init() {
+        // Before anything is drawn: somebody already signed in never gets the tutorial.
+        FirstRun.settle()
+    }
 
     var body: some Scene {
         WindowGroup {
-            RootView(session: session)
+            RootView(session: session, openedLink: $openedLink)
                 .task {
                     guard !restored else { return }
                     await session.restore()
@@ -25,6 +39,12 @@ struct MealPlannerApp: App {
                 }
                 // mealplanner://paste?text=… — what the share extension sends.
                 .onOpenURL { url in
+                    // mealplanner://invite/<token> and mealplanner://reset/<token>: the links a
+                    // person is handed, opened in the app rather than on the web.
+                    if url.scheme == "mealplanner", let link = AppLink.parse(url.absoluteString) {
+                        openedLink = link
+                        return
+                    }
                     guard url.scheme == "mealplanner", url.host == "paste" else { return }
                     let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
                     // What the share sheet handed over, on its way to the import log. An
@@ -48,19 +68,30 @@ struct MealPlannerApp: App {
                 }
                 .sheet(item: Binding(get: { shared.map(SharedText.init) }, set: { shared = $0?.text })) { incoming in
                     NavigationStack {
-                        SharedRecipeView(
-                            session: session,
-                            incoming: sharedRecipe == nil ? incoming.text : nil,
-                            structured: sharedRecipe,
-                            diagnostic: sharedDiagnostic,
-                            link: sharedLink
-                        )
+                        // One of this app's own public links: the recipe as its page shows it,
+                        // with Save to my recipes, rather than an import of the web app's page.
+                        if sharedRecipe == nil,
+                           let token = SharedRecipeLink.token(in: sharedLink) ?? SharedRecipeLink.token(in: incoming.text) {
+                            PublicRecipeScreen(session: session, token: token)
+                        } else {
+                            sharedRecipeView(incoming)
+                        }
                     }
                 }
                 // Every control in the app in the theme's colours, and light or dark, as chosen
                 // on the Theme screen.
                 .modifier(Themed())
         }
+    }
+
+    private func sharedRecipeView(_ incoming: SharedText) -> some View {
+        SharedRecipeView(
+            session: session,
+            incoming: sharedRecipe == nil ? incoming.text : nil,
+            structured: sharedRecipe,
+            diagnostic: sharedDiagnostic,
+            link: sharedLink
+        )
     }
 }
 
@@ -124,6 +155,10 @@ struct SharedText: Identifiable {
 /// two do not have to be learned separately.
 struct RootView: View {
     @Bindable var session: Session
+    /// An invite or reset link the app was opened with, until it has been dealt with.
+    @Binding var openedLink: AppLink?
+    /// The first-run tutorial is still to come on this phone (Welcome/Tutorial.swift).
+    @State private var firstRun = !FirstRun.seen
 
     /// Which tab is up. Seeded from `-mp_debug_tab` in debug builds so a screenshot run can
     /// land on any tab without tapping.
@@ -154,10 +189,37 @@ struct RootView: View {
     @State private var restockAsked: Set<UUID> = []
 
     var body: some View {
-        if session.isSignedIn {
-            signedIn
-        } else {
-            SignInView(session: session)
+        Group {
+            if session.isSignedIn {
+                if firstRun {
+                    // In through an invite (or a reset link) on a phone that has not had the
+                    // tutorial: it comes now, after joining, on the way into the app.
+                    TutorialView(finish: .app) { firstRun = false }
+                } else {
+                    signedIn
+                }
+            } else if let link = openedLink {
+                // Somebody sent a link sees who invited them first — not the tutorial.
+                NavigationStack { linkScreen(link) }
+            } else if firstRun {
+                TutorialView(finish: .signIn) { firstRun = false }
+            } else {
+                SignInView(session: session)
+            }
+        }
+        // A link opened while signed in: over whatever was on screen.
+        .sheet(item: Binding(get: { session.isSignedIn && !firstRun ? openedLink : nil },
+                             set: { openedLink = $0 })) { link in
+            NavigationStack { linkScreen(link) }
+        }
+    }
+
+    @ViewBuilder private func linkScreen(_ link: AppLink) -> some View {
+        switch link {
+        case .invite(let token):
+            JoinHouseholdView(session: session, token: token) { openedLink = nil }
+        case .reset(let token):
+            ResetPasswordView(session: session, token: token) { openedLink = nil }
         }
     }
 
@@ -306,6 +368,16 @@ struct RootView: View {
             default: GalleryView()
             }
         }
+        // -mp_debug_screen public -mp_debug_share_token <token>: a recipe's public link, opened
+        // as though it had been shared into the app.
+        .sheet(isPresented: Binding(
+            get: { debugSheet == "public" },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            NavigationStack {
+                PublicRecipeScreen(session: session, token: UserDefaults.standard.string(forKey: "mp_debug_share_token") ?? "")
+            }
+        }
         // As sheets: the household switcher, and Theme the way Settings shows it (pushed in a sheet).
         .sheet(isPresented: Binding(
             get: { ["switch", "theme-sheet"].contains(debugSheet ?? "") },
@@ -325,7 +397,15 @@ struct RootView: View {
         guard session.isSignedIn else { return }
         let before = ThemeStore.shared.pickCount
         guard let me = try? await APIClient.shared.me() else { return }
-        await MainActor.run { ThemeStore.shared.adopt(me.theme, since: before) }
+        var theme = me.theme
+        // Light or dark as answered on this phone's first run goes on an account that has
+        // never said either — once, and only the first account signed in afterwards.
+        if var server = theme, let asked = DeviceThemeMode.takeToSave(), server.mode == nil {
+            server.mode = asked
+            theme = server
+            _ = try? await APIClient.shared.updateTheme(server)
+        }
+        await MainActor.run { ThemeStore.shared.adopt(theme, since: before) }
     }
 
     /// Asks who you are: whether the ideas board is open (and whether you are its admin), and
@@ -515,7 +595,7 @@ struct SettingsView: View {
 }
 
 #Preview("Signed in") {
-    RootView(session: .preview)
+    RootView(session: .preview, openedLink: .constant(nil))
 }
 
 #Preview("Settings") {

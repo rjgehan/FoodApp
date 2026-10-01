@@ -151,6 +151,14 @@ actor APIClient {
         try await send("POST", "/api/auth/login/email", body: ["email": email, "password": password], authorized: false)
     }
 
+    /// The first-ever account on an empty server, with its household. Only works while the
+    /// landing says `needsSetup`.
+    func setUp(householdName: String, displayName: String, email: String, password: String) async throws -> AuthResponse {
+        try await send("POST", "/api/auth/setup",
+                       body: ["householdName": householdName, "displayName": displayName, "email": email, "password": password],
+                       authorized: false)
+    }
+
     // MARK: - You
 
     func me() async throws -> Me {
@@ -273,6 +281,11 @@ actor APIClient {
     /// Whose house and who asked — readable signed out, which is when a new person opens it.
     func inviteInfo(token: String) async throws -> InviteInfo {
         try await get("/api/public/invites/\(Self.pathSafe(token))", authorized: false)
+    }
+
+    /// Whether whoever is signed in is in the link's house already, and which house that is.
+    func inviteStanding(token: String) async throws -> InviteStanding {
+        try await get("/api/invites/\(Self.pathSafe(token))")
     }
 
     /// Join, as whoever is signed in. Saying yes twice is just being in already.
@@ -560,6 +573,11 @@ actor APIClient {
 
     func setPublished(recipe: UUID, published: Bool) async throws -> Recipe {
         try await send("PUT", "/api/recipes/\(recipe.uuidString)/published", body: ["published": published])
+    }
+
+    /// A recipe somebody sent as a public link, as anybody with the link may read it.
+    func publicRecipe(token: String) async throws -> PublicRecipe {
+        try await get("/api/public/recipes/\(Self.pathSafe(token))", authorized: false)
     }
 
     /// Keeps a copy of a recipe somebody sent as a public link, in one of your households.

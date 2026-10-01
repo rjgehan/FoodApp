@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { admin, adminByPassword, call, newHousehold, newMember, newRecipe, unique } from '../../lib/api';
 import { sheet, signIn } from '../../lib/ui';
+import { TUTORIAL_SEEN } from '../../lib/device';
 
 /**
  * The read-only admin pages, at iPhone size: the admin finds them in Settings and reads down to
@@ -67,7 +68,7 @@ test('the admin gets in from Settings and reads a household down to one of its r
 });
 
 test('on a computer the lists are tables', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, baseURL: process.env.WEB_URL ?? 'http://localhost:5173' });
+  const context = await browser.newContext({ storageState: TUTORIAL_SEEN, viewport: { width: 1280, height: 900 }, baseURL: process.env.WEB_URL ?? 'http://localhost:5173' });
   const page = await context.newPage();
   const hh = await newHousehold(unique('Admin wide'));
   await signIn(page, await adminByPassword(), hh.id);

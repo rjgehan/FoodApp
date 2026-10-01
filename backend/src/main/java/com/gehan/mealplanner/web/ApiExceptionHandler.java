@@ -30,6 +30,17 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    /**
+     * The usual body, plus exactly how long the lockout has left, so the sign-in screen can count
+     * down. Retry-After says the same for anything that reads headers.
+     */
+    @ExceptionHandler(com.gehan.mealplanner.security.SignInLockedException.class)
+    public ResponseEntity<Map<String, Object>> handleLocked(com.gehan.mealplanner.security.SignInLockedException ex) {
+        Map<String, Object> body = body(HttpStatus.TOO_MANY_REQUESTS.value(), ex.getReason());
+        body.put("retryAfterSeconds", ex.getSecondsLeft());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).headers(ex.getHeaders()).body(body);
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleStatus(ResponseStatusException ex) {
         int status = ex.getStatusCode().value();

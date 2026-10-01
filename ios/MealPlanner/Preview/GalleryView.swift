@@ -41,6 +41,24 @@ struct GalleryView: View {
                     }
                 }
 
+                KitchenSection("Welcome") {
+                    entry("First-run tutorial", "hand.wave") {
+                        TutorialView(finish: .signIn) {}
+                    }
+                    entry("First-time setup", "house.lodge") {
+                        NavigationStack { FirstTimeSetup(session: Session()) }
+                    }
+                    entry("Shared recipe (public link)", "link") {
+                        NavigationStack {
+                            PublicRecipeScreen(session: twoHouses, token: "sample", sample: PublicRecipeScreen.sample)
+                        }
+                    }
+                    entry("Save a copy to…", "square.and.arrow.down") {
+                        SaveCopySheet(session: twoHouses, recipeName: "Lemon herb chicken") { _ in }
+                            .pageBackground()
+                    }
+                }
+
                 KitchenSection("Screens") {
                     entry("Sign in — households", "house") {
                         SignInView(session: Session())

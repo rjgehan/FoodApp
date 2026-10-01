@@ -156,6 +156,20 @@ test('capture every screen', async ({ page }) => {
     await sheet(page).waitFor();
   };
 
+  group = 'First run';
+  await step('tutorial', async () => {
+    // A phone that has never opened the app: forget the tutorial for these three shots.
+    await page.goto('/');
+    await page.evaluate(() => localStorage.removeItem('mp_tutorialSeen'));
+    await page.goto('/');
+    await shot(page, 'Tutorial · plan the week together', 'Placeholder picture: the mockup of Plan.');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await shot(page, 'Tutorial · one list for the shop', 'Placeholder picture: the mockup of Groceries.');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await shot(page, 'Tutorial · light or dark?', 'Applies at once; saved to the account after sign-in if it has none.');
+    await page.evaluate(() => localStorage.setItem('mp_tutorialSeen', '1'));
+  });
+
   group = 'Sign in';
   await step('landing', async () => {
     await page.goto('/');

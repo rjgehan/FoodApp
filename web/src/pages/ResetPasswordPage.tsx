@@ -3,8 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { AuthResponse, PasswordResetInfo } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { PASSWORD_MAX, PASSWORD_MIN, PASSWORD_RULE } from '../auth/password';
-import { Button, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
+import { PASSWORD_MAX, PASSWORD_MIN } from '../auth/password';
+import { Button, ErrorText, Pill, Tile, usernameInputProps } from '../components/ui';
+import { Icon } from '../components/icons';
+import { IconField, MessageScreen, PasswordField, WelcomePage } from '../components/welcome';
 
 /**
  * Where an owner's reset link lands. Works signed out — that is the whole point — and signs the
@@ -56,87 +58,116 @@ export default function ResetPasswordPage() {
     }
   }
 
+  if (info === null) {
+    return (
+      <WelcomePage className="pt-6">
+        <p className="py-10 text-center text-sm text-muted">Loading…</p>
+      </WelcomePage>
+    );
+  }
+
+  if (!info.valid) {
+    return (
+      <MessageScreen
+        icon="broken"
+        title="This link doesn't work any more"
+        actions={
+          // Opened again after it was used, they are usually signed in already.
+          <Button variant="secondary" full size="lg" onClick={() => navigate('/', { replace: true })}>
+            {session ? 'Open Meal Planner' : 'Go to sign in'}
+          </Button>
+        }
+      >
+        Reset links work once, for a day. Ask the owner of your household to make you a new one.
+      </MessageScreen>
+    );
+  }
+
+  const matches = confirm.length > 0 && confirm === password;
+
   return (
-    <div className="flex min-h-screen items-center justify-center px-5 py-10 pb-safe pt-safe">
-      <div className="w-full max-w-xs">
-        <h1 className="mb-1 text-center text-3xl font-semibold tracking-tight">Meal Planner</h1>
+    <WelcomePage className="pt-6 sm:pt-0">
+      <form onSubmit={onSubmit} className="flex flex-1 flex-col gap-5 sm:flex-none">
+        <div className="flex flex-col gap-3">
+          <Tile icon="key" tone="accent" size={56} />
+          <h1 className="serif text-[1.75rem] leading-tight">New password for {info.displayName}</h1>
+          <p className="text-[0.9375rem] leading-normal text-muted">
+            This link works once. After saving you'll be signed straight in.
+          </p>
+        </div>
 
-        {info === null && <p className="mt-6 text-center text-sm text-muted">Loading…</p>}
+        <div className="flex flex-col gap-3.5">
+          <PasswordField
+            label="New password"
+            required
+            autoFocus={info.hasEmail}
+            autoComplete="new-password"
+            maxLength={PASSWORD_MAX}
+            hint={password && password.length < PASSWORD_MIN ? `At least ${PASSWORD_MIN} characters.` : undefined}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+            }}
+          />
+          <IconField
+            label="Confirm password"
+            icon="lock"
+            required
+            type="password"
+            autoComplete="new-password"
+            maxLength={PASSWORD_MAX}
+            value={confirm}
+            end={
+              matches ? (
+                <span className="flex h-10 w-10 items-center justify-center text-herb" aria-label="They match">
+                  <Icon name="check" size={18} strokeWidth={2.6} />
+                </span>
+              ) : undefined
+            }
+            onChange={(e) => {
+              setConfirm(e.target.value);
+              setError(null);
+            }}
+          />
+        </div>
 
-        {info && !info.valid && (
-          <div className="mt-6 space-y-4 text-center">
-            <p className="text-lg font-semibold">This link doesn't work any more</p>
-            <p className="text-sm text-muted">
-              Reset links work once, for a day. Ask the owner of your household to make you a new one.
-            </p>
-            {/* Opened again after it was used, they are usually signed in already. */}
-            <Button variant="secondary" full onClick={() => navigate('/', { replace: true })}>
-              {session ? 'Open Meal Planner' : 'Go to sign in'}
-            </Button>
-          </div>
-        )}
-
-        {info?.valid && (
-          <form onSubmit={onSubmit} className="mt-6 space-y-3">
-            <div className="mb-4 space-y-1 text-center">
-              <p className="text-lg font-semibold">Hi, {info.displayName}</p>
-              <p className="text-sm text-muted">
-                {info.hasEmail ? 'Choose a new password.' : 'Add your email and choose a password.'}
-              </p>
+        {!info.hasEmail && (
+          <section className="card flex flex-col gap-3 p-4">
+            <div className="flex items-center gap-2">
+              <Icon name="mail" size={16} className="text-sky" />
+              <h2 className="text-sm font-semibold">Add an email</h2>
+              <Pill tone="sky">Needed</Pill>
             </div>
-            {!info.hasEmail && (
-              <Field label="Email" hint="What you'll sign in with from now on.">
-                <Input
-                  aria-label="Email"
-                  required
-                  type="email"
-                  inputMode="email"
-                  autoComplete="username"
-                  {...usernameInputProps}
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError(null);
-                  }}
-                />
-              </Field>
-            )}
-            <Field label="New password" hint={PASSWORD_RULE}>
-              <Input
-                aria-label="New password"
-                required
-                autoFocus={info.hasEmail}
-                type="password"
-                autoComplete="new-password"
-                maxLength={PASSWORD_MAX}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError(null);
-                }}
-              />
-            </Field>
-            <Field label="Confirm password">
-              <Input
-                aria-label="Confirm password"
-                required
-                type="password"
-                autoComplete="new-password"
-                maxLength={PASSWORD_MAX}
-                value={confirm}
-                onChange={(e) => {
-                  setConfirm(e.target.value);
-                  setError(null);
-                }}
-              />
-            </Field>
-            {error && <ErrorText>{error}</ErrorText>}
-            <Button type="submit" full size="lg" disabled={busy}>
-              {busy ? 'Saving…' : 'Set password and sign in'}
-            </Button>
-          </form>
+            <p className="text-[0.8125rem] text-muted">
+              Your account doesn't have one yet. You'll use it to sign in from now on.
+            </p>
+            <IconField
+              icon="mail"
+              aria-label="Email"
+              placeholder="you@example.com"
+              required
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              {...usernameInputProps}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+            />
+          </section>
         )}
-      </div>
-    </div>
+
+        {error && <ErrorText>{error}</ErrorText>}
+
+        <div className="mt-auto pt-4 sm:mt-0">
+          <Button type="submit" full size="lg" disabled={busy}>
+            {busy ? 'Saving…' : 'Save and sign in'}
+          </Button>
+        </div>
+      </form>
+    </WelcomePage>
   );
 }

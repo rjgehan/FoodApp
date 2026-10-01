@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { HouseholdProvider } from './household/HouseholdContext';
@@ -23,6 +23,8 @@ import InvitePage from './pages/InvitePage';
 import AdminRoutes from './pages/AdminPage';
 import IdeasPage from './pages/IdeasPage';
 import ThemePage from './pages/ThemePage';
+import Tutorial from './tutorial/Tutorial';
+import { tutorialSeen } from './tutorial/seen';
 
 /** Every building block on one page, for development only: production builds leave it out. */
 const GalleryPage = import.meta.env.DEV ? lazy(() => import('./pages/GalleryPage')) : null;
@@ -30,6 +32,8 @@ const GalleryPage = import.meta.env.DEV ? lazy(() => import('./pages/GalleryPage
 export default function App() {
   const { session } = useAuth();
   const { pathname } = useLocation();
+  /** The first-run tutorial is still to come on this device (tutorial/seen.ts). */
+  const [tutorial, setTutorial] = useState(() => !tutorialSeen());
 
   /*
    * Share links are the one thing that works with no account, so they are matched before the
@@ -53,6 +57,23 @@ export default function App() {
     );
   }
 
+  /*
+   The first-run tutorial, before the sign-in screen. Not in front of an invite: a person sent a
+   link is shown who invited them first, and gets the tutorial once they have joined (below).
+  */
+  if (!session && tutorial && !pathname.startsWith('/invite/')) {
+    return <Tutorial finish="sign-in" onDone={() => setTutorial(false)} />;
+  }
+
+  /*
+   Signed in on a device that has not had it: somebody who arrived through an invite (or a reset
+   link) and is in now. The invite page finishes joining first — signing in to an existing
+   account from it joins as it lands — and the tutorial follows on the way into the app.
+  */
+  if (session && tutorial && !pathname.startsWith('/invite/')) {
+    return <Tutorial finish="app" onDone={() => setTutorial(false)} />;
+  }
+
   if (!session) {
     return (
       <Routes>
@@ -63,6 +84,18 @@ export default function App() {
     );
   }
 
+  // An invite opened while signed in is one decision, made on its own page as the mockup draws
+  // it: no tab bar or household switcher in front of the question of which house to join.
+  if (pathname.startsWith('/invite/')) {
+    return (
+      <HouseholdProvider>
+        <Routes>
+          <Route path="/invite/:token" element={<InvitePage />} />
+        </Routes>
+      </HouseholdProvider>
+    );
+  }
+
   return (
     <HouseholdProvider>
       <Layout>
@@ -70,7 +103,6 @@ export default function App() {
           {/* No home screen: the week's plan is where the day starts. */}
           <Route path="/" element={<Navigate to="/meal-plan" replace />} />
           <Route path="/household" element={<HouseholdPage />} />
-          <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />

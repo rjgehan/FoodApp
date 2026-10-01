@@ -5,6 +5,7 @@ import App from './App';
 import { AuthProvider } from './auth/AuthContext';
 import './index.css';
 import { startTheme } from './theme/theme';
+import { settleTutorial } from './tutorial/seen';
 
 // iOS Safari only applies :active to a touch when a touch listener exists, so without this every
 // press state in the app would wait for the finger to lift. An empty passive listener is enough.
@@ -12,6 +13,8 @@ document.addEventListener('touchstart', () => {}, { passive: true });
 
 // Before the first render, so nothing is ever drawn in the wrong colours.
 startTheme();
+// Somebody already signed in when the tutorial arrived never sees it.
+settleTutorial();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

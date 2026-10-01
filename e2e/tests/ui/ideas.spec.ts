@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { adminByPassword, call, newHousehold, newMember, statusOf, unique } from '../../lib/api';
 import { sheet, signIn } from '../../lib/ui';
+import { TUTORIAL_SEEN } from '../../lib/device';
 
 /**
  * The beta's ideas board at iPhone size: found from the lightbulb in the header, an idea
@@ -51,7 +52,7 @@ test('suggest an idea, somebody else upvotes it, and Top puts it first', async (
   }
 
   // Somebody else, on their own phone, finds it under New and upvotes it.
-  const theirs = await browser.newContext({
+  const theirs = await browser.newContext({ storageState: TUTORIAL_SEEN,
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { AuthResponse, Household, InviteInfo, InviteStanding, LandingResponse } from '../api/types';
+import type { AuthResponse, Household, InviteInfo, InviteStanding, LandingResponse, Me } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { PASSWORD_MAX, PASSWORD_MIN, PASSWORD_RULE } from '../auth/password';
+import { PASSWORD_MAX, PASSWORD_MIN } from '../auth/password';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, ErrorText, Field, Input, usernameInputProps } from '../components/ui';
+import { Avatar, Button, ErrorText, List, NoteBox, Row, Segmented, usernameInputProps } from '../components/ui';
+import { Icon } from '../components/icons';
+import { IconField, InviteHeader, MessageScreen, PasswordField, WelcomePage } from '../components/welcome';
 import LoginPage from './LoginPage';
 
 /**
@@ -40,6 +42,7 @@ function setPendingJoin(token: string | null) {
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const { session } = useAuth();
+  const navigate = useNavigate();
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [unreachable, setUnreachable] = useState(false);
 
@@ -57,61 +60,65 @@ export default function InvitePage() {
   useEffect(load, [load]);
 
   if (!token) return null;
-  if (unreachable) return <Unreachable signedIn={Boolean(session)} onRetry={load} />;
+
+  if (unreachable) {
+    return (
+      <MessageScreen
+        icon="wifi"
+        tone="mustard"
+        title="Connection problem"
+        actions={
+          <Button full size="lg" icon="refresh" onClick={load}>
+            Retry
+          </Button>
+        }
+      >
+        Couldn't reach Meal Planner. Your link may be fine: check your connection and try again.
+      </MessageScreen>
+    );
+  }
+
+  if (info && !info.valid) {
+    return (
+      <MessageScreen
+        icon="broken"
+        title="This invite has expired"
+        actions={
+          <Button
+            variant="secondary"
+            full
+            size="lg"
+            onClick={() => navigate(session ? '/meal-plan' : '/', { replace: true })}
+          >
+            {session ? 'Open Meal Planner' : 'Go to sign in'}
+          </Button>
+        }
+      >
+        Invite links last a week, and the owner can make a new one, which stops the old one working.
+        Ask them to send you the new one.
+      </MessageScreen>
+    );
+  }
+
   return session ? <SignedIn token={token} info={info} /> : <SignedOut token={token} info={info} />;
 }
 
-function Unreachable({ signedIn, onRetry }: { signedIn: boolean; onRetry: () => void }) {
-  const body = (
-    <div className="space-y-4 text-center">
-      <p className="text-lg font-semibold">Couldn't reach Meal Planner</p>
-      <p className="text-sm text-muted">Check your connection, then try again. The invite link itself is fine.</p>
-      <Button full onClick={onRetry}>
-        Try again
-      </Button>
-    </div>
-  );
-  return signedIn ? (
-    <Card>
-      <div className="mx-auto max-w-sm py-6">{body}</div>
-    </Card>
-  ) : (
-    <div className="flex min-h-screen items-center justify-center px-5 py-10 pb-safe pt-safe">
-      <div className="w-full max-w-xs space-y-6">
-        <h1 className="text-center text-3xl font-semibold tracking-tight">Meal Planner</h1>
-        {body}
-      </div>
-    </div>
+/** The invite's card, from what the link says about its house. */
+function Header({ info }: { info: InviteInfo }) {
+  return (
+    <InviteHeader
+      household={info.householdName ?? 'the household'}
+      invitedBy={info.invitedByName}
+      memberCount={info.memberCount}
+    />
   );
 }
 
-/** Who is asking, in one line: "Maya invited you · 3 people". */
-function Invitation({ info }: { info: InviteInfo }) {
-  const people = info.memberCount ?? 0;
+function Loading() {
   return (
-    <div className="space-y-1 text-center">
-      <p className="text-sm font-medium uppercase tracking-wide text-muted">You're invited</p>
-      <h2 className="text-2xl font-semibold tracking-tight">Join {info.householdName}</h2>
-      <p className="text-[0.9375rem] text-muted">
-        {info.invitedByName ? `${info.invitedByName} invited you` : 'Someone there invited you'}
-        {people > 0 && ` · ${people} ${people === 1 ? 'person' : 'people'}`}
-      </p>
-    </div>
-  );
-}
-
-function DeadLink({ action, onAction }: { action: string; onAction: () => void }) {
-  return (
-    <div className="space-y-4 text-center">
-      <p className="text-lg font-semibold">This invite doesn't work any more</p>
-      <p className="text-sm text-muted">
-        Invite links last a week, and the household's owner can swap one for a new one. Ask
-        whoever sent it for a fresh link.
-      </p>
-      <Button variant="secondary" full onClick={onAction}>
-        {action}
-      </Button>
-    </div>
+    <WelcomePage className="pt-4">
+      <p className="py-10 text-center text-sm text-muted">Loading…</p>
+    </WelcomePage>
   );
 }
 
@@ -121,11 +128,13 @@ function DeadLink({ action, onAction }: { action: string; onAction: () => void }
  * is told so, and offered the house instead of an invitation into it.
  */
 function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
+  const { session, logout } = useAuth();
   const { refresh, setActiveHouseholdId } = useHousehold();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [standing, setStanding] = useState<InviteStanding | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const autoJoined = useRef(false);
 
   useEffect(() => {
@@ -135,6 +144,15 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
       // Not knowing is no reason to hold them up: Join is harmless for somebody already in.
       .catch(() => setStanding({ alreadyMember: false, householdId: null }));
   }, [info, token]);
+
+  // Who they are joining as, with the address, so a shared computer does not join the wrong person.
+  useEffect(() => {
+    api<Me>('GET', '/api/users/me')
+      .then(setMe)
+      .catch(() => {
+        // The name from the session is enough to go on.
+      });
+  }, []);
 
   function openHouse(id: string) {
     setPendingJoin(null);
@@ -169,46 +187,66 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info, standing, token]);
 
+  if (!info || standing === null) return <Loading />;
+
+  const name = info.householdName ?? 'the household';
+  const you = me?.displayName ?? session?.displayName ?? '';
+
   return (
-    <Card>
-      <div className="mx-auto max-w-sm space-y-6 py-6">
-        {(info === null || (info.valid && standing === null)) && (
-          <p className="text-center text-sm text-muted">Loading…</p>
-        )}
-        {info && !info.valid && (
-          <DeadLink action="Open Meal Planner" onAction={() => navigate('/meal-plan', { replace: true })} />
-        )}
-        {info?.valid && standing?.alreadyMember && standing.householdId && (
-          <div className="space-y-4 text-center">
-            <p className="text-lg font-semibold">You're already in {info.householdName}</p>
-            <p className="text-sm text-muted">
-              This is its invite link — it works. Send it to whoever you want to join.
+    <WelcomePage className="gap-4 pt-4">
+      <Header info={info} />
+
+      {standing.alreadyMember && standing.householdId ? (
+        <>
+          <div className="card flex flex-col gap-2 border-transparent bg-herb-soft p-4 text-herb">
+            <div className="flex items-center gap-2">
+              <Icon name="check" size={16} strokeWidth={2.6} />
+              <p className="text-sm font-semibold">You're already in {name}</p>
+            </div>
+            <p className="text-[0.8125rem]">
+              This is its invite link, and it works. Send it to whoever you want to join.
             </p>
-            <Button full size="lg" onClick={() => openHouse(standing.householdId!)}>
-              Open {info.householdName}
+          </div>
+          <div className="mt-auto pt-6 sm:mt-2">
+            <Button full size="lg" icon="home" onClick={() => openHouse(standing.householdId!)}>
+              Open {name}
             </Button>
           </div>
-        )}
-        {info?.valid && standing && !standing.alreadyMember && (
-          <>
-            <Invitation info={info} />
-            <p className="text-center text-sm text-muted">
-              You'll see its plan, recipes and grocery list alongside your other households, and
-              can switch between them at the top of the screen.
-            </p>
-            {error && <ErrorText>{error}</ErrorText>}
-            <div className="space-y-2">
-              <Button full size="lg" disabled={busy} onClick={join}>
-                {busy ? 'Joining…' : `Join ${info.householdName}`}
-              </Button>
-              <Button variant="ghost" full disabled={busy} onClick={() => navigate('/meal-plan', { replace: true })}>
-                Not now
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </Card>
+        </>
+      ) : (
+        <>
+          <List>
+            <Row
+              lead={<Avatar name={you} tone="mustard" size={36} />}
+              title={`Joining as ${you}`}
+              subtitle={me?.email ?? undefined}
+              end={
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="press shrink-0 text-[0.875rem] font-medium text-accent-ink"
+                >
+                  Not you?
+                </button>
+              }
+            />
+          </List>
+          <p className="px-1 text-[0.8125rem] leading-normal text-muted">
+            You'll see its plan, recipes and grocery list alongside your other households, and can
+            switch between them at the top of the screen.
+          </p>
+          {error && <ErrorText>{error}</ErrorText>}
+          <div className="mt-auto flex flex-col gap-1 pt-6 sm:mt-2">
+            <Button full size="lg" icon={busy ? undefined : 'users'} disabled={busy} onClick={join}>
+              {busy ? 'Joining…' : `Join ${name}`}
+            </Button>
+            <Button variant="ghost" full disabled={busy} onClick={() => navigate('/meal-plan', { replace: true })}>
+              Not now
+            </Button>
+          </div>
+        </>
+      )}
+    </WelcomePage>
   );
 }
 
@@ -306,8 +344,10 @@ function SignedOut({ token, info }: { token: string; info: InviteInfo | null }) 
     }
   }
 
+  if (!info) return <Loading />;
+
   // The older way in, whole — it has several steps of its own — with the join waiting at the end.
-  if (mode === 'pin' && info?.valid) {
+  if (mode === 'pin') {
     return (
       <LoginPage
         startWithPin
@@ -323,158 +363,156 @@ function SignedOut({ token, info }: { token: string; info: InviteInfo | null }) 
     );
   }
 
+  const clear = () => setError(null);
+
   return (
-    <div className="flex min-h-screen items-center justify-center px-5 py-10 pb-safe pt-safe">
-      <div className="w-full max-w-xs space-y-6">
-        <h1 className="text-center text-3xl font-semibold tracking-tight">Meal Planner</h1>
+    <WelcomePage className="gap-4 pt-4">
+      <Header info={info} />
 
-        {info === null && <p className="text-center text-sm text-muted">Loading…</p>}
-        {info && !info.valid && <DeadLink action="Go to sign in" onAction={() => navigate('/', { replace: true })} />}
+      <Segmented
+        label="Do you have an account?"
+        value={mode}
+        onChange={(next) => {
+          setNotice(null);
+          switchTo(next);
+        }}
+        options={[
+          { value: 'create', label: 'New account' },
+          { value: 'sign-in', label: 'I have an account' },
+        ]}
+      />
 
-        {info?.valid && (
-          <>
-            <Invitation info={info} />
+      {mode === 'create' && (
+        <form onSubmit={onCreate} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
+            <IconField
+              icon="user"
+              aria-label="Your name"
+              placeholder="Your name"
+              required
+              autoComplete="name"
+              maxLength={50}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                clear();
+              }}
+            />
+            <IconField
+              icon="mail"
+              aria-label="Email"
+              placeholder="Email"
+              required
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              {...usernameInputProps}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clear();
+              }}
+            />
+            <PasswordField
+              aria-label="Password"
+              placeholder="Password"
+              required
+              autoComplete="new-password"
+              maxLength={PASSWORD_MAX}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clear();
+              }}
+            />
+            <IconField
+              icon="lock"
+              aria-label="Confirm password"
+              placeholder="Confirm password"
+              required
+              type="password"
+              autoComplete="new-password"
+              maxLength={PASSWORD_MAX}
+              value={confirm}
+              end={
+                confirm && confirm === password ? (
+                  <span className="flex h-10 w-10 items-center justify-center text-herb">
+                    <Icon name="check" size={18} strokeWidth={2.6} />
+                  </span>
+                ) : undefined
+              }
+              onChange={(e) => {
+                setConfirm(e.target.value);
+                clear();
+              }}
+            />
+          </div>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" full size="lg" disabled={busy}>
+            {busy ? 'Joining…' : 'Create account & join'}
+          </Button>
+          <p className="text-center text-[0.8125rem] text-muted">
+            At least {PASSWORD_MIN} characters. Your email is what you'll sign in with.
+          </p>
+        </form>
+      )}
 
-            {mode === 'create' && (
-              <form onSubmit={onCreate} className="space-y-3">
-                <p className="text-center text-sm text-muted">Make your account — it takes a moment.</p>
-                <Field label="Your name">
-                  <Input
-                    aria-label="Your name"
-                    required
-                    autoComplete="name"
-                    maxLength={50}
-                    value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                <Field label="Email" hint="What you'll sign in with.">
-                  <Input
-                    aria-label="Email"
-                    required
-                    type="email"
-                    inputMode="email"
-                    autoComplete="username"
-                    {...usernameInputProps}
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                <Field label="Password" hint={PASSWORD_RULE}>
-                  <Input
-                    aria-label="Password"
-                    required
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={PASSWORD_MAX}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                <Field label="Confirm password">
-                  <Input
-                    aria-label="Confirm password"
-                    required
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={PASSWORD_MAX}
-                    value={confirm}
-                    onChange={(e) => {
-                      setConfirm(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                {error && <ErrorText>{error}</ErrorText>}
-                <Button type="submit" full size="lg" disabled={busy}>
-                  {busy ? 'Joining…' : 'Create an account and join'}
-                </Button>
-                <TextLink onClick={() => switchTo('sign-in')}>I already have an account</TextLink>
-              </form>
-            )}
-
-            {mode === 'sign-in' && (
-              <form onSubmit={onSignIn} className="space-y-3">
-                {notice ? (
-                  <p className="rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent-ink">
-                    {notice}
-                  </p>
-                ) : (
-                  <p className="text-center text-sm text-muted">Sign in, and you'll join straight away.</p>
-                )}
-                <Field label="Email">
-                  <Input
-                    aria-label="Email"
-                    required
-                    type="email"
-                    inputMode="email"
-                    autoComplete="username"
-                    {...usernameInputProps}
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                <Field label="Password">
-                  <Input
-                    aria-label="Password"
-                    required
-                    autoFocus={Boolean(notice)}
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError(null);
-                    }}
-                  />
-                </Field>
-                {error && <ErrorText>{error}</ErrorText>}
-                <Button type="submit" full size="lg" disabled={busy || !email.trim() || !password}>
-                  {busy ? 'Signing in…' : 'Sign in and join'}
-                </Button>
-                <TextLink
-                  onClick={() => {
-                    setNotice(null);
-                    switchTo('create');
-                  }}
-                >
-                  I'm new — create an account
-                </TextLink>
-                {legacyPinLogin && (
-                  <TextLink
-                    onClick={() => {
-                      setPendingJoin(token);
-                      switchTo('pin');
-                    }}
-                  >
-                    Sign in with your name and PIN
-                  </TextLink>
-                )}
-              </form>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TextLink({ children, onClick }: { children: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="block min-h-touch w-full text-sm font-medium text-muted">
-      {children}
-    </button>
+      {mode === 'sign-in' && (
+        <form onSubmit={onSignIn} className="flex flex-col gap-4">
+          {notice ? (
+            <NoteBox tone="accent" icon="info">
+              <span className="font-medium">{notice}</span>
+            </NoteBox>
+          ) : (
+            <p className="px-1 text-[0.9375rem] text-muted">Sign in, and you'll join straight away.</p>
+          )}
+          <div className="flex flex-col gap-3">
+            <IconField
+              icon="mail"
+              aria-label="Email"
+              placeholder="Email"
+              required
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              {...usernameInputProps}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clear();
+              }}
+            />
+            <PasswordField
+              aria-label="Password"
+              placeholder="Password"
+              required
+              autoFocus={Boolean(notice)}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clear();
+              }}
+            />
+          </div>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" full size="lg" disabled={busy || !email.trim() || !password}>
+            {busy ? 'Signing in…' : 'Sign in and join'}
+          </Button>
+          {legacyPinLogin && (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingJoin(token);
+                switchTo('pin');
+              }}
+              className="block min-h-touch w-full text-sm font-medium text-muted"
+            >
+              Sign in with your name and PIN
+            </button>
+          )}
+        </form>
+      )}
+    </WelcomePage>
   );
 }

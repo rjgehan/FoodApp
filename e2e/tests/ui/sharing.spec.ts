@@ -84,10 +84,11 @@ test('a public link signs you in, lets you pick a household, and saves a copy th
 
   // Two households, so they are asked which — on the same link, not dropped into the app.
   const picker = sheet(page);
-  await expect(picker.getByText('Save to which household?')).toBeVisible();
+  await expect(picker.getByText('Save a copy to…')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/r/${token}$`));
   await page.screenshot({ path: test.info().outputPath('public-link-pick.png') });
-  await picker.getByRole('button', { name: b.name }).click();
+  await picker.getByRole('radio', { name: b.name }).click();
+  await picker.getByRole('button', { name: `Save to ${b.name}` }).click();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: 'Link Lasagna' })).toBeVisible();

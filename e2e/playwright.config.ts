@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { TUTORIAL_SEEN, WEB_URL } from './lib/device';
 
 /**
  * Runs against the local dev stack (`./dev.sh start`), never production: the suite creates
@@ -9,10 +10,12 @@ import { defineConfig } from '@playwright/test';
  * pointer — without that, anything the app hides behind `@media (hover: hover)` shows up in
  * screenshots even though a real phone never draws it.
  */
-export const WEB_URL = process.env.WEB_URL ?? 'http://localhost:5173';
+export { WEB_URL };
 
 const iphone = {
   baseURL: WEB_URL,
+  // A device that has had the first-run tutorial, so every test starts where it used to.
+  storageState: TUTORIAL_SEEN,
   channel: 'chrome',
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 3,

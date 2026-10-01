@@ -148,8 +148,9 @@ final class ThemeStore {
 
     var pickCount: Int { picks }
 
-    /// Signing out: the next person gets the app's own colours until theirs load.
-    func reset() { set(.standard) }
+    /// Signing out: the next person gets the app's own colours until theirs load — in the light
+    /// or dark this phone was set to on its first run, which belongs to the phone, not to them.
+    func reset() { set(Theme(mode: DeviceThemeMode.current)) }
 
     private func set(_ next: Theme) {
         // Sign-out finishes wherever its last await left it; the screen is only changed from main.
