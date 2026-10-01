@@ -5,6 +5,9 @@ import { HouseholdProvider } from './household/HouseholdContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import HouseholdPage from './pages/HouseholdPage';
+import HouseholdPlacesPage from './pages/HouseholdPlacesPage';
+import HouseholdSetupPage from './pages/HouseholdSetupPage';
+import HouseholdAislesPage from './pages/HouseholdAislesPage';
 import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeSectionPage from './pages/RecipeSectionPage';
@@ -104,6 +107,9 @@ export default function App() {
           {/* No home screen: the week's plan is where the day starts. */}
           <Route path="/" element={<Navigate to="/meal-plan" replace />} />
           <Route path="/household" element={<HouseholdPage />} />
+          <Route path="/household/places" element={<HouseholdPlacesPage />} />
+          <Route path="/household/setup" element={<HouseholdSetupPage />} />
+          <Route path="/household/aisles" element={<HouseholdAislesPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />

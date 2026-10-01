@@ -1,142 +1,253 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, imageUrl } from '../api/client';
-import type { RecipeSection } from '../api/types';
-import type { HouseholdMember, InviteLink, Place } from '../api/types';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { api, ApiError } from '../api/client';
+import type { HouseholdMember, Place, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useAuth } from '../auth/AuthContext';
+import { usePushedScreen } from '../components/Layout';
 import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
 import IconPicker from '../components/IconPicker';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
 import {
-  ActionMenu,
-  Badge,
+  Avatar,
   Button,
-  Card,
-  EmptyState,
   ErrorText,
   Field,
-  IconButton,
   Input,
-  NumberInput,
+  List,
+  NavBar,
+  Row,
+  SectionLabel,
   Sheet,
-  SheetRow,
-  usernameInputProps,
+  Tile,
 } from '../components/ui';
-import { ChevronDownIcon, ChevronUpIcon, PlusIcon, StoreIcon, TrashIcon } from '../components/icons';
-import PlaceActions from '../components/PlaceActions';
-import { PageTitle } from '../components/PageTitle';
-import ImagePicker from '../components/ImagePicker';
-import ProfileCard from '../components/ProfileCard';
-import LinkHandout from '../components/LinkHandout';
-import BarcodeScanner from '../components/BarcodeScanner';
-import { inviteUrl, parseAppLink } from '../utils/appLinks';
-import { useNavigate } from 'react-router-dom';
+import { InviteCard, InviteQrSheet, useInviteLink } from '../components/household/Invite';
+import { MemberSheet } from '../components/household/MemberSheet';
+import { JoinHouseholdForm } from '../components/household/JoinHousehold';
+import { personTone, SignInPill, type HouseholdScreenState } from '../components/household/HouseholdParts';
 
+type Open = 'qr' | 'icons' | 'join' | 'new' | 'leave' | null;
+
+/**
+ * The household (mockup 6.2): the way to invite somebody, who is here and how each of them signs
+ * in, and the house's own setup — places, name and servings, aisles. Reached from Settings, which
+ * is where its back button goes. The owner can tap anybody else for their actions.
+ */
 export default function HouseholdPage() {
+  usePushedScreen();
   const { households, activeHousehold } = useHousehold();
-  const { session } = useAuth();
-  const [justCreated, setJustCreated] = useState<string | null>(null);
-  // Taking somebody out replaces the invite link, so the Invite card fetches it again.
-  const [linkGeneration, setLinkGeneration] = useState(0);
-
-  function announce(name: string) {
-    setJustCreated(name);
-    setTimeout(() => setJustCreated(null), 4000);
-  }
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as HouseholdScreenState | null)?.from;
+  const back = () => navigate(from ?? '/meal-plan', { state: { openSettings: true } });
 
   return (
-    <div className="space-y-4">
-      <PageTitle title="Household" />
-      {justCreated && (
-        <div className="rounded-xl bg-herb-soft px-4 py-3 text-sm font-medium text-herb">
-          “{justCreated}” created — you're in it.
+    <div className="mx-auto max-w-2xl pb-6 lg:max-w-5xl">
+      <NavBar
+        title={activeHousehold?.name ?? 'Household'}
+        backLabel="Settings"
+        back={back}
+        className="-mx-1 mb-1.5"
+        sides="w-24"
+      />
+      {activeHousehold ? (
+        <HouseholdHome key={activeHousehold.id} />
+      ) : (
+        // Nobody in a household yet: join one somebody sent, or make your own.
+        households.length === 0 && (
+          <div className="space-y-6">
+            <section className="space-y-3">
+              <h2 className="title-section">Join a household</h2>
+              <JoinHouseholdForm />
+            </section>
+            <section className="space-y-3">
+              <h2 className="title-section">Or start your own</h2>
+              <NewHouseholdForm onCreated={() => undefined} />
+            </section>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function HouseholdHome() {
+  const { activeHousehold, groceryCategories } = useHousehold();
+  const { session } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const household = activeHousehold!;
+  const isOwner = household.role === 'OWNER';
+  const [open, setOpen] = useState<Open>(null);
+  const [members, setMembers] = useState<HouseholdMember[] | null>(null);
+  const [places, setPlaces] = useState<Place[] | null>(null);
+  const [actionsFor, setActionsFor] = useState<HouseholdMember | null>(null);
+  // Taking somebody out, or replacing the link, makes a new invite link; this fetches it again.
+  const [linkGeneration, setLinkGeneration] = useState(0);
+  const invite = useInviteLink(household.id, linkGeneration);
+
+  const loadMembers = useCallback(async () => {
+    const all = await api<HouseholdMember[]>('GET', `/api/households/${household.id}/members`).catch(() => []);
+    // You first, then whoever owns the place, then everyone else as the server lists them.
+    const rank = (m: HouseholdMember) => (m.userId === session?.userId ? 0 : m.role === 'OWNER' ? 1 : 2);
+    setMembers([...all].sort((a, b) => rank(a) - rank(b)));
+  }, [household.id, session?.userId]);
+
+  useEffect(() => {
+    loadMembers();
+    api<Place[]>('GET', `/api/households/${household.id}/places`)
+      .then(setPlaces)
+      .catch(() => setPlaces([]));
+  }, [household.id, loadMembers]);
+
+  // The pages under this one come back here, and Household's own back button still goes home.
+  const go = (path: string) => navigate(path, { state: location.state });
+  const toneOf = (m: HouseholdMember) => personTone(Math.max(0, (members ?? []).indexOf(m)));
+  const alone = household.memberCount <= 1;
+
+  return (
+    <>
+      {/* Two columns on a wide screen: the people on the left, the house's setup on the right. */}
+      <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-8">
+        <div className="space-y-3.5">
+          <InviteCard name={household.name} link={invite.link} error={invite.error} onShowQr={() => setOpen('qr')} />
+
+          <section aria-labelledby="whos-here" className="pt-1">
+            <SectionLabel>
+              <span id="whos-here">Who's here{members ? ` · ${members.length}` : ''}</span>
+            </SectionLabel>
+            <List label="People" inset={0}>
+              {(members ?? []).map((m) => {
+                const you = m.userId === session?.userId;
+                const canAct = isOwner && !you;
+                return (
+                  <Row
+                    key={m.userId}
+                    lead={<Avatar name={m.displayName} tone={toneOf(m)} size={38} />}
+                    title={you ? `${m.displayName} (you)` : m.displayName}
+                    subtitle={m.role === 'OWNER' ? 'Owner' : m.username}
+                    end={<SignInPill member={m} />}
+                    chevron={canAct}
+                    onClick={canAct ? () => setActionsFor(m) : undefined}
+                  />
+                );
+              })}
+              {members === null && <Row title={<span className="text-muted">Loading…</span>} />}
+            </List>
+          </section>
         </div>
-      )}
 
-      {/* Nobody in a household yet: join one somebody sent, or make your own. */}
-      {households.length === 0 && (
-        <>
-          <Card title="Join a household">
-            <JoinHouseholdForm />
-          </Card>
-          <Card title="Or start your own">
-            <NewHouseholdForm onCreated={announce} />
-          </Card>
-        </>
-      )}
+        <div className="space-y-3.5 max-lg:mt-3.5">
+          <section aria-label="Household setup" className="pt-1 lg:pt-0">
+            <SectionLabel>Household setup</SectionLabel>
+            <List>
+              <Row
+                onClick={() => go('/household/places')}
+                lead={<Tile icon="store" tone="plum" size={34} />}
+                title="Places we eat"
+                detail={places ? String(places.length) : undefined}
+                chevron
+              />
+              <Row
+                onClick={() => go('/household/setup')}
+                lead={<Tile icon="home" tone="herb" size={34} />}
+                title="Name, servings & planning"
+                detail={`${household.defaultServings} · ${household.planningHorizonDays} ${household.planningHorizonDays === 1 ? 'day' : 'days'}`}
+                chevron
+              />
+              <Row
+                onClick={() => go('/household/aisles')}
+                lead={<Tile icon="list" tone="sky" size={34} />}
+                title="Store aisles"
+                detail={String(groceryCategories.length)}
+                chevron
+              />
+              <Row
+                onClick={() => setOpen('icons')}
+                lead={<Tile icon="image" tone="mustard" size={34} />}
+                title="Recipe icons"
+                chevron
+              />
+            </List>
+          </section>
 
-      {/* The things people come here for stay on the page… */}
-      {activeHousehold && (
-        <MembersCard householdId={activeHousehold.id} onRemoved={() => setLinkGeneration((n) => n + 1)} />
-      )}
-      {activeHousehold && (
-        <InviteCard
-          key={linkGeneration}
-          householdId={activeHousehold.id}
-          name={activeHousehold.name}
-          isOwner={activeHousehold.role === 'OWNER'}
+          <section aria-label="Other households" className="space-y-3.5 pt-3.5">
+            <List>
+              <Row onClick={() => setOpen('join')} lead={<Tile icon="link" tone="sky" size={34} />} title="Join a household" chevron />
+              <Row
+                onClick={() => setOpen('new')}
+                lead={<Tile icon="plus" tone="herb" size={34} />}
+                title="Start another household"
+                chevron
+              />
+            </List>
+            {/* Alone in a household, leaving is not a thing you can do — there would be nobody left
+                to let you back in — so the row offers the only exit that exists. */}
+            <List>
+              <Row
+                onClick={() => setOpen('leave')}
+                lead={<Tile icon={alone ? 'trash' : 'door'} tone="accent" size={34} />}
+                title={`${alone ? 'Delete' : 'Leave'} “${household.name}”`}
+                titleClassName="text-accent-ink"
+                subtitle={alone ? "You're the only one here" : 'Everything stays here for everyone else'}
+              />
+            </List>
+          </section>
+        </div>
+      </div>
+
+      {/* Not inside the columns: a sheet is fixed to the screen, but it would still take their spacing. */}
+      {open === 'qr' && invite.link && (
+        <InviteQrSheet
+          householdId={household.id}
+          name={household.name}
+          people={members?.length ?? household.memberCount}
+          link={invite.link}
+          isOwner={isOwner}
+          onReplaced={async () => setLinkGeneration((n) => n + 1)}
+          onClose={() => setOpen(null)}
         />
       )}
-      {activeHousehold && <PlacesCard householdId={activeHousehold.id} />}
-
-      {/* …and everything set once and rarely touched is a row that opens on its own. */}
-      <Card title="Settings">
-        <div className="divide-y divide-line">
-          {activeHousehold && (
-            <SheetRow
-              label="Household"
-              detail={`Serves ${activeHousehold.defaultServings} · ${activeHousehold.planningHorizonDays} days ahead`}
-            >
-              {() => <SettingsCard />}
-            </SheetRow>
-          )}
-          {activeHousehold && <SheetRow label="Store aisles">{() => <StoreLayoutCard />}</SheetRow>}
-          {activeHousehold && (
-            <SheetRow label="Recipe icons">{() => <CatalogIconsCard householdId={activeHousehold.id} />}</SheetRow>
-          )}
-          <SheetRow label="You" detail={session?.displayName}>
-            {() => <ProfileCard />}
-          </SheetRow>
-          {households.length > 0 && (
-            <SheetRow label="Join a household">{() => <JoinHouseholdForm />}</SheetRow>
-          )}
-          {households.length > 0 && (
-            <SheetRow label="Start another household">
-              {(close) => (
-                <NewHouseholdForm
-                  onCreated={(name) => {
-                    close();
-                    announce(name);
-                  }}
-                />
-              )}
-            </SheetRow>
-          )}
-          {activeHousehold && (
-            // Alone in a household, leaving is not a thing you can do — there would be nobody
-            // left to let you back in — so the row offers the only exit that exists.
-            <SheetRow
-              label={`${activeHousehold.memberCount <= 1 ? 'Delete' : 'Leave'} “${activeHousehold.name}”`}
-              tone="danger"
-            >
-              {() => (
-                <LeaveCard
-                  householdId={activeHousehold.id}
-                  name={activeHousehold.name}
-                  alone={activeHousehold.memberCount <= 1}
-                />
-              )}
-            </SheetRow>
-          )}
-        </div>
-      </Card>
-    </div>
+      {actionsFor && (
+        <MemberSheet
+          householdId={household.id}
+          householdName={household.name}
+          member={actionsFor}
+          tone={toneOf(actionsFor)}
+          onClose={() => setActionsFor(null)}
+          onRemoved={async () => {
+            setLinkGeneration((n) => n + 1);
+            await loadMembers();
+          }}
+        />
+      )}
+      {open === 'icons' && (
+        <Sheet title="Recipe icons" subtitle="The picture on each drawer in Recipes" onClose={() => setOpen(null)}>
+          <CatalogIcons householdId={household.id} />
+        </Sheet>
+      )}
+      {open === 'join' && (
+        <Sheet title="Join a household" onClose={() => setOpen(null)}>
+          <JoinHouseholdForm onOpened={() => setOpen(null)} />
+        </Sheet>
+      )}
+      {open === 'new' && (
+        <Sheet title="Start another household" onClose={() => setOpen(null)}>
+          <NewHouseholdForm onCreated={() => setOpen(null)} />
+        </Sheet>
+      )}
+      {open === 'leave' && (
+        <Sheet title={alone ? 'Delete this household' : 'Leave this household'} onClose={() => setOpen(null)}>
+          <LeaveHousehold householdId={household.id} name={household.name} alone={alone} />
+        </Sheet>
+      )}
+    </>
   );
 }
 
 /**
  * You can belong to several households — one for your own place, one for your parents' — and
- * either lets you start another.
+ * either lets you start another. Its cupboard is offered the starter list once it exists.
  */
 function NewHouseholdForm({ onCreated }: { onCreated: (name: string) => void }) {
   const { createHousehold } = useHousehold();
@@ -159,14 +270,8 @@ function NewHouseholdForm({ onCreated }: { onCreated: (name: string) => void }) 
 
   return (
     <form onSubmit={onCreate} className="space-y-3">
-      <Field label="Name">
-        <Input
-          autoFocus
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Gehan House"
-          maxLength={60}
-        />
+      <Field label="Name" hint="You own it, and it starts empty. Nothing moves across from here.">
+        <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Gehan House" maxLength={60} />
       </Field>
       <Button type="submit" full size="lg" disabled={creating || !newName.trim()}>
         Create
@@ -175,8 +280,8 @@ function NewHouseholdForm({ onCreated }: { onCreated: (name: string) => void }) 
   );
 }
 
-/** Picks which built-in illustration each catalog drawer wears. */
-function CatalogIconsCard({ householdId }: { householdId: string }) {
+/** Picks which built-in illustration each catalog drawer wears, for everyone in the house. */
+function CatalogIcons({ householdId }: { householdId: string }) {
   const [icons, setIcons] = useState<Partial<Record<RecipeSection, string>>>({});
   const [editing, setEditing] = useState<RecipeSection | null>(null);
   const [busy, setBusy] = useState(false);
@@ -191,11 +296,9 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
     setBusy(true);
     try {
       setIcons(
-        await api<Partial<Record<RecipeSection, string>>>(
-          'PUT',
-          `/api/households/${householdId}/section-icons/${section}`,
-          { iconKey },
-        ),
+        await api<Partial<Record<RecipeSection, string>>>('PUT', `/api/households/${householdId}/section-icons/${section}`, {
+          iconKey,
+        }),
       );
       setEditing(null);
     } finally {
@@ -204,35 +307,32 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
   }
 
   return (
-    <Card title="Recipe icons">
-      <ul className="divide-y divide-line">
-        {SECTION_OPTIONS.map((s) => {
-          const current = icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value];
-          const Icon = iconByKey(current)?.Icon;
-          const open = editing === s.value;
-
-          return (
-            <li key={s.value} className="py-1">
-              <button
-                type="button"
-                onClick={() => setEditing(open ? null : s.value)}
-                className="flex min-h-touch w-full items-center gap-3 px-1 text-left"
-              >
-                {Icon && <Icon className="h-7 w-7 shrink-0 text-accent-ink" />}
-                <span className="flex-1 font-medium">{s.label}</span>
-                <span className="text-sm text-muted">{open ? 'Close' : 'Change'}</span>
-              </button>
-
-              {open && (
-                <div className="mt-2">
-                  <IconPicker value={current} onChange={(key) => key && choose(s.value, key)} disabled={busy} />
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </Card>
+    <List>
+      {SECTION_OPTIONS.map((s) => {
+        const current = icons[s.value] ?? DEFAULT_SECTION_ICONS[s.value];
+        const Drawing = iconByKey(current)?.Icon;
+        const open = editing === s.value;
+        return (
+          <li key={s.value}>
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setEditing(open ? null : s.value)}
+              className="press flex min-h-[52px] w-full items-center gap-3 px-4 py-2.5 text-left active:bg-surface2"
+            >
+              {Drawing && <Drawing className="h-8 w-8 shrink-0 text-accent-ink" />}
+              <span className="flex-1 font-medium">{s.label}</span>
+              <span className="text-[0.9375rem] text-accent-ink">{open ? 'Close' : 'Change'}</span>
+            </button>
+            {open && (
+              <div className="px-4 pb-4">
+                <IconPicker value={current} onChange={(key) => key && choose(s.value, key)} disabled={busy} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </List>
   );
 }
 
@@ -244,13 +344,19 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
  * for exactly that reason — so the only exit is to delete the household, and that takes
  * everything in it with no way back. Different enough that it asks you to type the name.
  */
-function LeaveCard({ householdId, name, alone }: { householdId: string; name: string; alone: boolean }) {
+function LeaveHousehold({
+  householdId,
+  name,
+  alone,
+}: {
+  householdId: string;
+  name: string;
+  alone: boolean;
+}) {
   const { refresh, setActiveHouseholdId, households } = useHousehold();
-  const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const nameMatches = typed.trim().toLowerCase() === name.trim().toLowerCase();
 
   async function go() {
@@ -274,867 +380,28 @@ function LeaveCard({ householdId, name, alone }: { householdId: string; name: st
   }
 
   return (
-    <Card title={alone ? 'Delete this household' : 'Leave this household'}>
-      {confirming ? (
-        <div className="space-y-3">
-          {alone ? (
-            <>
-              <p className="text-sm text-muted">
-                You are the only one in “{name}”, so there is nobody to leave it to. Deleting it
-                takes its recipes, plan, grocery list, cupboard and photos with it, for good.
-                Anyone who kept one of its published recipes loses that too.
-              </p>
-              <Field label={`Type ${name} to confirm`}>
-                <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
-              </Field>
-            </>
-          ) : (
-            <p className="text-sm text-muted">
-              You'll lose access to “{name}” — its recipes, plan and grocery list stay with everyone
-              else. You can be invited back.
-            </p>
-          )}
-          {error && <ErrorText>{error}</ErrorText>}
-          <div className="flex gap-2">
-            <Button
-              variant="danger"
-              className="flex-1"
-              disabled={busy || (alone && !nameMatches)}
-              onClick={go}
-            >
-              {busy ? (alone ? 'Deleting…' : 'Leaving…') : alone ? 'Delete for good' : 'Leave'}
-            </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => { setConfirming(false); setTyped(''); }}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <Button variant="danger" full onClick={() => setConfirming(true)}>
-          {alone ? `Delete “${name}”` : `Leave “${name}”`}
-        </Button>
-      )}
-    </Card>
-  );
-}
-
-/**
- * The places you eat when you are not cooking. Created on the fly from the meal planner, so this
- * card exists to fill in the details afterwards — the menu link and the phone number.
- */
-function PlacesCard({ householdId }: { householdId: string }) {
-  const [places, setPlaces] = useState<Place[] | null>(null);
-  const [editing, setEditing] = useState<Place | null>(null);
-  const [sheetError, setSheetError] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    setPlaces(await api<Place[]>('GET', `/api/households/${householdId}/places`).catch(() => []));
-  }, [householdId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    const name = newName.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      const created = await api<Place>('POST', `/api/households/${householdId}/places`, { name });
-      setNewName('');
-      await load();
-      // Straight into the details, since adding a name is never the actual goal.
-      setEditing(created);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function save(place: Place) {
-    setBusy(true);
-    setSheetError(null);
-    try {
-      await api('PUT', `/api/places/${place.id}`, {
-        name: place.name,
-        menuUrl: place.menuUrl,
-        phone: place.phone,
-        notes: place.notes,
-        imageId: place.imageId,
-      });
-      setEditing(null);
-      await load();
-    } catch (err) {
-      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
-      setSheetError(message ?? 'Could not save that.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(place: Place) {
-    setBusy(true);
-    try {
-      await api('DELETE', `/api/places/${place.id}`);
-      setEditing(null);
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card title="Places we eat">
-      {places === null ? (
-        <p className="py-2 text-sm text-muted">Loading…</p>
-      ) : places.length === 0 ? (
-        <EmptyState>Nowhere saved yet.</EmptyState>
-      ) : (
-        <ul className="divide-y divide-line">
-          {places.map((place) => (
-            <li key={place.id}>
-              <button
-                type="button"
-                onClick={() => setEditing(place)}
-                className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
-              >
-                {place.imageId ? (
-                  <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
-                ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent-ink">
-                    <StoreIcon className="h-5 w-5" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{place.name}</span>
-                  <span className="block truncate text-sm text-muted">
-                    {[place.phone, place.menuUrl ? 'menu saved' : null].filter(Boolean).join(' · ') || 'Add details'}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <form onSubmit={add} className="mt-3 flex gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Tony's, Chinese, pizza…"
-          aria-label="New place"
-        />
-        <Button type="submit" variant="secondary" disabled={busy || !newName.trim()}>
-          <PlusIcon className="h-5 w-5" />
-          Add
-        </Button>
-      </form>
-
-      {editing && (
-        <PlaceSheet
-          householdId={householdId}
-          place={editing}
-          busy={busy}
-          error={sheetError}
-          onSave={save}
-          onDelete={remove}
-          onClose={() => {
-            setEditing(null);
-            setSheetError(null);
-          }}
-        />
-      )}
-    </Card>
-  );
-}
-
-function PlaceSheet({
-  householdId,
-  place,
-  busy,
-  error,
-  onSave,
-  onDelete,
-  onClose,
-}: {
-  householdId: string;
-  place: Place;
-  busy: boolean;
-  error: string | null;
-  onSave: (place: Place) => void;
-  onDelete: (place: Place) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<Place>(place);
-
-  return (
-    <Sheet title={place.name} onClose={onClose}>
-      <div className="space-y-4">
-        {/* The saved values, not the draft: these open things, so unsaved edits must not. */}
-        <div className="flex gap-2">
-          <PlaceActions place={place} size="md" />
-        </div>
-
-        {draft.imageId && (
-          <img
-            src={imageUrl(draft.imageId)}
-            alt=""
-            className="aspect-[4/3] w-full rounded-xl object-cover"
-          />
-        )}
-        <ImagePicker householdId={householdId} onUploaded={(ids) => setDraft({ ...draft, imageId: ids[0] ?? null })}>
-          {draft.imageId ? 'Replace photo' : 'Add a photo'}
-        </ImagePicker>
-
-        <Field label="Name">
-          <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        </Field>
-        <Field label="Menu link">
-          <Input
-            type="url"
-            inputMode="url"
-            placeholder="https://…"
-            value={draft.menuUrl ?? ''}
-            onChange={(e) => setDraft({ ...draft, menuUrl: e.target.value || null })}
-          />
-        </Field>
-        <Field label="Phone">
-          <Input
-            type="tel"
-            inputMode="tel"
-            placeholder="(555) 123-4567"
-            value={draft.phone ?? ''}
-            onChange={(e) => setDraft({ ...draft, phone: e.target.value || null })}
-          />
-        </Field>
-        <Field label="Notes" hint="What to order, where to park.">
-          <Input value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value || null })} />
-        </Field>
-
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2">
-          <Button className="flex-1" disabled={busy || !draft.name.trim()} onClick={() => onSave(draft)}>
-            Save
-          </Button>
-          <Button variant="danger" disabled={busy} onClick={() => onDelete(place)}>
-            Delete
-          </Button>
-        </div>
-        <p className="text-sm text-muted">Deleting also clears any planned nights at this place.</p>
-      </div>
-    </Sheet>
-  );
-}
-
-function SettingsCard() {
-  const { activeHousehold, updateSettings, renameHousehold } = useHousehold();
-  const [name, setName] = useState(activeHousehold?.name ?? '');
-  const [servings, setServings] = useState<number | null>(activeHousehold?.defaultServings ?? 1);
-  const [horizonDays, setHorizonDays] = useState<number | null>(activeHousehold?.planningHorizonDays ?? 7);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (activeHousehold) {
-      setName(activeHousehold.name);
-      setServings(activeHousehold.defaultServings);
-      setHorizonDays(activeHousehold.planningHorizonDays);
-    }
-  }, [activeHousehold]);
-
-  const isOwner = activeHousehold?.role === 'OWNER';
-  const renamed = isOwner && name.trim() !== '' && name.trim() !== activeHousehold?.name;
-
-  /** One Save for the whole sheet: the rename (owners only) and the numbers. */
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setSettingsError(null);
-    try {
-      if (renamed) await renameHousehold(name.trim());
-      await updateSettings({
-        defaultServings: servings ?? 1,
-        planningHorizonDays: horizonDays ?? 7,
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } catch {
-      setSettingsError('Names can be up to 60 characters, servings 1–50, and days ahead 1–60.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card title="Household">
-      <form onSubmit={onSubmit} className="space-y-3">
-        {isOwner && (
-          <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+    <div className="space-y-4">
+      {alone ? (
+        <>
+          <p className="text-[0.9375rem] text-muted">
+            You are the only one in “{name}”, so there is nobody to leave it to. Deleting it takes its recipes, plan,
+            grocery list, cupboard and photos with it, for good. Anyone who kept one of its published recipes loses that
+            too.
+          </p>
+          <Field label={`Type ${name} to confirm`}>
+            <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
           </Field>
-        )}
-        <Field label="Default servings">
-          <NumberInput min={1} max={50} value={servings} onChange={setServings} />
-        </Field>
-        <Field label="Days ahead to plan">
-          <NumberInput min={1} max={60} value={horizonDays} onChange={setHorizonDays} />
-        </Field>
-        {settingsError && <ErrorText>{settingsError}</ErrorText>}
-        <Button type="submit" full size="lg" disabled={saving}>
-          {saved ? 'Saved' : 'Save'}
-        </Button>
-      </form>
-    </Card>
-  );
-}
-
-/**
- * The aisles in the order you walk your store — your own, not a fixed list. Arrows rather than
- * dragging: dragging a list on a phone fights the page scroll, and a dozen rows is few enough
- * that a tap per step is quick. Renaming and deleting live behind a "..." sheet per row so the
- * everyday case (just reordering) stays a single row of controls.
- */
-function StoreLayoutCard() {
-  const {
-    groceryCategories,
-    createGroceryCategory,
-    renameGroceryCategory,
-    reorderGroceryCategories,
-    deleteGroceryCategory,
-  } = useHousehold();
-  const [busy, setBusy] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [managing, setManaging] = useState<{ id: string; name: string } | null>(null);
-
-  const ordered = [...groceryCategories].sort((a, b) => a.position - b.position);
-
-  async function move(index: number, delta: -1 | 1) {
-    const next = [...ordered];
-    [next[index], next[index + delta]] = [next[index + delta], next[index]];
-    setBusy(true);
-    try {
-      await reorderGroceryCategories(next.map((c) => c.id));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onAdd(e: FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setAdding(true);
-    try {
-      await createGroceryCategory(newName.trim());
-      setNewName('');
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  return (
-    <Card title="Store aisles">
-      <p className="mb-2 text-sm text-muted">
-        The order you walk your store, and what you call each aisle. Groceries are listed in this
-        order, top to bottom.
-      </p>
-      <ol className="divide-y divide-line">
-        {ordered.map((category, i) => (
-          <li key={category.id} className="flex items-center gap-1 py-0.5">
-            <span className="w-6 shrink-0 text-sm tabular-nums text-faint">{i + 1}</span>
-            <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span>
-            <IconButton
-              label={`Move ${category.name} earlier`}
-              disabled={busy || i === 0}
-              onClick={() => move(i, -1)}
-            >
-              <ChevronUpIcon className="h-5 w-5" />
-            </IconButton>
-            <IconButton
-              label={`Move ${category.name} later`}
-              disabled={busy || i === ordered.length - 1}
-              onClick={() => move(i, 1)}
-            >
-              <ChevronDownIcon className="h-5 w-5" />
-            </IconButton>
-            <IconButton label={`Edit ${category.name}`} onClick={() => setManaging(category)}>
-              <span className="text-lg leading-none">⋯</span>
-            </IconButton>
-          </li>
-        ))}
-      </ol>
-
-      <form onSubmit={onAdd} className="mt-3 flex gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Add a category — Pharmacy, say"
-          aria-label="New category name"
-        />
-        <Button type="submit" variant="secondary" disabled={adding || !newName.trim()}>
-          <PlusIcon className="h-5 w-5" />
-        </Button>
-      </form>
-
-      {managing && (
-        <ManageCategorySheet
-          category={managing}
-          onClose={() => setManaging(null)}
-          onRename={async (name) => {
-            await renameGroceryCategory(managing.id, name);
-            setManaging(null);
-          }}
-          onDelete={async () => {
-            await deleteGroceryCategory(managing.id);
-            setManaging(null);
-          }}
-        />
-      )}
-    </Card>
-  );
-}
-
-function ManageCategorySheet({
-  category,
-  onClose,
-  onRename,
-  onDelete,
-}: {
-  category: { id: string; name: string };
-  onClose: () => void;
-  onRename: (name: string) => Promise<void>;
-  onDelete: () => Promise<void>;
-}) {
-  const [name, setName] = useState(category.name);
-  const [saving, setSaving] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-
-  return (
-    <Sheet title={category.name} onClose={onClose}>
-      <div className="space-y-4">
-        <Field label="Name">
-          <div className="flex gap-2">
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-            <Button
-              variant="secondary"
-              disabled={saving || !name.trim() || name.trim() === category.name}
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  await onRename(name.trim());
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              Save
-            </Button>
-          </div>
-        </Field>
-
-        {confirmingDelete ? (
-          <div className="space-y-2 rounded-xl bg-surface2 p-3">
-            <p className="text-sm text-muted">
-              Anything filed under {category.name} becomes unsorted — one tap to place it again, or
-              Sort will pick it up.
-            </p>
-            <div className="flex gap-2">
-              <Button variant="danger" full disabled={saving} onClick={onDelete}>
-                Delete {category.name}
-              </Button>
-              <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Button variant="danger" full onClick={() => setConfirmingDelete(true)}>
-            <TrashIcon className="h-5 w-5" />
-            Delete category
-          </Button>
-        )}
-      </div>
-    </Sheet>
-  );
-}
-
-function MembersCard({ householdId, onRemoved }: { householdId: string; onRemoved: () => void }) {
-  const { activeHousehold } = useHousehold();
-  const { session } = useAuth();
-  const [members, setMembers] = useState<HouseholdMember[]>([]);
-  const [resetting, setResetting] = useState<HouseholdMember | null>(null);
-  const [removing, setRemoving] = useState<HouseholdMember | null>(null);
-  const isOwner = activeHousehold?.role === 'OWNER';
-
-  async function refresh() {
-    setMembers(await api<HouseholdMember[]>('GET', `/api/households/${householdId}/members`));
-  }
-
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [householdId]);
-
-  return (
-    <Card title="Who's here">
-      <ul className="divide-y divide-line">
-        {members.map((m) => (
-          <li key={m.userId} className="flex items-center gap-3 py-2.5 first:pt-0">
-            <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft
-                         font-semibold text-accent-ink"
-              aria-hidden="true"
-            >
-              {m.displayName.charAt(0).toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{m.displayName}</span>
-              <span className="block truncate text-sm text-muted">{m.username}</span>
-            </span>
-            {m.role === 'OWNER' && <Badge>Owner</Badge>}
-            {/* Somebody who has never got in at all is a different job for the owner from somebody
-                who just has not added an email — the first needs telling how, or a reset link. */}
-            {!m.pinSet && !m.hasPassword ? (
-              <Badge tone="accent">Hasn't signed in yet</Badge>
-            ) : (
-              // The owner's cue: once nobody here shows this, the PIN screens can be switched off.
-              m.hasEmail === false && <Badge tone="accent">No email yet</Badge>
-            )}
-            {isOwner && m.userId !== session?.userId && (
-              <ActionMenu
-                label={`More for ${m.displayName}`}
-                title={m.displayName}
-                className="-mr-2"
-                items={[
-                  { label: 'Reset password', onSelect: () => setResetting(m) },
-                  { label: 'Remove from household', tone: 'danger', onSelect: () => setRemoving(m) },
-                ]}
-              />
-            )}
-          </li>
-        ))}
-      </ul>
-
-      {resetting && (
-        <ResetPasswordSheet householdId={householdId} member={resetting} onClose={() => setResetting(null)} />
-      )}
-      {removing && (
-        <RemoveMemberSheet
-          householdId={householdId}
-          householdName={activeHousehold?.name ?? 'this household'}
-          member={removing}
-          onClose={() => setRemoving(null)}
-          onRemoved={async () => {
-            onRemoved();
-            await refresh();
-          }}
-        />
-      )}
-    </Card>
-  );
-}
-
-/**
- * A forgotten password, without email: the owner makes a one-time link and hands it over — a
- * text, or the QR code held up in the kitchen. Opening the sheet makes the link, and any link
- * made for them before stops working.
- */
-function ResetPasswordSheet({
-  householdId,
-  member,
-  onClose,
-}: {
-  householdId: string;
-  member: HouseholdMember;
-  onClose: () => void;
-}) {
-  const [token, setToken] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Exactly one request per opening. Each new link retires the one before, so a second request
-  // (React runs effects twice in development) could leave the link on screen already dead.
-  const requested = useRef(false);
-
-  useEffect(() => {
-    if (requested.current) return;
-    requested.current = true;
-    api<{ token: string; expiresAt: string }>(
-      'POST',
-      `/api/households/${householdId}/members/${member.userId}/password-reset`,
-    )
-      .then((link) => setToken(link.token))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not make a reset link.'));
-  }, [householdId, member.userId]);
-
-  // The name is in the sentence below; a long one in the title would push "password" off the end.
-  return (
-    <Sheet title="Reset password" onClose={onClose}>
-      <div className="space-y-4">
+        </>
+      ) : (
         <p className="text-[0.9375rem] text-muted">
-          Send {member.displayName} this link, or let them scan the code. It lets them choose a new
-          password{member.hasEmail === false ? ' and add their email' : ''}, then signs them in. It
-          works once, for 24 hours.
+          You'll lose access to “{name}” — its recipes, plan and grocery list stay with everyone else. You can be
+          invited back.
         </p>
-        {error && <ErrorText>{error}</ErrorText>}
-        {!token && !error && <p className="text-sm text-muted">Making a link…</p>}
-        {token && (
-          <LinkHandout
-            url={`${window.location.origin}/reset/${token}`}
-            shareTitle="Reset your Meal Planner password"
-          />
-        )}
-      </div>
-    </Sheet>
-  );
-}
-
-/**
- * The owner takes somebody out. Asked first, in the app's own sheet: it is quick to do and it
- * cannot be undone from here. The invite link is replaced at the same time — they have seen it,
- * as everyone in the house has — so getting back in takes a new link somebody chooses to send.
- */
-function RemoveMemberSheet({
-  householdId,
-  householdName,
-  member,
-  onClose,
-  onRemoved,
-}: {
-  householdId: string;
-  householdName: string;
-  member: HouseholdMember;
-  onClose: () => void;
-  onRemoved: () => Promise<void>;
-}) {
-  const { refresh } = useHousehold();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function remove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api('DELETE', `/api/households/${householdId}/members/${member.userId}`);
-      await onRemoved();
-      // The household list carries how many are in it, which decides between Leave and Delete.
-      await refresh();
-      onClose();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not remove them.');
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Sheet title={`Remove ${member.displayName}?`} onClose={onClose}>
-      <div className="space-y-4">
-        <p className="text-[0.9375rem] text-muted">
-          {member.displayName} loses access to “{householdName}” straight away. Everything they
-          added stays here. The invite link is replaced too, so the one they have stops working —
-          they can only come back if somebody sends them the new one.
-        </p>
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2">
-          <Button variant="danger" className="flex-1" disabled={busy} onClick={remove}>
-            {busy ? 'Removing…' : 'Remove'}
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Sheet>
-  );
-}
-
-/**
- * How anybody new gets in: the household's invite link, sent as a message or held up as a QR
- * code for someone across the room. Whoever opens it makes an account (or signs in) and joins —
- * nobody is put in a house without saying yes. Anyone here can hand it out; only the owner can
- * throw it away and make a new one, since that breaks it for everyone who already has it.
- */
-function InviteCard({ householdId, name, isOwner }: { householdId: string; name: string; isOwner: boolean }) {
-  const [link, setLink] = useState<InviteLink | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setLink(await api<InviteLink>('GET', `/api/households/${householdId}/invite`));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not get the invite link.');
-    }
-  }, [householdId]);
-
-  useEffect(() => {
-    setLink(null);
-    load();
-  }, [load]);
-
-  async function replace() {
-    setBusy(true);
-    try {
-      await api('DELETE', `/api/households/${householdId}/invite`);
-      setLink(null);
-      await load();
-      setConfirming(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not make a new link.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const until = link
-    ? new Date(link.expiresAt).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-    : null;
-
-  return (
-    <Card title="Invite someone">
-      <div className="space-y-3">
-        <p className="text-[0.9375rem] text-muted">
-          Send this link to anyone you want in “{name}”, or let them scan the code. They make an
-          account (or sign in) and they're in.
-        </p>
-        {error && <ErrorText>{error}</ErrorText>}
-        {!link && !error && <p className="text-sm text-muted">Getting the link…</p>}
-        {link && (
-          <>
-            <LinkHandout url={inviteUrl(link.token)} shareTitle={`Join ${name} on Meal Planner`} qr="toggle" />
-            <p className="text-sm text-muted">
-              Works until {until}. Anyone who has it can join, so send it only to people you mean to.
-            </p>
-          </>
-        )}
-        {isOwner &&
-          link &&
-          (confirming ? (
-            <div className="space-y-3 rounded-xl bg-surface2 p-3">
-              <p className="text-sm">
-                The link you have now stops working, for everyone it was sent to. Nobody already
-                in the house is affected.
-              </p>
-              <div className="flex gap-2">
-                <Button variant="danger" size="sm" className="flex-1" disabled={busy} onClick={replace}>
-                  {busy ? 'Making…' : 'Make a new link'}
-                </Button>
-                <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button variant="ghost" size="sm" className="-ml-3" onClick={() => setConfirming(true)}>
-              Make a new link
-            </Button>
-          ))}
-      </div>
-    </Card>
-  );
-}
-
-/**
- * Joining somebody else's house from here: paste the link they sent, or scan the code on their
- * screen where the browser allows the camera. Either way it goes to the invite page, which says
- * whose house it is before anything happens.
- */
-function JoinHouseholdForm() {
-  const navigate = useNavigate();
-  const [text, setText] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function open(value: string) {
-    const link = parseAppLink(value);
-    if (!link) {
-      setError("That isn't a Meal Planner invite link. It looks like …/invite/ followed by a long code.");
-      return false;
-    }
-    navigate(`/${link.kind}/${link.token}`);
-    return true;
-  }
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (text.trim()) open(text);
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-[0.9375rem] text-muted">
-        Someone sent you an invite link, or has the code on their screen? Paste it here, or scan it.
-      </p>
-      <form onSubmit={onSubmit} className="flex gap-2">
-        <Input
-          aria-label="Invite link"
-          placeholder="https://…/invite/…"
-          inputMode="url"
-          {...usernameInputProps}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setError(null);
-          }}
-        />
-        <Button type="submit" variant="secondary" disabled={!text.trim()}>
-          Open
-        </Button>
-      </form>
-      <Button variant="ghost" size="sm" className="-ml-3" onClick={() => { setError(null); setScanning(true); }}>
-        Scan a QR code
-      </Button>
+      )}
       {error && <ErrorText>{error}</ErrorText>}
-      {scanning && (
-        <Sheet title="Scan an invite" onClose={() => setScanning(false)}>
-          <ScanInvite
-            onFound={(value) => {
-              if (open(value)) setScanning(false);
-            }}
-          />
-        </Sheet>
-      )}
-    </div>
-  );
-}
-
-/**
- * The camera, looking for an invite QR code. A code that is something else — a menu, a Wi-Fi
- * password — is said so, and the camera starts again rather than leaving a dead end.
- */
-function ScanInvite({ onFound }: { onFound: (value: string) => void }) {
-  const [attempt, setAttempt] = useState(0);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-
-  if (cameraError) {
-    return (
-      <div className="space-y-3 py-2">
-        <ErrorText>{cameraError}</ErrorText>
-        <p className="text-sm text-muted">You can still paste the link instead.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <BarcodeScanner
-        key={attempt}
-        kind="qr"
-        onError={setCameraError}
-        onFound={(value) => {
-          if (parseAppLink(value)) {
-            onFound(value);
-          } else {
-            setProblem("That QR code isn't a Meal Planner invite. Point at the code on the Invite card.");
-            setAttempt((n) => n + 1);
-          }
-        }}
-      />
-      {problem ? <ErrorText>{problem}</ErrorText> : <p className="text-center text-sm text-muted">Point your camera at an invite QR code.</p>}
+      <Button variant="danger" size="lg" full disabled={busy || (alone && !nameMatches)} onClick={go}>
+        {busy ? (alone ? 'Deleting…' : 'Leaving…') : alone ? 'Delete for good' : 'Leave'}
+      </Button>
     </div>
   );
 }
