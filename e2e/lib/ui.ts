@@ -67,6 +67,11 @@ export async function tapRowStart(page: Page, row: Locator) {
   await page.mouse.click(28, box.y + Math.min(12, box.height / 2));
 }
 
+/** New recipe opens on its three ways in, as cards: this picks one by its title. */
+export async function newRecipeWay(page: Page, way: 'Type it out' | 'From a link' | 'Paste from an AI') {
+  await page.getByRole('button', { name: new RegExp(`^${way}`) }).click();
+}
+
 /** Opens a ••• menu by its label and picks an item from it. */
 export async function fromMenu(page: Page, menu: string | RegExp, item: string | RegExp) {
   await page.getByRole('button', { name: menu }).first().click();

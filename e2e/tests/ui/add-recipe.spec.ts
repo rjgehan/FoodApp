@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { call, newHousehold } from '../../lib/api';
-import { fillSlot, sheet, signIn } from '../../lib/ui';
+import { fillSlot, newRecipeWay, sheet, signIn } from '../../lib/ui';
 
 /*
  * The three ways into a new recipe — Type it out, From a link, Paste — and the promise they all
@@ -30,21 +30,29 @@ test('a new recipe has three ways in, in order, and none of them writes it for y
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
-  await expect(page.getByRole('tab')).toHaveText(['Type it out', 'From a link', 'Paste']);
-  await expect(page.getByRole('tab', { name: 'Type it out' })).toHaveAttribute('aria-selected', 'true');
+  // The three ways in, as cards, in this order — and nothing that writes the recipe itself.
+  const ways = page.getByRole('button', { name: /^(Type it out|From a link|Paste from an AI)/ });
+  await expect(ways).toHaveCount(3);
+  await expect(ways.nth(0)).toContainText('Type it out');
+  await expect(ways.nth(1)).toContainText('From a link');
+  await expect(ways.nth(2)).toContainText('Paste from an AI');
   await expect(page.getByText(/Write it for me/)).toHaveCount(0);
+  // None of them is a form yet: the choice comes first.
+  await expect(page.getByPlaceholder('Recipe name')).toHaveCount(0);
 });
 
 test('Paste asks "an AI", not ChatGPT, and warns that it cannot read just anything', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
-  await page.getByRole('tab', { name: 'Paste' }).click();
-  // Only the chosen way in is on screen; the others wait, hidden, with whatever was in them.
-  const paste = page.getByRole('tabpanel');
+  await newRecipeWay(page, 'Paste from an AI');
+  const paste = page.getByRole('main');
 
-  await expect(paste.getByRole('heading', { name: 'Ask an AI' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Copy the question' })).toBeVisible();
+  // Three numbered steps: copy the question, ask an AI, paste the answer.
+  await expect(paste.getByRole('heading', { name: 'Copy this question' })).toBeVisible();
+  await expect(paste.getByRole('heading', { name: /^Ask an AI/ })).toBeVisible();
+  await expect(paste.getByRole('heading', { name: 'Paste the answer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy question' })).toBeVisible();
   await expect(page.getByText(/ChatGPT/)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Open/ })).toHaveCount(0);
   // The link card moved to its own tab.
@@ -56,7 +64,7 @@ test('Paste asks "an AI", not ChatGPT, and warns that it cannot read just anythi
 
   // A paragraph with no Ingredients heading is refused, with the reason, and nothing is made up.
   await page.getByLabel('The recipe to read').fill('Just fry an egg in some butter and eat it on toast.');
-  await page.getByRole('button', { name: 'Read it' }).click();
+  await page.getByRole('button', { name: 'Read into form' }).click();
   await expect(page.getByText(/Couldn’t find any ingredients/)).toBeVisible();
   await expect(paste.getByPlaceholder('Recipe name')).toHaveCount(0);
 });
@@ -66,17 +74,22 @@ test('switching ways in keeps what was typed, and a link pasted into Paste goes 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
 
-  await page.getByRole('tabpanel').getByPlaceholder('Recipe name').fill('Half typed lasagne');
-  await page.getByRole('tab', { name: 'Paste' }).click();
-  await page.getByRole('tabpanel').getByLabel('The recipe to read').fill(TIKTOK);
-  await page.getByRole('tab', { name: 'Type it out' }).click();
-  await expect(page.getByRole('tabpanel').getByPlaceholder('Recipe name')).toHaveValue('Half typed lasagne');
+  await newRecipeWay(page, 'Type it out');
+  await page.getByPlaceholder('Recipe name').fill('Half typed lasagne');
+  // Back to the ways in, and into another: what was typed waits behind it.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await newRecipeWay(page, 'Paste from an AI');
+  await page.getByLabel('The recipe to read').fill(TIKTOK);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await newRecipeWay(page, 'Type it out');
+  await expect(page.getByPlaceholder('Recipe name')).toHaveValue('Half typed lasagne');
 
   // A link on its own is not a recipe to read, but it is one to fetch — the same as the phone.
-  await page.getByRole('tab', { name: 'Paste' }).click();
-  await page.getByRole('tabpanel').getByRole('button', { name: 'Read it' }).click();
-  await expect(page.getByRole('tab', { name: 'From a link' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tabpanel').getByLabel('A link to a recipe')).toHaveValue(TIKTOK);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await newRecipeWay(page, 'Paste from an AI');
+  await page.getByRole('button', { name: 'Read into form' }).click();
+  await expect(page.getByRole('heading', { name: 'From a link' })).toBeVisible();
+  await expect(page.getByLabel('A link to a recipe')).toHaveValue(TIKTOK);
 });
 
 test('From a link opens what it read in the form, with the link already in Links', async ({ page }) => {
@@ -90,8 +103,8 @@ test('From a link opens what it read in the form, with the link already in Links
   });
 
   await page.goto('/recipes/new?section=LUNCH');
-  await page.getByRole('tab', { name: 'From a link' }).click();
-  const link = page.getByRole('tabpanel');
+  await newRecipeWay(page, 'From a link');
+  const link = page.getByRole('main');
   await expect(link.getByText('Works with TikTok, Instagram and recipe websites.')).toBeVisible();
 
   await link.getByLabel('A link to a recipe').fill(`Look at this! ${TIKTOK}`);
@@ -99,7 +112,11 @@ test('From a link opens what it read in the form, with the link already in Links
   // Sent as pasted: the server is the one that finds the link in the sentence.
   expect(sent?.url).toBe(`Look at this! ${TIKTOK}`);
 
-  // In the form for checking, not saved yet.
+  // First the draft — what was found — then the form for checking it, not saved yet.
+  await expect(link.getByRole('heading', { name: 'Crispy chickpeas' })).toBeVisible();
+  await expect(link.getByText('Found 2 ingredients and 2 steps.', { exact: false })).toBeVisible();
+  await link.getByRole('button', { name: 'Review draft' }).click();
+  await expect(page.getByRole('heading', { name: 'Check recipe' })).toBeVisible();
   await expect(link.getByPlaceholder('Recipe name')).toHaveValue('Crispy chickpeas');
   await expect(link.getByPlaceholder('ingredient').nth(1)).toHaveValue('olive oil');
   await expect(link.getByLabel('Link 1', { exact: true })).toHaveValue(TIKTOK);
@@ -116,13 +133,18 @@ test('From a link says why when a link cannot be read, and lets you try another'
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
-  await page.getByRole('tab', { name: 'From a link' }).click();
+  await newRecipeWay(page, 'From a link');
   // Refused by the real server before it fetches anything.
-  const link = page.getByRole('tabpanel');
+  const link = page.getByRole('main');
   await link.getByLabel('A link to a recipe').fill('javascript:alert(1)');
   await link.getByRole('button', { name: 'Get the recipe' }).click();
   await expect(link.getByText('Only web links can be imported.')).toBeVisible();
   await expect(link.getByRole('button', { name: 'Get the recipe' })).toBeEnabled();
+  // The ways on from a link that cannot be read: keep it as a link, or type it out.
+  await expect(link.getByRole('button', { name: 'Keep as saved link' })).toBeVisible();
+  await link.getByRole('button', { name: 'Type it out' }).click();
+  await expect(page.getByRole('heading', { name: 'New recipe' })).toBeVisible();
+  await expect(page.getByPlaceholder('Recipe name')).toBeVisible();
 });
 
 test('a new recipe from the planner offers a link and an AI paste, not the writer', async ({ page }) => {

@@ -341,15 +341,18 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
   await signIn(page, mine.owner, mine.id);
   await page.goto(`/recipes/${r.id}`);
   await fromMenu(page, 'Recipe options', /^Share/);
-  const inExplore = sheet(page).getByRole('switch', { name: 'In Explore' });
+  const inExplore = page.getByRole('switch', { name: 'Publish to Explore' });
   await expect(inExplore).toHaveAttribute('aria-checked', 'false');
   await inExplore.click();
   await expect(inExplore).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('button', { name: 'Recipe', exact: true }).click();
+  // Back on the recipe, ••• › Share says where it is now.
+  await page.getByRole('button', { name: 'Recipe options' }).click();
+  await expect(sheet(page).getByRole('button', { name: /^Share/ })).toContainText('In Explore');
   await page.keyboard.press('Escape');
-  await expect(page.getByText(/in Explore/)).toBeVisible();
   // Still in its own drawer, not shown as somebody else's recipe.
   await expect(page.getByText(/Dinner/).first()).toBeVisible();
-  await expect(page.getByText(/^Shared ·/)).toHaveCount(0);
+  await expect(page.getByText(/^Shared by/)).toHaveCount(0);
 
   // Find it from the other household.
   await signIn(page, theirs.owner, theirs.id);
@@ -365,8 +368,10 @@ test('publish a recipe, find it in Explore from another household, keep it', asy
 
   // Keep it: it lands in their own catalog.
   await page.getByText(name).click();
-  await page.getByRole('button', { name: 'Save to my recipes' }).click();
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText(`Shared by ${mine.name}`).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Move into my recipes' }).click();
+  await sheet(page).getByRole('button', { name: 'Move into my recipes' }).click();
+  await expect(page.getByText('Moved into your recipes')).toBeVisible();
   await expect.poll(async () =>
     (await call('GET', `/api/households/${theirs.id}/recipes`, { token: theirs.owner.token }))
       .some((x: any) => x.id === r.id)).toBe(true);
@@ -405,9 +410,10 @@ test('a recipe can be deleted from its ••• menu, and its planned meal goes
 
   await signIn(page, hh.owner, hh.id);
   await page.goto(`/recipes/${r.id}`);
-  await fromMenu(page, 'Recipe options', 'Delete recipe');
-  await expect(sheet(page).getByText('It can’t be undone.').or(sheet(page).getByText("It can't be undone."))).toBeVisible();
-  await sheet(page).getByRole('button', { name: 'Delete forever' }).click();
+  await fromMenu(page, 'Recipe options', /^Delete/);
+  const ask = page.getByRole('alertdialog', { name: 'Delete Leftover stew?' });
+  await expect(ask.getByText(/This can['’]t be undone\./)).toBeVisible();
+  await ask.getByRole('button', { name: 'Delete recipe' }).click();
 
   await expect(page).toHaveURL(/\/recipes$/);
   const recipes = await call('GET', `/api/households/${hh.id}/recipes`, { token: owner.token });

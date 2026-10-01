@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { call, newHousehold, newRecipe } from '../../lib/api';
-import { sheet, signIn } from '../../lib/ui';
+import { newRecipeWay, sheet, signIn } from '../../lib/ui';
 
 /*
  * The catalog's drawers and groups: the icon on a group, and adding a recipe from inside one
@@ -17,6 +17,9 @@ test('a recipe added from inside a group starts filed in that drawer and group',
   await expect(page.getByRole('link', { name: 'Add a recipe' })).toBeVisible();
   await page.getByRole('link', { name: 'Add recipe' }).click();
   await expect(page).toHaveURL(/\/recipes\/new\?section=DINNER&group=/);
+  // It says where the recipe will go before you pick a way in.
+  await expect(page.getByText(/Will be filed in\s*Dinner › Veggie/)).toBeVisible();
+  await newRecipeWay(page, 'Type it out');
 
   // Already pressed for you — and still changeable.
   await expect(page.getByRole('button', { name: 'Dinner', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -37,11 +40,11 @@ test('the paste tab starts filed in the drawer it was opened from too', async ({
   await page.goto('/recipes/section/breakfast');
   await page.getByRole('link', { name: 'Add recipe' }).click();
   await expect(page).toHaveURL(/section=BREAKFAST/);
-  await page.getByRole('tab', { name: 'Paste' }).click();
+  await newRecipeWay(page, 'Paste from an AI');
   await page.getByPlaceholder(/Name:/).fill('Porridge\n\nIngredients\n1 cup oats\n\nInstructions\nCook it.');
-  await page.getByRole('button', { name: 'Read it' }).click();
-  // Scoped to the tab on screen: Type it out is still there behind it, hidden, with its own form.
-  await expect(page.getByRole('tabpanel').getByPlaceholder('Recipe name')).toHaveValue('Porridge');
+  await page.getByRole('button', { name: 'Read into form' }).click();
+  await expect(page.getByRole('heading', { name: 'Check recipe' })).toBeVisible();
+  await expect(page.getByPlaceholder('Recipe name')).toHaveValue('Porridge');
   await expect(page.getByRole('button', { name: 'Breakfast', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -52,9 +55,12 @@ test('the drawer can be changed before saving, and Back returns to the group', a
   const side = groups.find((c: any) => c.name === 'Side' && c.section === 'DINNER');
 
   await page.goto(`/recipes/new?section=DINNER&group=${side.id}`);
+  await newRecipeWay(page, 'Type it out');
   await page.getByRole('button', { name: 'Lunch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Dinner', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await page.getByRole('button', { name: 'Back' }).click();
+  // Back to the ways in, then Cancel leaves for the group it was started from.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page).toHaveURL(new RegExp(`/recipes/section/dinner\\?group=${side.id}`));
 });
 
@@ -66,6 +72,7 @@ test('moving the drawer sets aside a group the new drawer does not have, instead
   expect(before.some((c: any) => c.name === 'Veggie' && c.section === 'LUNCH')).toBe(false);
 
   await page.goto(`/recipes/new?section=DINNER&group=${veggie.id}`);
+  await newRecipeWay(page, 'Type it out');
   const veggieChip = page.getByRole('button', { name: /^Veggie\b/ });
   await expect(veggieChip).toHaveAttribute('aria-pressed', 'true');
 
