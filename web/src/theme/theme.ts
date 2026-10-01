@@ -222,6 +222,12 @@ export function resetTheme() {
 export function startTheme() {
   current = cached();
   paint(current);
+  // The old app's cached stylesheet: never read any more, so not kept either.
+  try {
+    localStorage.removeItem(OLD_CSS_KEY);
+  } catch {
+    // Storage blocked: nothing was kept to begin with.
+  }
   systemDark().addEventListener('change', () => {
     paintMode(current);
     listeners.forEach((l) => l());

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { HouseholdProvider } from './household/HouseholdContext';
@@ -22,6 +23,9 @@ import InvitePage from './pages/InvitePage';
 import AdminRoutes from './pages/AdminPage';
 import IdeasPage from './pages/IdeasPage';
 import ThemePage from './pages/ThemePage';
+
+/** Every building block on one page, for development only: production builds leave it out. */
+const GalleryPage = import.meta.env.DEV ? lazy(() => import('./pages/GalleryPage')) : null;
 
 export default function App() {
   const { session } = useAuth();
@@ -91,6 +95,16 @@ export default function App() {
           <Route path="/ideas" element={<IdeasPage />} />
           {/* Theme: light or dark, and which of the five themes. Reached from Settings. */}
           <Route path="/settings/theme" element={<ThemePage />} />
+          {GalleryPage && (
+            <Route
+              path="/__gallery"
+              element={
+                <Suspense fallback={null}>
+                  <GalleryPage />
+                </Suspense>
+              }
+            />
+          )}
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

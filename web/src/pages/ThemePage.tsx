@@ -4,7 +4,7 @@ import { usePushedScreen } from '../components/Layout';
 import { Icon } from '../components/icons';
 import { ThemeSwatch } from '../components/ThemeSwatch';
 import { Button, cx, ErrorText, NavBar, Pill, SectionLabel, Segmented } from '../components/ui';
-import { normalizeHex } from '../theme/colors';
+import { contrast, hexToRgb, normalizeHex } from '../theme/colors';
 import { pickTheme, saveTheme, useTheme } from '../theme/sync';
 import { accentOf, activeKey, CUSTOM, THEMES, type Theme, type ThemeMode } from '../theme/theme';
 
@@ -181,7 +181,15 @@ function ThemeTile({
       style={selected ? { borderColor: swatch, padding: 'calc(0.75rem - 1px) calc(0.5rem - 1px)' } : undefined}
     >
       <ThemeSwatch color={swatch} rainbow={custom && !selected} className="h-[46px] w-[46px]">
-        {selected && <Icon name="check" size={20} strokeWidth={3} className="text-white drop-shadow" />}
+        {selected && (
+          // White on the dark dots, ink on the light ones (Brunch's yolk, a pale custom pick).
+          <Icon
+            name="check"
+            size={20}
+            strokeWidth={3}
+            className={contrast(hexToRgb(swatch), [255, 255, 255]) >= 2.2 ? 'text-white' : 'text-[#2B211A]'}
+          />
+        )}
       </ThemeSwatch>
       <span className="text-[0.8125rem] font-semibold">{name}</span>
     </button>
