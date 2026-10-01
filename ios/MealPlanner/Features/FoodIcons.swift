@@ -66,56 +66,6 @@ extension RecipeSection {
     }
 }
 
-/**
- A drawer or group tile: a square of its colour with the food drawn big in the middle and the
- name in a band along the bottom, like the web's. The picture is what you find it by, so it
- gets most of the square rather than a corner. No icon is just the colour and the name.
-*/
-struct CatalogTile: View {
-    let name: String
-    let detail: String
-    let tint: Color
-    var iconKey: String?
-    /// A drawing that is not one of the food icons a group can wear — Saved links' chain.
-    var art: Image? = nil
-
-    var body: some View {
-        Color.clear
-            .aspectRatio(1, contentMode: .fit)
-            .overlay {
-                GeometryReader { box in
-                    if let picture = art ?? FoodIcon.named(iconKey)?.image {
-                        picture
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: box.size.width * 0.66, height: box.size.height * 0.66)
-                            .position(x: box.size.width / 2, y: box.size.height * 0.05 + box.size.height * 0.33)
-                            // Faded as a whole rather than drawn in a see-through colour, so
-                            // the places its strokes cross do not come out darker.
-                            .foregroundStyle(Color.primary)
-                            .opacity(0.7)
-                            .accessibilityHidden(true)
-                    }
-                }
-            }
-            .overlay(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name).font(.headline).lineLimit(1)
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-                .background(Color(.systemBackground).opacity(0.5))
-            }
-            .background(tint)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .contentShape(RoundedRectangle(cornerRadius: 16))
-            .accessibilityElement(children: .combine)
-    }
-}
-
 /// Every drawing as a tap target, the chosen one ringed. `allowNone` adds "no icon" first, for
 /// groups; a drawer always wears something. The chosen one is named under the grid, as on the
 /// web: there is no hover on a phone, and a few of these are close cousins at this size.
@@ -169,16 +119,6 @@ struct FoodIconPicker: View {
         .accessibilityLabel(label)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
-}
-
-#Preview("Tiles") {
-    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-        CatalogTile(name: "Full meal", detail: "3 recipes", tint: Palette.cover(index: 2), iconKey: "full-meal")
-        CatalogTile(name: "Veggie", detail: "1 recipe", tint: Palette.cover(index: 3), iconKey: "veggie")
-        CatalogTile(name: "Side", detail: "0 recipes", tint: Palette.cover(index: 4), iconKey: "side")
-        CatalogTile(name: "Main", detail: "4 recipes · 4 groups", tint: Palette.cover(index: 1))
-    }
-    .padding()
 }
 
 #Preview("Picker") {
