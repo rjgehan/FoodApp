@@ -20,6 +20,7 @@ import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import com.gehan.mealplanner.security.JwtService;
 import com.gehan.mealplanner.security.SignInAttemptLimiter;
+import com.gehan.mealplanner.security.SignInLockedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -147,8 +148,8 @@ public class AuthService {
 
         long lockedFor = attemptLimiter.secondsUntilUnlocked(limiterKey);
         if (lockedFor > 0) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                    "Too many incorrect PINs. " + SignInAttemptLimiter.tryAgainIn(lockedFor));
+            throw new SignInLockedException(
+                    "Too many incorrect PINs. " + SignInAttemptLimiter.tryAgainIn(lockedFor), lockedFor);
         }
 
         User user = userRepository.findForSignIn(username).orElse(null);
@@ -183,8 +184,8 @@ public class AuthService {
 
         long lockedFor = attemptLimiter.secondsUntilUnlocked(limiterKey);
         if (lockedFor > 0) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                    "Too many incorrect passwords. " + SignInAttemptLimiter.tryAgainIn(lockedFor));
+            throw new SignInLockedException(
+                    "Too many incorrect passwords. " + SignInAttemptLimiter.tryAgainIn(lockedFor), lockedFor);
         }
 
         User user = userRepository.findByEmail(email).orElse(null);

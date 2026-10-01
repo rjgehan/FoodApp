@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
+  API_URL,
   admin,
   call,
   inviteToken,
@@ -117,6 +118,18 @@ test.describe('email and password', () => {
     }
     // However it is capitalised: the counter is per address, not per spelling.
     expect(await statusOf('POST', '/api/auth/login/email', { body: { email: email.toUpperCase(), password: 'right-password' } })).toBe(429);
+    // How long is left, to the second, for the sign-in screen's countdown — and as Retry-After.
+    const locked = await fetch(`${API_URL}/api/auth/login/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'right-password' }),
+    });
+    const body = await locked.json();
+    expect(locked.status).toBe(429);
+    expect(body.message).toMatch(/^Too many incorrect passwords\. Try again in \d+ min\.$/);
+    expect(body.retryAfterSeconds).toBeGreaterThan(0);
+    expect(body.retryAfterSeconds).toBeLessThanOrEqual(15 * 60);
+    expect(Number(locked.headers.get('retry-after'))).toBe(body.retryAfterSeconds);
     // The PIN is a separate way in with its own counter.
     expect((await login(m.username, '4321')).token).toBeTruthy();
   });
