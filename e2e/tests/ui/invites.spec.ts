@@ -27,15 +27,21 @@ test('the owner hands out the link, and somebody new makes an account from it an
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
 
-  const card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Invite someone' }) });
-  const link = card.getByLabel('Link', { exact: true });
-  await expect(link).toHaveText(/\/invite\/[A-Za-z0-9_-]{43}$/);
-  const url = (await link.textContent())!.trim();
-  // The QR code is there for somebody in the room, behind a toggle so the link leads.
-  await expect(card.getByRole('img', { name: 'QR code of the link' })).toHaveCount(0);
-  await card.getByRole('button', { name: 'Show QR code' }).click();
-  await expect(card.getByRole('img', { name: 'QR code of the link' })).toBeVisible();
-  await expect(card.getByText(/Works until/)).toBeVisible();
+  const card = page.getByRole('region', { name: 'Invite someone' });
+  await expect(card.getByText(`Anyone with the link can join ${hh.name}.`)).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Share link' })).toBeEnabled();
+  // The QR code is there for somebody in the room, a tap away so the card stays small.
+  await expect(page.getByRole('img', { name: 'QR code of the link' })).toHaveCount(0);
+  await card.getByRole('button', { name: 'Show QR' }).click();
+  const qr = page.getByRole('dialog', { name: 'Scan to join' });
+  await expect(qr.getByRole('img', { name: 'QR code of the link' })).toBeVisible();
+  await expect(qr.getByText(`${hh.name} · 1 person`)).toBeVisible();
+  // The well shows the link without its scheme; the whole of it is its title, and what Copy takes.
+  const link = qr.getByLabel('Link', { exact: true });
+  await expect(link).toHaveAttribute('title', /^https?:\/\/.+\/invite\/[A-Za-z0-9_-]{43}$/);
+  const url = (await link.getAttribute('title'))!;
+  await expect(link).toHaveText(url.replace(/^https?:\/\//, ''));
+  await expect(qr.getByText(/Works until/)).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('invite-card.png'), fullPage: true });
 
   const { context, page: phone } = await anotherPhone(browser);
@@ -196,16 +202,25 @@ test('only the owner can make a new link, and the old one stops working', async 
 
   await signIn(page, m, hh.id);
   await page.goto('/household');
-  const card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Invite someone' }) });
-  await expect(card.getByLabel('Link', { exact: true })).toHaveText(new RegExp(`${before}$`));
-  await expect(card.getByRole('button', { name: 'Make a new link' })).toHaveCount(0);
+  await page.getByRole('region', { name: 'Invite someone' }).getByRole('button', { name: 'Show QR' }).click();
+  const qr = page.getByRole('dialog', { name: 'Scan to join' });
+  await expect(qr.getByLabel('Link', { exact: true })).toHaveAttribute('title', new RegExp(`${before}$`));
+  await expect(qr.getByRole('button', { name: 'Share link' })).toBeVisible();
+  await expect(qr.getByRole('button', { name: 'Replace link' })).toHaveCount(0);
 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
-  await card.getByRole('button', { name: 'Make a new link' }).click();
-  await expect(card.getByText('The link you have now stops working')).toBeVisible();
-  await card.getByRole('button', { name: 'Make a new link' }).click();
-  await expect(card.getByLabel('Link', { exact: true })).not.toHaveText(new RegExp(`${before}$`));
+  await page.getByRole('region', { name: 'Invite someone' }).getByRole('button', { name: 'Show QR' }).click();
+  await expect(qr.getByText('Replacing stops the old link and QR working.')).toBeVisible();
+  await qr.getByRole('button', { name: 'Replace link' }).click();
+  // Asked first, because everyone it was sent to loses it.
+  const confirm = page.getByRole('alertdialog', { name: 'Replace the invite link?' });
+  await expect(confirm.getByText('The link you have now stops working')).toBeVisible();
+  await confirm.getByRole('button', { name: 'Replace link' }).click();
+  await expect(confirm).toHaveCount(0);
+  // The sheet stays up, now with the new link and its code.
+  await expect(qr.getByLabel('Link', { exact: true })).not.toHaveAttribute('title', new RegExp(`${before}$`));
+  await expect(qr.getByLabel('Link', { exact: true })).toHaveAttribute('title', new RegExp(`${await inviteToken(hh.id)}$`));
   expect((await call('GET', `/api/public/invites/${before}`)).valid).toBe(false);
 });
 
@@ -223,28 +238,40 @@ test('the owner removes someone, after asking, and their phone moves on to anoth
 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
-  const row = page.getByRole('listitem').filter({ hasText: m.displayName });
-  await row.getByRole('button', { name: `More for ${m.displayName}` }).click();
-  await sheet(page).getByRole('button', { name: 'Remove from household' }).click();
-  const confirm = sheet(page);
-  await expect(confirm.getByRole('heading', { name: `Remove ${m.displayName}?` })).toBeVisible();
+  // The owner taps somebody to see what they can do for them.
+  const row = page.getByRole('list', { name: 'People' }).getByRole('listitem').filter({ hasText: m.displayName });
+  await row.getByRole('button').click();
+  const actions = page.getByRole('dialog', { name: m.displayName });
+  await expect(actions.getByText('Signs in with email')).toBeVisible();
+  await actions.getByRole('button', { name: /^Remove from household/ }).click();
+  const confirm = page.getByRole('alertdialog', { name: `Remove ${m.displayName}?` });
+  await expect(confirm).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('remove-member.png') });
   // Cancel really cancels.
   await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(confirm).toHaveCount(0);
+  await actions.getByRole('button', { name: 'Close' }).click();
+  await expect(actions).toHaveCount(0);
   await expect(row).toBeVisible();
 
-  const card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Invite someone' }) });
+  const invite = page.getByRole('region', { name: 'Invite someone' });
+  const qr = page.getByRole('dialog', { name: 'Scan to join' });
   const before = await inviteToken(hh.id);
-  await expect(card.getByLabel('Link', { exact: true })).toHaveText(new RegExp(`${before}$`));
+  await invite.getByRole('button', { name: 'Show QR' }).click();
+  await expect(qr.getByLabel('Link', { exact: true })).toHaveAttribute('title', new RegExp(`${before}$`));
+  await qr.getByRole('button', { name: 'Close' }).click();
+  await expect(qr).toHaveCount(0);
 
-  await row.getByRole('button', { name: `More for ${m.displayName}` }).click();
-  await sheet(page).getByRole('button', { name: 'Remove from household' }).click();
-  await expect(sheet(page).getByText('The invite link is replaced too')).toBeVisible();
-  await sheet(page).getByRole('button', { name: 'Remove', exact: true }).click();
+  await row.getByRole('button').click();
+  await actions.getByRole('button', { name: /^Remove from household/ }).click();
+  await expect(confirm.getByText('The invite link is replaced too')).toBeVisible();
+  await confirm.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(actions).toHaveCount(0);
   await expect(page.getByRole('listitem').filter({ hasText: m.displayName })).toHaveCount(0);
   expect((await call('GET', '/api/households', { token: m.token })).map((h: { id: string }) => h.id)).toEqual([other.id]);
-  // The link they had seen is gone, and the card shows the new one.
-  await expect(card.getByLabel('Link', { exact: true })).not.toHaveText(new RegExp(`${before}$`));
+  // The link they had seen is gone, and the household page hands out the new one.
+  await invite.getByRole('button', { name: 'Show QR' }).click();
+  await expect(qr.getByLabel('Link', { exact: true })).not.toHaveAttribute('title', new RegExp(`${before}$`));
   expect((await call('GET', `/api/public/invites/${before}`)).valid).toBe(false);
 
   // Their next request there is turned away, and the app falls back to the house they still have

@@ -104,7 +104,7 @@ test('anybody else is sent home, and has no Admin row in Settings', async ({ pag
   await expect(page).toHaveURL(/\/meal-plan$/);
 
   await page.getByRole('button', { name: 'Your account' }).click();
-  await expect(sheet(page).getByRole('link', { name: 'Household settings' })).toBeVisible();
+  await expect(sheet(page).getByRole('button', { name: /^Household settings/ })).toBeVisible();
   await expect(sheet(page).getByRole('link', { name: /^Admin/ })).toHaveCount(0);
 });
 
@@ -114,7 +114,7 @@ test('the admin signed in with their PIN is sent home like anybody else', async 
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/meal-plan$/);
   await page.getByRole('button', { name: 'Your account' }).click();
-  await expect(sheet(page).getByRole('link', { name: 'Household settings' })).toBeVisible();
+  await expect(sheet(page).getByRole('button', { name: /^Household settings/ })).toBeVisible();
   await expect(sheet(page).getByRole('link', { name: /^Admin/ })).toHaveCount(0);
 });
 

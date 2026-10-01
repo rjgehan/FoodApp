@@ -36,7 +36,8 @@ test('a household made on the Household page starts by ticking what is in the ho
 
   // Offered once: coming back to the app does not ask again.
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Household', level: 1 })).toBeVisible();
+  // The new house is the one open now, so the page is named for it.
+  await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
