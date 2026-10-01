@@ -189,6 +189,28 @@ struct GalleryView: View {
                     }
                 }
 
+                KitchenSection("Explore") {
+                    entry("Explore", "safari") {
+                        ExploreView(session: session, sample: SampleData.published)
+                    }
+                    entry("Global recipes", "globe") {
+                        NavigationStack { GlobalRecipesScreen(session: session, sample: SampleData.published) }
+                    }
+                    entry("A published recipe", "text.book.closed") {
+                        NavigationStack { GlobalRecipeScreen(recipe: SampleData.published[0], session: session) }
+                    }
+                    entry("Move into my recipes — which household", "arrow.right.circle") {
+                        MoveIntoMineSheet(recipe: SampleData.published[0], session: twoHouses) { _, _ in }
+                            .pageBackground()
+                    }
+                    entry("Nutrition facts — coming soon", "leaf") {
+                        NavigationStack { SoonScreen(destination: SoonDestination.all[0]) }
+                    }
+                    entry("Meal plans — coming soon", "target") {
+                        NavigationStack { SoonScreen(destination: SoonDestination.all[1]) }
+                    }
+                }
+
                 KitchenSection {
                     LabeledContent("Server", value: Config.baseURL)
                     LabeledContent("Sample data", value: "no network calls")

@@ -147,6 +147,11 @@ Scan to join sheet, and `member` the first other person's owner actions (sign in
 add `-mp_debug_expand 1` to make them a password-reset link there. `-mp_debug_screen settings`
 opens Settings; with any of those `-mp_debug_scroll` values it goes on into the household page.
 
+On the Explore tab (`-mp_debug_tab explore`), `-mp_debug_screen explore-recipes` opens Global
+recipes, `explore-recipe` its first published recipe from another household, `explore-move` that
+recipe's Move into my recipes, and `explore-nutrition` or `explore-meal-plans` that door's
+coming-soon page.
+
 `-mp_debug_screen theme` opens Settings → Theme, `theme-sheet` the same inside a sheet (as Settings
 shows it), `design` the design system's catalogue, `gallery` the Gallery and `switch` the
 household switcher.
