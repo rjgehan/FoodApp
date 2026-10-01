@@ -1,4 +1,4 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
@@ -245,12 +245,26 @@ test('capture every screen', async ({ page }) => {
     await shot(page, 'Recipe catalog', '', { full: true });
     await page.getByPlaceholder(/Search recipes/).fill('steak');
     await shot(page, 'Recipe search');
+    await page.goto('/recipes/saved-links');
+    await shot(page, 'Saved links', '', { full: true });
+    await page.goto('/recipes/section/shared');
+    await shot(page, 'Shared with you', '', { full: true });
   });
   await step('drawer', async () => {
     await page.goto('/recipes/section/dinner');
-    await shot(page, 'Dinner drawer — groups', 'The + and pencil on each card are 24pt targets.', { full: true });
+    await shot(page, 'Dinner drawer — groups', 'Group cards, New group, and the unfiled recipes with their likely group first.', { full: true });
+    await page.getByRole('button', { name: 'Edit groups' }).click();
+    await shot(page, 'Edit groups', 'Every group here in one list; the icon grid is for the one being edited.', { full: true });
+    await page.getByRole('button', { name: 'Cancel' }).click();
     await page.getByText('Main dish', { exact: true }).first().click();
-    await shot(page, 'Group — with split suggestion', '', { full: true });
+    // A big group with nothing inside offers to split itself, once.
+    const split = page.getByRole('dialog', { name: /^Split/ });
+    if (await split.waitFor({ timeout: 4000 }).then(() => true, () => false)) {
+      await shot(page, 'Group — split suggestion');
+      await split.getByRole('button', { name: 'Close' }).click();
+      await expect(split).toHaveCount(0);
+    }
+    await shot(page, 'Group — recipes', '', { full: true });
     await page.getByRole('button', { name: /^Options for/ }).click();
     await shot(page, 'Group ••• menu');
     await sheet(page).getByRole('button', { name: 'Edit group' }).click();

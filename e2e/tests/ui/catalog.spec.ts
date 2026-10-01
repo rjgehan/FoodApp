@@ -93,7 +93,10 @@ test('a group can be given an icon, and it stays through a rename', async ({ pag
   await newRecipe(hh.id, 'Stew', [{ name: 'beef', qty: 1 }], { categories: ['Main'] });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  await page.getByRole('button', { name: 'More for Main' }).click();
+  // Inside the group, its ••• has the group's own sheet: name, icon, delete.
+  await page.getByRole('button', { name: /^Main\b/ }).click();
+  await page.getByRole('button', { name: 'Options for Main' }).click();
+  await sheet(page).getByRole('button', { name: 'Edit group', exact: true }).click();
 
   await Promise.all([
     page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/recipe-categories/')),
@@ -103,7 +106,7 @@ test('a group can be given an icon, and it stays through a rename', async ({ pag
 
   await sheet(page).getByRole('textbox').fill('Mains');
   await sheet(page).getByRole('button', { name: 'Rename' }).click();
-  await expect(page.getByRole('button', { name: /^Mains\b/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Mains', exact: true })).toBeVisible();
 
   const groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
   expect(groups.find((c: any) => c.name === 'Mains' && c.section === 'DINNER').iconKey).toBe('meat');
@@ -113,8 +116,8 @@ test('a new group can be made with an icon', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  await page.getByRole('button', { name: 'Options for Dinner' }).click();
-  await sheet(page).getByRole('button', { name: 'Add a group' }).click();
+  // The dashed tile after the groups.
+  await page.getByRole('button', { name: 'New group' }).click();
   await page.getByPlaceholder('Main dish, Side…').fill('Tacos');
   await page.getByRole('button', { name: 'Pick an icon' }).click();
   await page.getByRole('button', { name: 'Taco', exact: true }).click();
@@ -125,23 +128,84 @@ test('a new group can be made with an icon', async ({ page }) => {
   expect(groups.find((c: any) => c.name === 'Tacos').iconKey).toBe('taco');
 });
 
-test('from the Dinner page, Edit groups gives every group its icon in one list', async ({ page }) => {
+test('from the Dinner page, Edit groups gives every group its icon and name in one list', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  await page.getByRole('button', { name: 'Options for Dinner' }).click();
-  await sheet(page).getByRole('button', { name: 'Edit groups' }).click();
-  await expect(sheet(page).getByText('Groups in Dinner')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit groups' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit groups' })).toBeVisible();
+  const list = page.getByRole('list', { name: 'Groups in Dinner' });
 
-  await sheet(page).getByRole('button', { name: 'Icon for Main' }).click();
-  await Promise.all([
-    page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/recipe-categories/')),
-    sheet(page).getByRole('button', { name: 'Meat', exact: true }).click(),
-  ]);
-  await page.screenshot({ path: 'test-results/edit-groups-sheet.png' });
-  await page.keyboard.press('Escape');
+  // Tapping a group's tile chooses which one the icon grid is for.
+  await list.getByRole('button', { name: 'Icon for Main' }).click();
+  await expect(page.getByText('Icon for Main', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Meat', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Meat', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await list.getByLabel('Name of Side').fill('Sides');
+  await page.screenshot({ path: 'test-results/edit-groups-screen.png' });
+
+  // Nothing is sent until Done.
+  let groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
+  expect(groups.find((c: any) => c.name === 'Main' && c.section === 'DINNER').iconKey ?? null).not.toBe('meat');
+
+  await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('button', { name: /^Main\b/ }).locator('[data-icon="meat"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Sides\b/ })).toBeVisible();
 
-  const groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
+  groups = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: hh.owner.token });
   expect(groups.find((c: any) => c.name === 'Main' && c.section === 'DINNER').iconKey).toBe('meat');
+  expect(groups.some((c: any) => c.name === 'Sides' && c.section === 'DINNER')).toBe(true);
+});
+
+test('Edit groups: Cancel sends nothing, and a deleted group lets its recipes up a level', async ({ page }) => {
+  const hh = await newHousehold();
+  await newRecipe(hh.id, 'Chips', [{ name: 'potatoes', qty: 1 }], { categories: ['Side'] });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/section/dinner');
+
+  await page.getByRole('button', { name: 'Edit groups' }).click();
+  await page.getByRole('button', { name: 'Delete Side' }).click();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: /^Side\b/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Edit groups' }).click();
+  await page.getByRole('button', { name: 'Delete Side' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: /^Side\b/ })).toHaveCount(0);
+  // Chips is still in Dinner, now among the recipes to put in a group.
+  await expect(page.getByRole('region', { name: 'Unfiled recipes' }).getByText('Chips')).toBeVisible();
+});
+
+test('an unfiled recipe goes in a group with one tap', async ({ page }) => {
+  const hh = await newHousehold();
+  await newRecipe(hh.id, 'Veggie lasagne', [{ name: 'courgette', qty: 1 }]);
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes/section/dinner');
+  const unfiled = page.getByRole('region', { name: 'Unfiled recipes' });
+  await expect(unfiled).toContainText('1 unfiled recipe');
+  // The likely group comes first, filled.
+  const veggie = unfiled.getByRole('button', { name: 'Put Veggie lasagne in Veggie' });
+  await expect(veggie).toHaveClass(/bg-ink/);
+  await veggie.click();
+  await expect(unfiled).toHaveCount(0);
+  const [saved] = await call('GET', `/api/households/${hh.id}/recipes`, { token: hh.owner.token });
+  expect(saved.categories).toEqual(['Veggie']);
+});
+
+test('catalogue search finds recipes with where they are filed, and gathers the saved links', async ({ page }) => {
+  const hh = await newHousehold();
+  await newRecipe(hh.id, 'Pesto pasta', [{ name: 'pasta', qty: 1 }], { categories: ['Veggie'] });
+  await call('POST', `/api/households/${hh.id}/saved-links`, {
+    token: hh.owner.token,
+    body: { url: 'https://www.nothing.invalid/pasta-bake', name: 'Pasta bake' },
+  });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/recipes');
+  await page.getByPlaceholder(/Search recipes/).fill('pasta');
+  await expect(page.getByText('Recipes · 1')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Pesto pasta/ })).toContainText('Dinner › Veggie');
+  const links = page.getByRole('link', { name: /1 saved link matches "pasta"/ });
+  await links.click();
+  await expect(page).toHaveURL(/\/recipes\/saved-links\?q=pasta/);
+  await expect(page.getByText('Pasta bake')).toBeVisible();
 });
