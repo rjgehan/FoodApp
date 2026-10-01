@@ -1,4 +1,5 @@
 import { deriveCustom, type AccentColors } from './colors';
+import { deviceMode } from './deviceMode';
 import {
   DANGER,
   DEFAULT_THEME_KEY,
@@ -210,9 +211,12 @@ export function setTheme(theme: Theme) {
   listeners.forEach((l) => l());
 }
 
-/** Signing out: the next person gets the default until theirs loads. */
+/**
+ * Signing out: the next person gets the default until theirs loads — in the light or dark this
+ * device was set to on its first run, which belongs to the device rather than to whoever left.
+ */
 export function resetTheme() {
-  setTheme(DEFAULT_THEME);
+  setTheme({ ...DEFAULT_THEME, mode: deviceMode() });
 }
 
 /**

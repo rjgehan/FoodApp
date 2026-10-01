@@ -1,6 +1,7 @@
 import { expect, test, type Browser } from '@playwright/test';
 import { call, inviteToken, legacyMember, loginWithEmail, newHousehold, newMember, unique } from '../../lib/api';
 import { headerHousehold, householdsInSwitcher, sheet, signIn } from '../../lib/ui';
+import { TUTORIAL_SEEN } from '../../lib/device';
 
 /**
  * Invite links at iPhone size: the owner hands one out, a new person makes an account from it, a
@@ -11,7 +12,7 @@ const address = (who: string) => `${unique(who).toLowerCase()}@example.com`;
 
 /** Somebody else's phone, signed out: a fresh browser context at iPhone size. */
 async function anotherPhone(browser: Browser) {
-  const context = await browser.newContext({
+  const context = await browser.newContext({ storageState: TUTORIAL_SEEN,
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,

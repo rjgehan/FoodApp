@@ -2,6 +2,7 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { api } from '../api/client';
 import type { Me } from '../api/types';
 import { useOnResume } from '../utils/useOnResume';
+import { takeModeToSave } from './deviceMode';
 import { getTheme, sameTheme, setTheme, subscribeTheme, tidyTheme, type Theme } from './theme';
 
 /**
@@ -42,7 +43,16 @@ export function useThemeSync(userId: string | undefined) {
       .then((me) => {
         // An older server has no theme at all; that says nothing, so the cached one stays.
         if (!me.theme || picks !== before) return;
-        const theme = tidyTheme(me.theme);
+        let theme = tidyTheme(me.theme);
+        // Light or dark as answered on this device's first run goes on an account that has
+        // never said either — once, and only to the first account signed in afterwards.
+        const asked = takeModeToSave();
+        if (asked && !theme.mode) {
+          theme = { ...theme, mode: asked };
+          saveTheme(theme).catch(() => {
+            // Offline: it is on the page all the same, and the Theme screen can save it later.
+          });
+        }
         if (!sameTheme(theme, getTheme())) setTheme(theme);
       })
       .catch(() => {

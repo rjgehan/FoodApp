@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { call, inviteToken, legacyMember, loginWithEmail, newHousehold, unique } from '../../lib/api';
 import { headerHousehold, sheet, signIn, switchHousehold } from '../../lib/ui';
+import { TUTORIAL_SEEN } from '../../lib/device';
 
 /**
  * Email and password sign-in at iPhone size: the new front door, the prompt that moves PIN
@@ -70,7 +71,7 @@ test('a PIN account is asked for an email and password, and can put it off until
   await expect(page.getByText('Add an email and password')).toHaveCount(0);
 
   // …but the next time the app is opened, it asks again — and this time they fill it in.
-  const next = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const next = await browser.newContext({ storageState: TUTORIAL_SEEN, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const again = await next.newPage();
   await signIn(again, m, hh.id, { credentialsPrompt: true });
   await again.goto('/meal-plan');
@@ -152,7 +153,7 @@ test('the owner sees who has no email yet, and hands out a reset link that signs
   expect(url).toMatch(/\/reset\/[A-Za-z0-9_-]{43}$/);
 
   // Opened on their own phone, signed out.
-  const theirs = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const theirs = await browser.newContext({ storageState: TUTORIAL_SEEN, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const phone = await theirs.newPage();
   await phone.goto(url);
   await expect(phone.getByRole('heading', { name: `New password for ${m.displayName}` })).toBeVisible();

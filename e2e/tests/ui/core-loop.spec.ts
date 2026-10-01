@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { admin, call, groceries, find, isoDate, legacyMember, newHousehold, newRecipe, plan } from '../../lib/api';
 import { calendarDay, sheet, signIn, tab, tapRowStart } from '../../lib/ui';
+import { TUTORIAL_SEEN } from '../../lib/device';
 
 /**
  * Recipe → plan → groceries → shop → cupboard, clicked through at iPhone size, the way the
@@ -112,7 +113,7 @@ test('a second phone sees ticks without refreshing', async ({ page, browser }) =
   const hh = await newHousehold();
   await call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: hh.owner.token, body: { ingredientName: 'lemons' } });
 
-  const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const other = await browser.newContext({ storageState: TUTORIAL_SEEN, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const phone2 = await other.newPage();
   await signIn(phone2, hh.owner, hh.id);
   await phone2.goto('/grocery-list');
