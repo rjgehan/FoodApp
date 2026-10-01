@@ -291,6 +291,10 @@ struct JoinHouseholdView: View {
                                   : loadFailure.localizedDescription) {
                     Button { Task { await load() } } label: { Label("Retry", systemImage: "arrow.clockwise") }
                         .buttonStyle(.primary)
+                    // A way out as well as Retry: the usual reason is the wrong server, and
+                    // Server is on the sign-in screen this one stands in front of.
+                    Button(session.isSignedIn ? "Close" : "Go to sign in") { onDone() }
+                        .buttonStyle(.secondary)
                 }
             } else if let info, !info.valid {
                 MessageScreen(image: Image("LinkBroken"), title: "This invite has expired", message: deadExplanation) {
@@ -331,7 +335,7 @@ struct JoinHouseholdView: View {
     private func signedIn(_ info: InviteInfo, standing: InviteStanding) -> some View {
         ScrollView {
             VStack(spacing: 16) {
-                InviteCard(info: info)
+                InviteCard(info: info, ownLink: standing.alreadyMember)
                 if standing.alreadyMember {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("You're already in \(household)", systemImage: "checkmark")
@@ -369,12 +373,13 @@ struct JoinHouseholdView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            // Clear of the sheet's top edge when it opens over the app, as the mockup leaves it.
+            .padding(.top, 16)
             .frame(maxWidth: 440)
             .frame(maxWidth: .infinity)
         }
         .safeAreaInset(edge: .bottom) {
-            Group {
+            VStack(spacing: 8) {
                 if standing.alreadyMember, let id = standing.householdId {
                     Button { open(id) } label: { Label("Open \(household)", systemImage: "house") }
                         .buttonStyle(.primary)
@@ -384,6 +389,9 @@ struct JoinHouseholdView: View {
                     }
                     .buttonStyle(.primary)
                     .disabled(busy)
+                    // Said, not left to a swipe nothing on screen suggests — as on the web.
+                    PromptWayOut("Not now") { onDone() }
+                        .disabled(busy)
                 }
             }
             .padding(.horizontal, 20)
@@ -601,6 +609,10 @@ struct ResetPasswordView: View {
                                   : loadFailure.localizedDescription) {
                     Button { Task { await load() } } label: { Label("Retry", systemImage: "arrow.clockwise") }
                         .buttonStyle(.primary)
+                    // A way out as well as Retry: the usual reason is the wrong server, and
+                    // Server is on the sign-in screen this one stands in front of.
+                    Button(session.isSignedIn ? "Close" : "Go to sign in") { onDone() }
+                        .buttonStyle(.secondary)
                 }
             } else if let info, info.valid {
                 form(info)

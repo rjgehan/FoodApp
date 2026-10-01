@@ -413,6 +413,11 @@ actor APIClient {
         try await get("/api/households")
     }
 
+    /// The same list, for the recipe counts on it (nil each from a server too old to send them).
+    func householdRecipeCounts() async throws -> [HouseholdRecipeCount] {
+        try await get("/api/households")
+    }
+
     func plan(household: UUID, from: String, to: String) async throws -> [MealPlanEntry] {
         try await get("/api/households/\(household.uuidString)/meal-plan?start=\(from)&end=\(to)")
     }

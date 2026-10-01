@@ -44,8 +44,10 @@ struct FieldBox<Trailing: View>: View {
                 Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
             }
             HStack(spacing: 10) {
+                // Light weight: the mockup's field icons are thin 1.5pt lines, and SF Symbols at the
+                // regular weight read heavier than the web's.
                 if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 17)).foregroundStyle(Palette.muted)
+                    Image(systemName: systemImage).font(.system(size: 17, weight: .light)).foregroundStyle(Palette.muted)
                         .frame(width: 22)
                 }
                 Group {
@@ -62,7 +64,8 @@ struct FieldBox<Trailing: View>: View {
                     Button {
                         revealed.toggle()
                     } label: {
-                        Image(systemName: revealed ? "eye.slash" : "eye").foregroundStyle(Palette.muted)
+                        Image(systemName: revealed ? "eye.slash" : "eye").font(.system(size: 17, weight: .light))
+                            .foregroundStyle(Palette.muted)
                     }
                     .buttonStyle(PressFade())
                     .accessibilityLabel(revealed ? "Hide password" : "Show password")

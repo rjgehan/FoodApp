@@ -35,6 +35,9 @@ struct WelcomeBrand: View {
                 Text("Plan the week together. One list, everyone's phone.")
                     .font(.system(size: 16))
                     .foregroundStyle(Palette.muted)
+                    // It has the whole width. iOS still breaks after "One list," rather than leave
+                    // "phone." alone on the second line (the system's line breaking avoids a lone
+                    // last word, and SwiftUI's Text has no switch for it); the web breaks later.
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -45,19 +48,35 @@ struct WelcomeBrand: View {
 /**
  Who asked and into what — the top of every invite screen (`inviteHead`). The faces are the
  person who sent it and a count of everyone else, which is all a link may say about a house.
+ (The mockup draws two named faces, "J R +2"; a link may name nobody but the owner — anyone
+ holding it could be a stranger — so the second face stays a count, on purpose.)
+
+ `ownLink` is somebody already in the house opening its link: nobody invited them, so the line
+ over the name says whose link it is instead of "Ryan invited you to join".
  */
 struct InviteCard: View {
     let info: InviteInfo
+    var ownLink = false
 
     private var household: String { info.householdName ?? "the household" }
     private var people: Int { info.memberCount ?? 0 }
+
+    /// "4 people · 186 recipes", or whichever of the two the server sent.
+    private var facts: String {
+        var parts: [String] = []
+        if people > 0 { parts.append("\(people) \(people == 1 ? "person" : "people")") }
+        if let recipes = info.recipeCount { parts.append("\(recipes) \(recipes == 1 ? "recipe" : "recipes")") }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         VStack(spacing: 14) {
             faces
             VStack(spacing: 4) {
                 Group {
-                    if let who = info.invitedByName {
+                    if ownLink {
+                        Text("The invite link for").foregroundStyle(Palette.muted)
+                    } else if let who = info.invitedByName {
                         Text(who).fontWeight(.semibold).foregroundStyle(Palette.text)
                             + Text(" invited you to join").foregroundStyle(Palette.muted)
                     } else {
@@ -68,9 +87,8 @@ struct InviteCard: View {
                 Text(household).titleFont(28).foregroundStyle(Palette.text)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                if people > 0 {
-                    Text("\(people) \(people == 1 ? "person" : "people")")
-                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                if !facts.isEmpty {
+                    Text(facts).font(.system(size: 13)).foregroundStyle(Palette.muted)
                 }
             }
         }
@@ -190,7 +208,7 @@ func countdown(_ seconds: Int) -> String {
     ScrollView {
         VStack(spacing: 24) {
             WelcomeBrand()
-            InviteCard(info: InviteInfo(valid: true, householdName: "Gehan house", invitedByName: "Jo", memberCount: 4))
+            InviteCard(info: InviteInfo(valid: true, householdName: "Gehan house", invitedByName: "Jo", memberCount: 4, recipeCount: 186))
             NoteBox(text: Text("Too many sign-in attempts.").bold() + Text("\nFor safety, try again in 4:52."),
                     tone: .accent, systemImage: "lock")
         }

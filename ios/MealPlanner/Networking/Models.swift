@@ -190,6 +190,18 @@ struct InviteInfo: Codable, Hashable {
     let householdName: String?
     let invitedByName: String?
     let memberCount: Int?
+    /// How many recipes the house has. An older server leaves it out.
+    var recipeCount: Int? = nil
+}
+
+/**
+ How many recipes each of your houses has, from /api/households — what "Save a copy to…" says
+ under each name. Kept apart from HouseholdSummary on purpose: the count changes every time a
+ recipe is added, and a household that compares different would be switched to afresh.
+ */
+struct HouseholdRecipeCount: Decodable {
+    let id: UUID
+    let recipeCount: Int?
 }
 
 enum MealType: String, Codable, CaseIterable, Hashable {

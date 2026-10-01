@@ -65,12 +65,23 @@ struct PublicRecipeScreen: View {
                                   : loadFailure.localizedDescription) {
                     Button { Task { await load() } } label: { Label("Retry", systemImage: "arrow.clockwise") }
                         .buttonStyle(.primary)
+                    // The page's own Close is on the picture, which is not here.
+                    Button("Close") { dismiss() }.buttonStyle(.secondary)
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).pageBackground()
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        // The mockup's scrim behind "Save a copy to…": the system's own dimming behind a
+        // half-height sheet is faint, and in dark mode the recipe behind read as clearly as the
+        // sheet. (The sheet itself floats inset on iOS 26 — the system's look, kept.)
+        .overlay {
+            if choosing {
+                Palette.scrim.ignoresSafeArea().allowsHitTesting(false).transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: choosing)
         .navigationDestination(item: $copy) { saved in
             RecipeDetailView(recipe: saved, session: session)
         }
@@ -189,6 +200,8 @@ struct PublicRecipeScreen: View {
             .frame(height: 300)
             .overlay(alignment: .top) {
                 HStack {
+                    // The mockup says "Shared by Gehan house". A public link says nothing about
+                    // the house that owns the recipe (RecipeLinkService.view), so it says what it is.
                     Pill("Shared recipe", tone: .mustard, systemImage: "link")
                     Spacer()
                     if let url = URL(string: "\(Config.baseURL)/r/\(token)") {
@@ -350,6 +363,9 @@ struct SaveCopySheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var picked: UUID?
+    /// Each house's recipe count, fetched when the sheet opens; nil until then, or from an
+    /// older server, when the line says how many people instead.
+    @State private var recipeCounts: [UUID: Int]?
 
     private static let tones: [Tone] = [.herb, .sky, .plum, .mustard, .accent]
 
@@ -367,8 +383,7 @@ struct SaveCopySheet: View {
                     Button {
                         picked = house.id
                     } label: {
-                        let members = house.memberCount ?? 0
-                        ListRow(house.name, subtitle: "\(members) \(members == 1 ? "person" : "people")",
+                        ListRow(house.name, subtitle: facts(house),
                                 leading: { Avatar(house.name, tone: Self.tones[index % Self.tones.count], size: 40) }) {
                             CheckCircle(isOn: house.id == choice?.id)
                         }
@@ -389,6 +404,22 @@ struct SaveCopySheet: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 20)
+        .task {
+            guard let counts = try? await APIClient.shared.householdRecipeCounts() else { return }
+            recipeCounts = Dictionary(counts.compactMap { c in c.recipeCount.map { (c.id, $0) } },
+                                      uniquingKeysWith: { a, _ in a })
+        }
+    }
+
+    /**
+     The line under a house: how many recipes it has, which is what tells two houses apart when
+     the question is where a recipe goes. (The mockup adds "· Dinner drawer" to the ticked one; a
+     public link does not say how the recipe was filed, so that part is left out.)
+     */
+    private func facts(_ house: HouseholdSummary) -> String {
+        if let recipes = recipeCounts?[house.id] { return "\(recipes) \(recipes == 1 ? "recipe" : "recipes")" }
+        let members = house.memberCount ?? 0
+        return "\(members) \(members == 1 ? "person" : "people")"
     }
 }
 
