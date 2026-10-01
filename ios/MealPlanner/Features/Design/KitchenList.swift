@@ -48,9 +48,11 @@ struct KitchenSection<Content: View, Header: View, Footer: View>: View {
         Section {
             content.kitchenRows()
         } header: {
-            header
+            header.foregroundStyle(Palette.muted)
         } footer: {
-            footer
+            // Muted as the system's footers are, which the app-wide text colour would otherwise
+            // turn into body text.
+            footer.foregroundStyle(Palette.muted)
         }
     }
 }
