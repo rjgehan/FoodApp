@@ -111,7 +111,7 @@ export default function CopyCupboardSheet({
                   {stage.at === 'counting' && stage.from.id === h.id ? (
                     <span className="shrink-0 text-[0.9375rem] text-muted">Counting…</span>
                   ) : (
-                    <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+                    <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
                   )}
                 </button>
               </li>

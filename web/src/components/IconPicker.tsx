@@ -23,7 +23,7 @@ export default function IconPicker({
   const option = (selected: boolean) =>
     cx(
       'flex aspect-square items-center justify-center rounded-xl border transition-colors',
-      selected ? 'border-secondary bg-secondary-soft text-secondary' : 'border-line text-muted',
+      selected ? 'border-accent-ink bg-accent-soft text-accent-ink' : 'border-line text-muted',
     );
 
   const chosen = iconByKey(value)?.label ?? (allowNone ? 'No icon' : null);

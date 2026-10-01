@@ -198,7 +198,7 @@ export default function CupboardPage() {
       </form>
 
       {notice && (
-        <p role="status" className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">
+        <p role="status" className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">
           {notice}
         </p>
       )}
@@ -209,7 +209,7 @@ export default function CupboardPage() {
         <div>
           <EmptyState>
             Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
-            <Link to="/grocery-list" className="font-medium text-accent">
+            <Link to="/grocery-list" className="font-medium text-accent-ink">
               Groceries
             </Link>{' '}
             and what you bought lands here — or add things above.
@@ -264,7 +264,7 @@ export default function CupboardPage() {
                           type="button"
                           onClick={() => setEditing(item)}
                           className={cx(
-                            'flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-elevated/60',
+                            'flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-surface2/60',
                             trailing ? 'pl-4' : 'px-4',
                           )}
                           aria-label={`Edit ${item.name}`}
@@ -284,7 +284,7 @@ export default function CupboardPage() {
       )}
 
       {all.length > 0 && (
-        <p className="px-1 text-[0.8125rem] text-subtle">
+        <p className="px-1 text-[0.8125rem] text-faint">
           Swipe an item left to buy it again or remove it. Tap it to edit.
         </p>
       )}
@@ -362,7 +362,7 @@ function QuantityStepper({
   // Trims "3.00" down to "3", but keeps "2.5" as written.
   const shown = Number.isInteger(quantity) ? String(quantity) : String(Math.round(quantity * 100) / 100);
   return (
-    <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-elevated px-1 py-0.5" role="group" aria-label="Amount on hand">
+    <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-surface2 px-1 py-0.5" role="group" aria-label="Amount on hand">
       <button
         type="button"
         aria-label="One less"
@@ -390,7 +390,7 @@ function QuantityStepper({
 /** How much is left, in the two answers that stay true without anyone counting. */
 function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) => void }) {
   return (
-    <div className="flex shrink-0 rounded-[9px] bg-elevated p-0.5" role="group" aria-label="How much is left">
+    <div className="flex shrink-0 rounded-[9px] bg-surface2 p-0.5" role="group" aria-label="How much is left">
       {[false, true].map((isLow) => (
         <button
           key={String(isLow)}
@@ -399,7 +399,7 @@ function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) =
           onClick={() => onChange(isLow)}
           className={cx(
             'h-7 rounded-[7px] px-3 text-[0.8125rem] font-semibold transition-all duration-150',
-            low === isLow ? 'bg-surface shadow-sm ' + (isLow ? 'text-accent' : 'text-success') : 'text-muted',
+            low === isLow ? 'bg-surface shadow-sm ' + (isLow ? 'text-accent-ink' : 'text-herb') : 'text-muted',
           )}
         >
           {isLow ? 'Low' : 'Have'}

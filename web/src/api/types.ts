@@ -469,7 +469,7 @@ export interface AdminUserRow {
 /** Which colours people pick; see AdminDtos.ThemeUsage. */
 export interface AdminThemeUsage {
   people: number;
-  /** Never changed anything — counted as Classic in `presets` too. */
+  /** Never changed anything — counted as Tomato in `presets` too. */
   untouched: number;
   presets: { key: string; count: number }[];
   custom: { primary: string; secondary: string; count: number }[];

@@ -23,7 +23,7 @@ import {
   SwitchKnob,
 } from '../components/ui';
 import { ChevronLeftIcon, GlobeIcon, MoreIcon, PlayIcon, PlusIcon } from '../components/icons';
-import { coverClass } from '../utils/recipeFormat';
+import { photoClass } from '../utils/recipeFormat';
 import { SECTION_OPTIONS, sectionLabel } from '../utils/recipeMeta';
 import { isSafeLink } from '../utils/videoLink';
 import { saveLink, sourceLabel } from '../utils/savedLinks';
@@ -184,7 +184,7 @@ export default function SavedLinksPage() {
           onClick={() => setAdding(true)}
           aria-label="Save a link"
           title="Save a link"
-          className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink"
+          className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent"
         >
           <PlusIcon className="h-5 w-5" />
         </button>
@@ -218,7 +218,7 @@ export default function SavedLinksPage() {
       )}
 
       {notice && (
-        <p role="status" className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">
+        <p role="status" className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">
           {notice}
         </p>
       )}
@@ -231,7 +231,7 @@ export default function SavedLinksPage() {
         <p className="py-8 text-center text-sm text-muted">Loading…</p>
       ) : links.length === 0 ? (
         <div className="flex flex-col items-center px-6 py-10 text-center">
-          <SavedLinksArt className="h-20 w-20 text-subtle" />
+          <SavedLinksArt className="h-20 w-20 text-faint" />
           <p className="mt-3 text-lg font-semibold">Nothing saved yet</p>
           <p className="mt-1 max-w-sm text-[0.9375rem] text-muted">
             Keep the TikToks, Reels and recipe pages you mean to make. When a link won’t come through as a recipe, save
@@ -278,7 +278,7 @@ export default function SavedLinksPage() {
                   onClick={item.onSelect}
                   className={cx(
                     'press flex min-h-touch w-full items-center justify-between gap-3 py-3 text-left text-[1.0625rem]',
-                    item.danger ? 'text-danger' : 'text-accent',
+                    item.danger ? 'text-danger' : 'text-accent-ink',
                   )}
                 >
                   {item.label}
@@ -389,8 +389,8 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
       >
         <span
           className={cx(
-            'relative flex aspect-[4/5] flex-col items-center justify-center overflow-hidden rounded-2xl',
-            coverClass(link.id),
+            'relative flex aspect-[4/5] flex-col items-center justify-center overflow-hidden rounded-[18px]',
+            !picture && photoClass(link.id),
           )}
         >
           {picture ? (
@@ -406,9 +406,9 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
             <>
               {/* No picture: what kind of link it is, drawn big. The badge below says where. */}
               {link.source === 'WEB' ? (
-                <GlobeIcon className="h-12 w-12 text-ink/40" />
+                <GlobeIcon strokeWidth={1.6} className="h-12 w-12 opacity-90" />
               ) : (
-                <PlayIcon className="h-12 w-12 text-ink/40" />
+                <PlayIcon strokeWidth={1.6} className="h-12 w-12 opacity-90" />
               )}
             </>
           )}
@@ -426,7 +426,7 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
         </span>
         <span className="block px-0.5 pt-2">
           <span className="line-clamp-2 font-medium leading-snug">{link.name}</span>
-          {detail && <span className="mt-0.5 block truncate text-xs text-subtle">{detail}</span>}
+          {detail && <span className="mt-0.5 block truncate text-xs text-faint">{detail}</span>}
         </span>
       </a>
       <button

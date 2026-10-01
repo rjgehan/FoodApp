@@ -122,7 +122,7 @@ export default function UnitInput({
         <ul
           role="listbox"
           className={cx(
-            'absolute z-20 max-h-56 w-full overflow-auto rounded-xl border border-line bg-elevated py-1 shadow-lg',
+            'absolute z-20 max-h-56 w-full overflow-auto rounded-xl border border-line bg-surface2 py-1 shadow-lg',
             dropUp ? 'bottom-full mb-1' : 'mt-1',
           )}
         >
@@ -139,7 +139,7 @@ export default function UnitInput({
                 }}
                 className={cx(
                   'flex min-h-touch w-full items-center px-3 text-left',
-                  i === highlight ? 'bg-secondary-soft text-secondary' : 'text-ink',
+                  i === highlight ? 'bg-accent-soft text-accent-ink' : 'text-ink',
                 )}
               >
                 {unit}

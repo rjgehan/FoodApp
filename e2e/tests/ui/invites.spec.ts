@@ -1,6 +1,6 @@
 import { expect, test, type Browser } from '@playwright/test';
 import { call, inviteToken, legacyMember, loginWithEmail, newHousehold, newMember, unique } from '../../lib/api';
-import { headerHousehold, sheet, signIn } from '../../lib/ui';
+import { headerHousehold, householdsInSwitcher, sheet, signIn } from '../../lib/ui';
 
 /**
  * Invite links at iPhone size: the owner hands one out, a new person makes an account from it, a
@@ -123,7 +123,7 @@ test('signed in, the link is one button', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
   await expect.poll(() => headerHousehold(page)).toBe(hh.name);
   // Both houses are there to switch between.
-  await expect(page.getByLabel('Active household').locator('option')).toHaveCount(2);
+  await expect(await householdsInSwitcher(page)).toHaveCount(2);
 });
 
 test('somebody already in the house is told so, not invited into it', async ({ page }) => {
@@ -250,9 +250,10 @@ test('the owner removes someone, after asking, and their phone moves on to anoth
   // — saying why, so the switch does not look like the app losing its place.
   await theirs.getByRole('link', { name: 'Groceries', exact: true }).last().click();
   await expect.poll(() => headerHousehold(theirs)).toBe(other.name);
-  await expect(theirs.getByText(`You're no longer in “${hh.name}”`)).toBeVisible();
+  await expect(theirs.getByRole('alertdialog', { name: `You've been removed from “${hh.name}”` })).toBeVisible();
+  await expect(theirs.getByRole('alertdialog')).toContainText(`We've moved you to “${other.name}”`);
   await theirs.getByRole('button', { name: 'OK', exact: true }).click();
-  await expect(theirs.getByText(`You're no longer in “${hh.name}”`)).toHaveCount(0);
+  await expect(theirs.getByRole('alertdialog')).toHaveCount(0);
   await context.close();
 });
 

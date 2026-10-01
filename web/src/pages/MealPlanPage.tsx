@@ -5,7 +5,7 @@ import { api, ApiError, imageUrl } from '../api/client';
 import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, RecipeSection, SavedLink } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { entryLabel, formatTime, isPlanned } from '../utils/planEntry';
-import { coverClass } from '../utils/recipeFormat';
+import { photoClass } from '../utils/recipeFormat';
 import { useMediaQuery } from '../utils/useMediaQuery';
 import { useOnResume } from '../utils/useOnResume';
 import PlaceActions from '../components/PlaceActions';
@@ -14,7 +14,7 @@ import RecipeForm from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
 import { PasteFromAi } from '../components/RecipePaste';
 import { Button, Card, CheckCircle, Chip, cx, EmptyState, ErrorText, Field, IconButton, Input, Sheet } from '../components/ui';
-import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, LinkIcon, PlusIcon, StoreIcon } from '../components/icons';
+import { BookIcon, CartIcon, ChevronLeftIcon, ChevronRightIcon, Icon, LinkIcon, PlusIcon, StoreIcon } from '../components/icons';
 import { isSafeLink } from '../utils/videoLink';
 import { sourceLabel } from '../utils/savedLinks';
 
@@ -255,10 +255,10 @@ export default function MealPlanPage() {
                 className={cx(
                   'flex shrink-0 snap-start flex-col rounded-2xl border p-3 text-left transition-colors',
                   photos ? 'w-48' : 'w-36',
-                  isToday ? 'border-secondary bg-secondary-soft/40' : 'border-line bg-surface active:bg-elevated',
+                  isToday ? 'border-accent-ink bg-accent-soft/40' : 'border-line bg-surface active:bg-surface2',
                 )}
               >
-                <span className={cx('text-[0.8125rem] font-medium', isToday ? 'text-secondary' : 'text-muted')}>
+                <span className={cx('text-[0.8125rem] font-medium', isToday ? 'text-accent-ink' : 'text-muted')}>
                   {isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday: 'short' })}
                 </span>
                 <span className="text-2xl font-semibold leading-tight">{day.getDate()}</span>
@@ -388,7 +388,7 @@ function MonthCalendar({
 
       <div className="grid grid-cols-7">
         {WEEKDAY_LABELS.map((w, i) => (
-          <div key={i} className="py-1 text-center text-xs font-semibold text-subtle">
+          <div key={i} className="py-1 text-center text-xs font-semibold text-faint">
             {w}
           </div>
         ))}
@@ -411,7 +411,7 @@ function MonthCalendar({
               aria-label={`${day.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}${planned.length ? `, ${planned.length} planned` : ''}`}
               onClick={() => onPick(key)}
               className={cx(
-                'flex flex-col items-center justify-center rounded-xl border p-1 transition-colors active:bg-elevated',
+                'flex flex-col items-center justify-center rounded-xl border p-1 transition-colors active:bg-surface2',
                 inWindow ? 'border-accent/30' : 'border-transparent',
                 !inMonth && 'opacity-35',
               )}
@@ -419,7 +419,7 @@ function MonthCalendar({
               <span
                 className={cx(
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium',
-                  isToday ? 'bg-accent text-accent-ink' : 'text-ink',
+                  isToday ? 'bg-accent text-on-accent' : 'text-ink',
                 )}
               >
                 {day.getDate()}
@@ -435,7 +435,7 @@ function MonthCalendar({
                       <MealPhoto key={e.id} entry={e} pictures={pictures} className="h-7 w-7 rounded-md" small />
                     ))}
                     {planned.length > 3 && (
-                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-elevated text-[0.6875rem] font-semibold text-muted">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-surface2 text-[0.6875rem] font-semibold text-muted">
                         +{planned.length - 2}
                       </span>
                     )}
@@ -803,7 +803,7 @@ function DaySheet({
               </div>
 
               {dishes.length === 0 ? (
-                <p className="pb-1 text-sm text-subtle">Nothing yet</p>
+                <p className="pb-1 text-sm text-faint">Nothing yet</p>
               ) : (
                 <ul className="divide-y divide-line">
                   {dishes.map((entry) => {
@@ -857,7 +857,7 @@ function DaySheet({
                                 href={entry.savedLinkUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="press inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-elevated px-3 text-[0.9375rem] font-semibold text-ink active:bg-line"
+                                className="press inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-surface2 px-3 text-[0.9375rem] font-semibold text-ink active:bg-line"
                               >
                                 <LinkIcon className="h-4 w-4" />
                                 Open on {sourceLabel({ source: entry.savedLinkSource, url: entry.savedLinkUrl })}
@@ -961,7 +961,7 @@ function MealPhoto({
 
   if (imageId && failedId !== imageId) {
     return (
-      <span className={cx('flex overflow-hidden bg-elevated', className)}>
+      <span className={cx('flex overflow-hidden bg-surface2', className)}>
         <img
           src={imageUrl(imageId)}
           alt=""
@@ -978,10 +978,8 @@ function MealPhoto({
       aria-hidden
       className={cx(
         'flex items-center justify-center overflow-hidden',
-        coverClass(entry.recipeId ?? entry.placeId ?? entry.savedLinkId ?? label),
-        // In a calendar square a bare pastel tile next to a photo reads as one still loading, and
-        // nearly vanishes on a white card, so it gets an edge and a darker mark.
-        small ? 'text-ink/60 ring-1 ring-inset ring-line' : 'text-ink/40',
+        // Eating out is plum, as everywhere; a recipe or a link gets its own food colour.
+        entry.placeId ? 'photo hue-plum' : photoClass(entry.recipeId ?? entry.savedLinkId ?? label),
         className,
       )}
     >
@@ -990,9 +988,7 @@ function MealPhoto({
       ) : entry.savedLinkId ? (
         <LinkIcon className={small ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
       ) : (
-        <span className={cx('select-none font-serif font-semibold', small ? 'text-xs' : 'text-2xl')}>
-          {label.charAt(0).toUpperCase()}
-        </span>
+        <Icon name="utensils" strokeWidth={1.6} className={small ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
       )}
     </span>
   );
@@ -1002,7 +998,7 @@ function MealPhoto({
 function EntryDetail({ entry }: { entry: MealPlanEntry }) {
   if (entry.recipeDeleted) {
     return (
-      <span className="block text-sm text-accent">
+      <span className="block text-sm text-accent-ink">
         {entry.savedLinkDeleted ? 'Saved link was deleted' : 'Recipe was deleted'}
       </span>
     );
@@ -1015,7 +1011,7 @@ function EntryDetail({ entry }: { entry: MealPlanEntry }) {
     );
   }
   if (entry.recipeId && entry.needsIngredients) {
-    return <span className="block text-sm text-accent">No ingredients yet</span>;
+    return <span className="block text-sm text-accent-ink">No ingredients yet</span>;
   }
   if (entry.recipeId && entry.servings) {
     return <span className="block text-sm text-muted">Serves {entry.servings}</span>;
@@ -1043,7 +1039,7 @@ function ServingsControl({
   return (
     <span className="flex items-center gap-2">
       <span className="text-sm text-muted">Serves</span>
-      <span className="flex items-center gap-1.5 rounded-[9px] bg-elevated px-1 py-0.5" role="group" aria-label="Servings">
+      <span className="flex items-center gap-1.5 rounded-[9px] bg-surface2 px-1 py-0.5" role="group" aria-label="Servings">
         <button
           type="button"
           aria-label="Fewer servings"
@@ -1204,7 +1200,7 @@ function PickerTabs({
   return (
     <div className="space-y-3">
       {/* A two-way switch, sized like one — not two big buttons competing with the results. */}
-      <div className="flex rounded-xl bg-elevated p-0.5" role="tablist">
+      <div className="flex rounded-xl bg-surface2 p-0.5" role="tablist">
         {(['home', 'out'] as const).map((t) => (
           <button
             key={t}
@@ -1316,7 +1312,7 @@ function PlacePicker({
                 {place.imageId ? (
                   <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary-soft text-secondary">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent-ink">
                     <StoreIcon className="h-5 w-5" />
                   </span>
                 )}
@@ -1416,7 +1412,7 @@ function HomePicker({
 
       {stocked.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-subtle">In the cupboard</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-faint">In the cupboard</p>
           <ul className="divide-y divide-line">
             {stocked.map((c) => (
               <li key={c.id}>
@@ -1476,7 +1472,7 @@ function HomePicker({
 
       {links.length > 0 && (
         <div>
-          {!linksOnly && <p className="text-xs font-semibold uppercase tracking-wide text-subtle">Saved links</p>}
+          {!linksOnly && <p className="text-xs font-semibold uppercase tracking-wide text-faint">Saved links</p>}
           <ul className="divide-y divide-line">
             {links.map((link) => (
               <li key={link.id}>
@@ -1489,7 +1485,7 @@ function HomePicker({
                   {link.coverImageId ? (
                     <img src={imageUrl(link.coverImageId)} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
                   ) : (
-                    <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink/45', coverClass(link.id))}>
+                    <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', photoClass(link.id))}>
                       <LinkIcon className="h-5 w-5" />
                     </span>
                   )}
@@ -1511,7 +1507,7 @@ function HomePicker({
         !typed && (
           <EmptyState>
             No recipes yet.{' '}
-            <button type="button" className="font-medium text-accent underline" onClick={() => onNewRecipe('')}>
+            <button type="button" className="font-medium text-accent-ink underline" onClick={() => onNewRecipe('')}>
               Make one
             </button>
           </EmptyState>
@@ -1519,7 +1515,7 @@ function HomePicker({
       ) : (
         <>
           {(stocked.length > 0 || links.length > 0) && (
-            <p className="text-xs font-semibold uppercase tracking-wide text-subtle">Recipes</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-faint">Recipes</p>
           )}
           <ul className="divide-y divide-line">
             {shown.map((r) => (

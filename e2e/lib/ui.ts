@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { Session } from './api';
 
 /**
@@ -28,17 +28,23 @@ export async function signIn(
   );
 }
 
-/**
- * The household name in the header, top left — a select when there are several, plain text when
- * there is one. Read in one go: checking for the select and then reading it could straddle the
- * moment the list changes (being removed from a house, say), and then wait on a select that is gone.
- */
+/** The household name in the header's household pill, top left. */
 export async function headerHousehold(page: Page): Promise<string> {
-  return page.locator('header').first().evaluate((header) => {
-    const picker = header.querySelector<HTMLSelectElement>('select[aria-label="Active household"]');
-    if (picker) return picker.selectedOptions[0]?.textContent ?? '';
-    return header.querySelector('span.truncate')?.textContent ?? '';
-  });
+  return page.locator('header').first().evaluate((header) => header.querySelector('[data-household-name]')?.textContent ?? '');
+}
+
+/** The household pill opens the switcher; this picks a household in it. */
+export async function switchHousehold(page: Page, name: string) {
+  await page.getByRole('button', { name: /Switch household$/ }).click();
+  const switcher = page.getByRole('dialog', { name: 'Switch household' });
+  await switcher.getByRole('radio', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }).click();
+  await expect(switcher).toHaveCount(0);
+}
+
+/** The households in the switcher, as their names. Leaves the switcher open. */
+export async function householdsInSwitcher(page: Page) {
+  await page.getByRole('button', { name: /Switch household$/ }).click();
+  return page.getByRole('dialog').last().getByRole('radio');
 }
 
 /** The bottom tab bar. `.last()` because the header on wide screens has the same links. */

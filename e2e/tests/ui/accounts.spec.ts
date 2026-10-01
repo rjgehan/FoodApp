@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { call, inviteToken, legacyMember, loginWithEmail, newHousehold, unique } from '../../lib/api';
-import { headerHousehold, sheet, signIn } from '../../lib/ui';
+import { headerHousehold, sheet, signIn, switchHousehold } from '../../lib/ui';
 
 /**
  * Email and password sign-in at iPhone size: the new front door, the prompt that moves PIN
@@ -33,7 +33,7 @@ test('email and password sign in, landing in the household you were last in', as
   await expect(page.getByText('Add an email and password')).toHaveCount(0);
 
   // Switching is remembered for the next sign-in, on any device.
-  await page.getByLabel('Active household').selectOption(first.id);
+  await switchHousehold(page, first.name);
   await expect.poll(async () => (await loginWithEmail(email, 'front-door-pw')).lastHouseholdId).toBe(first.id);
 });
 
@@ -116,7 +116,10 @@ test('you can change your email and password from Settings', async ({ page }) =>
   await signIn(page, m, hh.id);
   await page.goto('/meal-plan');
   await page.getByRole('button', { name: 'Your account' }).click();
-  const settings = sheet(page);
+  // Settings says who you are, and keeps the sign-in details one row further in.
+  await expect(sheet(page).getByRole('button', { name: /^Password & sign-in/ })).toContainText(email);
+  await sheet(page).getByRole('button', { name: /^Password & sign-in/ }).click();
+  const settings = page.getByRole('dialog', { name: 'Password & sign-in' });
   await expect(settings.getByText(email)).toBeVisible();
   await settings.getByRole('button', { name: 'Change' }).click();
   await settings.getByLabel('New password').fill('new-password');

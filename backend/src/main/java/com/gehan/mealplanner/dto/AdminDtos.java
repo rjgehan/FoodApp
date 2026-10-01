@@ -69,7 +69,7 @@ public class AdminDtos {
 
     /**
      * Which colours people pick, for choosing the app's own one day. `untouched` never opened
-     * Appearance at all, and count as Classic in `presets` — that is what they see. `presets` has
+     * Appearance at all, and count as Tomato (the default) in `presets` — that is what they see. `presets` has
      * every preset (and "custom"), in the order the apps show them, even at zero: a preset nobody
      * picks is as much the answer as one everybody does. `custom` are the pairs themselves.
      */

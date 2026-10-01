@@ -10,10 +10,12 @@ import com.gehan.mealplanner.dto.HouseholdDtos.ThemeRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.ThemeResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
 import com.gehan.mealplanner.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -33,6 +35,8 @@ class ThemeDatabaseTest {
     @Autowired HouseholdService householdService;
     @Autowired AdminService adminService;
     @Autowired UserRepository userRepository;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired EntityManager entityManager;
 
     private String tag;
 
@@ -61,19 +65,19 @@ class ThemeDatabaseTest {
     @Test
     void anOlderAppRenamingYouLeavesYourColoursAlone() {
         User ryan = account("theme-rename");
-        themeSettings.update(ryan.getId(), new ThemeRequest("basil", null, null, "LIGHT"));
+        themeSettings.update(ryan.getId(), new ThemeRequest("matcha", null, null, "LIGHT"));
 
         householdService.updateProfile(ryan.getId(), new UpdateProfileRequest(null, "Ryan G"));
 
         assertThat(accountService.me(ryan.getId()).theme())
-                .isEqualTo(new ThemeResponse("basil", null, null, ThemeMode.LIGHT));
+                .isEqualTo(new ThemeResponse("matcha", null, null, ThemeMode.LIGHT));
     }
 
     @Test
     void theAdminCountsWhatPeoplePick() {
         ThemeUsage before = adminService.themes();
-        themeSettings.update(account("theme-a").getId(), new ThemeRequest("ocean", null, null, "DARK"));
-        themeSettings.update(account("theme-b").getId(), new ThemeRequest("ocean", null, null, null));
+        themeSettings.update(account("theme-a").getId(), new ThemeRequest("nordic", null, null, "DARK"));
+        themeSettings.update(account("theme-b").getId(), new ThemeRequest("graphite", null, null, null));
         themeSettings.update(account("theme-c").getId(), new ThemeRequest("custom", "#123456", "#ABCDEF", "LIGHT"));
         themeSettings.update(account("theme-d").getId(), new ThemeRequest("custom", "#123456", "#abcdef", null));
         account("theme-e");
@@ -82,13 +86,67 @@ class ThemeDatabaseTest {
 
         assertThat(after.people() - before.people()).isEqualTo(5);
         assertThat(after.untouched() - before.untouched()).isEqualTo(1);
-        assertThat(count(after, "ocean") - count(before, "ocean")).isEqualTo(2);
+        // An old key sent by an old app is counted as the theme it became.
+        assertThat(count(after, "nordic") - count(before, "nordic")).isEqualTo(2);
         assertThat(count(after, "custom") - count(before, "custom")).isEqualTo(2);
         // Nobody picked it, and it is still listed: that is an answer too.
         assertThat(after.presets()).extracting(PresetCount::key).containsAll(ThemeSettings.PRESETS);
         assertThat(pair(after, "#123456", "#ABCDEF") - pair(before, "#123456", "#ABCDEF")).isEqualTo(2);
         assertThat(mode(after, ThemeMode.DARK) - mode(before, ThemeMode.DARK)).isEqualTo(1);
         assertThat(mode(after, ThemeMode.SYSTEM) - mode(before, ThemeMode.SYSTEM)).isEqualTo(3);
+    }
+
+    @Test
+    void oldPairsAreReadAsTheThemeTheyBecameAndNeverRewritten() {
+        // Rows as an older server left them, written straight to the table.
+        User basil = account("theme-basil");
+        User graphite = account("theme-graphite");
+        User mocha = account("theme-mocha");
+        User custom = account("theme-own");
+        User nobody = account("theme-none");
+        userRepository.flush();
+        ThemeUsage before = adminService.themes();
+        jdbc.update("UPDATE users SET theme_preset = 'basil', theme_mode = 'DARK' WHERE id = ?", basil.getId());
+        jdbc.update("UPDATE users SET theme_preset = 'graphite' WHERE id = ?", graphite.getId());
+        jdbc.update("UPDATE users SET theme_preset = 'mocha' WHERE id = ?", mocha.getId());
+        jdbc.update("UPDATE users SET theme_preset = 'custom', theme_primary = '#0F766E', theme_secondary = '#F97316'"
+                + " WHERE id = ?", custom.getId());
+        // What JPA already holds would hide the rows as they now are.
+        entityManager.clear();
+
+        // /me and the admin speak in today's keys.
+        assertThat(accountService.me(basil.getId()).theme())
+                .isEqualTo(new ThemeResponse("matcha", null, null, ThemeMode.DARK));
+        assertThat(accountService.me(graphite.getId()).theme().preset()).isEqualTo("nordic");
+        assertThat(accountService.me(mocha.getId()).theme().preset()).isEqualTo("tomato");
+        assertThat(accountService.me(custom.getId()).theme())
+                .isEqualTo(new ThemeResponse("custom", "#0F766E", "#F97316", null));
+        ThemeUsage after = adminService.themes();
+        assertThat(after.presets()).extracting(PresetCount::key)
+                .containsExactly("tomato", "matcha", "blueberry", "brunch", "nordic", "custom");
+        assertThat(count(after, "matcha") - count(before, "matcha")).isEqualTo(1);
+        assertThat(count(after, "nordic") - count(before, "nordic")).isEqualTo(1);
+
+        // Reading changed nothing that is stored, so the app from before the themes still works.
+        assertThat(stored(basil)).isEqualTo("basil");
+        assertThat(stored(graphite)).isEqualTo("graphite");
+        assertThat(stored(mocha)).isEqualTo("mocha");
+        assertThat(stored(custom)).isEqualTo("custom");
+        assertThat(stored(nobody)).isNull();
+
+        // An old app saving an old key keeps it as sent, and is answered in today's key.
+        assertThat(themeSettings.update(nobody.getId(), new ThemeRequest("ocean", null, null, null)).preset())
+                .isEqualTo("blueberry");
+        userRepository.flush();
+        assertThat(stored(nobody)).isEqualTo("ocean");
+        // Picking one of today's themes is what stores a new key.
+        themeSettings.update(basil.getId(), new ThemeRequest("brunch", null, null, "DARK"));
+        userRepository.flush();
+        assertThat(stored(basil)).isEqualTo("brunch");
+    }
+
+    private String stored(User user) {
+        return jdbc.queryForObject("SELECT theme_preset FROM users WHERE id = ?", String.class, user.getId());
     }
 
     private static long count(ThemeUsage usage, String key) {

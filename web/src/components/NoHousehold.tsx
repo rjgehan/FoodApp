@@ -16,7 +16,7 @@ export default function NoHousehold() {
         {lostHousehold ? "You aren't in a household any more." : "You aren't in a household yet."} Open an
         invite link someone sent you, or start your own.
       </p>
-      <Link to="/household" className="press inline-flex h-11 items-center rounded-xl bg-accent px-4 font-semibold text-accent-ink">
+      <Link to="/household" className="press inline-flex h-11 items-center rounded-xl bg-accent px-4 font-semibold text-on-accent">
         Join or start a household
       </Link>
     </div>

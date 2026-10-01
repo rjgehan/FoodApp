@@ -122,7 +122,7 @@ export default function NewRecipePage() {
 
       <PageTitle title="New recipe" />
 
-      <div className="flex rounded-xl bg-elevated p-0.5" role="tablist" aria-label="How to add it">
+      <div className="flex rounded-xl bg-surface2 p-0.5" role="tablist" aria-label="How to add it">
         {modes.map((m) => (
           <button
             key={m.value}

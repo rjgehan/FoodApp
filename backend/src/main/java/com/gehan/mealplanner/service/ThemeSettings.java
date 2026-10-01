@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -25,14 +26,32 @@ import java.util.regex.Pattern;
 public class ThemeSettings {
 
     /**
-     * The presets, by the key the apps know them by. The same list is in web/src/theme/theme.ts
-     * and ios/MealPlanner/Theme.swift. A key that has shipped is never renamed or dropped: it is
-     * in people's rows, and an old app would not know the new name.
+     * The presets, by the key the apps know them by: five whole themes, each with its own light
+     * and dark palette and title font. The same list is in web/src/theme/themes.ts and
+     * ios/MealPlanner/Theme.swift. Tomato is the default — what everyone who never picked
+     * anything sees.
      */
-    public static final List<String> PRESETS =
-            List.of("classic", "basil", "lagoon", "ocean", "blueberry", "plum", "mocha", "graphite");
+    public static final List<String> PRESETS = List.of("tomato", "matcha", "blueberry", "brunch", "nordic");
 
-    /** Your own pair rather than a preset — `primary` and `secondary` say which. */
+    /** What everyone sees until they pick something else, and where an unknown key ends up. */
+    public static final String DEFAULT_PRESET = "tomato";
+
+    /**
+     * The eight colour pairs that came before the five themes, and the theme each became. Rows
+     * saved before the change still hold them and old iPhone builds still send them, so they are
+     * accepted and stored as sent, and read back as the theme they became (see {@link #current}).
+     * Stored rows are never rewritten: a server without the five themes still reads them.
+     */
+    public static final Map<String, String> LEGACY_PRESETS = Map.of(
+            "classic", "tomato",
+            "mocha", "tomato",
+            "basil", "matcha",
+            "lagoon", "matcha",
+            "ocean", "blueberry",
+            "plum", "blueberry",
+            "graphite", "nordic");
+
+    /** Your own accent rather than a preset — `primary` says which. */
     public static final String CUSTOM = "custom";
 
     private static final Pattern HEX = Pattern.compile("^#?([0-9A-Fa-f]{6})$");
@@ -57,24 +76,40 @@ public class ThemeSettings {
     }
 
     /**
-     * The request tidied into what is stored: a known preset key, colours as uppercase #RRGGBB,
-     * and a mode — or null for any of them. Custom needs both colours, since there is nothing
-     * else to draw it with.
+     * The request tidied into what is stored: a known preset key (an old one is kept as sent and
+     * read back as the theme it became), colours as uppercase #RRGGBB, and a mode — or null for
+     * any of them.
+     *
+     * Custom needs its main colour, since there is nothing else to draw it with. The second
+     * colour is left over from when custom was a pair: today's apps pick one, so a missing second
+     * is filled in with the main colour, which keeps the row drawable by an old iPhone build
+     * that still expects both.
      */
     public static ThemeResponse checked(ThemeRequest request) {
         String preset = blankToNull(request.preset());
         if (preset != null) {
             preset = preset.toLowerCase(Locale.ROOT);
-            if (!preset.equals(CUSTOM) && !PRESETS.contains(preset)) {
+            String now = current(preset);
+            if (!now.equals(CUSTOM) && !PRESETS.contains(now)) {
                 throw badRequest("There's no theme called \"" + request.preset().trim() + "\".");
             }
         }
         String primary = hex(request.primary(), "main");
         String secondary = hex(request.secondary(), "second");
-        if (CUSTOM.equals(preset) && (primary == null || secondary == null)) {
-            throw badRequest("A custom theme needs both of its colours.");
+        if (CUSTOM.equals(preset)) {
+            if (primary == null) {
+                throw badRequest("A custom theme needs its colour.");
+            }
+            if (secondary == null) {
+                secondary = primary;
+            }
         }
         return new ThemeResponse(preset, primary, secondary, mode(request.mode()));
+    }
+
+    /** A preset key as it is today: an old one becomes the theme it was folded into. */
+    public static String current(String key) {
+        return key == null ? null : LEGACY_PRESETS.getOrDefault(key, key);
     }
 
     private static String hex(String value, String which) {

@@ -39,7 +39,7 @@ export default function AdminRecipePage() {
             <PageTitle title={recipe.name} />
             <p className="mt-1.5 text-[0.9375rem]">
               From{' '}
-              <Link to={`/admin/households/${recipe.householdId}`} className="font-medium text-accent hover:underline">
+              <Link to={`/admin/households/${recipe.householdId}`} className="font-medium text-accent-ink hover:underline">
                 {data.householdName}
               </Link>
               <span className="text-muted"> · added {formatDay(data.createdAt)}</span>
@@ -92,7 +92,7 @@ export default function AdminRecipePage() {
                     <span
                       className={cx(
                         'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                        'bg-secondary-soft text-sm font-semibold text-secondary',
+                        'bg-accent-soft text-sm font-semibold text-accent-ink',
                       )}
                     >
                       {i + 1}

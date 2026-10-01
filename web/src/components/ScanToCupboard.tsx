@@ -94,12 +94,12 @@ export default function ScanToCupboard({
             <div>
               <p className="text-lg font-semibold leading-tight">{stage.product.name}</p>
               <p className="text-sm text-muted">{describe(stage.product)}</p>
-              <p className="mt-1 text-xs text-subtle">{stage.product.barcode}</p>
+              <p className="mt-1 text-xs text-faint">{stage.product.barcode}</p>
             </div>
 
             {stage.already ? (
-              <div className="rounded-xl bg-secondary-soft px-4 py-3">
-                <p className="font-medium text-accent">You already have this.</p>
+              <div className="rounded-xl bg-accent-soft px-4 py-3">
+                <p className="font-medium text-accent-ink">You already have this.</p>
                 <p className="text-sm text-ink">
                   It is in the cupboard as “{stage.already.name}”
                   {stage.already.runningLow ? ', and it is marked running low.' : '.'}

@@ -10,7 +10,7 @@ import { Button, Card, ErrorText, Field, Input, usernameInputProps } from './ui'
  * with — which also changes which name you tap on the login screen, so it says so. Below them,
  * the email and password you sign in with now.
  */
-export default function ProfileCard() {
+export default function ProfileCard({ showSignOut = true }: { showSignOut?: boolean } = {}) {
   const { session, setDisplayName, logout } = useAuth();
   const [displayName, setName] = useState(session?.displayName ?? '');
   const [username, setUsername] = useState('');
@@ -95,7 +95,7 @@ export default function ProfileCard() {
             </div>
           )}
           {signInSaved && !editingSignIn && (
-            <p className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
+            <p className="rounded-xl bg-herb-soft px-4 py-3 text-sm font-medium text-herb">
               Saved. Use them next time you sign in.
             </p>
           )}
@@ -118,9 +118,12 @@ export default function ProfileCard() {
           )}
         </section>
       )}
-      <Button variant="ghost" full className="mt-4 text-danger" onClick={logout}>
-        Sign out
-      </Button>
+      {/* Settings has its own Sign out row, so this one is for Household → You. */}
+      {showSignOut && (
+        <Button variant="danger" full className="mt-4" onClick={logout}>
+          Sign out
+        </Button>
+      )}
     </Card>
   );
 }

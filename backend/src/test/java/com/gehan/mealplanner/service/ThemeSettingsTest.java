@@ -36,8 +36,8 @@ class ThemeSettingsTest {
         for (String key : ThemeSettings.PRESETS) {
             assertThat(check(key, null, null, null).preset()).isEqualTo(key);
         }
-        assertThat(check(" Ocean ", null, null, "dark"))
-                .isEqualTo(new ThemeResponse("ocean", null, null, ThemeMode.DARK));
+        assertThat(check(" Matcha ", null, null, "dark"))
+                .isEqualTo(new ThemeResponse("matcha", null, null, ThemeMode.DARK));
         refused("neon", null, null, null, "no theme called \"neon\"");
     }
 
@@ -52,15 +52,48 @@ class ThemeSettingsTest {
     }
 
     @Test
-    void customNeedsBothColours() {
-        refused("custom", "#EA580C", null, null, "both of its colours");
-        refused("custom", null, null, null, "both of its colours");
+    void theFivePresetsAreTheMockupsThemes() {
+        assertThat(ThemeSettings.PRESETS).containsExactly("tomato", "matcha", "blueberry", "brunch", "nordic");
+        assertThat(ThemeSettings.DEFAULT_PRESET).isEqualTo("tomato");
     }
 
     @Test
-    void aPresetKeepsTheCustomPairForLater() {
-        assertThat(check("plum", "#112233", "#445566", "LIGHT"))
-                .isEqualTo(new ThemeResponse("plum", "#112233", "#445566", ThemeMode.LIGHT));
+    void anOldPairIsAcceptedAsSentAndReadAsTheThemeItBecame() {
+        // What old iPhone builds still send. It is stored as sent, so a server from before the
+        // five themes still reads it, and answered as the theme it became.
+        assertThat(check("classic", null, null, null).preset()).isEqualTo("classic");
+        assertThat(check("Plum", null, null, "LIGHT"))
+                .isEqualTo(new ThemeResponse("plum", null, null, ThemeMode.LIGHT));
+        assertThat(ThemeSettings.current("classic")).isEqualTo("tomato");
+        assertThat(ThemeSettings.current("mocha")).isEqualTo("tomato");
+        assertThat(ThemeSettings.current("basil")).isEqualTo("matcha");
+        assertThat(ThemeSettings.current("lagoon")).isEqualTo("matcha");
+        assertThat(ThemeSettings.current("ocean")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("blueberry")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("plum")).isEqualTo("blueberry");
+        assertThat(ThemeSettings.current("graphite")).isEqualTo("nordic");
+        assertThat(ThemeSettings.current("custom")).isEqualTo("custom");
+        assertThat(ThemeSettings.current(null)).isNull();
+        // Every old key lands on one of today's.
+        assertThat(ThemeSettings.PRESETS).containsAll(ThemeSettings.LEGACY_PRESETS.values());
+    }
+
+    @Test
+    void customNeedsItsColourAndAnOldAppStillGetsAPair() {
+        refused("custom", null, null, null, "needs its colour");
+        refused("custom", null, "#EA580C", null, "needs its colour");
+        // Today's apps send one colour; the second is filled in so an old app can draw it.
+        assertThat(check("custom", "#2f6f9f", null, null))
+                .isEqualTo(new ThemeResponse("custom", "#2F6F9F", "#2F6F9F", null));
+        // An old app's pair is kept as it was.
+        assertThat(check("custom", "#2F6F9F", "#FDBA74", null))
+                .isEqualTo(new ThemeResponse("custom", "#2F6F9F", "#FDBA74", null));
+    }
+
+    @Test
+    void aPresetKeepsTheCustomColoursForLater() {
+        assertThat(check("brunch", "#112233", "#445566", "LIGHT"))
+                .isEqualTo(new ThemeResponse("brunch", "#112233", "#445566", ThemeMode.LIGHT));
     }
 
     @Test

@@ -229,7 +229,7 @@ export default function RecipeDetailPage() {
       <Card>
         <EmptyState>
           {error}{' '}
-          <Link to="/recipes" className="font-medium text-accent underline">
+          <Link to="/recipes" className="font-medium text-accent-ink underline">
             Back to recipes
           </Link>
         </EmptyState>
@@ -420,7 +420,7 @@ export default function RecipeDetailPage() {
           </div>
 
           {planned && (
-            <p className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">
+            <p className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">
               On the plan for {planned} ·{' '}
               <Link to="/meal-plan" className="underline">
                 See Plan
@@ -445,7 +445,7 @@ export default function RecipeDetailPage() {
                   href={featuredVideo.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="press flex min-h-touch items-center justify-center gap-2 rounded-xl bg-elevated px-4
+                  className="press flex min-h-touch items-center justify-center gap-2 rounded-xl bg-surface2 px-4
                              font-semibold text-ink"
                 >
                   <PlayIcon className="h-5 w-5" />
@@ -529,7 +529,7 @@ export default function RecipeDetailPage() {
                     <span
                       className={cx(
                         'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                        'bg-secondary-soft text-sm font-semibold text-secondary',
+                        'bg-accent-soft text-sm font-semibold text-accent-ink',
                       )}
                     >
                       {i + 1}
@@ -585,7 +585,7 @@ export default function RecipeDetailPage() {
                   {/* Asks first, as the phone does: a new link is a different address, so every
                       one already sent is gone for good. */}
                   {confirmingRevoke ? (
-                    <div className="space-y-3 rounded-xl bg-elevated p-3">
+                    <div className="space-y-3 rounded-xl bg-surface2 p-3">
                       <p className="text-sm">
                         Anyone you sent it to won't be able to open it any more. Copies people
                         already saved stay theirs.

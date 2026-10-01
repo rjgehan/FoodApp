@@ -3,6 +3,7 @@ package com.gehan.mealplanner.dto;
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.ThemeMode;
 import com.gehan.mealplanner.domain.User;
+import com.gehan.mealplanner.service.ThemeSettings;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -102,13 +103,15 @@ public class HouseholdDtos {
 
     /**
      * Your colours. `preset` is a key from ThemeSettings.PRESETS or "custom"; `primary` and
-     * `secondary` are the custom pair as #RRGGBB; `mode` is SYSTEM, LIGHT or DARK. Null throughout
-     * is the app as it has always looked.
+     * `secondary` are the custom colour as #RRGGBB (the second one is only for old apps, which
+     * drew custom as a pair); `mode` is SYSTEM, LIGHT or DARK. Null throughout is the default:
+     * Tomato, following the system. A row still holding one of the old pairs' keys is answered
+     * with the theme it became.
      */
     public record ThemeResponse(String preset, String primary, String secondary, ThemeMode mode) {
         public static ThemeResponse of(User user) {
-            return new ThemeResponse(user.getThemePreset(), user.getThemePrimary(), user.getThemeSecondary(),
-                    user.getThemeMode());
+            return new ThemeResponse(ThemeSettings.current(user.getThemePreset()), user.getThemePrimary(),
+                    user.getThemeSecondary(), user.getThemeMode());
         }
     }
 

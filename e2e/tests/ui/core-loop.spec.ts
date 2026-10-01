@@ -193,11 +193,18 @@ test('the avatar opens Settings: your account, and the way into the household', 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
   await page.getByRole('button', { name: 'Your account' }).click();
-  await expect(sheet(page).getByText('Username')).toBeVisible();
-  await expect(sheet(page).getByRole('button', { name: 'Sign out' })).toBeVisible();
-  // The sheet names itself once: the card inside drops its own title.
-  await expect(sheet(page).getByText('Settings', { exact: true })).toHaveCount(1);
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await expect(settings.getByRole('heading', { name: hh.owner.displayName })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: /^Theme/ })).toBeVisible();
+  // Your name and sign-in are one row further in; that sheet names itself, so the card inside
+  // drops its own title.
+  await settings.getByRole('button', { name: /^Password & sign-in/ }).click();
+  const account = page.getByRole('dialog', { name: 'Password & sign-in' });
+  await expect(account.getByText('Username')).toBeVisible();
+  await expect(account.getByRole('heading', { name: 'You', exact: true })).toHaveCount(0);
+  await account.getByRole('button', { name: 'Close' }).click();
   // Household lost its tab and lives in here now.
-  await sheet(page).getByRole('link', { name: 'Household settings' }).click();
+  await settings.getByRole('link', { name: /^Household settings/ }).click();
   await expect(page).toHaveURL(/\/household$/);
 });

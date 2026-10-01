@@ -32,7 +32,7 @@ export const DESTINATIONS: Destination[] = [
     title: 'Global recipes',
     blurb: 'What every other household on this server has published.',
     Icon: GlobeIcon,
-    tint: 'cover-0',
+    tint: 'bg-accent-soft',
     ready: true,
   },
   {
@@ -42,7 +42,7 @@ export const DESTINATIONS: Destination[] = [
     plan: 'Look up any ingredient or scanned product and see what is in it — calories, protein, '
         + 'and the vitamins and minerals a label does not bother printing.',
     Icon: LeafIcon,
-    tint: 'cover-2',
+    tint: 'bg-herb-soft',
     ready: false,
   },
   {
@@ -52,7 +52,7 @@ export const DESTINATIONS: Destination[] = [
     plan: 'Say what you want more of — iron, fibre, whatever a doctor mentioned — and get a '
         + 'week of real meals from recipes this house already cooks that adds up to it.',
     Icon: TargetIcon,
-    tint: 'cover-4',
+    tint: 'bg-sky-soft',
     ready: false,
   },
 ];

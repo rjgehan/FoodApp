@@ -60,7 +60,7 @@ export default function LinkHandout({
   return (
     <div className="space-y-3">
       <p
-        className="select-all break-all rounded-xl bg-elevated px-4 py-3 font-mono text-[0.8125rem] text-ink"
+        className="select-all break-all rounded-xl bg-surface2 px-4 py-3 font-mono text-[0.8125rem] text-ink"
         aria-label="Link"
       >
         {url}

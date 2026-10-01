@@ -6,11 +6,24 @@ const CompactTitle = createContext<(title: string | null) => void>(() => {});
 export const CompactTitleProvider = CompactTitle.Provider;
 
 /**
- * A page's large title, the iOS way: big and tightly set at the top of the page, and once it
- * scrolls under the bar a small copy fades into the bar, so you always know where you are.
- * `children` sit at the title's right, for the one or two actions that belong to the whole page.
+ * A page's large title (the mockup's `large` row): 34px in the theme's title font, with an
+ * optional quiet line above it ("Tuesday, September 29") and the page's one or two actions at
+ * its right — usually round buttons (IconButton shape="round") or the round ••• ActionMenu. Once
+ * it scrolls under the top bar a small copy fades into the bar, so you always know where you are.
  */
-export function PageTitle({ title, subtitle, children }: { title: string; subtitle?: ReactNode; children?: ReactNode }) {
+export function PageTitle({
+  title,
+  over,
+  subtitle,
+  children,
+}: {
+  title: string;
+  /** The small line above the title. */
+  over?: ReactNode;
+  /** A line under the title. */
+  subtitle?: ReactNode;
+  children?: ReactNode;
+}) {
   const setCompact = useContext(CompactTitle);
   const heading = useRef<HTMLHeadingElement>(null);
 
@@ -30,14 +43,17 @@ export function PageTitle({ title, subtitle, children }: { title: string; subtit
   }, [title, setCompact]);
 
   return (
-    <div className="pb-1">
-      <div className="flex items-end justify-between gap-3">
-        <h1 ref={heading} className="large-title min-w-0 break-words">
-          {title}
-        </h1>
-        {children && <div className="mb-1 flex shrink-0 items-center gap-1">{children}</div>}
+    <div className="pb-3 pt-1">
+      <div className="flex items-end justify-between gap-2.5">
+        <div className="min-w-0">
+          {over && <p className="mb-0.5 text-[0.8125rem] font-medium text-muted">{over}</p>}
+          <h1 ref={heading} className="title-large break-words">
+            {title}
+          </h1>
+        </div>
+        {children && <div className="mb-0.5 flex shrink-0 items-center gap-2.5">{children}</div>}
       </div>
-      {subtitle && <p className="mt-1 text-muted">{subtitle}</p>}
+      {subtitle && <p className="mt-1.5 text-muted">{subtitle}</p>}
     </div>
   );
 }

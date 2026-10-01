@@ -176,7 +176,7 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
               className={cx(
                 'flex items-center justify-center px-3 text-sm font-semibold',
                 last ? 'flex-1' : 'shrink-0',
-                action.tone === 'danger' ? 'bg-danger text-bg' : 'bg-accent text-accent-ink',
+                action.tone === 'danger' ? 'bg-danger text-bg' : 'bg-accent text-on-accent',
               )}
             >
               {action.label}

@@ -270,14 +270,14 @@ export default function RecipeForm({
                 onClick={() => updateIngredient(i, { optional: !row.optional })}
                 className={
                   'shrink-0 rounded-full px-2 py-1 text-xs font-medium ' +
-                  (row.optional ? 'bg-secondary-soft text-secondary' : 'bg-elevated text-subtle')
+                  (row.optional ? 'bg-accent-soft text-accent-ink' : 'bg-surface2 text-faint')
                 }
               >
                 Opt
               </button>
               <IconButton
                 label={`Remove ingredient ${i + 1}`}
-                className="text-subtle"
+                className="text-faint"
                 disabled={ingredients.length === 1}
                 onClick={() => setIngredients((rows) => rows.filter((_, idx) => idx !== i))}
               >
@@ -367,14 +367,14 @@ export default function RecipeForm({
 
       {error && <ErrorText>{error}</ErrorText>}
       {duplicate && (
-        <div role="alert" className="space-y-3 rounded-xl bg-secondary-soft p-4 text-[0.9375rem]">
+        <div role="alert" className="space-y-3 rounded-xl bg-accent-soft p-4 text-[0.9375rem]">
           <p>
             You already have <span className="font-medium">“{duplicate.name}”</span> in your recipes.
           </p>
           <div className="flex flex-wrap gap-2">
             <Link
               to={`/recipes/${duplicate.id}`}
-              className="flex h-9 items-center rounded-[10px] bg-accent px-3 text-[0.9375rem] font-medium text-accent-ink"
+              className="flex h-9 items-center rounded-[10px] bg-accent px-3 text-[0.9375rem] font-medium text-on-accent"
             >
               Open it
             </Link>

@@ -86,7 +86,7 @@ function Key({
       aria-label={label}
       className="flex h-[4.25rem] select-none items-center justify-center rounded-2xl border border-line
                  bg-surface text-2xl font-medium text-ink transition-colors
-                 active:bg-secondary-soft active:text-secondary
+                 active:bg-accent-soft active:text-accent-ink
                  disabled:opacity-30 disabled:active:bg-surface disabled:active:text-ink"
     >
       {children}

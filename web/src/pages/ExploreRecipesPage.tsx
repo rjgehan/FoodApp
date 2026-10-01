@@ -100,9 +100,9 @@ export default function ExploreRecipesPage() {
         </>
       )}
 
-      <p className="pt-2 text-[0.8125rem] text-subtle">
+      <p className="pt-2 text-[0.8125rem] text-faint">
         Anyone signed in here can read a published recipe and keep it. Take one back out any time from{' '}
-        <Link to="/recipes" className="font-medium text-accent">
+        <Link to="/recipes" className="font-medium text-accent-ink">
           your recipes
         </Link>
         .
