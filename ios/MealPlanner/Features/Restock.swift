@@ -74,15 +74,16 @@ struct RestockSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     RestockPicker(everyDays: $everyDays)
                 } footer: {
                     Text("Counted from the last time it was put away. When it's time, the app asks whether to add it to the list.")
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle(name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -138,7 +139,7 @@ struct RestockPrompt: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     ForEach(items) { item in
                         let on = selected.contains(item.ingredientId)
                         Button {
@@ -168,9 +169,10 @@ struct RestockPrompt: View {
                         .textCase(nil)
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle("Time to restock?")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {

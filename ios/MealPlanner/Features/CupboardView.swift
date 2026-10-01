@@ -51,7 +51,7 @@ struct CupboardView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     Text(items.isEmpty ? "Nothing in the cupboard yet" : subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -59,23 +59,23 @@ struct CupboardView: View {
                 }
                 // A new house's cupboard is the one that is empty, and ticking a list beats typing it.
                 if items.isEmpty {
-                    Section {
+                    KitchenSection {
                         Button("Start with the basics", systemImage: "checklist") { startingWithBasics = true }
                     }
                 }
                 if let notice {
-                    Section {
+                    KitchenSection {
                         Label(notice, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Palette.success)
+                            .foregroundStyle(Palette.herb)
                             .font(.subheadline)
                     }
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
 
                 ForEach(groups, id: \.category?.id) { group in
-                    Section(group.category?.name ?? "Everything else") {
+                    KitchenSection(group.category?.name ?? "Everything else") {
                         ForEach(group.items) { item in
                             row(item)
                                 .contentShape(Rectangle())
@@ -95,6 +95,7 @@ struct CupboardView: View {
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Cupboard")
             .searchable(text: $query, prompt: "Do we have… ?")
             .refreshable { await load() }
@@ -173,7 +174,7 @@ struct CupboardView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color(.tertiarySystemFill), in: Capsule())
+                .background(Palette.surface2, in: Capsule())
             } else {
                 // Everything else: the one-tap answer to "are we out?"
                 HaveOrLow(low: item.runningLow) { wanted in Task { await setLow(item, wanted) } }
@@ -281,11 +282,11 @@ struct HaveOrLow: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            half(isLow: false, title: "Have", tint: Palette.success)
+            half(isLow: false, title: "Have", tint: Palette.herb)
             half(isLow: true, title: "Low", tint: Palette.accent)
         }
         .padding(2)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
+        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 9))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("How much is left")
     }
@@ -302,7 +303,7 @@ struct HaveOrLow: View {
                 .background {
                     if chosen {
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(Color(.secondarySystemGroupedBackground))
+                            .fill(Palette.surface)
                             .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
                     }
                 }
@@ -347,7 +348,7 @@ struct CupboardItemSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     TextField("Name", text: $name)
                 } header: {
                     Text("Name")
@@ -355,7 +356,7 @@ struct CupboardItemSheet: View {
                     Text("Renaming it to something already in the cupboard merges the two.")
                 }
 
-                Section {
+                KitchenSection {
                     LabeledContent("Status", value: item.runningLow ? "Running low" : "Have some")
                     LabeledContent("On the grocery list", value: item.onList ? "Yes" : "No")
                     if let amount = item.amount {
@@ -363,7 +364,7 @@ struct CupboardItemSheet: View {
                     }
                 }
 
-                Section {
+                KitchenSection {
                     Toggle("Always have", isOn: $staple)
                     Toggle("Count how much is left", isOn: $tracks)
                     if tracks {
@@ -385,7 +386,7 @@ struct CupboardItemSheet: View {
 
                 // Needs the ingredient behind it, which a server from before reminders does not send.
                 if item.ingredientId != nil {
-                    Section {
+                    KitchenSection {
                         RestockPicker(everyDays: $everyDays)
                     } footer: {
                         Text("Counted from the last time it was put away. When it's time, the app asks.")
@@ -393,10 +394,10 @@ struct CupboardItemSheet: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
 
-                Section {
+                KitchenSection {
                     Button("Put it back on the list", systemImage: "cart.badge.plus") {
                         Task { await buyAgain() }
                     }
@@ -405,6 +406,7 @@ struct CupboardItemSheet: View {
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle(item.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

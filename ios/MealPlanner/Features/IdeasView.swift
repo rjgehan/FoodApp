@@ -34,7 +34,7 @@ struct IdeasView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     Text("Beta · Suggest what would make the app better, and upvote the ideas you want most.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -49,7 +49,7 @@ struct IdeasView: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
 
                 if closed {
@@ -67,7 +67,7 @@ struct IdeasView: View {
                     }
                     .listRowBackground(Color.clear)
                 } else {
-                    Section {
+                    KitchenSection {
                         ForEach(ideas) { idea in
                             IdeaRow(
                                 idea: idea,
@@ -95,6 +95,7 @@ struct IdeasView: View {
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Ideas")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
@@ -240,10 +241,10 @@ private struct IdeaRow: View {
                     Text("\(idea.voteCount)")
                         .font(.subheadline.weight(.semibold).monospacedDigit())
                 }
-                .foregroundStyle(idea.votedByMe ? Palette.accentInk : Palette.accent)
+                .foregroundStyle(idea.votedByMe ? Palette.onAccent : Palette.accentInk)
                 .frame(width: 46, height: 52)
                 .background(
-                    idea.votedByMe ? Palette.accent : Color(.tertiarySystemFill),
+                    idea.votedByMe ? Palette.accent : Palette.surface2,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                 )
             }
@@ -286,7 +287,7 @@ private struct IdeaRow: View {
                     }
                     if admin {
                         // Where it is up to: the one it is at now wears the tick.
-                        Section("Where it's up to") {
+                        KitchenSection("Where it's up to") {
                             ForEach(IdeaStatus.allCases, id: \.self) { status in
                                 Button {
                                     if status != idea.status { onStatus(status) }
@@ -332,7 +333,7 @@ private struct StatusBadge: View {
     private var foreground: Color {
         switch status {
         case .planned: return Palette.accent
-        case .done: return Palette.success
+        case .done: return Palette.herb
         case .open, .notDoing: return .secondary
         }
     }
@@ -340,8 +341,8 @@ private struct StatusBadge: View {
     private var background: Color {
         switch status {
         case .planned: return Palette.accentSoft
-        case .done: return Palette.successSoft
-        case .open, .notDoing: return Color(.tertiarySystemFill)
+        case .done: return Palette.herbSoft
+        case .open, .notDoing: return Palette.surface2
         }
     }
 }
@@ -375,7 +376,7 @@ struct IdeaEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     TextField("In a few words", text: $title, axis: .vertical)
                         .focused($focused)
                         .submitLabel(.next)
@@ -391,7 +392,7 @@ struct IdeaEditor: View {
                     if left <= 15 { Text("\(left) \(left == 1 ? "character" : "characters") left") }
                 }
 
-                Section("Details (optional)") {
+                KitchenSection("Details (optional)") {
                     TextField("What would it help with? How might it work?", text: $details, axis: .vertical)
                         .lineLimit(3...8)
                         .onChange(of: details) { _, new in
@@ -400,9 +401,10 @@ struct IdeaEditor: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle(idea == nil ? "Suggest an idea" : "Edit idea")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

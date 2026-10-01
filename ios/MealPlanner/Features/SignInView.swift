@@ -44,6 +44,7 @@ struct SignInView: View {
                     householdList
                 }
             }
+            .kitchenList()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -89,23 +90,23 @@ struct SignInView: View {
     private var emailForm: some View {
         Form {
             if let pending = session.pendingInvite {
-                Section {
+                KitchenSection {
                     HStack(alignment: .firstTextBaseline) {
                         Label("Sign in to join \(pending.householdName)", systemImage: "house")
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(Palette.accentInk)
                         Spacer()
                         Button("Cancel") { session.pendingInvite = nil }
                             .font(.subheadline)
                     }
                     if let notice = session.notice { Text(notice).font(.subheadline).foregroundStyle(.secondary) }
                 }
-                .listRowBackground(Palette.secondarySoft)
+                .listRowBackground(Palette.accentSoft)
             } else if let notice = session.notice {
-                Section { Text(notice).foregroundStyle(Palette.secondary) }
-                    .listRowBackground(Palette.secondarySoft)
+                KitchenSection { Text(notice).foregroundStyle(Palette.accentInk) }
+                    .listRowBackground(Palette.accentSoft)
             }
 
-            Section {
+            KitchenSection {
                 TextField("Email", text: $email)
                     .textContentType(.username)
                     .keyboardType(.emailAddress)
@@ -125,10 +126,10 @@ struct SignInView: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
 
-            Section {
+            KitchenSection {
                 Button {
                     Task { await signInWithEmail() }
                 } label: {
@@ -141,7 +142,7 @@ struct SignInView: View {
                 .disabled(busy || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
             }
 
-            Section {
+            KitchenSection {
                 Button {
                     scanning = true
                 } label: {
@@ -155,7 +156,7 @@ struct SignInView: View {
             }
 
             if legacyPinLogin {
-                Section {
+                KitchenSection {
                     Button("Sign in with your name and PIN") {
                         error = nil
                         usingPin = true
@@ -167,7 +168,7 @@ struct SignInView: View {
                 .listRowBackground(Color.clear)
             }
 
-            Section {
+            KitchenSection {
                 LabeledContent("Server", value: Config.baseURL)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -178,9 +179,9 @@ struct SignInView: View {
     private var householdList: some View {
         List {
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
-            Section("Pick your household") {
+            KitchenSection("Pick your household") {
                 ForEach(households) { h in
                     Button {
                         household = h
@@ -191,7 +192,7 @@ struct SignInView: View {
                     }
                 }
             }
-            Section {
+            KitchenSection {
                 LabeledContent("Server", value: Config.baseURL)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -222,7 +223,7 @@ struct SignInView: View {
             }
 
             if let error {
-                Text(error).foregroundStyle(.red).font(.callout)
+                Text(error).foregroundStyle(Palette.danger).font(.callout)
             }
 
             // A real keypad, because a four-digit PIN on a phone should never open a keyboard.

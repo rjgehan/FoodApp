@@ -79,9 +79,10 @@ struct RecipeShareSheet: View {
                     exploreSection
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle("Share")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -100,7 +101,7 @@ struct RecipeShareSheet: View {
     }
 
     private var linkSection: some View {
-        Section {
+        KitchenSection {
             if let url {
                 Text(url.absoluteString)
                     .font(.footnote.monospaced())
@@ -154,7 +155,7 @@ struct RecipeShareSheet: View {
     }
 
     private var householdsSection: some View {
-        Section {
+        KitchenSection {
             ForEach($targets) { $target in
                 Toggle(target.name, isOn: Binding(
                     get: { target.shared },
@@ -170,7 +171,7 @@ struct RecipeShareSheet: View {
     }
 
     private var exploreSection: some View {
-        Section {
+        KitchenSection {
             Toggle("In Explore", isOn: Binding(
                 get: { recipe.published ?? false },
                 set: { on in Task { await setPublished(on) } }

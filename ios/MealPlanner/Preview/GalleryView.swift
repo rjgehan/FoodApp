@@ -20,7 +20,7 @@ struct GalleryView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     Picker("Appearance", selection: $scheme) {
                         Text("System").tag(ColorScheme?.none)
                         Text("Light").tag(ColorScheme?.some(.light))
@@ -29,7 +29,19 @@ struct GalleryView: View {
                     .pickerStyle(.segmented)
                 }
 
-                Section("Screens") {
+                KitchenSection("Design") {
+                    entry("Design system — every component", "paintbrush") {
+                        DesignSystemView()
+                    }
+                    entry("Theme", "paintpalette") {
+                        ThemeScreen()
+                    }
+                    entry("Switch household", "arrow.left.arrow.right") {
+                        HouseholdPicker(session: twoHouses)
+                    }
+                }
+
+                KitchenSection("Screens") {
                     entry("Sign in — households", "house") {
                         SignInView(session: Session())
                     }
@@ -114,7 +126,7 @@ struct GalleryView: View {
                     }
                 }
 
-                Section {
+                KitchenSection {
                     LabeledContent("Server", value: Config.baseURL)
                     LabeledContent("Sample data", value: "no network calls")
                 } footer: {

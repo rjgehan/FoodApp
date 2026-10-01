@@ -40,7 +40,7 @@ struct PlanView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let error {
-                        Text(error).foregroundStyle(.red).font(.callout)
+                        Text(error).foregroundStyle(Palette.danger).font(.callout)
                     }
 
                     if planDays.isEmpty {
@@ -85,6 +85,7 @@ struct PlanView: View {
                 }
                 .padding(.vertical, 8)
             }
+            .pageBackground()
             .navigationTitle("Plan")
             .refreshable { await load() }
             // Deleting a recipe takes its planned meals with it.
@@ -199,11 +200,11 @@ private struct DayCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(isToday ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground))
+                .fill(isToday ? Color.accentColor.opacity(0.12) : Palette.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(isToday ? Color.accentColor : Color(.separator), lineWidth: isToday ? 1.5 : 0.5)
+                .stroke(isToday ? Color.accentColor : Palette.border, lineWidth: isToday ? 1.5 : 0.5)
         )
     }
 }
@@ -368,10 +369,10 @@ struct DaySheet: View {
         NavigationStack {
             List {
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
                 ForEach(MealType.allCases, id: \.self) { meal in
-                    Section(meal.title) {
+                    KitchenSection(meal.title) {
                         ForEach(meals.filter { $0.mealType == meal }) { entry in
                             entryRow(entry)
                             if expanded == entry.id {
@@ -383,13 +384,14 @@ struct DaySheet: View {
                     }
                 }
 
-                Section {
+                KitchenSection {
                     Button("Add this day to Groceries", systemImage: "cart") {
                         Task { await addDayToGroceries() }
                     }
                     .disabled(busy || meals.isEmpty)
                 }
             }
+            .kitchenList()
             .navigationTitle(day.formatted(.dateTime.weekday(.wide).month().day()))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -567,7 +569,7 @@ struct DaySheet: View {
             } label: {
                 Label("Remove", systemImage: "trash")
             }
-            .foregroundStyle(.red)
+            .foregroundStyle(Palette.danger)
         }
         // Two buttons in one row: borderless, or the List makes the whole row one button
         // and a tap anywhere presses both.
@@ -708,7 +710,7 @@ struct PlannedLinkPicture: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(Color(.tertiarySystemFill))
+            .fill(Palette.surface2)
             .frame(width: 44, height: 44)
             .overlay {
                 if let imageId, let url = APIClient.shared.imageURL(imageId) {
@@ -874,6 +876,7 @@ struct RecipePicker: View {
                     ProgressView()
                 }
             }
+            .kitchenList()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -891,7 +894,7 @@ struct RecipePicker: View {
 
     private var list: some View {
         List {
-            Section {
+            KitchenSection {
                 ForEach(shown) { recipe in
                     recipeRow(recipe)
                 }
@@ -899,7 +902,7 @@ struct RecipePicker: View {
                 if !links.isEmpty { Text("Recipes") }
             }
             if let onPickLink, !shownLinks.isEmpty {
-                Section("Saved links") {
+                KitchenSection("Saved links") {
                     ForEach(shownLinks) { link in
                         Button {
                             onPickLink(link)
@@ -986,7 +989,7 @@ struct OptionalExtrasPicker: View {
 
     var body: some View {
         List {
-            Section {
+            KitchenSection {
                 ForEach(recipe.ingredients.filter(\.optional)) { ingredient in
                     OptionalExtraRow(ingredient: ingredient, isOn: selected.contains(ingredient.id)) {
                         if selected.contains(ingredient.id) { selected.remove(ingredient.id) }
@@ -999,7 +1002,7 @@ struct OptionalExtrasPicker: View {
                 Text("Only the ticked ones go on the grocery list with this meal.")
             }
 
-            Section {
+            KitchenSection {
                 Button {
                     onDone(Array(selected))
                 } label: {
@@ -1007,6 +1010,7 @@ struct OptionalExtrasPicker: View {
                 }
             }
         }
+        .kitchenList()
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
     }

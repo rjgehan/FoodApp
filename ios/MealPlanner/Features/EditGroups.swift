@@ -36,7 +36,7 @@ struct EditGroupsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     HStack {
                         iconButton(addingIcon, label: "Icon for the new group") { choosingIconFor = .new }
                         TextField("New group", text: $adding)
@@ -48,11 +48,11 @@ struct EditGroupsView: View {
                 }
 
                 if groups.isEmpty {
-                    Section {
+                    KitchenSection {
                         Text("No groups in \(place) yet.").foregroundStyle(.secondary)
                     }
                 } else {
-                    Section {
+                    KitchenSection {
                         ForEach(groups) { group in
                             HStack {
                                 iconButton(icon(of: group), label: "Icon for \(group.name)") {
@@ -83,9 +83,10 @@ struct EditGroupsView: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle("Groups")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -140,14 +141,14 @@ struct EditGroupsView: View {
             Group {
                 if let icon = FoodIcon.named(key) {
                     icon.image.resizable().scaledToFit().padding(5)
-                        .foregroundStyle(Palette.secondary)
-                        .background(Palette.secondarySoft, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Palette.accentInk)
+                        .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     Image(systemName: "photo.badge.plus")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [3])))
+                            .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [3])))
                 }
             }
             .frame(width: 36, height: 36)
@@ -238,6 +239,7 @@ struct IconChooser: View {
                 FoodIconPicker(selected: selected, allowNone: allowNone, onPick: onPick)
                     .padding(16)
             }
+            .pageBackground()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

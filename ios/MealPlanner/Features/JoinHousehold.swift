@@ -275,7 +275,7 @@ struct JoinHouseholdView: View {
     var body: some View {
         Form {
             if let info, info.valid {
-                Section {
+                KitchenSection {
                     VStack(spacing: 6) {
                         Text("You're invited").font(.footnote.weight(.semibold)).textCase(.uppercase)
                             .foregroundStyle(.secondary)
@@ -295,7 +295,7 @@ struct JoinHouseholdView: View {
                     signedOut(info)
                 }
             } else if info != nil || loadError != nil {
-                Section {
+                KitchenSection {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("This invite doesn't work any more").font(.headline)
                         Text(deadExplanation).foregroundStyle(.secondary)
@@ -303,10 +303,11 @@ struct JoinHouseholdView: View {
                     .padding(.vertical, 4)
                 }
             } else {
-                Section { ProgressView().frame(maxWidth: .infinity) }
+                KitchenSection { ProgressView().frame(maxWidth: .infinity) }
                     .listRowBackground(Color.clear)
             }
         }
+        .kitchenList()
         .navigationTitle("Invite")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -328,13 +329,13 @@ struct JoinHouseholdView: View {
 
     @ViewBuilder
     private func signedIn(_ info: InviteInfo) -> some View {
-        Section {
+        KitchenSection {
             Text("You'll see its plan, recipes and grocery list alongside your other households, and can switch between them at the top of the screen.")
                 .foregroundStyle(.secondary)
         }
         .listRowBackground(Color.clear)
-        if let error { Section { Text(error).foregroundStyle(.red) } }
-        Section {
+        if let error { KitchenSection { Text(error).foregroundStyle(Palette.danger) } }
+        KitchenSection {
             Button { Task { await join() } } label: {
                 wide(busy ? nil : "Join \(info.householdName ?? "")")
             }
@@ -344,7 +345,7 @@ struct JoinHouseholdView: View {
 
     @ViewBuilder
     private func signedOut(_ info: InviteInfo) -> some View {
-        Section {
+        KitchenSection {
             TextField("Your name", text: $name)
                 .textContentType(.name)
             TextField("Email", text: $email)
@@ -361,15 +362,15 @@ struct JoinHouseholdView: View {
         } footer: {
             Text("Passwords need at least 8 characters. Your email is what you'll sign in with.")
         }
-        if let error { Section { Text(error).foregroundStyle(.red) } }
-        Section {
+        if let error { KitchenSection { Text(error).foregroundStyle(Palette.danger) } }
+        KitchenSection {
             Button { Task { await signUp() } } label: {
                 wide(busy ? nil : "Create an account and join")
             }
             .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty
                       || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
         }
-        Section {
+        KitchenSection {
             Button("I already have an account") {
                 // Signing in, by email or by PIN, says yes to this as it lands.
                 session.pendingInvite = PendingInvite(token: token, householdName: info.householdName ?? "the household")
@@ -464,7 +465,7 @@ struct ResetPasswordView: View {
     var body: some View {
         Form {
             if let info, info.valid {
-                Section {
+                KitchenSection {
                     VStack(spacing: 6) {
                         Text("Hi, \(info.displayName ?? "there")").font(.title2.weight(.bold))
                         Text(info.hasEmail ? "Choose a new password." : "Add your email and choose a password.")
@@ -476,13 +477,13 @@ struct ResetPasswordView: View {
                 .listRowBackground(Color.clear)
 
                 if session.isSignedIn {
-                    Section {
+                    KitchenSection {
                         Label("Saving signs this phone in as \(info.displayName ?? "them"), instead of \(session.displayName ?? "you").",
                               systemImage: "person.2")
                             .foregroundStyle(.secondary)
                     }
                 }
-                Section {
+                KitchenSection {
                     if !info.hasEmail {
                         TextField("Email", text: $email)
                             .textContentType(.username)
@@ -495,8 +496,8 @@ struct ResetPasswordView: View {
                 } footer: {
                     Text("At least 8 characters.")
                 }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
-                Section {
+                if let error { KitchenSection { Text(error).foregroundStyle(Palette.danger) } }
+                KitchenSection {
                     Button { Task { await save(info) } } label: {
                         HStack {
                             Spacer()
@@ -507,7 +508,7 @@ struct ResetPasswordView: View {
                     .disabled(busy || password.isEmpty || (!info.hasEmail && email.trimmingCharacters(in: .whitespaces).isEmpty))
                 }
             } else if info != nil || loadError != nil {
-                Section {
+                KitchenSection {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("This link doesn't work any more").font(.headline)
                         Text(loadError ?? AppLink.otherHost(in: scannedFrom).map {
@@ -518,10 +519,11 @@ struct ResetPasswordView: View {
                     .padding(.vertical, 4)
                 }
             } else {
-                Section { ProgressView().frame(maxWidth: .infinity) }
+                KitchenSection { ProgressView().frame(maxWidth: .infinity) }
                     .listRowBackground(Color.clear)
             }
         }
+        .kitchenList()
         .navigationTitle("Reset password")
         .navigationBarTitleDisplayMode(.inline)
         .task {

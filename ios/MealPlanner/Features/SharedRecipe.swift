@@ -184,7 +184,7 @@ struct SharedRecipeView: View {
 
     var body: some View {
         List {
-            Section {
+            KitchenSection {
                 TextEditor(text: $text)
                     .frame(minHeight: 160)
                     .font(.callout)
@@ -208,16 +208,16 @@ struct SharedRecipeView: View {
             }
 
             if let note {
-                Section { Text(note).font(.footnote).foregroundStyle(.secondary) }
+                KitchenSection { Text(note).font(.footnote).foregroundStyle(.secondary) }
             }
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
 
             // Could not be read, and a link is all there is: keep it rather than lose it. The
             // recipe is in the video, or behind a bio link, and can be made a recipe later.
             if error != nil, fromPage == nil, copy == nil, kept == nil, linkToKeep != nil {
-                Section {
+                KitchenSection {
                     Button(keeping ? "Saving…" : "Save the link", systemImage: "link") {
                         Task { await keep(name: nil, cover: nil) }
                     }
@@ -229,7 +229,7 @@ struct SharedRecipeView: View {
             }
 
             if let kept {
-                Section {
+                KitchenSection {
                     HStack(spacing: 12) {
                         PlannedLinkPicture(imageId: kept.coverImageId)
                         VStack(alignment: .leading, spacing: 2) {
@@ -240,14 +240,14 @@ struct SharedRecipeView: View {
                 } header: {
                     Label(kept.alreadySaved == true ? "Already in Saved links" : "Saved to Saved links",
                           systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Palette.success)
+                        .foregroundStyle(Palette.herb)
                 } footer: {
                     Text("Find it under Recipes › Saved links.")
                 }
             }
 
             if let copy {
-                Section {
+                KitchenSection {
                     NavigationLink {
                         RecipeDetailView(recipe: copy, session: session)
                     } label: {
@@ -261,13 +261,13 @@ struct SharedRecipeView: View {
             }
 
             if let fromPage {
-                Section("What the page published") {
+                KitchenSection("What the page published") {
                     LabeledContent("Name", value: fromPage.name)
                     if fromPage.servings > 0 { LabeledContent("Serves", value: "\(fromPage.servings)") }
                     if fromPage.prep > 0 { LabeledContent("Prep", value: "\(fromPage.prep) min") }
                     if fromPage.cook > 0 { LabeledContent("Cook", value: "\(fromPage.cook) min") }
                 }
-                Section("Ingredients · \(fromPage.ingredients.count)") {
+                KitchenSection("Ingredients · \(fromPage.ingredients.count)") {
                     ForEach(Array(fromPage.ingredients.enumerated()), id: \.offset) { _, line in
                         let row = Amount(line)
                         LabeledContent(row.name.isEmpty ? line : row.name) {
@@ -276,7 +276,7 @@ struct SharedRecipeView: View {
                     }
                 }
                 if !fromPage.steps.isEmpty {
-                    Section {
+                    KitchenSection {
                         ForEach(Array(fromPage.steps.enumerated()), id: \.offset) { index, step in
                             (Text("\(index + 1). ") + IngredientMentions.text(
                                 step, names: fromPage.ingredients.map { Amount($0).name })
@@ -312,7 +312,7 @@ struct SharedRecipeView: View {
                         }
                     }
                 }
-                Section {
+                KitchenSection {
                     // Once only: tapped again it used to save the same recipe again, eight times
                     // for somebody who wasn't sure the first tap had worked.
                     Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
@@ -338,13 +338,13 @@ struct SharedRecipeView: View {
 
             #if canImport(FoundationModels)
             if #available(iOS 26.0, *), fromPage == nil, let parsed {
-                Section("What it read") {
+                KitchenSection("What it read") {
                     LabeledContent("Name", value: parsed.name)
                     LabeledContent("Serves", value: "\(parsed.servings)")
                     if parsed.prepMinutes > 0 { LabeledContent("Prep", value: "\(parsed.prepMinutes) min") }
                     if parsed.cookMinutes > 0 { LabeledContent("Cook", value: "\(parsed.cookMinutes) min") }
                 }
-                Section("Ingredients · \(parsed.ingredientLines.count)") {
+                KitchenSection("Ingredients · \(parsed.ingredientLines.count)") {
                     ForEach(Array(parsed.ingredientLines.enumerated()), id: \.offset) { _, line in
                         let row = Amount(line)
                         LabeledContent(row.name.isEmpty ? line : row.name) {
@@ -357,12 +357,12 @@ struct SharedRecipeView: View {
                         }
                     }
                 }
-                Section("Steps · \(parsed.steps.count)") {
+                KitchenSection("Steps · \(parsed.steps.count)") {
                     ForEach(Array(parsed.steps.enumerated()), id: \.offset) { index, step in
                         Text("\(index + 1). \(step)").font(.callout)
                     }
                 }
-                Section {
+                KitchenSection {
                     Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
                            systemImage: saved != nil ? "checkmark" : "square.and.arrow.down") {
                         Task { await save(parsed) }
@@ -389,6 +389,7 @@ struct SharedRecipeView: View {
         } message: {
             Text("It's already in your recipes — the same link or the same name.")
         }
+        .kitchenList()
         .navigationTitle("Paste → recipe")
         .navigationBarTitleDisplayMode(.inline)
         .task {

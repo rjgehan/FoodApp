@@ -30,7 +30,7 @@ struct StartCupboardSheet: View {
                         .foregroundStyle(.secondary)
 
                     if let error {
-                        Text(error).foregroundStyle(.red)
+                        Text(error).foregroundStyle(Palette.danger)
                     }
 
                     if let groups {
@@ -44,7 +44,7 @@ struct StartCupboardSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Palette.bg)
             // The way out stays in reach at the bottom, however far down the list you are.
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 4) {
@@ -71,6 +71,7 @@ struct StartCupboardSheet: View {
                 .padding(.bottom, 8)
                 .background(.bar)
             }
+            .pageBackground()
             .navigationTitle(first ? "Let's start your cupboard" : "Start with the basics")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -129,9 +130,9 @@ struct StartCupboardSheet: View {
             .font(.subheadline.weight(.medium))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .foregroundStyle(item.have ? Palette.success : on ? Palette.accentInk : Color.primary)
+            .foregroundStyle(item.have ? Palette.herb : on ? Palette.onAccent : Color.primary)
             .background(
-                item.have ? Palette.successSoft : on ? Palette.accent : Color(.tertiarySystemFill),
+                item.have ? Palette.herbSoft : on ? Palette.accent : Palette.surface2,
                 in: Capsule()
             )
         }
@@ -249,7 +250,7 @@ struct CopyCupboardSheet: View {
         NavigationStack {
             Form {
                 if let picked, let theirs {
-                    Section {
+                    KitchenSection {
                         Text(summary(from: picked.name, total: theirs.count))
                     } footer: {
                         if missing > 0 {
@@ -257,7 +258,7 @@ struct CopyCupboardSheet: View {
                         }
                     }
                     if missing > 0 {
-                        Section {
+                        KitchenSection {
                             Button(busy ? "Copying…" : "Copy \(things(missing))") {
                                 Task { await copy(from: picked) }
                             }
@@ -265,7 +266,7 @@ struct CopyCupboardSheet: View {
                         }
                     }
                 } else {
-                    Section {
+                    KitchenSection {
                         ForEach(others) { household in
                             Button {
                                 Task { await pick(household) }
@@ -291,9 +292,10 @@ struct CopyCupboardSheet: View {
                     }
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle("Copy from another household")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

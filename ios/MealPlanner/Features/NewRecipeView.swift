@@ -126,6 +126,7 @@ struct NewRecipeView: View {
     var body: some View {
         NavigationStack {
             page
+                .kitchenList()
                 // Above the page rather than in the bar: three words each need the width, and
                 // the bar already holds Cancel and Save.
                 .safeAreaInset(edge: .top, spacing: 0) {
@@ -136,7 +137,7 @@ struct NewRecipeView: View {
                     .disabled(reading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Color(.systemGroupedBackground))
+                    .background(Palette.bg)
                 }
                 .navigationTitle("New recipe")
                 .navigationBarTitleDisplayMode(.inline)
@@ -244,7 +245,7 @@ struct FromALinkPage: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 TextField("https://…", text: $link)
                     .keyboardType(.URL)
                     .textContentType(.URL)
@@ -291,8 +292,8 @@ struct FromALinkPage: View {
             if let error, kept == nil {
                 // A link that cannot be read is still worth keeping — the recipe is in the
                 // video, or behind a bio — so the way on is right under the reason.
-                Section {
-                    Text(error).foregroundStyle(.red)
+                KitchenSection {
+                    Text(error).foregroundStyle(Palette.danger)
                     Button(keeping ? "Saving…" : "Save the link instead", systemImage: "link") {
                         Task { await keep() }
                     }
@@ -303,10 +304,10 @@ struct FromALinkPage: View {
                 }
             }
             if let keepError {
-                Section { Text(keepError).foregroundStyle(.red) }
+                KitchenSection { Text(keepError).foregroundStyle(Palette.danger) }
             }
             if let kept {
-                Section {
+                KitchenSection {
                     HStack(spacing: 12) {
                         PlannedLinkPicture(imageId: kept.coverImageId)
                         VStack(alignment: .leading, spacing: 2) {
@@ -317,7 +318,7 @@ struct FromALinkPage: View {
                 } header: {
                     Label(kept.alreadySaved == true ? "Already in Saved links" : "Saved to Saved links",
                           systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Palette.success)
+                        .foregroundStyle(Palette.herb)
                 } footer: {
                     Text("Find it under Recipes › Saved links.")
                 }
@@ -452,7 +453,7 @@ struct PastePage: View {
                 pasteSection
             }
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
         .onChange(of: reading) { _, now in busy = now }
@@ -468,7 +469,7 @@ struct PastePage: View {
     }
 
     private var pasteSection: some View {
-        Section {
+        KitchenSection {
             if !onDevice {
                 FormatWarning()
             }
@@ -499,7 +500,7 @@ struct PastePage: View {
     }
 
     private func askSection(title: String) -> some View {
-        Section {
+        KitchenSection {
             TextField("What do you want to make? (optional)", text: $dish)
             Stepper("Serves \(servings)", value: $servings, in: 1...40)
             Button(copied ? "Copied" : "Copy the question", systemImage: copied ? "checkmark" : "doc.on.doc") {
@@ -619,7 +620,7 @@ private struct FormatWarning: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(Palette.accentInk)
             VStack(alignment: .leading, spacing: 4) {
                 Text("You can’t paste just anything here.").font(.subheadline.weight(.semibold))
                 Text("It only reads a recipe laid out the way the question asks: the name at the top, a line saying “Ingredients” with one ingredient per line under it, then a line saying “Instructions” with the steps. A recipe written as a paragraph won’t come through, and one copied off a website needs those two headings — or use From a link for the website itself.")
@@ -627,7 +628,7 @@ private struct FormatWarning: View {
             }
         }
         .padding(.vertical, 4)
-        .listRowBackground(Palette.secondarySoft)
+        .listRowBackground(Palette.accentSoft)
         .accessibilityElement(children: .combine)
     }
 }
