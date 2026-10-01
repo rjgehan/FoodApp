@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { call, isoDate, newHousehold, uploadImage } from '../../lib/api';
-import { calendarDay, fillSlot, sheet, signIn } from '../../lib/ui';
+import { calendarDay, fillSlot, newRecipeWay, sheet, signIn } from '../../lib/ui';
 
 /*
  * Saved links on the phone: a link that will not come through as a recipe is kept instead of
@@ -32,8 +32,8 @@ test('a link that cannot be read is saved instead, and waits in Saved links', as
   );
 
   await page.goto('/recipes/new');
-  await page.getByRole('tab', { name: 'From a link' }).click();
-  const panel = page.getByRole('tabpanel');
+  await newRecipeWay(page, 'From a link');
+  const panel = page.getByRole('main');
   // Always there, quietly, for a link you only want to keep.
   await expect(panel.getByRole('button', { name: 'Just save the link' })).toBeVisible();
 
@@ -41,7 +41,7 @@ test('a link that cannot be read is saved instead, and waits in Saved links', as
   await panel.getByRole('button', { name: 'Get the recipe' }).click();
   await expect(panel.getByText('That video has no recipe this can read.')).toBeVisible();
 
-  await panel.getByRole('button', { name: 'Save the link instead' }).click();
+  await panel.getByRole('button', { name: 'Keep as saved link' }).click();
   await expect(panel.getByText('Saved to Saved links')).toBeVisible();
   // The page said nothing, so it goes by its site's name.
   await expect(panel.getByText('nothing.invalid', { exact: true }).first()).toBeVisible();
@@ -73,10 +73,13 @@ test('a saved link is planned from its menu, and opens from the plan', async ({ 
   await sheet(page).getByRole('button', { name: 'Add to plan' }).click();
 
   const planSheet = sheet(page);
-  await planSheet.getByRole('button', { name: 'Tomorrow' }).click();
-  await planSheet.getByRole('button', { name: 'Dinner', exact: true }).click();
-  await planSheet.getByRole('button', { name: /^Add to Tomorrow · Dinner$/ }).click();
-  await expect(page.getByRole('status')).toContainText('On the plan for Tomorrow · Dinner');
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  const short = next.toLocaleDateString('en-US', { weekday: 'short' });
+  await planSheet.getByRole('radio', { name: next.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }) }).click();
+  await planSheet.getByRole('radio', { name: 'Dinner', exact: true }).click();
+  await planSheet.getByRole('button', { name: `Add to ${short} · Dinner`, exact: true }).click();
+  await expect(page.getByRole('status')).toContainText(`On the plan for ${short} · Dinner`);
 
   const tomorrow = isoDate(1);
   const [entry] = await call('GET', `/api/households/${hh.id}/meal-plan?start=${tomorrow}&end=${tomorrow}`, {

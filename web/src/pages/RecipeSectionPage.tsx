@@ -475,7 +475,7 @@ function SharedWithYou({ recipes, onBack }: { recipes: Recipe[] | null; onBack: 
             </section>
           ))}
           <p className="px-1 text-[0.8125rem] text-muted">
-            Open one and choose Save to my recipes to keep it in a drawer of yours.
+            Open one and choose Move into my recipes to keep it in a drawer of yours.
           </p>
         </>
       )}

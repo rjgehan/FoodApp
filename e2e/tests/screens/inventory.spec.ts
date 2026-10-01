@@ -4,7 +4,7 @@ import { deflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { API_URL, admin, call, isoDate, newHousehold, newMember, newRecipe, plan } from '../../lib/api';
-import { fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
+import { fromMenu, newRecipeWay, sheet, signIn, swipeLeft } from '../../lib/ui';
 
 /**
  * The screen inventory: every screen and sheet at iPhone size, light and dark, with a realistic
@@ -272,14 +272,16 @@ test('capture every screen', async ({ page }) => {
   });
   await step('recipe', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await shot(page, 'Recipe', 'No "Plan this" action; photo/video editing sits between ingredients and method.', { full: true });
+    await shot(page, 'Recipe', 'Photo hero with the name on it, then Ingredients · Method · Photos; Add to plan along the bottom.', { full: true });
+    await page.getByRole('tab', { name: /^Method/ }).click();
+    await shot(page, 'Recipe — method');
   });
   await step('share', async () => {
     await page.goto(`/recipes/${parm.id}`);
     await page.getByRole('button', { name: 'Recipe options' }).click();
     await shot(page, 'Recipe ••• menu');
     await sheet(page).getByRole('button', { name: /^Share/ }).click();
-    await shot(page, 'Share sheet');
+    await shot(page, 'Share', '', { full: true });
   });
   await step('add to plan', async () => {
     await page.goto(`/recipes/${parm.id}`);
@@ -288,32 +290,38 @@ test('capture every screen', async ({ page }) => {
   });
   await step('organize', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await fromMenu(page, 'Recipe options', 'Organize');
-    await shot(page, 'Organize', '', { full: true });
+    await fromMenu(page, 'Recipe options', /^Organise/);
+    await shot(page, 'Organise', '', { full: true });
   });
   await step('photos', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await fromMenu(page, 'Recipe options', 'Photos & links');
+    await fromMenu(page, 'Recipe options', /^Photos & links/);
     await shot(page, 'Photos & links', '', { full: true });
   });
   await step('index card', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await fromMenu(page, 'Recipe options', 'Index card');
+    await fromMenu(page, 'Recipe options', /^Index card/);
     await shot(page, 'Index card', '', { full: true });
   });
   await step('edit', async () => {
     await page.goto(`/recipes/${parm.id}/edit`);
     await shot(page, 'Edit recipe', '', { full: true });
+    await page.getByRole('button', { name: 'Delete this recipe' }).click();
+    await shot(page, 'Delete recipe?');
   });
   await step('new', async () => {
     await page.goto('/recipes/new');
+    await shot(page, 'New recipe — choose a way', '', { full: true });
+    await newRecipeWay(page, 'Type it out');
     await shot(page, 'New recipe — type it out', '', { full: true });
     await page.getByPlaceholder('unit').first().click();
     await shot(page, 'Unit picker');
-    await page.getByRole('tab', { name: 'From a link' }).click();
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await newRecipeWay(page, 'From a link');
     await shot(page, 'New recipe — from a link', '', { full: true });
-    await page.getByRole('tab', { name: 'Paste' }).click();
-    await shot(page, 'New recipe — paste', '', { full: true });
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await newRecipeWay(page, 'Paste from an AI');
+    await shot(page, 'New recipe — paste from an AI', '', { full: true });
   });
 
   group = 'Groceries';

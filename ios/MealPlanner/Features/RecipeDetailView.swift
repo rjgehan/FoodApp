@@ -1,383 +1,387 @@
+import PhotosUI
 import SwiftUI
 
-/// The recipe, and the one thing you usually want to do with it: put it on a day.
+/**
+ A recipe (the mockup's 3.7, Option 1): the photo hero with its name on it, then Ingredients,
+ Method and Photos as tabs that stick under the status bar as you scroll, and Add to plan along
+ the bottom between the previous and next recipe. Everything else — organising it, its photos
+ and links, sharing, editing, deleting — waits behind the ••• on the photo.
+ */
 struct RecipeDetailView: View {
     @State var recipe: Recipe
     var session: Session?
 
-    @State private var planning = false
-    @State private var planned: String?
-    @State private var editing = false
-    @State private var changingPhoto = false
+    enum Tab: Hashable { case ingredients, method, photos }
+    enum Sheet: Identifiable, Hashable {
+        case options, plan, organise, media, edit
+        var id: Self { self }
+    }
+
+    @State private var tab: Tab = .ingredients
+    /// How many the amounts are shown for: the recipe's own number until the stepper moves.
+    @State private var servings: Int?
+    @State private var sheet: Sheet?
     @State private var sharing = false
     @State private var confirmingDelete = false
-    @State private var deleting = false
-    @State private var deleteError: String?
+    /// The catalogue in name order, for previous and next.
+    @State private var siblings: [Recipe] = []
+    @State private var toast: String?
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var addingPhotos = false
+    /// The hero has scrolled out of sight, so the status bar gets the page behind it.
+    @State private var heroGone = false
     @Environment(\.dismiss) private var dismissDetail
+
+    private var mine: Bool { !recipe.shared }
 
     /// One step per line, the way it was written.
     private var steps: [String] {
         (recipe.instructions ?? "")
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.replacingOccurrences(of: #"^(\d+[.)]|[-*•])\s*"#, with: "", options: .regularExpression) }
             .filter { !$0.isEmpty }
     }
 
+    private var pictures: [UUID] {
+        var seen = Set<UUID>()
+        return ([recipe.coverImageId].compactMap { $0 } + (recipe.photoIds ?? [])).filter { seen.insert($0).inserted }
+    }
+
+    private var index: Int? { siblings.firstIndex { $0.id == recipe.id } }
+    private var previous: Recipe? { index.flatMap { $0 > 0 ? siblings[$0 - 1] : nil } }
+    private var next: Recipe? { index.flatMap { $0 + 1 < siblings.count ? siblings[$0 + 1] : nil } }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let id = recipe.coverImageId, let url = APIClient.shared.imageURL(id) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Palette.surface
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 240)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .onTapGesture { if !recipe.shared { changingPhoto = true } }
-                } else if !recipe.shared {
-                    /*
-                     Offered where the missing picture would be, rather than four taps deep
-                     inside the edit form. This is for the recipes written down months ago
-                     that never got one, which is most of them.
-                    */
-                    Button {
-                        changingPhoto = true
-                    } label: {
-                        VStack(spacing: 8) {
-                            Image(systemName: "photo.badge.plus").font(.system(size: 28))
-                            Text("Add a photo").font(.subheadline.weight(.medium))
-                        }
-                        .foregroundStyle(Color.accentColor)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 120)
-                        // A dashed outline, because the card colour is the same white as
-                        // the page behind it and an invisible box is not an invitation.
-                        .background(Color.accentColor.opacity(0.06),
-                                    in: RoundedRectangle(cornerRadius: 18))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18)
-                                .strokeBorder(
-                                    Color.accentColor.opacity(0.35),
-                                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
-                                )
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(recipe.name).font(.largeTitle.weight(.bold))
-                    if let description = recipe.description, !description.isEmpty {
-                        Text(description).foregroundStyle(.secondary)
-                    }
-                    Text(recipe.facts).font(.subheadline).foregroundStyle(.secondary)
-                    if let owner = recipe.ownerName, recipe.shared {
-                        Text("from \(owner)").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-
-                if let planned {
-                    Label("On the plan for \(planned)", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Palette.herb)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Palette.herb.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                }
-
-                // The one filled button on the screen: the step the whole app is built around.
-                Button {
-                    planning = true
-                } label: {
-                    Label("Add to plan", systemImage: "calendar.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-                // Where it came from and the videos of it — every link, not just the first.
-                RecipeLinksList(links: recipe.allLinks)
-
-                if !recipe.ingredients.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Ingredients · \(recipe.ingredients.count)").font(.headline)
-                        ForEach(recipe.ingredients) { ingredient in
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(ingredient.amount ?? "")
-                                    .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 74, alignment: .leading)
-                                Text(ingredient.ingredientName)
-                                if ingredient.optional {
-                                    Text("optional").font(.caption).foregroundStyle(.tertiary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            Divider()
-                        }
-                    }
-                }
-
-                if !steps.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Method").font(.headline)
-                        ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                Text("\(index + 1)")
-                                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20, alignment: .trailing)
-                                StepText(step: step, names: recipe.ingredients.map(\.ingredientName))
+        GeometryReader { outer in
+            let top = outer.safeAreaInsets.top
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    RecipeHero(recipe: recipe, topInset: top, back: { dismissDetail() }, share: mine ? { sharing = true } : nil,
+                               options: { sheet = .options })
+                        .padding(.top, -top)
+                        .background {
+                            GeometryReader { geo in
+                                Color.clear.preference(key: HeroBottom.self, value: geo.frame(in: .global).maxY)
                             }
                         }
+                    Section {
+                        panel.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 24)
+                    } header: {
+                        RecipeTabBar(tab: $tab, counts: (recipe.ingredients.count, steps.count, pictures.count))
                     }
                 }
             }
-            .padding(16)
+            .onPreferenceChange(HeroBottom.self) { bottom in heroGone = bottom < top + 60 }
+            .overlay(alignment: .top) {
+                // Under the status bar once the photo has gone, so the tabs do not seem to float.
+                Palette.bg.frame(height: top).ignoresSafeArea(edges: .top).opacity(heroGone ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
         }
         .pageBackground()
-        .navigationTitle(recipe.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // Only the household that owns a recipe can change it — or hand it on; a shared one
-            // is read-only.
-            if !recipe.shared {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Share", systemImage: "square.and.arrow.up") { sharing = true }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Edit") { editing = true }
-                }
-                // Behind a menu rather than beside Edit: it is the rarest thing anybody does here,
-                // and the one that cannot be taken back.
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu("More", systemImage: "ellipsis") {
-                        Button("Delete recipe", systemImage: "trash", role: .destructive) {
-                            confirmingDelete = true
-                        }
-                    }
-                    .disabled(deleting)
-                }
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
+        // The bar is hidden here, but its title is what Share's back button says.
+        .navigationTitle("Recipe")
+        .overlay(alignment: .bottom) {
+            if let toast {
+                RecipeToast(text: toast).padding(.horizontal, 16).padding(.bottom, 92)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .confirmationDialog("Delete “\(recipe.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete forever", role: .destructive) {
-                Task { await deleteRecipe() }
+        .animation(.easeOut(duration: 0.2), value: toast)
+        .kitchenAlert(isPresented: $confirmingDelete) {
+            DeleteRecipeCard(recipe: recipe, session: session) { deleted in
+                confirmingDelete = false
+                if deleted { dismissDetail() }
             }
-        } message: {
-            Text((recipe.sharedWith ?? []).isEmpty && recipe.published != true
-                ? "It comes off your planned meals and any share link stops working. This can't be undone."
-                : "It comes off your planned meals and any share link stops working. Anyone else who planned it keeps the meal, marked as deleted. This can't be undone.")
         }
-        .alert("Couldn't delete it", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
-        )) {
-            Button("OK") { deleteError = nil }
-        } message: {
-            Text(deleteError ?? "")
-        }
-        .sheet(isPresented: $sharing) {
+        .navigationDestination(isPresented: $sharing) {
             RecipeShareSheet(recipe: $recipe)
         }
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .options:
+                RecipeOptionsSheet(recipe: recipe, sharedCount: recipe.sharedWith?.count ?? 0) { pick($0) }
+            case .plan:
+                AddToPlanSheet(recipe: recipe, session: session) { when in say("On the plan for \(when)") }
+            case .organise:
+                OrganiseSheet(recipe: recipe, session: session) { saved in
+                    let moved = recipe.shared && recipe.section == nil
+                    recipe = saved
+                    say(moved ? "Moved into your recipes" : "Filed")
+                }
+            case .media:
+                PhotosLinksSheet(recipe: recipe, session: session) { recipe = $0 }
+            case .edit:
+                EditRecipeView(recipe: recipe, session: session, onDeleted: {
+                    sheet = nil
+                    dismissDetail()
+                }) { saved in
+                    recipe = saved
+                }
+            }
+        }
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await addPhotos(items) }
+        }
+        .task { await loadSiblings() }
         #if DEBUG
-        // -mp_debug_screen share opens this recipe's Share sheet, for screenshot runs.
+        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method opens that on
+        // this recipe, for screenshot runs.
         .task {
-            if UserDefaults.standard.string(forKey: "mp_debug_screen") == "share", !recipe.shared {
-                sharing = true
+            try? await Task.sleep(for: .milliseconds(600))
+            switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
+            case "share" where mine: sharing = true
+            case "recipe-options": sheet = .options
+            case "recipe-plan": sheet = .plan
+            case "recipe-delete" where mine: confirmingDelete = true
+            case "recipe-method": tab = .method
+            default: break
             }
         }
         #endif
-        .sheet(isPresented: $changingPhoto) {
-            CoverPhotoSheet(recipe: recipe, session: session) { saved in
-                recipe = saved
-            }
+    }
+
+    // MARK: Tabs
+
+    @ViewBuilder private var panel: some View {
+        switch tab {
+        case .ingredients: ingredientsPanel
+        case .method: methodPanel
+        case .photos: photosPanel
         }
-        .sheet(isPresented: $editing) {
-            EditRecipeView(recipe: recipe, session: session) { saved in
-                recipe = saved
+    }
+
+    private var ingredientsPanel: some View {
+        let shown = servings ?? recipe.servings
+        let scale = recipe.servings > 0 ? Double(shown) / Double(recipe.servings) : 1
+        return VStack(alignment: .leading, spacing: 14) {
+            // Somebody else's, and not in a drawer of yours yet: the way to keep it is right
+            // here, as well as behind •••.
+            if recipe.shared && recipe.section == nil {
+                HStack(spacing: 10) {
+                    Text("Shared by \(recipe.ownerName ?? "another household"). Only they can change it.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.plum)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { sheet = .organise } label: { Label("Move into my recipes", systemImage: "arrow.right") }
+                        .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                }
+                .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
+                .background(Palette.plumSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-        }
-        .sheet(isPresented: $planning) {
-            AddToPlanSheet(recipe: recipe, session: session) { label in
-                planned = label
+            if let description = recipe.description, !description.isEmpty {
+                Text(description).font(.system(size: 15)).foregroundStyle(Palette.muted)
+            }
+            HStack(alignment: .center, spacing: 8) {
+                let links = recipe.allLinks.filter { $0.destination != nil }
+                if links.isEmpty {
+                    if mine {
+                        Button { sheet = .media } label: { Label("Add link", systemImage: "plus") }
+                            .buttonStyle(.kitchen(.ghost, size: .small, fill: false))
+                            .padding(.leading, -12)
+                    }
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                                Link(destination: link.destination!) {
+                                    Label(chipName(link), systemImage: link.isVideo ? "play" : "link")
+                                }
+                                .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                                .accessibilityLabel(link.name)
+                            }
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                ServingsStepper(value: Binding(get: { shown }, set: { servings = $0 }))
+            }
+            if recipe.ingredients.isEmpty {
+                empty("No ingredients yet — until they're in, planning this adds nothing to Groceries.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(recipe.ingredients) { ingredient in ingredientRow(ingredient, scale: scale) }
+                }
             }
         }
     }
 
-    private func deleteRecipe() async {
-        deleting = true
-        defer { deleting = false }
-        do {
-            try await APIClient.shared.deleteRecipe(recipe.id)
-            NotificationCenter.default.post(name: .recipesChanged, object: nil)
-            dismissDetail()
-        } catch {
-            deleteError = error.localizedDescription
+    private func ingredientRow(_ item: RecipeIngredient, scale: Double) -> some View {
+        let amount = [item.quantity.map { fraction($0 * scale) }, item.unit].compactMap { $0 }.filter { !$0.isEmpty }
+            .joined(separator: " ")
+        var name = Text(item.ingredientName)
+        if let notes = item.notes, !notes.isEmpty { name = name + Text(", \(notes)").foregroundColor(Palette.muted) }
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(amount).font(.system(size: 15, weight: .semibold)).monospacedDigit()
+                .frame(width: 74, alignment: .leading)
+            name.font(.system(size: 15)).frame(maxWidth: .infinity, alignment: .leading)
+            if item.optional { Pill("Optional", tone: .mustard) }
+        }
+        .foregroundStyle(Palette.text)
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var methodPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if steps.isEmpty {
+                empty(mine ? "No method written down yet. Add the steps in Edit." : "No method written down yet.")
+            }
+            ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
+                HStack(alignment: .top, spacing: 12) {
+                    StepNumber(number: i + 1)
+                    StepText(step: step, names: recipe.ingredients.map(\.ingredientName))
+                        .font(.system(size: 16))
+                        .foregroundStyle(Palette.text)
+                        .lineSpacing(3)
+                        .padding(.top, 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private var photosPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if pictures.isEmpty {
+                empty("No photos yet.")
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    ForEach(pictures, id: \.self) { id in
+                        Color.clear.aspectRatio(1, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: APIClient.shared.imageURL(id)) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: { Palette.surface2 }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+            }
+            if mine {
+                PhotosPicker(selection: $picked, maxSelectionCount: 10, matching: .images, photoLibrary: .shared()) {
+                    Label(addingPhotos ? "Adding…" : "Add photos", systemImage: "photo.badge.plus")
+                }
+                .buttonStyle(.secondary)
+                .disabled(addingPhotos)
+            }
+        }
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(text).font(.system(size: 15)).foregroundStyle(Palette.muted)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+    }
+
+    /// "TikTok" with a play mark, "Website"-style names for pages: short, as on the photo's buttons.
+    private func chipName(_ link: SourceLink) -> String {
+        if let label = link.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty { return label }
+        return link.site ?? link.url
+    }
+
+    // MARK: Bottom bar
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            stepButton("chevron.left", "Previous recipe", previous)
+            // The one filled button on the screen: the step the whole app is built around.
+            Button { sheet = .plan } label: { Label("Add to plan", systemImage: "calendar") }
+                .buttonStyle(.primary)
+                .disabled(session?.household == nil)
+            stepButton("chevron.right", "Next recipe", next)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background(Palette.bg)
+        .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
+    }
+
+    private func stepButton(_ symbol: String, _ label: String, _ target: Recipe?) -> some View {
+        Button {
+            guard let target else { return }
+            // Flipped in place: Back still goes where the recipe was opened from.
+            recipe = target
+            tab = .ingredients
+            servings = nil
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(Palette.text)
+                .frame(width: 52, height: 52)
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+        }
+        .buttonStyle(PressFade())
+        .disabled(target == nil)
+        .opacity(target == nil ? 0.4 : 1)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: Behaviour
+
+    private func pick(_ option: RecipeOption) {
+        switch option {
+        case .organise, .move: sheet = .organise
+        case .media: sheet = .media
+        case .share: sharing = true
+        case .edit: sheet = .edit
+        case .delete: confirmingDelete = true
+        }
+    }
+
+    private func say(_ text: String) {
+        toast = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if toast == text { toast = nil }
+        }
+    }
+
+    private func loadSiblings() async {
+        guard let household = session?.household?.id,
+              let all = try? await APIClient.shared.recipes(household: household) else { return }
+        siblings = all.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func addPhotos(_ items: [PhotosPickerItem]) async {
+        guard let household = session?.household?.id else { return }
+        addingPhotos = true
+        defer {
+            addingPhotos = false
+            picked = []
+        }
+        var ids = recipe.photoIds ?? []
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data),
+                  let jpeg = await Task.detached(priority: .userInitiated, operation: { image.jpegForUpload() }).value,
+                  let id = try? await APIClient.shared.uploadImage(household: household, jpeg: jpeg) else { continue }
+            ids.append(id)
+        }
+        if let saved = try? await APIClient.shared.setImages(recipeId: recipe.id, coverImageId: recipe.coverImageId ?? ids.first,
+                                                            photoIds: ids) {
+            recipe = saved
         }
     }
 }
 
-/// Day, then meal, then done — the same two-tap shape as the web sheet. A saved link plans the
-/// same way, minus the servings and extras it has no ingredients for.
-struct AddToPlanSheet: View {
-    let recipe: Recipe?
-    var savedLink: SavedLink? = nil
-    var session: Session?
-    var onPlanned: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var day = Date()
-    @State private var meal: MealType
-    /// Which optional ingredients to buy this time. None, unless somebody ticks them.
-    @State private var extras: Set<UUID> = []
-    @State private var busy = false
-    @State private var error: String?
-
-    init(recipe: Recipe, session: Session?, onPlanned: @escaping (String) -> Void) {
-        self.init(recipe: recipe, savedLink: nil, section: recipe.section, session: session, onPlanned: onPlanned)
-    }
-
-    init(savedLink: SavedLink, session: Session?, onPlanned: @escaping (String) -> Void) {
-        self.init(recipe: nil, savedLink: savedLink, section: savedLink.section, session: session, onPlanned: onPlanned)
-    }
-
-    private init(recipe: Recipe?, savedLink: SavedLink?, section: RecipeSection?, session: Session?,
-                 onPlanned: @escaping (String) -> Void) {
-        self.recipe = recipe
-        self.savedLink = savedLink
-        self.session = session
-        self.onPlanned = onPlanned
-        // The meal it most likely goes on, from where it is filed — the web's MEAL_FOR_SECTION.
-        let likely: MealType = switch section {
-        case .breakfast: .breakfast
-        case .lunch: .lunch
-        case .snacks, .drinks: .snack
-        case .dinner, .other, nil: .dinner
-        }
-        _meal = State(initialValue: likely)
-    }
-
-    private var days: [Date] { (0..<14).map { Day.adding($0, to: Date()) } }
-    private var optional: [RecipeIngredient] { (recipe?.ingredients ?? []).filter(\.optional) }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                KitchenSection("Day") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(days, id: \.self) { candidate in
-                                let picked = Calendar.current.isDate(candidate, inSameDayAs: day)
-                                Button {
-                                    day = candidate
-                                } label: {
-                                    Text(label(for: candidate))
-                                        .font(.subheadline.weight(picked ? .semibold : .regular))
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            picked ? Color.accentColor : Palette.surface2,
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(picked ? Color.white : Color.primary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
-                }
-
-                KitchenSection("Meal") {
-                    Picker("Meal", selection: $meal) {
-                        ForEach(MealType.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                if !optional.isEmpty {
-                    KitchenSection("Buying the optional extras?") {
-                        ForEach(optional) { ingredient in
-                            OptionalExtraRow(ingredient: ingredient, isOn: extras.contains(ingredient.id)) {
-                                if extras.contains(ingredient.id) { extras.remove(ingredient.id) }
-                                else { extras.insert(ingredient.id) }
-                            }
-                        }
-                    }
-                }
-
-                if let error {
-                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
-                }
-
-                KitchenSection {
-                    Button {
-                        Task { await add() }
-                    } label: {
-                        if busy {
-                            ProgressView().frame(maxWidth: .infinity)
-                        } else {
-                            Text("Add to \(label(for: day)) · \(meal.title)").frame(maxWidth: .infinity)
-                        }
-                    }
-                    .disabled(busy)
-                }
-            }
-            .kitchenList()
-            .navigationTitle("Add to plan")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
-                }
-            }
-        }
-        // Full height from the start when there are extras to tick: at .medium the Add button
-        // sat under the sheet's corner with one extra and off the screen with two.
-        .presentationDetents(optional.isEmpty ? [.medium] : [.large])
-    }
-
-    private func label(for date: Date) -> String {
-        if Calendar.current.isDateInToday(date) { return "Today" }
-        if Calendar.current.isDateInTomorrow(date) { return "Tomorrow" }
-        return date.formatted(.dateTime.weekday(.abbreviated).day())
-    }
-
-    private func add() async {
-        guard let household = session?.household?.id else {
-            error = "No household."
-            return
-        }
-        busy = true
-        defer { busy = false }
-        do {
-            if let recipe {
-                _ = try await APIClient.shared.addToPlan(
-                    household: household,
-                    date: Day.iso(day),
-                    meal: meal,
-                    recipeId: recipe.id,
-                    // The household's usual number, like the web; the recipe's own if the server
-                    // has not said.
-                    servings: session?.defaultServings ?? recipe.servings,
-                    includedOptionalIngredientIds: Array(extras)
-                )
-            } else if let savedLink {
-                _ = try await APIClient.shared.addToPlan(
-                    household: household, date: Day.iso(day), meal: meal, savedLinkId: savedLink.id)
-            }
-            onPlanned("\(label(for: day)) · \(meal.title)")
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
+private struct HeroBottom: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 #Preview("Recipe") {
     NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: .preview) }
+}
+
+#Preview("Recipe — dark") {
+    NavigationStack { RecipeDetailView(recipe: SampleData.recipes[1], session: .preview) }
+        .preferredColorScheme(.dark)
 }

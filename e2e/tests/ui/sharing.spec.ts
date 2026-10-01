@@ -3,11 +3,11 @@ import { admin, call, inviteToken, isoDate, newHousehold, newMember, newRecipe, 
 import { calendarDay, fromMenu, sheet, signIn } from '../../lib/ui';
 
 /**
- * Sharing at iPhone size: the Share sheet offers only the other houses you are in, and a public
+ * Sharing at iPhone size: the Share screen offers only the other houses you are in, and a public
  * link can be saved into your own recipes — signing in on the way if you need to.
  */
 
-test('the Share sheet lists only your other households, as switches', async ({ page }) => {
+test('the Share screen lists only your other households, as switches', async ({ page }) => {
   const a = await newHousehold();
   const b = await newHousehold();
   const notMine = await newHousehold();
@@ -18,20 +18,24 @@ test('the Share sheet lists only your other households, as switches', async ({ p
   await signIn(page, cook, a.id);
   await page.goto(`/recipes/${r.id}`);
   await fromMenu(page, 'Recipe options', /^Share/);
+  await expect(page).toHaveURL(new RegExp(`/recipes/${r.id}/share$`));
 
-  const share = sheet(page);
-  await expect(share.getByRole('heading', { name: 'Your other households' })).toBeVisible();
-  const toB = share.getByRole('switch', { name: b.name });
+  const share = page.getByRole('main');
+  await expect(share.getByText('Share into your other households')).toBeVisible();
+  const houses = share.getByRole('list', { name: 'Your other households' });
+  const toB = houses.getByRole('switch', { name: b.name });
   await expect(toB).toHaveAttribute('aria-checked', 'false');
+  await expect(houses.getByRole('switch')).toHaveCount(1);
   await expect(share.getByText(notMine.name)).toHaveCount(0);
   await expect(share.getByText(a.name)).toHaveCount(0);
   // The link and Explore are still here.
-  await expect(share.getByRole('heading', { name: 'Anyone with the link' })).toBeVisible();
-  await expect(share.getByRole('switch', { name: 'In Explore' })).toBeVisible();
+  await expect(share.getByRole('switch', { name: 'Public link' })).toBeVisible();
+  await expect(share.getByRole('switch', { name: 'Publish to Explore' })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('share-sheet.png') });
 
   await toB.click();
   await expect(toB).toHaveAttribute('aria-checked', 'true');
+  await expect(houses.getByText('Shows in their Shared with you')).toBeVisible();
   await expect.poll(async () => (await call('GET', `/api/recipes/${r.id}`, { token: cook.token })).sharedWith).toEqual([b.id]);
 
   await toB.click();
@@ -39,19 +43,21 @@ test('the Share sheet lists only your other households, as switches', async ({ p
   await expect.poll(async () => (await call('GET', `/api/recipes/${r.id}`, { token: cook.token })).sharedWith).toEqual([]);
 });
 
-test('somebody in just one household sees no household list in the Share sheet', async ({ page }) => {
+test('somebody in just one household sees no household list on the Share screen', async ({ page }) => {
   const a = await newHousehold();
   const solo = await newMember(a.id);
   const r = await newRecipe(a.id, 'Solo Soup', [{ name: 'leek', qty: 2 }]);
 
   await signIn(page, solo, a.id);
   await page.goto(`/recipes/${r.id}`);
-  await fromMenu(page, 'Recipe options', /^Share/);
-  await expect(sheet(page).getByRole('heading', { name: 'Anyone with the link' })).toBeVisible();
-  await expect(sheet(page).getByRole('heading', { name: 'Your other households' })).toHaveCount(0);
-  // Explore is the only switch left.
-  await expect(sheet(page).getByRole('switch')).toHaveCount(1);
-  await expect(sheet(page).getByRole('switch', { name: 'In Explore' })).toBeVisible();
+  // The round Share button on the photo goes to the same place as ••• › Share.
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  const share = page.getByRole('main');
+  await expect(share.getByRole('switch', { name: 'Public link' })).toBeVisible();
+  await expect(share.getByText('Share into your other households')).toHaveCount(0);
+  // The link and Explore are the only switches left.
+  await expect(share.getByRole('switch')).toHaveCount(2);
+  await expect(share.getByRole('switch', { name: 'Publish to Explore' })).toBeVisible();
 });
 
 test('a public link signs you in, lets you pick a household, and saves a copy there', async ({ page }) => {
@@ -124,22 +130,37 @@ test('turning off the link asks first, and Cancel keeps it', async ({ page }) =>
   await signIn(page, cook, a.id);
   await page.goto(`/recipes/${r.id}`);
   await fromMenu(page, 'Recipe options', /^Share/);
-  const share = sheet(page);
-  await share.getByRole('button', { name: 'Create a link' }).click();
-  await expect(share.getByLabel('Link')).toContainText('/r/');
+  const link = page.getByRole('switch', { name: 'Public link' });
+  // Turning it on needs no question: nothing that was sent stops working.
+  await expect(link).toHaveAttribute('aria-checked', 'false');
+  await link.click();
+  await expect(link).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByLabel('Link', { exact: true })).toContainText('/r/');
   const { token } = await call('GET', `/api/recipes/${r.id}/link`, { token: cook.token });
 
   // One tap only asks; Cancel keeps it.
-  await share.getByRole('button', { name: 'Turn off the link' }).click();
-  await expect(share.getByText(/won't be able to open it any more/)).toBeVisible();
+  await link.click();
+  const ask = page.getByRole('alertdialog', { name: 'Turn off the link?' });
+  await expect(ask.getByText(/won't be able to open it any more/)).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('turn-off-link.png') });
-  await share.getByRole('button', { name: 'Cancel' }).click();
-  await expect(share.getByText(/won't be able to open it any more/)).toHaveCount(0);
+  await ask.getByRole('button', { name: 'Cancel' }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(link).toHaveAttribute('aria-checked', 'true');
   expect((await call('GET', `/api/recipes/${r.id}/link`, { token: cook.token })).token).toBe(token);
 
-  await share.getByRole('button', { name: 'Turn off the link' }).click();
-  await share.getByRole('button', { name: 'Turn off the link' }).last().click();
-  await expect(share.getByRole('button', { name: 'Create a link' })).toBeVisible();
+  // A new link asks too, and the old one stops working.
+  await page.getByRole('button', { name: 'New link' }).click();
+  const fresh = page.getByRole('alertdialog', { name: 'Make a new link?' });
+  await expect(fresh.getByText("The old link will stop working for anyone you've sent it to.")).toBeVisible();
+  await fresh.getByRole('button', { name: 'New link' }).click();
+  await expect(fresh).toHaveCount(0);
+  await expect.poll(async () => (await call('GET', `/api/recipes/${r.id}/link`, { token: cook.token })).token).not.toBe(token);
+  const renewed = (await call('GET', `/api/recipes/${r.id}/link`, { token: cook.token })).token;
+  await expect(page.getByLabel('Link', { exact: true })).toContainText(renewed);
+
+  await link.click();
+  await page.getByRole('alertdialog', { name: 'Turn off the link?' }).getByRole('button', { name: 'Turn off' }).click();
+  await expect(link).toHaveAttribute('aria-checked', 'false');
   expect((await call('GET', `/api/recipes/${r.id}/link`, { token: cook.token })).token).toBeNull();
 });
 

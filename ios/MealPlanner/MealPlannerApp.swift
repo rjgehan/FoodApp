@@ -337,6 +337,15 @@ struct RootView: View {
         )) {
             DebugRecipeDetail(session: session)
         }
+        // -mp_debug_screen recipe|recipe-options|recipe-plan|recipe-delete|recipe-method
+        // -mp_debug_recipe <uuid>: that recipe's page from the server, full screen as it is pushed,
+        // with the named sheet or tab open.
+        .fullScreenCover(isPresented: Binding(
+            get: { (debugSheet ?? "").hasPrefix("recipe") },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            DebugRecipeDetail(session: session)
+        }
         // Settings is behind the avatar now, which a screenshot run cannot tap.
         .sheet(isPresented: Binding(
             get: { debugSheet == "settings" },

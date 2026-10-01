@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, imageUrl } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection, SourceLink } from '../api/types';
 import UnitInput from './UnitInput';
-import { Button, Chip, ErrorText, Field, IconButton, Input, NumberInput, Textarea } from './ui';
-import { PlusIcon, TrashIcon } from './icons';
-import ImagePicker from './ImagePicker';
+import { Button, Chip, cx, ErrorText, Input, NumberInput, Pill, SectionLabel, Textarea } from './ui';
+import { Icon, type IconName } from './icons';
+import CoverPicker from './recipe/CoverPicker';
 import RecipeClassifier from './RecipeClassifier';
 import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from './LinksEditor';
 import { SECTION_OPTIONS, DEFAULT_FILING, moveToDrawer, type Filing } from '../utils/recipeMeta';
@@ -41,11 +41,15 @@ export interface RecipeDraft {
  * every field from it and switches the save to a PUT, so create and edit can never drift apart
  * — a field added here shows up in both.
  *
- * Laid out as one page of plain sections rather than a stack of cards, and each ingredient is a
- * single line — amount, unit, name — the way a recipe is written, so a list of twelve fits on
- * a phone screen instead of three.
+ * Laid out as the mockup's "Check recipe" (3.16): the picture beside the name, the times and
+ * servings in a row, then each ingredient as one line — the amount and unit as small chips, the
+ * name, and a leaf that makes it optional — the way a recipe is written, so a list of twelve
+ * fits on a phone screen instead of three. Filing comes last, as chips.
+ *
+ * `id` names the form, so a Save in the screen's top bar can submit it from outside.
  */
 export default function RecipeForm({
+  id,
   householdId,
   recipe,
   draft,
@@ -54,6 +58,7 @@ export default function RecipeForm({
   savedLinkId,
   onSaved,
 }: {
+  id?: string;
   householdId: string;
   recipe?: Recipe;
   /** Starting values with nothing saved behind them — a recipe read off a link, say. */
@@ -118,12 +123,6 @@ export default function RecipeForm({
     setFiling(moved.filing);
   }
 
-  // Everything optional lives behind this, so the first screen is just the recipe.
-  // Opened by default when editing: if any of it is already filled in, hiding it would look
-  // like the edit form had quietly dropped the values.
-  const [showExtras, setShowExtras] = useState(
-    Boolean(seed?.description || seed?.prepTimeMinutes || seed?.cookTimeMinutes || seed?.coverImageId),
-  );
   const [description, setDescription] = useState(seed?.description ?? '');
   const [prep, setPrep] = useState<number | null>(seed?.prepTimeMinutes ?? null);
   const [cook, setCook] = useState<number | null>(seed?.cookTimeMinutes ?? null);
@@ -211,43 +210,73 @@ export default function RecipeForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <div className="space-y-2">
+    <form id={id} onSubmit={onSubmit} className="flex flex-col gap-3.5">
+      <div className="flex items-center gap-3">
+        <CoverPicker
+          householdId={householdId}
+          coverImageId={coverImageId}
+          seed={recipe?.id ?? name}
+          onChange={setCoverImageId}
+          onError={setError}
+        />
         <Input
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Recipe name"
           aria-label="Recipe name"
-          className="h-12 text-lg font-semibold"
+          className="h-11 min-w-0 flex-1 text-[1.0625rem]"
         />
-        <label className="flex items-center gap-3 text-muted">
-          Serves
-          <NumberInput min={1} className="w-20" value={servings} onChange={setServings} aria-label="Serves" />
-        </label>
       </div>
 
-      <section>
-        <h2 className="text-lg font-semibold">Ingredients</h2>
-        <p className="mb-1 text-sm text-muted">Type a line like “2 cups flour” — the amount fills itself in. Opt marks an optional extra.</p>
-        <ul className="divide-y divide-line">
+      {/* The quick facts the recipe page shows on its photo, in the same order. */}
+      <div className="flex gap-2">
+        <FactField icon="clock" label="Prep (min)" suffix="min prep" value={prep} onChange={setPrep} min={0} />
+        <FactField icon="flame" label="Cook (min)" suffix="cook" value={cook} onChange={setCook} min={0} />
+        <FactField icon="users" label="Serves" value={servings} onChange={setServings} min={1} narrow />
+      </div>
+
+      <Input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="A line about it (optional)"
+        aria-label="A line about it"
+        className="h-11 text-[0.9375rem]"
+      />
+
+      <section className="flex flex-col gap-1.5 pt-1.5">
+        <SectionLabel className="!px-0" end={<span className="font-medium normal-case">Leaf = optional</span>}>
+          Ingredients
+        </SectionLabel>
+        <p className="-mt-1 pb-1 text-[0.8125rem] text-muted">Type a line like “2 cups flour” — the amount fills itself in.</p>
+        <ul className="flex flex-col gap-1.5">
           {ingredients.map((row, i) => (
-            <li key={i} className="flex items-center gap-1.5 py-1.5">
+            <li
+              key={i}
+              className={cx(
+                'flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-line bg-surface py-1 pl-2.5 pr-1',
+                'focus-within:border-accent focus-within:shadow-[inset_0_0_0_0.5px_rgb(var(--accent))]',
+              )}
+            >
               <NumberInput
-                className="w-16 shrink-0"
                 placeholder="qty"
                 value={row.quantity}
                 onChange={(v) => updateIngredient(i, { quantity: v })}
                 aria-label={`Ingredient ${i + 1} amount`}
+                style={{ width: `calc(${row.quantity == null ? 3 : String(row.quantity).length}ch + 1.1rem)` }}
+                className={cx(CHIP, '!bg-sky-soft !text-sky placeholder:!text-sky/50')}
               />
               <UnitInput
-                className="w-[5.5rem] shrink-0"
                 value={row.unit}
                 onChange={(unit) => updateIngredient(i, { unit })}
                 aria-label={`Ingredient ${i + 1} unit`}
+                chevron={false}
+                className="shrink-0"
+                style={{ width: `calc(${row.unit ? row.unit.length : 4}ch + 1.1rem)` }}
+                inputClassName={cx(CHIP, '!bg-herb-soft !text-herb placeholder:!text-herb/50')}
               />
-              <Input
-                className="min-w-0 flex-1"
+              <input
+                className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[0.9375rem] text-ink outline-none placeholder:text-faint"
                 placeholder="ingredient"
                 value={row.ingredientName}
                 autoFocus={focusRow === i}
@@ -263,37 +292,37 @@ export default function RecipeForm({
                 }}
                 aria-label={`Ingredient ${i + 1}`}
               />
+              {/* The leaf: something a cook might skip, chosen each time the meal is planned. */}
               <button
                 type="button"
                 aria-pressed={Boolean(row.optional)}
+                aria-label={`Ingredient ${i + 1} optional`}
                 title={row.optional ? 'Optional — tap to require it' : 'Tap to mark optional'}
                 onClick={() => updateIngredient(i, { optional: !row.optional })}
-                className={
-                  'shrink-0 rounded-full px-2 py-1 text-xs font-medium ' +
-                  (row.optional ? 'bg-accent-soft text-accent-ink' : 'bg-surface2 text-faint')
-                }
+                className="press flex h-9 shrink-0 items-center justify-center rounded-lg px-1.5"
               >
-                Opt
+                {row.optional ? <Pill tone="mustard">Opt.</Pill> : <Icon name="leaf" size={16} className="text-faint" />}
               </button>
-              <IconButton
-                label={`Remove ingredient ${i + 1}`}
-                className="text-faint"
+              <button
+                type="button"
+                aria-label={`Remove ingredient ${i + 1}`}
+                title="Remove"
                 disabled={ingredients.length === 1}
                 onClick={() => setIngredients((rows) => rows.filter((_, idx) => idx !== i))}
+                className="press flex h-9 w-7 shrink-0 items-center justify-center rounded-lg text-faint disabled:opacity-30"
               >
-                <TrashIcon className="h-5 w-5" />
-              </IconButton>
+                <Icon name="x" size={15} />
+              </button>
             </li>
           ))}
         </ul>
-        <Button type="button" variant="ghost" size="sm" className="mt-1" onClick={addRow}>
-          <PlusIcon className="h-4 w-4" />
+        <Button type="button" variant="ghost" size="sm" icon="plus" className="-ml-2 self-start" onClick={addRow}>
           Add ingredient
         </Button>
       </section>
 
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">Method</h2>
+      <section className="flex flex-col gap-2">
+        <SectionLabel className="!px-0">Method</SectionLabel>
         <Textarea
           rows={6}
           value={instructions}
@@ -303,15 +332,15 @@ export default function RecipeForm({
         />
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Links</h2>
-        <p className="mb-1 text-sm text-muted">Where it came from, a video of it being made — as many as you like.</p>
+      <section className="flex flex-col gap-1">
+        <SectionLabel className="!px-0">Links</SectionLabel>
+        <p className="text-[0.8125rem] text-muted">Where it came from, a video of it being made — as many as you like.</p>
         <LinksEditor value={links} onChange={setLinks} />
       </section>
 
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">Filed under</h2>
-        <div className="flex flex-wrap gap-2">
+      <section className="flex flex-col gap-2">
+        <SectionLabel className="!px-0">Filing</SectionLabel>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Drawer">
           {SECTION_OPTIONS.map((s) => (
             <Chip key={s.value} active={filing.section === s.value} onClick={() => chooseSection(s.value)}>
               {s.label}
@@ -319,49 +348,13 @@ export default function RecipeForm({
           ))}
         </div>
         {showGroups ? (
-          <div className="mt-4">
+          <div className="mt-2">
             <RecipeClassifier householdId={householdId} value={filing} onChange={setFiling} groups={known} sectionsHidden />
           </div>
         ) : (
-          <Button type="button" variant="ghost" size="sm" className="-ml-3 mt-1" onClick={() => setShowGroups(true)}>
-            <PlusIcon className="h-4 w-4" />
+          <Button type="button" variant="ghost" size="sm" icon="plus" className="-ml-2 self-start" onClick={() => setShowGroups(true)}>
             Put it in a group
           </Button>
-        )}
-      </section>
-
-      <section>
-        {!showExtras ? (
-          <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setShowExtras(true)}>
-            <PlusIcon className="h-4 w-4" />
-            Photo and times
-          </Button>
-        ) : (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">More</h2>
-            {coverImageId && (
-              <img
-                src={imageUrl(coverImageId)}
-                alt=""
-                className="aspect-[4/3] w-full rounded-xl object-cover"
-              />
-            )}
-            <ImagePicker householdId={householdId} onUploaded={(ids) => setCoverImageId(ids[0] ?? null)}>
-              {coverImageId ? 'Replace photo' : 'Add a photo'}
-            </ImagePicker>
-
-            <Field label="A line about it">
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-            </Field>
-            <div className="flex gap-3">
-              <Field label="Prep (min)">
-                <NumberInput min={0} className="w-24" value={prep} onChange={setPrep} />
-              </Field>
-              <Field label="Cook (min)">
-                <NumberInput min={0} className="w-24" value={cook} onChange={setCook} />
-              </Field>
-            </div>
-          </div>
         )}
       </section>
 
@@ -384,9 +377,59 @@ export default function RecipeForm({
           </div>
         </div>
       )}
-      <Button type="submit" full size="lg" disabled={saving || !name.trim()}>
+      <Button type="submit" full size="lg" className="mt-1" disabled={saving || !name.trim()}>
         {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}
       </Button>
     </form>
+  );
+}
+
+/** The ingredient line's amount and unit, drawn as the mockup's small chips. */
+const CHIP =
+  '!h-[26px] shrink-0 !rounded-full !border-0 !px-2 text-center !text-xs !font-semibold !shadow-none ' +
+  '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+/** "⏱ 10 min prep": a small number field with its icon and what the number means. */
+function FactField({
+  icon,
+  label,
+  suffix,
+  value,
+  onChange,
+  min,
+  narrow = false,
+}: {
+  icon: IconName;
+  label: string;
+  suffix?: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+  min: number;
+  narrow?: boolean;
+}) {
+  return (
+    <label
+      className={cx(
+        'flex h-[2.625rem] min-w-0 items-center gap-1.5 rounded-field border border-line bg-surface px-3 text-sm',
+        'transition-[border-color,box-shadow] focus-within:border-accent focus-within:shadow-focus',
+        narrow ? 'w-[4.5rem] shrink-0' : suffix && suffix.length > 5 ? 'flex-[1.25]' : 'flex-1',
+      )}
+    >
+      <Icon name={icon} size={18} className="mr-0.5 shrink-0 text-muted" />
+      <NumberInput
+        min={min}
+        value={value}
+        onChange={onChange}
+        aria-label={label}
+        placeholder="–"
+        style={narrow ? undefined : { width: `calc(${value == null ? 1 : String(value).length}ch + 2px)` }}
+        className={cx(
+          '!h-auto min-w-0 shrink-0 !border-0 !bg-transparent !px-0 !shadow-none text-sm',
+          '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none',
+          narrow && '!w-full',
+        )}
+      />
+      {suffix && <span className="min-w-0 truncate text-muted">{suffix}</span>}
+    </label>
   );
 }

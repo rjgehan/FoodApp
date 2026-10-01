@@ -1,19 +1,20 @@
 import { expect, test } from '@playwright/test';
 import { admin, call, newHousehold, newRecipe } from '../../lib/api';
-import { fromMenu, sheet, signIn } from '../../lib/ui';
+import { fromMenu, newRecipeWay, sheet, signIn } from '../../lib/ui';
 
 test('pasting an ordinary recipe fills the form', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
-  await page.getByRole('tab', { name: 'Paste' }).click();
+  await newRecipeWay(page, 'Paste from an AI');
   await page.getByPlaceholder(/Name:/).fill(
     'Chicken Parmesan\n\nIngredients\n2 chicken breasts\n1 1/2 cups marinara sauce\n8 oz mozzarella, shredded\n\nInstructions\nFry it.\nBake it.',
   );
-  await page.getByRole('button', { name: 'Read it' }).click();
+  await page.getByRole('button', { name: 'Read into form' }).click();
 
-  // Scoped to the tab on screen: Type it out is still there behind it, hidden, with its own form.
-  const form = page.getByRole('tabpanel');
+  // Into "Check recipe", the same form as typing it out, to look over before saving.
+  await expect(page.getByRole('heading', { name: 'Check recipe' })).toBeVisible();
+  const form = page.getByRole('main');
   await expect(form.getByPlaceholder('Recipe name')).toHaveValue('Chicken Parmesan');
   const qty = form.getByPlaceholder('qty');
   await expect(qty.nth(1)).toHaveValue('1.5');
@@ -25,6 +26,7 @@ test('a blank amount is saved as "some", not as 1', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
+  await newRecipeWay(page, 'Type it out');
   await page.getByPlaceholder('Recipe name').fill('Seasoned Eggs');
   await page.getByPlaceholder('ingredient').first().fill('salt and pepper');
   await page.getByRole('button', { name: 'Save recipe' }).click();
@@ -40,6 +42,7 @@ test('typing a unit and pressing Return keeps what was typed', async ({ page }) 
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
+  await newRecipeWay(page, 'Type it out');
   const unit = page.getByPlaceholder('unit').first();
   await unit.click();
   await unit.pressSequentially('lb');
@@ -107,6 +110,7 @@ test('a recipe keeps as many links as you give it, and the page lists them', asy
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
+  await newRecipeWay(page, 'Type it out');
   await page.getByPlaceholder('Recipe name').fill('Ragu');
   await page.getByPlaceholder('ingredient').first().fill('mince');
   await page.getByRole('button', { name: 'Add link' }).click();
@@ -142,6 +146,7 @@ test('a link the server will not keep is said on the form, not lost', async ({ p
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
+  await newRecipeWay(page, 'Type it out');
   await page.getByPlaceholder('Recipe name').fill('Ragu');
   await page.getByRole('button', { name: 'Add link' }).click();
   await page.getByLabel('Link 1', { exact: true }).fill('not a link');
@@ -209,6 +214,7 @@ test('saving a recipe the house already has says so, and a second copy is one ta
   const first = await newRecipe(hh.id, 'Banana Bread', [{ name: 'bananas', qty: 3 }]);
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/new');
+  await newRecipeWay(page, 'Type it out');
   await page.getByPlaceholder('Recipe name').fill('banana bread');
   await page.getByRole('button', { name: 'Save recipe' }).click();
 

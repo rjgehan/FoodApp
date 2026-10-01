@@ -157,11 +157,17 @@ test('recipe → plan in one sheet, straight from the recipe', async ({ page }) 
   await signIn(page, hh.owner, hh.id);
   await page.goto(`/recipes/${r.id}`);
   await page.getByRole('button', { name: 'Add to plan' }).click();
-  await sheet(page).getByRole('button', { name: 'Tomorrow' }).click();
+  // The days of the planning window as tiles, today first.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day = tomorrow.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+  const short = tomorrow.toLocaleDateString('en-US', { weekday: 'short' });
+  await sheet(page).getByRole('radio', { name: day }).click();
   await sheet(page).getByText('feta').click();
   // Filed under Breakfast, so Breakfast is already chosen.
-  await sheet(page).getByRole('button', { name: 'Add to Tomorrow · Breakfast' }).click();
-  await expect(page.getByText(/On the plan for Tomorrow · Breakfast/)).toBeVisible();
+  await expect(sheet(page).getByRole('radio', { name: 'Breakfast' })).toHaveAttribute('aria-checked', 'true');
+  await sheet(page).getByRole('button', { name: `Add to ${short} · Breakfast` }).click();
+  await expect(page.getByText(`On the plan for ${short} · Breakfast`)).toBeVisible();
   const [e] = await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(1)}&end=${isoDate(1)}`, { token: hh.owner.token });
   expect(e).toMatchObject({ mealType: 'BREAKFAST', recipeName: 'Shakshuka' });
   expect(e.includedOptionalIngredientIds).toHaveLength(1);
@@ -175,12 +181,14 @@ test('the recipe page has one filled button, and the rest behind •••', asy
   await signIn(page, hh.owner, hh.id);
   await page.goto(`/recipes/${r.id}`);
   await expect(page.getByRole('button', { name: 'Add to plan' })).toBeVisible();
-  for (const hidden of ['Edit', 'Share', 'Organize', 'Index card', 'Add photos']) {
-    await expect(page.getByRole('button', { name: hidden, exact: true })).toHaveCount(0);
+  // Share is the round button on the photo, beside •••; everything else waits behind •••.
+  await expect(page.getByRole('button', { name: 'Share', exact: true })).toBeVisible();
+  for (const hidden of [/^Edit recipe/, /^Organise/, /^Index card/, /^Photos & links/, /^Delete/, /^Add photos/]) {
+    await expect(page.getByRole('button', { name: hidden })).toHaveCount(0);
   }
   await page.getByRole('button', { name: 'Recipe options' }).click();
-  for (const shown of ['Edit', 'Share', 'Organize', 'Photos & links', 'Index card']) {
-    await expect(sheet(page).getByRole('button', { name: shown, exact: true })).toBeVisible();
+  for (const shown of [/^Edit recipe/, /^Share/, /^Organise/, /^Photos & links/, /^Index card/, /^Delete/]) {
+    await expect(sheet(page).getByRole('button', { name: shown })).toBeVisible();
   }
 });
 
