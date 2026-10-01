@@ -104,8 +104,8 @@ class InviteDatabaseTest {
     void aLinkTellsAStrangerTheHouseAndWhoAskedAndNothingMore() {
         InviteResponse link = inviteService.getOrCreate(householdId, owner.getId());
         InviteInfo info = inviteService.describe(link.token());
-        assertThat(info).isEqualTo(new InviteInfo("Invites IT", "Owner", 1, true));
-        assertThat(inviteService.describe("not-a-real-token")).isEqualTo(new InviteInfo(null, null, null, false));
+        assertThat(info).isEqualTo(new InviteInfo("Invites IT", "Owner", 1, true, 0));
+        assertThat(inviteService.describe("not-a-real-token")).isEqualTo(new InviteInfo(null, null, null, false, null));
     }
 
     @Test

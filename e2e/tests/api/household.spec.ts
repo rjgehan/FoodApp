@@ -102,6 +102,18 @@ test('the household list says how many people are in it', async () => {
   expect(count(shared.id)).toBe(2);
 });
 
+test('the household list says how many recipes each one has', async () => {
+  const owner = await admin();
+  const empty = await newHousehold();
+  const cooking = await newHousehold();
+  await newRecipe(cooking.id, 'Counted Curry', [{ name: 'rice', qty: 1 }]);
+  await newRecipe(cooking.id, 'Counted Chowder', [{ name: 'corn', qty: 1 }]);
+  const list = await call('GET', '/api/households', { token: owner.token });
+  const count = (id: string) => list.find((h: { id: string }) => h.id === id)?.recipeCount;
+  expect(count(empty.id)).toBe(0);
+  expect(count(cooking.id)).toBe(2);
+});
+
 test('deleting a place clears the nights planned there', async () => {
   const hh = await newHousehold();
   const owner = await admin();

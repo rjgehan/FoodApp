@@ -27,6 +27,20 @@ public interface RecipeRepository extends JpaRepository<Recipe, UUID> {
     List<Recipe> findVisibleTo(@Param("householdId") UUID householdId);
 
     /**
+     * How many recipes a household has — the same ones its Recipes tab lists — for the line
+     * under its name where somebody is choosing between houses ("186 recipes").
+     */
+    @Query("""
+            select count(distinct r) from Recipe r
+            left join RecipeShare s on s.recipe = r
+            left join RecipeFiling f on f.recipe = r
+            where r.household.id = :householdId
+               or s.household.id = :householdId
+               or f.household.id = :householdId
+            """)
+    long countVisibleTo(@Param("householdId") UUID householdId);
+
+    /**
      * Recipes the startup backfill may have something to move for: links still only in the old
      * single columns, or text in those columns that does not look like a link (no http, or a
      * space in it). A narrowing only — the backfill decides for each one.

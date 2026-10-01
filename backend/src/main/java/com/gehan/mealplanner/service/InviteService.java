@@ -111,7 +111,7 @@ public class InviteService {
 
     /**
      * What the link says to whoever opens it, before they sign in or say yes. The house, who
-     * asked, and how many live there — enough to know it is the right one, and no names beyond
+     * asked, how many live there and how many recipes it has — enough to know it is the right one, and no names beyond
      * the inviter's. A link that does not work says nothing at all.
      *
      * "Who asked" is the house's owner. The link belongs to the house, not to one person in it:
@@ -126,8 +126,9 @@ public class InviteService {
                         invite.getHousehold().getName(),
                         inviterName(invite),
                         (int) memberRepository.countByHouseholdId(invite.getHousehold().getId()),
-                        true))
-                .orElse(new InviteInfo(null, null, null, false));
+                        true,
+                        householdService.recipeCount(invite.getHousehold().getId())))
+                .orElse(new InviteInfo(null, null, null, false, null));
     }
 
     private String inviterName(HouseholdInvite invite) {

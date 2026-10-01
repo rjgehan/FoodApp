@@ -22,11 +22,13 @@ public class HouseholdDtos {
     /**
      * `memberCount` is here so a screen can tell whether you are the last one in without
      * fetching the member list first — which is the difference between offering to leave a
-     * household and offering to delete it.
+     * household and offering to delete it. `recipeCount` is what a "which household?" picker
+     * says under each name (saving a shared recipe), since that is what tells two houses apart
+     * when the question is where a recipe should go.
      */
     public record HouseholdResponse(
             UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role,
-            int memberCount) {
+            int memberCount, int recipeCount) {
     }
 
     public record RenameHouseholdRequest(@NotBlank @Size(max = 60) String name) {
@@ -49,10 +51,11 @@ public class HouseholdDtos {
 
     /**
      * What an invite link says to somebody who is not signed in yet: whose house, who asked, and
-     * how many are in it — no names, nothing else. All null but `valid` when the link does not
-     * work, so a dead or made-up token tells nobody anything.
+     * how many are in it and how many recipes it has — no names, nothing else. All null but
+     * `valid` when the link does not work, so a dead or made-up token tells nobody anything.
      */
-    public record InviteInfo(String householdName, String invitedByName, Integer memberCount, boolean valid) {
+    public record InviteInfo(String householdName, String invitedByName, Integer memberCount, boolean valid,
+                             Integer recipeCount) {
     }
 
     /** A signed-in person's place in the house a link is for: in it already, and if so which. */

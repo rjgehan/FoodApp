@@ -17,6 +17,7 @@ import com.gehan.mealplanner.repository.HouseholdInviteRepository;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.RecipeCategoryRepository;
+import com.gehan.mealplanner.repository.RecipeRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,6 +37,7 @@ public class HouseholdService {
     private final HouseholdMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final RecipeCategoryRepository categoryRepository;
+    private final RecipeRepository recipeRepository;
     private final GroceryCategoryService groceryCategoryService;
     private final HouseholdInviteRepository inviteRepository;
     private final AdminAccess adminAccess;
@@ -45,6 +47,7 @@ public class HouseholdService {
                              HouseholdMemberRepository memberRepository,
                              UserRepository userRepository,
                              RecipeCategoryRepository categoryRepository,
+                             RecipeRepository recipeRepository,
                              GroceryCategoryService groceryCategoryService,
                              HouseholdInviteRepository inviteRepository,
                              AdminAccess adminAccess,
@@ -53,6 +56,7 @@ public class HouseholdService {
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
+        this.recipeRepository = recipeRepository;
         this.groceryCategoryService = groceryCategoryService;
         this.inviteRepository = inviteRepository;
         this.adminAccess = adminAccess;
@@ -120,7 +124,14 @@ public class HouseholdService {
         return new HouseholdResponse(
                 household.getId(), household.getName(), household.getDefaultServings(),
                 household.getPlanningHorizonDays(), role,
-                memberRepository.findByHouseholdId(household.getId()).size());
+                memberRepository.findByHouseholdId(household.getId()).size(),
+                recipeCount(household.getId()));
+    }
+
+    /** The recipes a household's Recipes tab lists: its own, shared with it, and kept from Explore. */
+    @Transactional(readOnly = true)
+    public int recipeCount(UUID householdId) {
+        return (int) recipeRepository.countVisibleTo(householdId);
     }
 
     @Transactional(readOnly = true)

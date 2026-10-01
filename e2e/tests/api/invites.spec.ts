@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, inviteToken, loginWithEmail, newHousehold, newMember, statusOf, unique } from '../../lib/api';
+import { admin, call, inviteToken, loginWithEmail, newHousehold, newMember, newRecipe, statusOf, unique } from '../../lib/api';
 import { quote, sql } from '../../lib/db';
 
 /**
@@ -42,16 +42,19 @@ test.describe('the link', () => {
   test('tells a stranger the house, who asked and how many — and nothing else', async () => {
     const hh = await newHousehold();
     const member = await newMember(hh.id);
+    await newRecipe(hh.id, 'Invite Irish Stew', [{ name: 'lamb', qty: 1 }]);
     const token = await inviteToken(hh.id);
     const said = await info(token);
-    expect(Object.keys(said).sort()).toEqual(['householdName', 'invitedByName', 'memberCount', 'valid']);
-    expect(said).toEqual({ householdName: hh.name, invitedByName: 'E2E Admin', memberCount: 2, valid: true });
+    expect(Object.keys(said).sort()).toEqual(['householdName', 'invitedByName', 'memberCount', 'recipeCount', 'valid']);
+    expect(said).toEqual({ householdName: hh.name, invitedByName: 'E2E Admin', memberCount: 2, recipeCount: 1, valid: true });
     // No member names, emails or ids beyond the one who asked.
     const text = JSON.stringify(said);
     for (const leak of [member.displayName, member.email, member.username, member.userId, hh.id]) {
       expect(text).not.toContain(leak);
     }
-    expect(await info('not-a-real-token')).toEqual({ householdName: null, invitedByName: null, memberCount: null, valid: false });
+    expect(await info('not-a-real-token')).toEqual({
+      householdName: null, invitedByName: null, memberCount: null, recipeCount: null, valid: false,
+    });
   });
 
   test('runs out after a week, and the next person to look gets a fresh one', async () => {
