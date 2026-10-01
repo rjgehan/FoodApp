@@ -127,7 +127,7 @@ export default function NewRecipeSheet({
     <Sheet title="New recipe" subtitle={`It goes straight into ${slotLabel}.`} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Field label="Name">
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Chicken pot pie" />
+          <Input autoFocus aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Chicken pot pie" />
         </Field>
         <div role="radiogroup" aria-label="How to make it" className="grid grid-cols-2 gap-2.5">
           {WAYS.map((w) => {

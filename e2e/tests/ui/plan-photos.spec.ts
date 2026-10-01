@@ -33,7 +33,7 @@ async function planWithPhotos() {
   return { hh, cover, shopFront };
 }
 
-const dayCards = (page: Page) => page.getByRole('button', { name: /^Plan for / });
+const dayCards = (page: Page) => page.getByRole('region', { name: /^Plan for / });
 
 test.describe('on a computer', () => {
   test.use({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
@@ -69,7 +69,7 @@ test.describe('on a computer', () => {
     await info.attach('plan-desktop', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
 
     // And the day sheet, next to the dish.
-    await today.click();
+    await today.getByRole('button', { name: /^Dinner: Shepherds pie/ }).click();
     await expect(sheet(page).locator(`img[src$="/api/images/${cover}"]`)).toBeVisible();
     await info.attach('day-sheet-desktop', { body: await page.screenshot(), contentType: 'image/png' });
   });
@@ -89,7 +89,10 @@ test.describe('on a computer', () => {
 
     const day = page.getByRole('button', { name: /, 4 planned$/ });
     await expect(day).toContainText('+2');
-    await expect(dayCards(page).first()).toContainText('+1 more');
+    // Coming up has the room to list every one of them.
+    for (const item of ['Porridge', 'Sandwiches', 'Leftovers', 'Apples']) {
+      await expect(dayCards(page).first()).toContainText(item, { ignoreCase: true });
+    }
   });
 });
 
@@ -106,7 +109,7 @@ async function expectNoPhotos(page: Page) {
   await expect(card).toContainText('Shepherds pie');
   await expect(dayCards(page).nth(1)).toContainText('Tonys Pizzeria');
   await expect(page.locator('main img')).toHaveCount(0);
-  await card.click();
+  await card.getByRole('button', { name: /^Dinner: Shepherds pie/ }).click();
   await expect(sheet(page).getByText('Shepherds pie')).toBeVisible();
   await expect(sheet(page).locator('img')).toBeHidden();
   expect(photoRequests).toEqual([]);

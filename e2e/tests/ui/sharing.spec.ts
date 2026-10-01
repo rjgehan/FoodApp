@@ -175,13 +175,14 @@ test('a shared recipe deleted by its owners stays on the other plan, marked as d
   await expect(day.getByText('Borrowed Soup')).toBeVisible();
   await expect(day.getByText('Recipe was deleted')).toBeVisible();
   // It may still be cooked from memory, so bread can still go next to it.
-  await expect(day.getByRole('button', { name: 'Add side' })).toBeVisible();
+  await expect(day.getByRole('button', { name: 'Add a side' })).toBeVisible();
 
   // Opened, it says what happened and offers what can still be done — nothing to view.
   await day.getByText('Borrowed Soup').click();
-  await expect(day.getByText(/The household that shared this recipe has deleted it/)).toBeVisible();
-  await expect(day.getByRole('button', { name: 'View recipe' })).toHaveCount(0);
-  await expect(day.getByRole('button', { name: 'Change' })).toBeVisible();
-  await expect(day.getByRole('button', { name: 'Remove' })).toBeVisible();
+  const options = page.getByRole('dialog', { name: 'Borrowed Soup options' });
+  await expect(options.getByText(/The household that shared this recipe has deleted it/)).toBeVisible();
+  await expect(options.getByRole('button', { name: 'Open recipe' })).toHaveCount(0);
+  await expect(options.getByRole('button', { name: 'Swap for something else' })).toBeVisible();
+  await expect(options.getByRole('button', { name: 'Remove from plan' })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('deleted-shared-recipe.png') });
 });

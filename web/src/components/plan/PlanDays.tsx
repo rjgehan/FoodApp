@@ -43,7 +43,7 @@ export function DayBlock({
   return (
     <section
       className="flex items-start gap-2"
-      aria-label={day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+      aria-label={`Plan for ${day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`}
     >
       <div className="flex w-11 shrink-0 flex-col items-center pt-2.5">
         <span className="text-[0.6875rem] font-semibold uppercase text-muted">

@@ -100,3 +100,14 @@ export async function calendarDay(page: Page, date: Date) {
   const label = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   return page.getByRole('button', { name: new RegExp(`^${label}(,|$)`) });
 }
+
+/**
+ * In an open day sheet: picks a meal along the top and presses "Plan dinner" (or, with something
+ * already in it, "Add a side"), which opens the screen for filling the slot. Returns that screen.
+ */
+export async function fillSlot(page: Page, meal: 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack', { side = false } = {}) {
+  const day = sheet(page);
+  await day.getByRole('tab', { name: new RegExp(`^${meal}`) }).click();
+  await day.getByRole('button', { name: side ? 'Add a side' : `Plan ${meal.toLowerCase()}` }).click();
+  return page.getByRole('dialog', { name: new RegExp(`^${meal} · `) });
+}

@@ -4,6 +4,7 @@ import type { PillTone } from '../ui';
 import { entryLabel, formatTime, isPlanned } from '../../utils/planEntry';
 import { sectionLabel } from '../../utils/recipeMeta';
 import { formatMinutes, totalMinutes } from '../../utils/recipeFormat';
+import { sourceLabel } from '../../utils/savedLinks';
 
 /*
  The Plan's shared vocabulary: dates as the server writes them, a day's meals grouped into
@@ -161,7 +162,7 @@ export function mealIcon(section: RecipeSection | null | undefined, meal?: MealT
 export function dishDetail(entry: MealPlanEntry, recipe: Recipe | undefined): string {
   if (entry.recipeDeleted) return entry.savedLinkDeleted ? 'Saved link was deleted' : 'Recipe was deleted';
   if (entry.placeId) return 'Eat out';
-  if (entry.savedLinkId) return 'Saved link';
+  if (entry.savedLinkId) return `Saved link · ${sourceLabel({ source: entry.savedLinkSource, url: entry.savedLinkUrl })}`;
   if (entry.itemName) return entry.runningLow ? 'Running low' : entry.inCupboard ? 'In the cupboard' : 'Not in the cupboard';
   if (entry.needsIngredients) return 'No ingredients yet';
   const minutes = recipe ? totalMinutes(recipe) : null;

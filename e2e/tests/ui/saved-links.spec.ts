@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { call, isoDate, newHousehold, uploadImage } from '../../lib/api';
-import { calendarDay, sheet, signIn } from '../../lib/ui';
+import { calendarDay, fillSlot, sheet, signIn } from '../../lib/ui';
 
 /*
  * Saved links on the phone: a link that will not come through as a recipe is kept instead of
@@ -90,12 +90,14 @@ test('a saved link is planned from its menu, and opens from the plan', async ({ 
   await (await calendarDay(page, d)).click();
   const day = sheet(page);
   await expect(day.getByText('Saved link · TikTok')).toBeVisible();
+  // Nothing to shop for, so the day offers no Add to groceries for it.
+  await expect(day.getByRole('button', { name: /to groceries$/ })).toHaveCount(0);
   await day.getByRole('button', { name: /Crispy gnocchi/ }).click();
-  await expect(day.getByRole('link', { name: 'Open on TikTok' })).toHaveAttribute('href', TIKTOK);
+  const options = page.getByRole('dialog', { name: 'Crispy gnocchi options' });
+  await expect(options.getByRole('link', { name: 'Open on TikTok' })).toHaveAttribute('href', TIKTOK);
 
-  // It has no ingredients, and the day's Add to Groceries says so rather than pretending.
-  await day.getByRole('button', { name: 'Add this day to Groceries' }).click();
-  await expect(sheet(page).getByText(/Saved links have no ingredients/)).toBeVisible();
+  // It has no ingredients, and its options say so rather than pretending.
+  await expect(options.getByText(/A saved link has no ingredients/)).toBeVisible();
 });
 
 test('the plan picker offers saved links alongside the recipes', async ({ page }) => {
@@ -105,9 +107,9 @@ test('the plan picker offers saved links alongside the recipes', async ({ page }
 
   await page.goto('/meal-plan');
   await (await calendarDay(page, new Date())).click();
-  await sheet(page).getByRole('button', { name: /^\+?\s*Add$/ }).nth(2).click();
-  await sheet(page).getByRole('button', { name: 'Saved links', exact: true }).click();
-  await sheet(page).getByRole('button', { name: /Smash burger tacos/ }).click();
+  const slot = await fillSlot(page, 'Dinner');
+  await slot.getByRole('button', { name: 'Links', exact: true }).click();
+  await slot.getByRole('button', { name: /Smash burger tacos/ }).click();
 
   await expect(sheet(page).getByText('Saved link · TikTok')).toBeVisible();
   const today = isoDate(0);
