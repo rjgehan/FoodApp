@@ -68,7 +68,13 @@ struct FillSlotView: View {
             .pageBackground()
             .centeredTitle(title)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() }.tint(Palette.accentInk) }
+                // Plain accent text, as the mockup's nav bar has it — not a glass bubble.
+                BareToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .font(.system(size: 17))
+                        .foregroundStyle(Palette.accentInk)
+                        .buttonStyle(PressFade())
+                }
             }
         }
         .task { if store.recipes.isEmpty || store.cupboard.isEmpty { await store.loadPickings() } }

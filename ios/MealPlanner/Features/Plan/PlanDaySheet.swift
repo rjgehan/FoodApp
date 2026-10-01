@@ -219,9 +219,9 @@ struct PlanDaySheet: View {
                 Button { filling = SlotTarget(date: date, meal: meal, replacing: dishes[0]) } label: {
                     Label("Swap", systemImage: "arrow.left.arrow.right")
                 }
-                .buttonStyle(.kitchen(.secondary, size: .small))
+                .buttonStyle(.kitchen(.secondary, size: .small, fill: true))
                 Button { timing = true } label: { Label("Time", systemImage: "clock") }
-                    .buttonStyle(.kitchen(.secondary, size: .small))
+                    .buttonStyle(.kitchen(.secondary, size: .small, fill: true))
                 Button { removing = true } label: { Image(systemName: "trash") }
                     .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
                     .frame(width: 52)

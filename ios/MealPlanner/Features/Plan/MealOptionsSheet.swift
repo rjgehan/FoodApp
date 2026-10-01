@@ -39,7 +39,7 @@ struct MealOptionsSheet: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $viewing) { id in PlannedRecipeView(recipeId: id, session: store.session) }
         }
-        .kitchenSheet([.medium, .large])
+        .kitchenSheet([.fraction(0.75), .large])
         .fullScreenCover(item: $swapping) { target in FillSlotView(store: store, target: target) }
         .sheet(isPresented: $timing) {
             if let entry {
@@ -199,6 +199,6 @@ struct MealOptionsSheet: View {
 #Preview("Meal options") {
     let store = PlanStore(session: .preview, sample: SampleData.plan)
     return Color.clear.sheet(isPresented: .constant(true)) {
-        MealOptionsSheet(store: store, entryId: SampleData.plan[0].id)
+        MealOptionsSheet(store: store, entryId: store.entries[0].id)
     }
 }

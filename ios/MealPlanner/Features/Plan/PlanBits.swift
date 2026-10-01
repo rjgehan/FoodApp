@@ -146,7 +146,7 @@ struct ExtrasSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
         }
-        .kitchenSheet([.medium, .large])
+        .kitchenSheet([.fraction(0.75), .large])
     }
 }
 
