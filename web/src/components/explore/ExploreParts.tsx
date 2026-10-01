@@ -186,7 +186,8 @@ export function GlobalRecipeCard({
   const kept = isKept(recipe);
   const owner = recipe.shared ? recipe.ownerName ?? 'Another household' : householdName ?? 'You';
   return (
-    <li className="card flex items-center gap-3 !p-2.5">
+    // min-w-0 lets a long name truncate: a grid item otherwise grows to its unwrapped text and pushes the + off screen.
+    <li className="card flex min-w-0 items-center gap-3 !p-2.5">
       <Link
         to={recipe.shared ? `/explore/recipes/${recipe.id}` : `/recipes/${recipe.id}`}
         className="press flex min-w-0 flex-1 items-center gap-3"
