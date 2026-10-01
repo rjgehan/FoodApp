@@ -136,72 +136,63 @@ struct RestockPrompt: View {
         _selected = State(initialValue: Set(items.map(\.ingredientId)))
     }
 
+    // The mockup's 7.2: the bell on mustard beside the question and how many are due, the due
+    // things as a ticked list on a card, then "Add 3 to groceries" and the way to put it all off.
+    // An unticked row says what will happen to it, so leaving one out is not a guess.
     var body: some View {
-        NavigationStack {
-            List {
-                KitchenSection {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                PromptHeader(systemImage: "bell", tone: .mustard, title: "Time to restock?",
+                             line: items.count == 1 ? "1 reminder is due" : "\(items.count) reminders are due")
+                ListGroup {
                     ForEach(items) { item in
                         let on = selected.contains(item.ingredientId)
                         Button {
                             if on { selected.remove(item.ingredientId) } else { selected.insert(item.ingredientId) }
                         } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3)
-                                    .foregroundStyle(on ? Palette.accent : Color.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name)
-                                        .foregroundStyle(on ? .primary : .secondary)
-                                    Text("\(item.every) · \(item.lastBought)")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .contentShape(Rectangle())
+                            ListRow(capitalised(item.name),
+                                    subtitle: on ? "\(Restock.everyTitle(item.everyDays)) · \(item.lastBought)"
+                                        : "Skip · ask again in 3 days",
+                                    titleColor: on ? Palette.text : Palette.muted,
+                                    leading: { CheckBox(isOn: on) }, trailing: { EmptyView() })
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressFade())
                         .accessibilityAddTraits(on ? [.isSelected] : [])
                     }
-                } header: {
-                    Text(items.count == 1
-                         ? "This usually runs out about now. Untick it if you still have some."
-                         : "These usually run out about now. Untick anything you still have.")
-                        .textCase(nil)
                 }
                 if let error {
-                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
+                    Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
-            }
-            .kitchenList()
-            .navigationTitle("Time to restock?")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 10) {
+                VStack(spacing: 0) {
                     Button {
                         Task { await add() }
                     } label: {
-                        Text(addTitle).frame(maxWidth: .infinity)
+                        Label(addTitle, systemImage: "cart")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                     .disabled(busy || selected.isEmpty)
-
-                    Button("Not now") { notNow() }
-                        .buttonStyle(.bordered)
+                    PromptWayOut("Skip all for 3 days") { notNow() }
                         .disabled(busy)
                 }
-                .controlSize(.large)
-                .padding()
-                .background(.bar)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 26)
+            .padding(.bottom, 20)
         }
-        .presentationDetents([.medium, .large])
-        // Swiped away without an answer is "Not now" too.
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.fraction(0.72), .large])
+        // Swiped away without an answer is "Skip all" too.
         .onDisappear { snoozeIfUnanswered() }
     }
 
     private var addTitle: String {
         if busy { return "Adding…" }
-        return selected.count == items.count || selected.isEmpty ? "Add to list" : "Add \(selected.count) to list"
+        return selected.isEmpty ? "Add to groceries" : "Add \(selected.count) to groceries"
+    }
+
+    /// Named the way recipes name them, lower case; shown the way the mockup writes them.
+    private func capitalised(_ name: String) -> String {
+        name.prefix(1).uppercased() + name.dropFirst()
     }
 
     private func add() async {

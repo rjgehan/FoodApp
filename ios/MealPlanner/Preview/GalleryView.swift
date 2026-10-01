@@ -189,6 +189,19 @@ struct GalleryView: View {
                     }
                 }
 
+                KitchenSection("Prompts & extras") {
+                    let prompts = PromptGallery(session: session, twoHouses: twoHouses)
+                    entry("Add an email and password", "envelope") { prompts.addEmail() }
+                    entry("Time to restock? — as the mockup", "bell") { prompts.restock() }
+                    entry("Stock your cupboard", "checklist") { prompts.starter() }
+                    entry("Removed from a household", "door.left.hand.open") { prompts.removed() }
+                    entry("Ideas board — as the mockup", "lightbulb") {
+                        IdeasView(session: session, sample: SampleData.ideasMockup)
+                    }
+                    entry("Share to Meal Planner", "square.and.arrow.down") { prompts.share() }
+                    entry("Rewritten on device", "wand.and.stars") { prompts.rewritten() }
+                }
+
                 KitchenSection("Explore") {
                     entry("Explore", "safari") {
                         ExploreView(session: session, sample: SampleData.published)

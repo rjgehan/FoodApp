@@ -21,65 +21,57 @@ struct StartCupboardSheet: View {
     @State private var busy = false
     @State private var error: String?
 
+    // The mockup's 7.3: chips to tick — green with a tick once chosen, plain with a + until then —
+    // and one button at the bottom. Straight after making the house it is a prompt (its own
+    // heading, Skip under the button); from the Cupboard's menu it is an ordinary sheet with a
+    // close button.
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Text(intro)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    if let error {
-                        Text(error).foregroundStyle(Palette.danger)
-                    }
-
-                    if let groups {
-                        ForEach(groups, id: \.name) { group in
-                            section(group)
-                        }
-                    } else if error == nil {
-                        ProgressView().frame(maxWidth: .infinity)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if first {
+                    PromptHeader(title: "Stock your cupboard", line: intro)
+                } else {
+                    SheetHeader("Start with the basics", subtitle: intro) { dismiss() }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-            }
-            .background(Palette.bg)
-            // The way out stays in reach at the bottom, however far down the list you are.
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 4) {
-                    Button {
-                        Task { await add() }
-                    } label: {
-                        Text(busy ? "Adding…" : chosen.isEmpty ? "Add to cupboard" : "Add \(chosen.count) to cupboard")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accent)
-                    .disabled(busy || chosen.isEmpty)
 
-                    if first {
-                        Button("Skip") { dismiss() }
-                            .padding(.vertical, 8)
-                            .disabled(busy)
-                    }
+                if let error {
+                    Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .background(.bar)
-            }
-            .pageBackground()
-            .navigationTitle(first ? "Let's start your cupboard" : "Start with the basics")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if !first {
-                    ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+
+                if let groups {
+                    ForEach(groups, id: \.name) { group in
+                        section(group)
+                    }
+                } else if error == nil {
+                    ProgressView().frame(maxWidth: .infinity)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 26)
+            .padding(.bottom, 12)
         }
+        // The way out stays in reach at the bottom, however far down the list you are.
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                Button {
+                    Task { await add() }
+                } label: {
+                    Text(busy ? "Adding…" : chosen.isEmpty ? "Add to cupboard" : "Add \(chosen.count) to cupboard")
+                }
+                .buttonStyle(.primary)
+                .disabled(busy || chosen.isEmpty)
+
+                if first {
+                    PromptWayOut("Skip") { dismiss() }
+                        .disabled(busy)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .background(Palette.bg)
+        }
+        .kitchenSheet([.large])
         .task { await load() }
         // Skip is the one way out of the first one, so a stray swipe does not lose the list.
         .interactiveDismissDisabled(first && !chosen.isEmpty)
@@ -87,8 +79,8 @@ struct StartCupboardSheet: View {
 
     private var intro: String {
         let have = groups?.contains { $0.items.contains(where: \.have) } ?? false
-        return "Tap what's already in the house. Each lands in its aisle, and you can change any of it later."
-            + (have ? " The green ones are in the cupboard already." : "")
+        return "Tick what you already have. You can change it anytime."
+            + (have ? " The pale green ones are in the cupboard already." : "")
     }
 
     private func section(_ group: StarterGroup) -> some View {
@@ -96,17 +88,14 @@ struct StartCupboardSheet: View {
         let allOn = !open.isEmpty && open.allSatisfy(chosen.contains)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(group.name.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(.secondary)
+                SectionLabel(group.name)
                 Spacer()
                 if !open.isEmpty {
                     Button(allOn ? "Clear" : "Select all") {
                         if allOn { chosen.subtract(open) } else { chosen.formUnion(open) }
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .tint(Palette.accent)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.accentInk)
                     .accessibilityLabel(allOn ? "Clear \(group.name)" : "Select all in \(group.name)")
                 }
             }
@@ -123,21 +112,24 @@ struct StartCupboardSheet: View {
         return Button {
             if chosen.contains(item.name) { chosen.remove(item.name) } else { chosen.insert(item.name) }
         } label: {
-            HStack(spacing: 5) {
-                if on { Image(systemName: "checkmark").font(.caption.weight(.bold)) }
-                Text(item.name)
+            HStack(spacing: 6) {
+                Image(systemName: on ? "checkmark" : "plus").font(.system(size: 12, weight: on ? .heavy : .semibold))
+                // Named the way recipes name them, lower case; shown the way the mockup writes them.
+                Text(item.name.prefix(1).uppercased() + item.name.dropFirst())
             }
-            .font(.subheadline.weight(.medium))
+            .font(.system(size: 15, weight: .medium))
+            .lineLimit(1)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .foregroundStyle(item.have ? Palette.herb : on ? Palette.onAccent : Color.primary)
-            .background(
-                item.have ? Palette.herbSoft : on ? Palette.accent : Palette.surface2,
-                in: Capsule()
-            )
+            .frame(minHeight: 38)
+            .foregroundStyle(item.have ? Palette.herb : on ? Color.white : Palette.text)
+            .background(item.have ? Palette.herbSoft : on ? Palette.herb : Palette.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(on ? Color.clear : Palette.border, lineWidth: 1))
+            .fixedSize()
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressFade())
         .disabled(item.have)
+        .accessibilityLabel(item.name)
         .accessibilityAddTraits(on ? [.isSelected] : [])
         .accessibilityHint(item.have ? "Already in the cupboard" : "")
     }

@@ -119,39 +119,120 @@ struct CredentialsPrompt: View {
     /// Set once saved, so the sheet says it worked instead of vanishing the way "Not now" does.
     @State private var savedEmail: String?
 
+    // The mockup's 7.1: the envelope on a sky tile, the question and why it is asked, two fields
+    // with icons, Save — and "Not now" under it, since that is what closing it means.
     var body: some View {
-        NavigationStack {
-            Form {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
                 if let savedEmail {
-                    KitchenSection {
-                        Label("Saved. Next time, sign in with \(savedEmail) and your new password.",
-                              systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Palette.herb)
-                    }
+                    PromptHeader(systemImage: "checkmark", tone: .herb, title: "You're all set",
+                                 line: "Saved. Next time, sign in with \(savedEmail) and your new password.",
+                                 stacked: true)
+                    Button("Done") { dismiss() }.buttonStyle(.primary)
                 } else {
-                    KitchenSection {
-                        Text("Next time you'll sign in with these instead of your PIN.")
-                            .foregroundStyle(.secondary)
+                    PromptHeader(systemImage: "envelope", tone: .sky, title: "Add an email and password",
+                                 line: "PIN sign-in is being retired. Add these once and you'll use them from now on.",
+                                 stacked: true)
+                    PromptCredentialsFields(me: me) { saved in savedEmail = saved.email ?? "" } notNow: {
+                        session.credentialsPromptDismissed = true
+                        dismiss()
                     }
-                    .listRowBackground(Color.clear)
-                    CredentialsForm(me: me) { saved in savedEmail = saved.email ?? "" }
                 }
             }
-            .kitchenList()
-            .navigationTitle(savedEmail == nil ? "Add an email and password" : "You're all set")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if savedEmail == nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Not now") {
-                            session.credentialsPromptDismissed = true
-                            dismiss()
-                        }
-                    }
-                } else {
-                    ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
-                }
+            .padding(.horizontal, 20)
+            .padding(.top, 28)
+            .padding(.bottom, 20)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.fraction(0.68), .large])
+    }
+}
+
+/**
+ The prompt's own fields (7.1): an icon in each and no label over them, the confirmation only
+ once a password has been typed, and the buttons stacked. The same rules as CredentialsForm,
+ which Settings keeps.
+*/
+private struct PromptCredentialsFields: View {
+    let me: Me
+    var onSaved: (Me) -> Void
+    var notNow: () -> Void
+
+    @State private var email: String
+    @State private var password = ""
+    @State private var confirm = ""
+    @State private var current = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    init(me: Me, onSaved: @escaping (Me) -> Void, notNow: @escaping () -> Void) {
+        self.me = me
+        self.onSaved = onSaved
+        self.notNow = notNow
+        _email = State(initialValue: me.email ?? "")
+    }
+
+    private var trimmedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var canSave: Bool {
+        !busy && !trimmedEmail.isEmpty
+            && (trimmedEmail.lowercased() != (me.email ?? "") || !password.isEmpty)
+            && (me.hasPassword ? !current.isEmpty : !password.isEmpty)
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            FieldBox(nil, text: $email, prompt: "Email", systemImage: "envelope")
+                .textContentType(.username)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            FieldBox(nil, text: $password, prompt: "New password", systemImage: "lock", secure: true)
+                .textContentType(.newPassword)
+            if !password.isEmpty {
+                FieldBox(nil, text: $confirm, prompt: "Confirm password", systemImage: "lock", secure: true)
+                    .textContentType(.newPassword)
             }
+            if me.hasPassword {
+                FieldBox(nil, text: $current, prompt: "Current password", systemImage: "key", secure: true,
+                         hint: "Needed to change either one.")
+                    .textContentType(.password)
+            }
+            if let error {
+                Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(spacing: 0) {
+                Button {
+                    Task { await save() }
+                } label: {
+                    if busy { ProgressView().tint(Palette.onAccent) } else { Text("Save") }
+                }
+                .buttonStyle(.primary)
+                .disabled(!canSave)
+                PromptWayOut("Not now", action: notNow)
+                    .disabled(busy)
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func save() async {
+        if !password.isEmpty || !me.hasPassword {
+            guard password.count >= 8 else { error = "Passwords need at least 8 characters."; return }
+            guard password.count <= 128 else { error = "Passwords can be at most 128 characters."; return }
+            guard password == confirm else { error = "Those passwords don't match."; return }
+        }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let saved = try await APIClient.shared.updateCredentials(
+                email: trimmedEmail,
+                password: password.isEmpty ? nil : password,
+                currentPassword: me.hasPassword ? current : nil)
+            onSaved(saved)
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }
@@ -206,6 +287,7 @@ enum QRCode {
 }
 
 #Preview("Add an email") {
-    CredentialsPrompt(session: .preview, me: SampleData.me)
+    Color.clear.pageBackground()
+        .sheet(isPresented: .constant(true)) { CredentialsPrompt(session: .preview, me: SampleData.me) }
 }
 

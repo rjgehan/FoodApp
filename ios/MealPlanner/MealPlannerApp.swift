@@ -13,6 +13,8 @@ struct MealPlannerApp: App {
     @State private var sharedDiagnostic: String?
     /// The page the shared text came from, kept as the saved recipe's link.
     @State private var sharedLink: String?
+    /// "Keep as saved link" was picked in the share sheet rather than "Read as recipe".
+    @State private var sharedKeep = false
     /// An invite or reset link the app was opened with (mealplanner://invite/<token>).
     @State private var openedLink: AppLink? = {
         #if DEBUG
@@ -52,6 +54,7 @@ struct MealPlannerApp: App {
                     // nothing at all, and only the note tells them apart.
                     sharedDiagnostic = items?.first(where: { $0.name == "diag" })?.value
                     sharedLink = items?.first(where: { $0.name == "link" })?.value
+                    sharedKeep = items?.first(where: { $0.name == "keep" })?.value == "1"
                     if let json = items?.first(where: { $0.name == "recipe" })?.value,
                        let data = json.data(using: .utf8),
                        let decoded = try? JSONDecoder().decode(StructuredRecipe.self, from: data) {
@@ -90,7 +93,8 @@ struct MealPlannerApp: App {
             incoming: sharedRecipe == nil ? incoming.text : nil,
             structured: sharedRecipe,
             diagnostic: sharedDiagnostic,
-            link: sharedLink
+            link: sharedLink,
+            keepAsLink: sharedKeep
         )
     }
 }
@@ -285,6 +289,15 @@ struct RootView: View {
     /// ...and what they may ask on top of them.
     private var tabsWithPrompts: some View {
         tabsAtWork
+        // Taken out of a household and moved to another (7.4).
+        .kitchenAlert(isPresented: Binding(
+            get: { session.removedFrom != nil },
+            set: { if !$0 { session.removedFrom = nil } }
+        )) {
+            if let removed = session.removedFrom {
+                HouseholdRemovedCard(removedFrom: removed.from, movedTo: removed.to) { session.removedFrom = nil }
+            }
+        }
         // Something to say after signing in — an invite that no longer worked, say.
         .alert("Meal Planner", isPresented: Binding(
             get: { session.isSignedIn && session.notice != nil },
@@ -366,6 +379,14 @@ struct RootView: View {
         )) {
             IdeasView(session: session)
         }
+        // -mp_debug_screen prompt-email|prompt-restock|prompt-starter|prompt-removed|prompt-ideas|
+        // prompt-share|prompt-rewritten: section 07's screens from sample data, as the Gallery has them.
+        .fullScreenCover(isPresented: Binding(
+            get: { (debugSheet ?? "").hasPrefix("prompt-") },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            promptScreen(debugSheet ?? "")
+        }
         // Settings → Theme, and the design system's catalogue and the Gallery, for screenshots.
         .fullScreenCover(isPresented: Binding(
             get: { ["theme", "design", "gallery"].contains(debugSheet ?? "") },
@@ -397,6 +418,23 @@ struct RootView: View {
             } else {
                 NavigationStack { ThemeScreen() }
             }
+        }
+    }
+
+    @ViewBuilder private func promptScreen(_ name: String) -> some View {
+        let gallery = PromptGallery(session: .preview, twoHouses: {
+            let two = Session.preview
+            two.households = [SampleData.household, SampleData.otherHousehold]
+            return two
+        }())
+        switch name {
+        case "prompt-email": gallery.addEmail()
+        case "prompt-restock": gallery.restock()
+        case "prompt-starter": gallery.starter()
+        case "prompt-removed": gallery.removed()
+        case "prompt-ideas": IdeasView(session: .preview, sample: SampleData.ideasMockup)
+        case "prompt-share": gallery.share()
+        default: NavigationStack { gallery.rewritten() }
         }
     }
     #endif
