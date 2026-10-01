@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Input, cx } from './ui';
 import { ChevronDownIcon } from './icons';
 
@@ -27,11 +27,19 @@ export default function UnitInput({
   className,
   'aria-label': ariaLabel,
   placeholder = 'unit',
+  inputClassName,
+  style,
+  chevron = true,
 }: {
   value: string;
   onChange: (value: string) => void;
   className?: string;
   'aria-label'?: string;
+  /** Extra classes for the box itself — the recipe form draws it as a small pill. */
+  inputClassName?: string;
+  style?: CSSProperties;
+  /** The ▾ that opens the list. A pill too small for it opens the list on focus alone. */
+  chevron?: boolean;
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +98,7 @@ export default function UnitInput({
   }
 
   return (
-    <div ref={wrapRef} className={cx('relative', className)}>
+    <div ref={wrapRef} className={cx('relative', className)} style={style}>
       <Input
         value={value}
         placeholder={placeholder}
@@ -99,7 +107,7 @@ export default function UnitInput({
         aria-expanded={open}
         aria-autocomplete="list"
         autoComplete="off"
-        className="w-full pr-9"
+        className={cx('w-full', chevron && 'pr-9', inputClassName)}
         onChange={(e) => {
           onChange(e.target.value);
           setHighlight(0);
@@ -108,7 +116,7 @@ export default function UnitInput({
         onFocus={openList}
         onKeyDown={onKeyDown}
       />
-      <button
+      {chevron && <button
         type="button"
         tabIndex={-1}
         aria-label="Show units"
@@ -116,13 +124,13 @@ export default function UnitInput({
         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted"
       >
         <ChevronDownIcon className="h-4 w-4" />
-      </button>
+      </button>}
 
       {open && options.length > 0 && (
         <ul
           role="listbox"
           className={cx(
-            'absolute z-20 max-h-56 w-full overflow-auto rounded-xl border border-line bg-surface2 py-1 shadow-lg',
+            'absolute z-20 max-h-56 w-full min-w-[8rem] overflow-auto rounded-xl border border-line bg-surface2 py-1 shadow-lg',
             dropUp ? 'bottom-full mb-1' : 'mt-1',
           )}
         >

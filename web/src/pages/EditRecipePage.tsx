@@ -3,19 +3,22 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, EmptyState } from '../components/ui';
-import { ChevronLeftIcon } from '../components/icons';
+import { usePushedScreen } from '../components/Layout';
+import { Button, Card, EmptyState, NavBar } from '../components/ui';
 import RecipeForm from '../components/RecipeForm';
-import { PageTitle } from '../components/PageTitle';
+import { DeleteRecipeAlert } from '../components/recipe/RecipeSheets';
 
-/** The same form as writing a new one, seeded from the recipe and saving over it. */
+/**
+ * The same form as writing a new one, seeded from the recipe and saving over it: Cancel, "Edit
+ * recipe" and Save along the top, as the mockup's 3.20 has it, and Delete at the very foot.
+ */
 export default function EditRecipePage() {
   const { recipeId } = useParams<{ recipeId: string }>();
-  const { activeHouseholdId } = useHousehold();
+  const { activeHouseholdId, households } = useHousehold();
   const navigate = useNavigate();
+  usePushedScreen();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -25,81 +28,76 @@ export default function EditRecipePage() {
       .catch(() => setError('Could not load that recipe.'));
   }, [recipeId, activeHouseholdId]);
 
-  async function remove() {
-    if (!recipe) return;
-    setDeleting(true);
-    try {
-      await api('DELETE', `/api/recipes/${recipe.id}`);
-      navigate('/recipes', { replace: true });
-    } catch {
-      setError('Could not delete that.');
-      setDeleting(false);
-    }
+  /** Back to the recipe — the way it came, when it came from there. */
+  function leave() {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate(`/recipes/${recipeId}`, { replace: true });
   }
+
+  const cancel = (
+    <button type="button" className="press text-[1.0625rem] text-accent-ink" onClick={leave}>
+      Cancel
+    </button>
+  );
 
   if (error) {
     return (
-      <Card>
-        <EmptyState>{error}</EmptyState>
-      </Card>
+      <div className="flex flex-col gap-2">
+        <NavBar title="Edit recipe" left={cancel} />
+        <Card>
+          <EmptyState>{error}</EmptyState>
+        </Card>
+      </div>
     );
   }
   if (!activeHouseholdId || !recipe) {
-    return <p className="py-8 text-center text-sm text-muted">Loading…</p>;
+    return <p className="py-16 text-center text-sm text-muted">Loading…</p>;
   }
   // Sharing a recipe does not hand over the pencil; the owner household edits it.
   if (recipe.shared) {
     return (
-      <Card>
-        <EmptyState>This recipe belongs to another household, so you can't edit it.</EmptyState>
-      </Card>
+      <div className="flex flex-col gap-2">
+        <NavBar title="Edit recipe" left={cancel} />
+        <Card>
+          <EmptyState>This recipe belongs to another household, so you can't edit it.</EmptyState>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <Button variant="ghost" size="sm" onClick={() => navigate(`/recipes/${recipe.id}`)}>
-        <ChevronLeftIcon className="h-5 w-5" />
-        Back
-      </Button>
-      <PageTitle title="Edit recipe" />
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 pb-6">
+      <NavBar
+        title="Edit recipe"
+        left={cancel}
+        right={
+          <button type="submit" form="edit-recipe" className="press font-semibold">
+            Save
+          </button>
+        }
+      />
       <RecipeForm
+        id="edit-recipe"
         householdId={activeHouseholdId}
         recipe={recipe}
         onSaved={(r) => navigate(`/recipes/${r.id}`, { replace: true })}
       />
 
-      {/*
-       * Two taps, not a browser confirm(): a native dialog is ugly on a phone and easy to
-       * dismiss by accident. Deleting a recipe cannot be undone, so it asks first.
-       */}
-      <Card>
-        {confirming ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted">
-              This removes “{recipe.name}” for good, takes it off your planned meals, and stops any
-              share link working. It can't be undone.
-              {/* The other houses are not asked, so they are at least not surprised: their meals
-                  stay on their plan, marked as deleted, instead of disappearing. */}
-              {(recipe.sharedWith.length > 0 || recipe.published) &&
-                ' Anyone else who planned it keeps the meal on their plan, marked as deleted.'}
-            </p>
-            <div className="flex gap-2">
-              <Button variant="danger" className="flex-1" disabled={deleting} onClick={remove}>
-                {deleting ? 'Deleting…' : 'Delete forever'}
-              </Button>
-              <Button variant="secondary" disabled={deleting} onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          // A red text link, not a red slab: it is the rarest thing on the page, and the last.
-          <Button variant="ghost" className="-ml-4 text-danger" onClick={() => setConfirming(true)}>
-            Delete this recipe
-          </Button>
-        )}
-      </Card>
+      {/* A red word, not a red slab: it is the rarest thing on the page, and the last. It asks
+          first, in an alert rather than a browser confirm(), and cannot be undone. */}
+      <Button variant="ghost" icon="trash" className="mt-2 self-center text-danger" onClick={() => setDeleting(true)}>
+        Delete this recipe
+      </Button>
+
+      {deleting && (
+        <DeleteRecipeAlert
+          recipe={recipe}
+          households={households}
+          onCancel={() => setDeleting(false)}
+          onDeleted={() => navigate('/recipes', { replace: true })}
+        />
+      )}
     </div>
   );
 }

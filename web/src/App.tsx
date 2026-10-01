@@ -14,6 +14,7 @@ import ExploreRecipesPage from './pages/ExploreRecipesPage';
 import ExploreSoonPage from './pages/ExploreSoonPage';
 import NewRecipePage from './pages/NewRecipePage';
 import EditRecipePage from './pages/EditRecipePage';
+import RecipeSharePage from './pages/RecipeSharePage';
 import MealPlanPage from './pages/MealPlanPage';
 import GroceryListPage from './pages/GroceryListPage';
 import CupboardPage from './pages/CupboardPage';
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="/recipes/saved-links" element={<SavedLinksPage />} />
           <Route path="/recipes/:recipeId" element={<RecipeDetailPage />} />
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
+          <Route path="/recipes/:recipeId/share" element={<RecipeSharePage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="/cupboard" element={<CupboardPage />} />

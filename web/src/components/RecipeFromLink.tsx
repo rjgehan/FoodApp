@@ -4,19 +4,32 @@ import { api, ApiError, imageUrl } from '../api/client';
 import type { Recipe, RecipeSection, SavedLink } from '../api/types';
 import type { RecipeDraft } from './RecipeForm';
 import { DraftToCheck } from './RecipePaste';
-import { Button, Card, ErrorText, Input } from './ui';
-import { LinkIcon } from './icons';
+import { Button, ErrorText, Photo, Pill } from './ui';
+import { Icon } from './icons';
 import { SAVED_LINKS_PATH, saveLink, sourceLabel } from '../utils/savedLinks';
 import { photoClass } from '../utils/recipeFormat';
+import { isVideoLink } from '../utils/videoLink';
+import { instructionSteps } from '../utils/recipeFormat';
 
 /** What the server read: a draft, and whether its steps were written down or only said. */
 type ImportedRecipe = RecipeDraft & { methodSource?: 'PUBLISHED' | 'SPOKEN' | null };
 
+/** What to check first in a draft read off a link, when there is something in particular. */
+export function draftNote(draft: ImportedRecipe): string | undefined {
+  return draft.methodSource === 'SPOKEN'
+    ? 'The steps were pieced together from what’s said in the video. Give them a read, then save.'
+    : undefined;
+}
+
 /**
- * A link in, a recipe out. The server does the reading: a website's own schema.org recipe, which
- * is exact, or the caption (and, failing that, what is said) of a TikTok or an Instagram Reel.
- * None of it spends an AI request. What comes back is a draft in the ordinary form, with the
- * link already in its Links, so nothing is saved until it has been looked at.
+ * A link in, a recipe out (the mockup's 3.14). The server does the reading: a website's own
+ * schema.org recipe, which is exact, or the caption (and, failing that, what is said) of a
+ * TikTok or an Instagram Reel. None of it spends an AI request. What comes back is a draft —
+ * its name, its picture, how much was found — and the form to check it in, with the link already
+ * in its Links, so nothing is saved until it has been looked at.
+ *
+ * A link that cannot be read is still worth keeping: the recipe is in the video, or behind a
+ * bio. So the way on — keep it as a saved link, or type it out — is right under the reason.
  */
 export function FromALink({
   householdId,
@@ -26,6 +39,8 @@ export function FromALink({
   groups,
   onSaved,
   onLinkSaved,
+  onDraft,
+  onTypeInstead,
 }: {
   householdId: string;
   /** A link handed over from Paste, to fill the box with. */
@@ -42,12 +57,20 @@ export function FromALink({
    * went and offers the way there; the planner passes one to put the link straight on the plan.
    */
   onLinkSaved?: (link: SavedLink) => void;
+  /**
+   * "Review draft" hands the draft to the screen around this one, which shows it in its own
+   * "Check recipe" page. Without it, the form opens here, in place.
+   */
+  onDraft?: (draft: RecipeDraft, note?: string) => void;
+  /** "Type it out" under a link that could not be read. Without it, the button is not offered. */
+  onTypeInstead?: () => void;
 }) {
   const navigate = useNavigate();
   const [link, setLink] = useState('');
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<ImportedRecipe | null>(null);
+  const [checking, setChecking] = useState(false);
   const [keeping, setKeeping] = useState(false);
   const [keepError, setKeepError] = useState<string | null>(null);
   const [kept, setKept] = useState<SavedLink | null>(null);
@@ -57,6 +80,7 @@ export function FromALink({
       setLink(handed);
       setError(null);
       setDraft(null);
+      setChecking(false);
       setKept(null);
     }
   }, [handed]);
@@ -87,43 +111,6 @@ export function FromALink({
     }
   }
 
-  if (kept) {
-    return (
-      <Card>
-        <div className="flex items-center gap-3" role="status">
-          <span className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[14px] ${kept.coverImageId ? '' : photoClass(kept.id)}`}>
-            {kept.coverImageId ? (
-              <img src={imageUrl(kept.coverImageId)} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <LinkIcon className="h-6 w-6 opacity-90" />
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-semibold">
-              {kept.alreadySaved ? 'Already in Saved links' : 'Saved to Saved links'}
-            </span>
-            <span className="block truncate text-[0.9375rem]">{kept.name}</span>
-            <span className="block text-sm text-muted">{sourceLabel(kept)}</span>
-          </span>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <Button className="flex-1" onClick={() => navigate(SAVED_LINKS_PATH)}>
-            See saved links
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setKept(null);
-              setLink('');
-            }}
-          >
-            Another link
-          </Button>
-        </div>
-      </Card>
-    );
-  }
-
   async function read(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -145,7 +132,45 @@ export function FromALink({
     }
   }
 
-  if (draft) {
+  if (kept) {
+    return (
+      <div className="card flex flex-col gap-4 p-4">
+        <div className="flex items-center gap-3" role="status">
+          <span className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[14px] ${kept.coverImageId ? '' : photoClass(kept.id)}`}>
+            {kept.coverImageId ? (
+              <img src={imageUrl(kept.coverImageId)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Icon name="link" size={24} className="opacity-90" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Icon name="check" size={16} strokeWidth={2.6} className="text-herb" />
+              {kept.alreadySaved ? 'Already in Saved links' : 'Saved to Saved links'}
+            </span>
+            <span className="block truncate text-[0.9375rem]">{kept.name}</span>
+            <span className="block text-sm text-muted">{sourceLabel(kept)}</span>
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={() => navigate(SAVED_LINKS_PATH)}>
+            See saved links
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setKept(null);
+              setLink('');
+            }}
+          >
+            Another link
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (draft && checking) {
     return (
       <DraftToCheck
         householdId={householdId}
@@ -153,59 +178,123 @@ export function FromALink({
         section={section}
         groups={groups}
         again="Try another link"
-        note={
-          draft.methodSource === 'SPOKEN'
-            ? 'The steps were pieced together from what’s said in the video. Give them a read, then save.'
-            : undefined
-        }
+        note={draftNote(draft)}
         aside={
           <Button variant="ghost" size="sm" disabled={keeping} onClick={() => keep(draft)}>
             {keeping ? 'Saving…' : 'Just save the link'}
           </Button>
         }
-        onAgain={() => setDraft(null)}
+        onAgain={() => {
+          setDraft(null);
+          setChecking(false);
+        }}
         onSaved={onSaved}
       />
     );
   }
 
+  const video = isVideoLink(link);
+  const steps = draft ? instructionSteps(draft.instructions).length : 0;
+
   return (
-    <form onSubmit={read}>
-      <Card>
-        <div className="space-y-3">
-          <Input
-            type="text"
-            inputMode="url"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            value={link}
-            onChange={(e) => {
-              setLink(e.target.value);
-              setError(null);
-              setKeepError(null);
-            }}
-            placeholder="https://…"
-            aria-label="A link to a recipe"
-          />
-          <p className="text-sm font-medium text-ink">Works with TikTok, Instagram and recipe websites.</p>
+    <form onSubmit={read} className="flex flex-col gap-4">
+      <label className="flex h-[3.25rem] items-center gap-2.5 rounded-field border border-line bg-surface px-3.5 transition-[border-color,box-shadow] focus-within:border-accent focus-within:shadow-focus">
+        <Icon name="link" size={19} className="shrink-0 text-muted" />
+        <input
+          type="text"
+          inputMode="url"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          value={link}
+          onChange={(e) => {
+            setLink(e.target.value);
+            setError(null);
+            setKeepError(null);
+            setDraft(null);
+          }}
+          placeholder="Paste a link — https://…"
+          aria-label="A link to a recipe"
+          className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint"
+        />
+        {draft && <Icon name="check" size={18} strokeWidth={2.6} className="shrink-0 text-herb" aria-label="Read" />}
+      </label>
+
+      {draft ? (
+        <>
+          {/* The draft, before the form: what was found, so the next page holds no surprises. */}
+          <div className="card flex flex-col overflow-hidden">
+            {draft.coverImageId ? (
+              <img src={imageUrl(draft.coverImageId)} alt="" className="h-[10.625rem] w-full object-cover" />
+            ) : (
+              <Photo seed={draft.name} icon={video ? 'play' : 'utensils'} large className="h-[10.625rem] w-full" />
+            )}
+            <div className="flex flex-col gap-2.5 px-4 pb-4 pt-3">
+              <div className="flex flex-wrap gap-1.5">
+                <Pill tone="herb" icon="check">
+                  {draft.methodSource === 'SPOKEN'
+                    ? 'Read from what’s said in the video'
+                    : video
+                      ? 'Read from video caption'
+                      : 'Read from the page'}
+                </Pill>
+                <Pill tone="mustard">Draft</Pill>
+              </div>
+              <h2 className="serif text-[1.375rem] leading-tight">{draft.name || 'Untitled recipe'}</h2>
+              <p className="text-[0.8125rem] text-muted">
+                Found {count(draft.ingredients.length, 'ingredient')} and {count(steps, 'step')}. You'll check them on the
+                next page.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="lg"
+            full
+            icon="arrowR"
+            onClick={() => (onDraft ? onDraft(draft, draftNote(draft)) : setChecking(true))}
+          >
+            Review draft
+          </Button>
+          <div className="flex flex-wrap justify-center gap-x-2">
+            <Button type="button" variant="ghost" size="sm" disabled={keeping} onClick={() => keep(draft)}>
+              {keeping ? 'Saving…' : 'Just save the link'}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <Icon name="check" size={15} strokeWidth={2.4} className="text-herb" />
+            Works with TikTok, Instagram and recipe websites.
+          </p>
           {error && (
-            // A link that cannot be read is still a link worth keeping — the recipe is in the
-            // video, or behind a bio — so the way on is right under the reason.
-            <div className="space-y-2.5 rounded-xl bg-surface2 p-3">
-              <ErrorText>{error}</ErrorText>
-              <p className="text-sm text-muted">
+            <div className="card flex flex-col gap-2.5 p-4" role="alert">
+              <div className="flex items-center gap-2">
+                <Icon name="alert" size={16} className="shrink-0 text-mustard" />
+                <span className="text-[0.9375rem] font-semibold">This link can’t be read</span>
+              </div>
+              <p className="text-[0.8125rem] text-muted">{error}</p>
+              <p className="text-[0.8125rem] text-muted">
                 Keep it in Saved links instead, with its name and picture, and make it a recipe whenever you like.
               </p>
-              <Button type="button" full disabled={keeping} onClick={() => keep()}>
-                <LinkIcon className="h-5 w-5" />
-                {keeping ? 'Saving…' : 'Save the link instead'}
-              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" size="sm" icon="bookmark" className="h-11 flex-1" disabled={keeping} onClick={() => keep()}>
+                  {keeping ? 'Saving…' : 'Keep as saved link'}
+                </Button>
+                {onTypeInstead && (
+                  <Button type="button" variant="secondary" size="sm" icon="pen" className="h-11 flex-1" onClick={onTypeInstead}>
+                    Type it out
+                  </Button>
+                )}
+              </div>
             </div>
           )}
           {keepError && <ErrorText>{keepError}</ErrorText>}
-          {reading ? <Reading /> : (
-            <Button type="submit" full variant={error ? 'secondary' : 'primary'} disabled={!link.trim() || keeping}>
+          {reading ? (
+            <Reading />
+          ) : (
+            <Button type="submit" size="lg" full variant={error ? 'secondary' : 'primary'} disabled={!link.trim() || keeping}>
               Get the recipe
             </Button>
           )}
@@ -214,14 +303,18 @@ export function FromALink({
               {keeping ? 'Saving…' : 'Just save the link'}
             </Button>
           )}
-          <p className="text-sm text-muted">
+          <p className="text-[0.8125rem] leading-normal text-muted">
             A website’s own recipe comes through exactly as they wrote it. A video’s is read from its caption or what’s
-            said in it, so give it a look before you save. Either way it opens in the form first.
+            said in it, so give it a look before you save. Either way it opens in the form first. No AI.
           </p>
-        </div>
-      </Card>
+        </>
+      )}
     </form>
   );
+}
+
+function count(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
 /**

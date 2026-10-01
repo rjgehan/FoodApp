@@ -156,6 +156,7 @@ export function NavBar({
   left,
   right,
   className,
+  sides = 'w-28',
 }: {
   title?: ReactNode;
   back?: string | (() => void);
@@ -164,6 +165,8 @@ export function NavBar({
   left?: ReactNode;
   right?: ReactNode;
   className?: string;
+  /** The width of each side, which the title is centred between — narrower for a long title. */
+  sides?: string;
 }) {
   const backCls = 'press -ml-1.5 flex h-11 items-center gap-0.5 whitespace-nowrap text-[1.0625rem] text-accent-ink';
   const backInner = (
@@ -174,7 +177,7 @@ export function NavBar({
   );
   return (
     <div className={cx('flex h-12 items-center justify-between gap-2', className)}>
-      <div className="flex w-28 shrink-0 items-center">
+      <div className={cx('flex shrink-0 items-center', sides)}>
         {left ??
           (typeof back === 'string' ? (
             <Link to={back} className={backCls}>
@@ -187,7 +190,7 @@ export function NavBar({
           ) : null)}
       </div>
       <h1 className="min-w-0 flex-1 truncate text-center text-[1.0625rem] font-semibold">{title}</h1>
-      <div className="flex w-28 shrink-0 items-center justify-end gap-4 text-[1.0625rem] text-accent-ink">{right}</div>
+      <div className={cx('flex shrink-0 items-center justify-end gap-4 text-[1.0625rem] text-accent-ink', sides)}>{right}</div>
     </div>
   );
 }
