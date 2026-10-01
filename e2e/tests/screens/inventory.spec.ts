@@ -377,10 +377,23 @@ test('capture every screen', async ({ page }) => {
   await step('household', async () => {
     await page.goto('/household');
     await shot(page, 'Household', '', { full: true });
-    await page.getByRole('button', { name: 'Show QR code' }).click();
-    await shot(page, 'Invite someone — QR code');
+    await page.getByRole('button', { name: 'Show QR', exact: true }).click();
+    await shot(page, 'Invite someone — scan to join');
   });
-  for (const row of ['Household', 'Store aisles', 'You', 'Join a household', 'Start another household']) {
+  await step('member', async () => {
+    await page.goto('/household');
+    // The owner taps somebody else for their actions.
+    await page.getByRole('list', { name: 'People' }).getByRole('button').first().click();
+    await shot(page, 'Household → someone in it (owner actions)');
+  });
+  for (const row of ['Places we eat', 'Name, servings & planning', 'Store aisles']) {
+    await step(row, async () => {
+      await page.goto('/household');
+      await page.getByRole('button', { name: new RegExp(`^${row}`) }).click();
+      await shot(page, `Household → ${row}`, '', { full: true });
+    });
+  }
+  for (const row of ['Join a household', 'Start another household']) {
     await step(row, async () => {
       await page.goto('/household');
       await page.getByRole('button', { name: new RegExp(`^${row}`) }).last().click();
@@ -388,7 +401,7 @@ test('capture every screen', async ({ page }) => {
     });
   }
   await step('place', async () => {
-    await page.goto('/household');
+    await page.goto('/household/places');
     await page.getByText('Golden Dragon').first().click();
     await shot(page, 'Place details');
   });

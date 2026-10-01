@@ -2,7 +2,8 @@ import { Link, useParams } from 'react-router-dom';
 import type { AdminHouseholdDetail } from '../api/types';
 import { AdminBack, AdminTable, formatDay, LoadError, RecipeBadges, useAdminData, Yes } from '../components/AdminParts';
 import { PageTitle } from '../components/PageTitle';
-import { Badge, Card, EmptyState } from '../components/ui';
+import { Badge, Card, EmptyState, Tile } from '../components/ui';
+import { Icon } from '../components/icons';
 import { sectionLabel } from '../utils/recipeMeta';
 
 /** One household as its owner never sees it: everybody in it, how they sign in, and every recipe. */
@@ -54,16 +55,26 @@ export default function AdminHouseholdPage() {
                 <div className="space-y-1">
                   <p className="flex items-center gap-1.5">
                     <span className="truncate font-medium">{m.displayName}</span>
-                    {m.role === 'OWNER' && <Badge>Owner</Badge>}
+                    {m.role === 'OWNER' && <Badge tone="accent">Owner</Badge>}
                   </p>
                   <p className="text-sm text-muted">
                     {m.username} · joined {formatDay(m.joinedAt)}
                   </p>
                   <p className="break-all text-sm">{m.email ?? <span className="text-muted">No email yet</span>}</p>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge tone={m.hasPassword ? 'success' : 'neutral'}>{m.hasPassword ? 'Password' : 'No password'}</Badge>
-                    {m.hasPin && <Badge>PIN</Badge>}
-                    {m.lastHousehold && <Badge>Opens here</Badge>}
+                    <Badge tone={m.hasPassword ? 'herb' : 'neutral'} icon={m.hasPassword ? 'lock' : undefined}>
+                      {m.hasPassword ? 'Password' : 'No password'}
+                    </Badge>
+                    {m.hasPin && (
+                      <Badge tone="mustard" icon="key">
+                        PIN
+                      </Badge>
+                    )}
+                    {m.lastHousehold && (
+                      <Badge tone="sky" icon="home">
+                        Opens here
+                      </Badge>
+                    )}
                   </div>
                 </div>
               )}
@@ -74,17 +85,24 @@ export default function AdminHouseholdPage() {
             {h.recipes.length === 0 ? (
               <EmptyState>No recipes of its own yet.</EmptyState>
             ) : (
-              <ul className="divide-y divide-line rounded-2xl bg-surface px-4">
+              <ul className="card card-rows inset-rows" aria-label="Recipes in this household">
                 {h.recipes.map((r) => (
                   <li key={r.id}>
-                    <Link to={`/admin/recipes/${r.id}`} className="press flex min-h-touch flex-col gap-1 py-3 md:flex-row md:items-center md:gap-3">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-accent-ink">{r.name}</span>
-                        <span className="block text-sm text-muted">
-                          {r.section ? sectionLabel(r.section) : 'Not filed'} · added {formatDay(r.createdAt)}
+                    <Link
+                      to={`/admin/recipes/${r.id}`}
+                      className="press flex min-h-[52px] items-center gap-3 px-4 py-3 active:bg-surface2 md:hover:bg-surface2/60"
+                    >
+                      <Tile icon="book" tone="accent" size={36} />
+                      <span className="flex min-w-0 flex-1 flex-col gap-1 md:flex-row md:items-center md:gap-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{r.name}</span>
+                          <span className="block text-sm text-muted">
+                            {r.section ? sectionLabel(r.section) : 'Not filed'} · added {formatDay(r.createdAt)}
+                          </span>
                         </span>
+                        <RecipeBadges recipe={r} />
                       </span>
-                      <RecipeBadges recipe={r} />
+                      <Icon name="chevR" size={16} className="shrink-0 text-faint" />
                     </Link>
                   </li>
                 ))}

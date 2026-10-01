@@ -117,8 +117,8 @@ test('you can change your email and password from Settings', async ({ page }) =>
   await signIn(page, m, hh.id);
   await page.goto('/meal-plan');
   await page.getByRole('button', { name: 'Your account' }).click();
-  // Settings says who you are, and keeps the sign-in details one row further in.
-  await expect(sheet(page).getByRole('button', { name: /^Password & sign-in/ })).toContainText(email);
+  // Settings says who you are under your name, and keeps the sign-in details one row further in.
+  await expect(page.getByRole('dialog', { name: 'Settings' }).getByText(email)).toBeVisible();
   await sheet(page).getByRole('button', { name: /^Password & sign-in/ }).click();
   const settings = page.getByRole('dialog', { name: 'Password & sign-in' });
   await expect(settings.getByText(email)).toBeVisible();
@@ -138,19 +138,29 @@ test('the owner sees who has no email yet, and hands out a reset link that signs
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
 
-  // Somebody who has never got in is told apart from somebody who just has no email yet.
-  const newcomer = page.getByRole('listitem').filter({ hasText: never.displayName });
+  // Somebody who has never got in is told apart from somebody who signs in with a PIN and has no
+  // email yet; the owner's own row says email.
+  const people = page.getByRole('list', { name: 'People' });
+  const newcomer = people.getByRole('listitem').filter({ hasText: never.displayName });
   await expect(newcomer.getByText("Hasn't signed in yet")).toBeVisible();
-  await expect(newcomer.getByText('No email yet')).toHaveCount(0);
-  const row = page.getByRole('listitem').filter({ hasText: m.displayName });
-  await expect(row.getByText('No email yet')).toBeVisible();
-  await row.getByRole('button', { name: `More for ${m.displayName}` }).click();
-  await sheet(page).getByRole('button', { name: 'Reset password' }).click();
-  const handout = sheet(page);
-  await expect(handout.getByRole('heading', { name: 'Reset password' })).toBeVisible();
+  await expect(newcomer.getByText('PIN', { exact: true })).toHaveCount(0);
+  const row = people.getByRole('listitem').filter({ hasText: m.displayName });
+  await expect(row.getByText('PIN', { exact: true })).toBeVisible();
+  await expect(people.getByRole('listitem').filter({ hasText: '(you)' }).getByText('Email', { exact: true })).toBeVisible();
+  await row.getByRole('button').click();
+  const actions = page.getByRole('dialog', { name: m.displayName });
+  await expect(actions.getByText('Signs in with a PIN')).toBeVisible();
+  // Nothing is made until it is asked for: each new link cancels the last.
+  await expect(actions.getByRole('region', { name: 'Reset link' })).toHaveCount(0);
+  await actions.getByRole('button', { name: /^Create password-reset link/ }).click();
+  const handout = actions.getByRole('region', { name: 'Reset link' });
+  await expect(handout.getByRole('heading', { name: 'Reset link ready' })).toBeVisible();
+  await expect(handout.getByText('Works once', { exact: true })).toBeVisible();
+  await expect(handout.getByRole('button', { name: `Send to ${m.displayName}` })).toBeVisible();
+  await handout.getByRole('button', { name: 'Show QR code' }).click();
   await expect(handout.getByRole('img', { name: 'QR code of the link' })).toBeVisible();
-  const url = (await handout.getByLabel('Link', { exact: true }).textContent())!.trim();
-  expect(url).toMatch(/\/reset\/[A-Za-z0-9_-]{43}$/);
+  const url = (await handout.getByLabel('Link', { exact: true }).getAttribute('title'))!;
+  expect(url).toMatch(/^https?:\/\/.+\/reset\/[A-Za-z0-9_-]{43}$/);
 
   // Opened on their own phone, signed out.
   const theirs = await browser.newContext({ storageState: TUTORIAL_SEEN, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

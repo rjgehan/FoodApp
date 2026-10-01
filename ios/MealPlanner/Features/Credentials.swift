@@ -191,89 +191,6 @@ struct CredentialsScreen: View {
 
 // MARK: - The owner's side of a forgotten password
 
-/**
- A one-time link for someone in the house who forgot their password. There is no email sending,
- so the owner hands it over: shared as a message, or held up as a QR code for their camera. The
- person opens it on the web, where it sets a new password and signs them in. Making one retires
- any link made for them before, so it is made once per opening of this sheet.
-*/
-struct PasswordResetSheet: View {
-    var session: Session
-    let member: HouseholdMember
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var link: URL?
-    @State private var error: String?
-    @State private var copied = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                KitchenSection {
-                    Text("Send \(member.shown) this link, or let them scan the code. It lets them choose a new password"
-                         + (member.hasEmail == false ? " and add their email" : "")
-                         + ", then signs them in. It works once, for 24 hours.")
-                        .foregroundStyle(.secondary)
-                }
-                .listRowBackground(Color.clear)
-
-                if let link {
-                    KitchenSection {
-                        Text(link.absoluteString)
-                            .font(.footnote.monospaced())
-                            .textSelection(.enabled)
-                        Button(copied ? "Copied" : "Copy link", systemImage: "doc.on.doc") {
-                            UIPasteboard.general.string = link.absoluteString
-                            copied = true
-                        }
-                        ShareLink(item: link, subject: Text("Reset your Meal Planner password")) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                        }
-                    }
-                    if let qr = QRCode.image(for: link.absoluteString) {
-                        KitchenSection {
-                            Image(uiImage: qr)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: 220)
-                                .padding(8)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 12))
-                                .frame(maxWidth: .infinity)
-                                .accessibilityLabel("QR code of the link")
-                        }
-                        .listRowBackground(Color.clear)
-                    }
-                } else if let error {
-                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
-                } else {
-                    KitchenSection { ProgressView().frame(maxWidth: .infinity) }
-                }
-            }
-            // Their name is in the sentence above; in the title a long one cut "password" off.
-            .kitchenList()
-            .navigationTitle("Reset password")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
-            }
-        }
-        .task { await make() }
-    }
-
-    private func make() async {
-        guard link == nil, error == nil, let household = session.household?.id else { return }
-        do {
-            let made = try await APIClient.shared.makePasswordReset(household: household, user: member.userId)
-            // The same address the web is served from — in production the API and the site
-            // share an origin, which is where the reset page lives.
-            link = URL(string: "\(Config.baseURL)/reset/\(made.token)")
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-}
-
 /// Black-on-white QR codes, drawn by Core Image — no library needed.
 enum QRCode {
     static func image(for text: String) -> UIImage? {
@@ -292,6 +209,3 @@ enum QRCode {
     CredentialsPrompt(session: .preview, me: SampleData.me)
 }
 
-#Preview("Reset link") {
-    PasswordResetSheet(session: .preview, member: SampleData.members[1])
-}

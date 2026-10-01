@@ -197,14 +197,12 @@ test('the recipe page has one filled button, and the rest behind •••', asy
   }
 });
 
-test('sign out lives under Household → You, not in the header', async ({ page }) => {
+test('sign out lives in Settings, behind your initial, not in the header', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
   await expect(page.getByRole('button', { name: /log out|sign out/i })).toHaveCount(0);
-  await page.goto('/household');
-  // The row reads "You" plus your name; the header's avatar is "Your account".
-  await page.getByRole('button', { name: /^You / }).click();
+  await page.getByRole('button', { name: 'Your account' }).click();
   await sheet(page).getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByText("Plan the week together. One list, everyone's phone.")).toBeVisible();
 });
@@ -226,6 +224,11 @@ test('the avatar opens Settings: your account, and the way into the household', 
   await expect(account.getByRole('heading', { name: 'You', exact: true })).toHaveCount(0);
   await account.getByRole('button', { name: 'Close' }).click();
   // Household lost its tab and lives in here now.
-  await settings.getByRole('link', { name: /^Household settings/ }).click();
+  await settings.getByRole('button', { name: /^Household settings/ }).click();
   await expect(page).toHaveURL(/\/household$/);
+  await expect(page.getByRole('heading', { name: hh.name, level: 1 })).toBeVisible();
+  // Its back button is Settings: the page it was opened over, with Settings open again.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(/\/meal-plan$/);
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
 });

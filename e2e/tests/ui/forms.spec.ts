@@ -161,7 +161,7 @@ test('a place menu link typed without https:// is accepted or explained', async 
   const owner = await admin();
   await call('POST', `/api/households/${hh.id}/places`, { token: owner.token, body: { name: 'Diner' } });
   await signIn(page, hh.owner, hh.id);
-  await page.goto('/household');
+  await page.goto('/household/places');
   await page.getByText('Diner', { exact: true }).click();
   await sheet(page).locator('input[type=url]').fill('diner.com/menu');
   await sheet(page).getByRole('button', { name: 'Save' }).click();

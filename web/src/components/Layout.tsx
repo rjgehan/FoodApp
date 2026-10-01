@@ -15,6 +15,8 @@ import { CompactTitleProvider } from './PageTitle';
 import { Icon, type IconName } from './icons';
 import { Toaster } from './toast';
 import type { ThemeScreenState } from '../pages/ThemePage';
+import { JoinHouseholdSheet } from './household/JoinHousehold';
+import type { HouseholdScreenState } from './household/HouseholdParts';
 
 /*
  Named for what is behind each tab. Five, the most a phone tab bar should hold.
@@ -66,6 +68,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const [joining, setJoining] = useState(false);
   const [pushed, setPushed] = useState(false);
   const {
     households,
@@ -256,8 +259,10 @@ export default function Layout({ children }: { children: ReactNode }) {
                   {/* Everything about the house itself — aisles, places, who is here — is a page
                       rather than a sheet: there is a lot of it. */}
                   <Row
-                    to="/household"
-                    onClick={() => setShowSettings(false)}
+                    onClick={() => {
+                      setShowSettings(false);
+                      navigate('/household', { state: { from: location.pathname + location.search } satisfies HouseholdScreenState });
+                    }}
                     lead={<Tile icon="home" tone="herb" size={34} />}
                     title="Household settings"
                     subtitle={activeName}
@@ -312,7 +317,6 @@ export default function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setShowAccount(true)}
                     lead={<Tile icon="key" tone="accent" size={34} />}
                     title="Password & sign-in"
-                    subtitle={me?.email ?? undefined}
                     chevron
                   />
                 </List>
@@ -335,7 +339,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           {showSwitcher && (
             <Sheet title={households.length > 1 ? 'Switch household' : 'Your household'} onClose={() => setShowSwitcher(false)}>
               <div className="space-y-4">
-                <List label="Households" inset={72}>
+                <List label="Households">
                   {households.map((h, i) => (
                     <Row
                       key={h.id}
@@ -352,21 +356,24 @@ export default function Layout({ children }: { children: ReactNode }) {
                     />
                   ))}
                 </List>
+                {/* Somebody else's house: paste or scan the link they sent. */}
                 <Button
                   variant="secondary"
                   size="lg"
                   full
-                  icon="home"
+                  icon="link"
                   onClick={() => {
                     setShowSwitcher(false);
-                    navigate('/household');
+                    setJoining(true);
                   }}
                 >
-                  Household settings
+                  Join with an invite link
                 </Button>
               </div>
             </Sheet>
           )}
+
+          {joining && <JoinHouseholdSheet onClose={() => setJoining(false)} />}
 
           <CredentialsPrompt />
           {/* "Time to restock?" — here so it asks whichever page the app opens on. */}

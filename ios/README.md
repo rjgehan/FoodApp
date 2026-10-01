@@ -141,9 +141,11 @@ Share screen pushed (the public link, your other households, Explore). `-mp_debu
 to plan, the delete question or the Method tab. `-mp_debug_new link -mp_debug_link "<url>"
 -mp_debug_draft 1` shows From a link's draft card with a sample draft, without reading anything.
 
-`-mp_debug_screen household -mp_debug_scroll people` opens Who's here, with the Invite someone
-section; add `-mp_debug_expand 1` to open a password reset link for the first other person, or
-`-mp_debug_expand remove` to ask to remove them (sign in as the owner).
+`-mp_debug_screen household` opens the household page (the Invite card, Who's here, its setup);
+with `-mp_debug_scroll places|setup|aisles|icons|new` it opens that page on top, `qr` the invite's
+Scan to join sheet, and `member` the first other person's owner actions (sign in as the owner) —
+add `-mp_debug_expand 1` to make them a password-reset link there. `-mp_debug_screen settings`
+opens Settings; with any of those `-mp_debug_scroll` values it goes on into the household page.
 
 `-mp_debug_screen theme` opens Settings → Theme, `theme-sheet` the same inside a sheet (as Settings
 shows it), `design` the design system's catalogue, `gallery` the Gallery and `switch` the

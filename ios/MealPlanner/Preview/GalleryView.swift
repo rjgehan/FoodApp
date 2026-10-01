@@ -150,11 +150,30 @@ struct GalleryView: View {
                     entry("Scan an invite", "qrcode.viewfinder") {
                         ScanInviteScreen(session: Session())
                     }
-                    entry("Invite someone", "person.badge.plus") {
+                    entry("Settings", "gearshape") {
+                        SettingsView(session: twoHouses)
+                    }
+                    entry("Household", "house") {
                         NavigationStack {
-                            Form { InviteSection(session: session, sample: SampleData.invite) }
-                                .navigationTitle("Who's here")
+                            HouseholdScreen(session: session, samplePeople: SampleData.people,
+                                            sampleInvite: SampleData.invite, samplePlaces: SampleData.places,
+                                            sampleAisles: SampleData.storeAisles)
                         }
+                    }
+                    entry("Invite — scan to join", "qrcode") {
+                        InviteQRSheet(session: session, people: 4, link: SampleData.invite) { _ in }
+                    }
+                    entry("Someone in the house — owner actions", "person.crop.circle.badge.exclamationmark") {
+                        MemberSheet(session: session, member: SampleData.people[2], tone: .sky) {}
+                    }
+                    entry("Places we eat", "storefront") {
+                        NavigationStack { PlacesScreen(session: session, sample: SampleData.places) }
+                    }
+                    entry("Name, servings & planning", "slider.horizontal.3") {
+                        NavigationStack { HouseholdBasicsScreen(session: session) }
+                    }
+                    entry("Store aisles", "list.bullet") {
+                        NavigationStack { AislesScreen(session: session, sample: SampleData.storeAisles) }
                     }
                     entry("Recipe", "text.book.closed") {
                         NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: session) }

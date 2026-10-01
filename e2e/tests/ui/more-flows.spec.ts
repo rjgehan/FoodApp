@@ -283,14 +283,17 @@ test('household: reorder an aisle and the list follows', async ({ page }) => {
   await signIn(page, hh.owner, hh.id);
   await page.goto('/household');
   await page.getByRole('button', { name: /^Store aisles/ }).click();
-  // Walk Dairy & eggs to the top. The arrows are also disabled while a move is saving, so a
-  // disabled one is not proof it has arrived: ask the server instead.
-  const up = page.getByRole('button', { name: 'Move Dairy & eggs earlier' });
+  await expect(page).toHaveURL(/\/household\/aisles$/);
+  // Walk Dairy & eggs to the top from the keyboard: its grip takes the arrow keys. Each step is
+  // saved behind the move, so ask the server whether it has arrived rather than the page.
+  const grip = page.getByRole('button', { name: 'Move Dairy & eggs', exact: true });
   await expect(async () => {
-    if (await up.isEnabled()) await up.click();
+    await grip.focus();
+    await page.keyboard.press('ArrowUp');
     const aisles = await call('GET', `/api/households/${hh.id}/categories`, { token: owner.token });
     expect(aisles.sort((a: any, b: any) => a.position - b.position)[0].name).toBe('Dairy & eggs');
   }).toPass({ timeout: 15_000 });
+  await expect(page.getByRole('list', { name: 'Store aisles' }).getByRole('listitem').first()).toContainText('Dairy & eggs');
   await page.goto('/grocery-list');
   const [milk, apples] = await Promise.all([page.getByText('milk', { exact: true }).boundingBox(), page.getByText('apples', { exact: true }).boundingBox()]);
   expect(milk!.y).toBeLessThan(apples!.y);

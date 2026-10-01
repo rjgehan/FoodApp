@@ -4,7 +4,7 @@ import type { AdminRecipeDetail } from '../api/types';
 import { AdminBack, formatDay, LoadError, RecipeBadges, useAdminData } from '../components/AdminParts';
 import LinkList from '../components/LinkList';
 import { PageTitle } from '../components/PageTitle';
-import { Card, cx, EmptyState } from '../components/ui';
+import { Card, EmptyState, Photo, StepNumber } from '../components/ui';
 import { formatMinutes, formatQuantity, instructionSteps } from '../utils/recipeFormat';
 import { sectionLabel } from '../utils/recipeMeta';
 
@@ -27,12 +27,15 @@ export default function AdminRecipePage() {
       {!data && !error && <p className="py-8 text-center text-sm text-muted">Loading…</p>}
       {data && recipe && (
         <>
-          {recipe.coverImageId && (
+          {recipe.coverImageId ? (
             <img
               src={imageUrl(recipe.coverImageId)}
               alt={recipe.name}
-              className="aspect-[4/3] w-full rounded-2xl object-cover md:aspect-[16/7]"
+              className="aspect-[4/3] w-full rounded-card object-cover md:aspect-[16/7]"
             />
+          ) : (
+            // No photo: the recipe's own food colour, as everywhere else in the app.
+            <Photo seed={recipe.id} large className="aspect-[16/7] w-full rounded-card" />
           )}
 
           <div>
@@ -67,9 +70,9 @@ export default function AdminRecipePage() {
             {recipe.ingredients.length === 0 ? (
               <EmptyState>No ingredients.</EmptyState>
             ) : (
-              <ul className="divide-y divide-line">
+              <ul className="card card-rows inset-rows">
                 {recipe.ingredients.map((i) => (
-                  <li key={i.id} className="flex items-baseline gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <li key={i.id} className="flex items-baseline gap-3 px-4 py-3">
                     <span className="w-24 shrink-0 font-medium tabular-nums">
                       {formatQuantity(i.quantity)} {i.unit}
                     </span>
@@ -89,15 +92,8 @@ export default function AdminRecipePage() {
               <ol className="space-y-3">
                 {steps.map((step, i) => (
                   <li key={i} className="flex gap-3">
-                    <span
-                      className={cx(
-                        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                        'bg-accent-soft text-sm font-semibold text-accent-ink',
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed">{step}</span>
+                    <StepNumber n={i + 1} />
+                    <span className="pt-0.5 leading-relaxed">{step}</span>
                   </li>
                 ))}
               </ol>
