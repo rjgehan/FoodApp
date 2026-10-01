@@ -130,7 +130,8 @@ struct PublicRecipeScreen: View {
                     HStack {
                         Text("Ingredients").titleFont(20).foregroundStyle(Palette.text)
                         Spacer()
-                        ServingsStepper(value: shown) { servings = $0 }
+                        // The Plan's shared stepper; the amounts follow it, nothing is saved.
+                        ServingsStepper(value: Binding(get: { shown }, set: { servings = $0 }), label: true)
                     }
                     .padding(.top, 4)
                     ListGroup {
@@ -325,34 +326,6 @@ private struct HeroPictures: View {
         }
         .clipped()
         .accessibilityHidden(true)
-    }
-}
-
-/// − 4 servings +, the mockup's stepper: the amounts follow it, nothing is saved.
-private struct ServingsStepper: View {
-    let value: Int
-    let onChange: (Int) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            knob("minus", label: "Fewer servings") { onChange(max(1, value - 1)) }
-                .disabled(value <= 1)
-            Text("\(value) \(value == 1 ? "serving" : "servings")")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Palette.text)
-                .monospacedDigit()
-            knob("plus", label: "More servings") { onChange(min(99, value + 1)) }
-        }
-        .padding(3)
-        .background(Palette.surface2, in: Capsule())
-    }
-
-    private func knob(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            IconButtonFace(systemImage: systemImage, size: 26)
-        }
-        .buttonStyle(PressFade())
-        .accessibilityLabel(label)
     }
 }
 
