@@ -61,12 +61,12 @@ struct SavedLinksView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let error {
-                    Text(error).foregroundStyle(.red).font(.callout)
+                    Text(error).foregroundStyle(Palette.danger).font(.callout)
                 }
                 if let notice {
                     Label(notice, systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Palette.success)
+                        .foregroundStyle(Palette.herb)
                         .transition(.opacity)
                 }
                 if sources.count > 1 || !drawers.isEmpty {
@@ -106,6 +106,7 @@ struct SavedLinksView: View {
             }
             .padding(16)
         }
+        .pageBackground()
         .navigationTitle("Saved links")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search saved links")
@@ -196,7 +197,7 @@ struct SavedLinksView: View {
                 .font(.subheadline.weight(on ? .semibold : .regular))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(on ? Palette.accent : Color(.tertiarySystemFill), in: Capsule())
+                .background(on ? Palette.accent : Palette.surface2, in: Capsule())
                 .foregroundStyle(on ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
@@ -418,7 +419,7 @@ struct SaveLinkSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     TextField("Paste a TikTok, Reel or recipe link", text: $url)
                         .keyboardType(.URL)
                         .textContentType(.URL)
@@ -430,15 +431,16 @@ struct SaveLinkSheet: View {
                 } footer: {
                     Text("Its name and picture are filled in from the page.")
                 }
-                Section {
+                KitchenSection {
                     Toggle("Just me", isOn: $personal)
                 } footer: {
                     Text("Only you will see it. Otherwise everyone in the household can.")
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
+            .kitchenList()
             .navigationTitle("Save a link")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -490,10 +492,10 @@ struct SavedLinkImportSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     Text(link.name).font(.headline)
                     if let error {
-                        Text(error).foregroundStyle(.red)
+                        Text(error).foregroundStyle(Palette.danger)
                     } else {
                         TimelineView(.periodic(from: since, by: 1)) { context in
                             HStack(spacing: 10) {
@@ -508,7 +510,7 @@ struct SavedLinkImportSheet: View {
                     }
                 }
                 if error != nil {
-                    Section {
+                    KitchenSection {
                         Button("Make it a recipe", systemImage: "square.and.pencil") { draft = typedOut }
                         Button("Keep the link", systemImage: "link") { dismiss() }
                     } footer: {
@@ -516,6 +518,7 @@ struct SavedLinkImportSheet: View {
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Try importing again")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

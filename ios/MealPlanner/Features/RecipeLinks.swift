@@ -117,7 +117,7 @@ struct LinksSection: View {
     @FocusState private var focused: UUID?
 
     var body: some View {
-        Section {
+        KitchenSection {
             ForEach($links) { $link in
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("https://…", text: $link.url)

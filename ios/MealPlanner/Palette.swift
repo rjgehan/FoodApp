@@ -1,113 +1,127 @@
 import SwiftUI
+import UIKit
 
 /**
- The app's colours, and the same ones the web uses.
+ The app's colours: the 21 tokens of the theme in force (Features/Design/ThemeTokens.swift),
+ each one light or dark as the screen is. Views take every colour from here, never a hex value
+ or one of UIKit's greys, so a theme repaints all of it.
 
- Every value here has a twin in `web/src/index.css`. They are written out rather than derived
- because there is no way to share a stylesheet between SwiftUI and Tailwind — so the rule is
- that neither side invents a colour, and a change happens in both files or not at all.
+   bg / surface / surface2   the page, a card on it, a well or a segmented control's track
+   text / muted / faint      body text, secondary text, placeholders and quiet icons
+   border                    hairlines and card edges
+   accent                    the filled primary button, the selected thing
+   accentSoft / accentInk    tinted fills / accent-coloured text, links, the tab you are on
+   onAccent                  text and icons on a filled accent
+   herb, mustard, plum, sky  good, warning, eating out, cupboard — each with a Soft fill
+   tab, scrim                the tab bar's frosted fill, the shade behind a sheet
 
- The greys are deliberately absent. UIKit's semantic colours already say "page", "card" and
- "separator", they adapt to dark mode and Increase Contrast on their own, and they are what
- the rest of the system is drawn with:
-
-   Color(.systemGroupedBackground)           the page, the well a card sits on
-   Color(.secondarySystemGroupedBackground)  the card
-   Color(.separator)                         a hairline between rows
-
- What is here is what UIKit cannot know: the orange that means "you can act", and the six
- tints that make a recipe recognisable when you flip past it.
-
- The orange and its tint are Classic, the default. Somebody who picks other colours in Settings
- → Appearance gets theirs instead (Theme.swift): the accent, the tint and the text on it are read
- from ThemeStore each time, which is also what redraws a view when the pick changes.
+ They are read from ThemeStore each time, which is also what redraws a view when the theme
+ changes. `Palette.ui` has the same colours for UIKit.
  */
 enum Palette {
+    static var bg: Color { token(\.bg) }
+    static var surface: Color { token(\.surface) }
+    static var surface2: Color { token(\.surface2) }
+    static var text: Color { token(\.text) }
+    static var muted: Color { token(\.muted) }
+    static var faint: Color { token(\.faint) }
+    static var border: Color { token(\.border) }
+    static var accent: Color { token(\.accent) }
+    static var accentSoft: Color { token(\.accentSoft) }
+    static var onAccent: Color { token(\.onAccent) }
+    static var accentInk: Color { token(\.accentInk) }
+    static var herb: Color { token(\.herb) }
+    static var herbSoft: Color { token(\.herbSoft) }
+    static var mustard: Color { token(\.mustard) }
+    static var mustardSoft: Color { token(\.mustardSoft) }
+    static var plum: Color { token(\.plum) }
+    static var plumSoft: Color { token(\.plumSoft) }
+    static var sky: Color { token(\.sky) }
+    static var skySoft: Color { token(\.skySoft) }
+    static var tab: Color { token(\.tab) }
+    static var scrim: Color { token(\.scrim) }
 
-    /// The one colour that means "you can act". Without it every button is Apple's blue,
-    /// which is the single clearest sign that nobody chose anything.
-    static var accent: Color {
-        guard let c = ThemeStore.shared.colors else { return classicAccent }
-        return dynamic(light: c.light.accent, dark: c.dark.accent)
+    /// Something wrong — a failed save, a destructive action. The mockup has no red of its own
+    /// and uses the accent's ink, which in Tomato is already a tomato red.
+    static var danger: Color { accentInk }
+
+    /// The card shadow (`--shadow`): a soft two-layer drop in light, nothing visible in dark.
+    static var shadow: Color { Color(dynamic(light: RGBA(rgb: 0x2B211A, alpha: 0.06), dark: RGBA(rgb: 0, alpha: 0))) }
+
+    /// A token as a SwiftUI colour that follows light and dark.
+    static func token(_ key: KeyPath<ThemeTokens, RGBA>) -> Color {
+        Color(ui(key))
     }
-    private static let classicAccent = dynamic(light: 0xEA580C, dark: 0xFF9F40)
-
-    /// "You have this" — the only other colour that carries meaning. Green in both schemes,
-    /// the web's --success, which is darker than Apple's green in light mode so it reads as
-    /// text rather than as a tick.
-    static let success = dynamic(light: 0x248A3D, dark: 0x30D158)
-
-    /// The second colour at a whisper — behind an avatar, a notice, a selected icon. The web's
-    /// --secondary-soft: in Classic a warm tint in light and a dark ember in dark, not the
-    /// accent at low opacity.
-    static var secondarySoft: Color {
-        guard let c = ThemeStore.shared.colors else { return classicSoft }
-        return dynamic(light: c.light.secondarySoft, dark: c.dark.secondarySoft)
-    }
-    private static let classicSoft = dynamic(light: 0xFFEDD5, dark: 0x402008)
-
-    /// Text and icons on `secondarySoft` — the web's --secondary. Classic's is its orange.
-    static var secondary: Color {
-        guard let c = ThemeStore.shared.colors else { return classicAccent }
-        return dynamic(light: c.light.secondary, dark: c.dark.secondary)
-    }
-
-    /// The tint's old name, from before there was a second colour to tint it with.
-    static var accentSoft: Color { secondarySoft }
-
-    /// Text and icons on a solid accent fill — the web's --accent-ink. Worked out per theme
-    /// (Theme.swift), white or near-black, whichever reads on that accent; Classic's is white in
-    /// light and near-black on the bright orange dark mode uses.
-    static var accentInk: Color {
-        guard let c = ThemeStore.shared.colors else { return classicInk }
-        return dynamic(light: c.light.accentInk, dark: c.dark.accentInk)
-    }
-    private static let classicInk = dynamic(light: 0xFFFFFF, dark: 0x1C1917)
-
-    /// "You have this" at a whisper, behind something already in the cupboard or a Done badge —
-    /// the web's --success-soft.
-    static let successSoft = dynamic(light: 0xDEF7E5, dark: 0x082C12)
 
     /**
-     Recipe tints, in the web's order so the same recipe is the same colour in both places.
-
-     Pastel in light and deep in dark, rather than one colour at low opacity: a tint that is
-     only a faded accent reads as a disabled state, and six faded accents read as one mistake
-     repeated six times.
-    */
-    private static let covers: [Color] = [
-        dynamic(light: 0xFBE3CE, dark: 0x5A3620),
-        dynamic(light: 0xF8EAD0, dark: 0x53431D),
-        dynamic(light: 0xE2ECDB, dark: 0x2D4A2B),
-        dynamic(light: 0xF2DEE6, dark: 0x4C2C3C),
-        dynamic(light: 0xDDE8F1, dark: 0x27404F),
-        dynamic(light: 0xEEE4D9, dark: 0x473A2F),
-    ]
-
-    /// One of the six by position, for the handful of places that choose a tint deliberately
-    /// rather than deriving it from a name.
-    static func cover(index: Int) -> Color { covers[index % covers.count] }
-
-    /// The same hash the web's `coverClass` uses, over the same six colours, so a group keeps
-    /// its colour across both — and keeps it between launches, which is what makes it useful.
-    static func cover(for id: String) -> Color {
-        var hash: UInt32 = 0
-        for scalar in id.unicodeScalars { hash = hash &* 31 &+ scalar.value }
-        return covers[Int(hash % UInt32(covers.count))]
+     A token for UIKit: the bars, the switch, the segmented control. Without a style it is read
+     from the theme in force each time it is drawn, not when it was made: a view that has not
+     been redrawn since the theme changed (a sheet that was already up) still paints in the new
+     one when light or dark flips under it.
+     */
+    static func ui(_ key: KeyPath<ThemeTokens, RGBA>, in style: ThemeStyle? = nil) -> UIColor {
+        if let style {
+            return dynamic(light: style.light[keyPath: key], dark: style.dark[keyPath: key])
+        }
+        let store = ThemeStore.shared
+        return UIColor { traits in
+            let tokens = traits.userInterfaceStyle == .dark ? store.style.dark : store.style.light
+            return tokens[keyPath: key].uiColor
+        }
     }
 
-    static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
+    private static func dynamic(light: RGBA, dark: RGBA) -> UIColor {
+        let l = light.uiColor, d = dark.uiColor
+        return UIColor { $0.userInterfaceStyle == .dark ? d : l }
+    }
+
+    /**
+     A recognisable soft fill for a group or section tile, by position: the five tones' Soft
+     colours and the well, in the theme's colours. A tile on it takes `coverInk` for its icon.
+    */
+    private static let coverTones: [Tone] = [.accent, .mustard, .herb, .plum, .sky, .neutral]
+
+    static func cover(index: Int) -> Color { coverTones[index % coverTones.count].soft }
+
+    /// The same hash the web's `coverClass` uses, so a group keeps its colour across both — and
+    /// keeps it between launches, which is what makes it useful.
+    static func cover(for id: String) -> Color { coverTone(for: id).soft }
+
+    static func coverTone(for id: String) -> Tone {
+        var hash: UInt32 = 0
+        for scalar in id.unicodeScalars { hash = hash &* 31 &+ scalar.value }
+        return coverTones[Int(hash % UInt32(coverTones.count))]
     }
 }
 
-private extension UIColor {
-    convenience init(rgb: UInt32) {
-        self.init(
-            red: CGFloat((rgb >> 16) & 0xFF) / 255,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255,
-            blue: CGFloat(rgb & 0xFF) / 255,
-            alpha: 1
-        )
+/**
+ The meaning-carrying colours as a pair each — the soft fill and the ink that reads on it — the
+ mockup's `pill(…, tone)`, `tile(…, tone)` and `noteBox(…, tone)`.
+ */
+enum Tone: String, CaseIterable, Hashable {
+    case accent, herb, mustard, plum, sky, neutral
+
+    /// The fill behind it.
+    var soft: Color {
+        switch self {
+        case .accent: return Palette.accentSoft
+        case .herb: return Palette.herbSoft
+        case .mustard: return Palette.mustardSoft
+        case .plum: return Palette.plumSoft
+        case .sky: return Palette.skySoft
+        case .neutral: return Palette.surface2
+        }
+    }
+
+    /// Text and icons on `soft` (and the tone on its own, as text).
+    var ink: Color {
+        switch self {
+        case .accent: return Palette.accentInk
+        case .herb: return Palette.herb
+        case .mustard: return Palette.mustard
+        case .plum: return Palette.plum
+        case .sky: return Palette.sky
+        case .neutral: return Palette.muted
+        }
     }
 }

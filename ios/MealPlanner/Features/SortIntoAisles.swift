@@ -34,7 +34,7 @@ struct SortIntoAislesSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     if unplaced.isEmpty {
                         Text("Everything on the list is already in an aisle.")
                     } else {
@@ -55,11 +55,11 @@ struct SortIntoAislesSheet: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
 
                 if placing {
-                    Section {
+                    KitchenSection {
                         HStack(spacing: 10) {
                             ProgressView()
                             Text("Placed \(placed) of \(unplaced.count)…")
@@ -67,6 +67,7 @@ struct SortIntoAislesSheet: View {
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Sort into aisles")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

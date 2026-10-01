@@ -39,5 +39,16 @@
 	<string>To use one of your photos as a recipe's picture.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Meal Planner talks to the kitchen server on your home network.</string>
+	<!--
+	  The title faces (MealPlanner/Fonts, SIL OFL, licences beside them). Fraunces is every
+	  theme's title font except Blueberry's (Nunito) and Nordic's (Inter); UI text stays SF Pro.
+	  All three are variable fonts: Typography.swift sets their axes.
+	-->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fraunces.ttf</string>
+		<string>Nunito.ttf</string>
+		<string>Inter.ttf</string>
+	</array>
 </dict>
 </plist>

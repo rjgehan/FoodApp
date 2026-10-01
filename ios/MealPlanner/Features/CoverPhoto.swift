@@ -56,12 +56,12 @@ struct CoverPhotoSection: View {
     private var named: String { dishName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        Section {
+        KitchenSection {
             if let coverImageId, let url = APIClient.shared.imageURL(coverImageId) {
                 AsyncImage(url: url) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Color(.secondarySystemGroupedBackground)
+                    Palette.surface
                 }
                 .frame(height: 170)
                 .frame(maxWidth: .infinity)
@@ -112,7 +112,7 @@ struct CoverPhotoSection: View {
             .disabled(flow.uploading)
 
             if let error = flow.error {
-                Text(error).font(.footnote).foregroundStyle(.red)
+                Text(error).font(.footnote).foregroundStyle(Palette.danger)
             }
         } header: {
             Text("Photo")
@@ -327,10 +327,11 @@ struct CoverPhotoSheet: View {
             Form {
                 CoverPhotoSection(dishName: recipe.name, session: session, coverImageId: $coverImageId, flow: cover)
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
             .coverPhotoFlow(cover, session: session, coverImageId: $coverImageId)
+            .kitchenList()
             .navigationTitle(recipe.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

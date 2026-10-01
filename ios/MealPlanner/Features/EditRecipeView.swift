@@ -110,14 +110,14 @@ struct EditRecipeView: View {
         ScrollViewReader { scroller in
             Form {
                 if let draftNote {
-                    Section {
+                    KitchenSection {
                         Label(draftNote, systemImage: "checklist")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                Section("Recipe") {
+                KitchenSection("Recipe") {
                     TextField("Name", text: $name)
                     TextField("Description", text: $summary, axis: .vertical)
                     Stepper("Serves \(servings)", value: $servings, in: 1...40)
@@ -131,7 +131,7 @@ struct EditRecipeView: View {
                  recipe already had straight back, which meant a recipe written here always
                  landed in Dinner with no groups and there was no way to move it.
                 */
-                Section {
+                KitchenSection {
                     Picker("Drawer", selection: $section) {
                         ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
@@ -167,12 +167,12 @@ struct EditRecipeView: View {
                          : "Tap a group to file it there. A recipe can be on more than one shelf.")
                 }
 
-                Section("Time") {
+                KitchenSection("Time") {
                     Stepper("Prep \(prep) min", value: $prep, in: 0...600, step: 5)
                     Stepper("Cook \(cook) min", value: $cook, in: 0...600, step: 5)
                 }
 
-                Section {
+                KitchenSection {
                     ForEach($ingredients) { $row in
                         HStack(spacing: 8) {
                             TextField("qty", text: $row.amount)
@@ -199,7 +199,7 @@ struct EditRecipeView: View {
                     Text("Opt marks an optional extra — the plan asks whether you are buying it each time the meal goes on.")
                 }
 
-                Section("Method") {
+                KitchenSection("Method") {
                     TextField("One step per line", text: $instructions, axis: .vertical)
                         .lineLimit(6...20)
                 }
@@ -207,7 +207,7 @@ struct EditRecipeView: View {
                 LinksSection(links: $links)
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
             }
             #if DEBUG
@@ -237,6 +237,7 @@ struct EditRecipeView: View {
         } message: {
             Text("It's already in your recipes — the same link or the same name.")
         }
+        .kitchenList()
         .navigationTitle(recipe == nil ? "New recipe" : "Edit recipe")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -393,8 +394,8 @@ private struct OptionalTag: View {
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(isOn ? Palette.secondarySoft : Color(.tertiarySystemFill), in: Capsule())
-                .foregroundStyle(isOn ? Palette.secondary : Color(.secondaryLabel))
+                .background(isOn ? Palette.accentSoft : Palette.surface2, in: Capsule())
+                .foregroundStyle(isOn ? Palette.accentInk : Color(.secondaryLabel))
         }
         .buttonStyle(.borderless)
         .accessibilityLabel("Optional")

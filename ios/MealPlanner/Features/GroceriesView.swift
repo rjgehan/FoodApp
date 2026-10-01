@@ -48,7 +48,7 @@ struct GroceriesView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                KitchenSection {
                     HStack(spacing: 10) {
                         TextField("Add something — 2 lb chicken, milk…", text: $draft)
                             .submitLabel(.done)
@@ -68,21 +68,21 @@ struct GroceriesView: View {
                     Text(toBuy.isEmpty ? "Nothing to buy" : "\(toBuy.count) to buy")
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
                 if copied {
-                    Section {
+                    KitchenSection {
                         Label(
                             "Copied. In Notes: paste, select the lines, then tap the checklist button.",
                             systemImage: "checkmark.circle.fill"
                         )
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.herb)
                         .font(.footnote)
                     }
                 }
 
                 ForEach(groups, id: \.category?.id) { group in
-                    Section(group.category?.name ?? "Unsorted") {
+                    KitchenSection(group.category?.name ?? "Unsorted") {
                         ForEach(group.items) { item in
                             row(item)
                                 .swipeActions {
@@ -96,7 +96,7 @@ struct GroceriesView: View {
                 }
 
                 if !inCart.isEmpty {
-                    Section("Got it") {
+                    KitchenSection("Got it") {
                         ForEach(inCart) { item in
                             row(item)
                                 .swipeActions {
@@ -107,13 +107,14 @@ struct GroceriesView: View {
                                 }
                         }
                     }
-                    Section {
+                    KitchenSection {
                         Button("Done shopping", systemImage: "bag.badge.checkmark") { puttingAway = true }
                     } footer: {
                         Text("Everything ticked comes off the list and goes into the cupboard.")
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Groceries")
             .sheet(item: $reminding) { item in
                 if let ingredient = item.ingredientId {

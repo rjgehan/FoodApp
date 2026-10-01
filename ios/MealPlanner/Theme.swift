@@ -3,55 +3,49 @@ import SwiftUI
 import UIKit
 
 /**
- Each person's colours, the same ones the web uses: kept on the server (PUT /api/users/me/theme)
- so they follow you between the phone and the web, and cached here so the app opens in them.
+ Each person's theme, the same one the web uses: kept on the server (PUT /api/users/me/theme) so
+ it follows you between the phone and the web, and cached here so the app opens in it.
 
- What the two colours drive is written up in web/src/theme/colors.ts, and the arithmetic below is
- that file's, step for step, so a custom pair comes out the same on both:
-
-   primary    Palette.accent — buttons, links, the tab you are on, ticks, switches.
-   secondary  Palette.secondarySoft — the tinted fills: your initial, notices, a selected icon —
-              with Palette.secondary for the text and icons on them.
-
- Everything nil is the app as it has always looked: Classic, following the phone's light or dark.
+ A theme is one of the five presets (Tomato, Matcha, Blueberry, Brunch, Nordic — their colours
+ are in Features/Design/ThemeTokens.swift) or Custom, your own accent on Tomato's neutrals; and
+ Light, Dark or System on top. Everything nil is Tomato following the phone.
  */
 struct Theme: Codable, Hashable {
-    /// A preset's key, "custom", or nil for Classic.
+    /// A preset's key, "custom", or nil for Tomato. Older apps and servers used other keys
+    /// ("classic", "basil"…); `activeKey` reads those as the theme that replaced them.
     var preset: String?
-    /// The custom pair as #RRGGBB, kept while a preset is on so Custom finds them again.
+    /// Custom's accent as #RRGGBB, kept while a preset is on so Custom finds it again.
     var primary: String?
+    /// The server wants two colours for Custom (the old design had a second one). Sent as the
+    /// accent when there is nothing else, and otherwise left alone.
     var secondary: String?
     var mode: ThemeMode?
 
     static let standard = Theme()
 
-    /// Which one is on: "classic" for the default, "custom" for your own pair.
+    /// Which one is on, in the new keys: "tomato" for the default, "custom" for your own colour.
     var activeKey: String {
-        if preset == ThemePreset.custom, primary != nil, secondary != nil { return ThemePreset.custom }
-        if let preset, ThemePreset.named(preset) != nil { return preset }
-        return "classic"
+        if preset == ThemePreset.custom, primary != nil { return ThemePreset.custom }
+        return ThemePreset.canonical(preset)
     }
 
-    /// The pair in force, for a swatch.
-    var pair: (primary: String, secondary: String) {
-        if activeKey == ThemePreset.custom, let primary, let secondary { return (primary, secondary) }
-        let p = ThemePreset.named(activeKey) ?? ThemePreset.all[0]
-        return (p.primary, p.secondary)
+    /// Every colour and the title face in force.
+    var style: ThemeStyle {
+        if activeKey == ThemePreset.custom, let primary { return .custom(accent: primary) }
+        return ThemeStyle.preset(activeKey) ?? .tomato
     }
 
-    /// Classic is Palette's own values; anything else is worked out from its pair.
-    var colors: ThemeColors? {
-        activeKey == "classic" ? nil : ThemeColors(primary: pair.primary, secondary: pair.secondary)
+    /// The same choice with the preset in the new keys — what is cached, shown and sent back.
+    var normalized: Theme {
+        var next = self
+        if let preset, preset != ThemePreset.custom { next.preset = ThemePreset.canonical(preset) }
+        if next.preset == ThemePreset.custom, next.primary == nil { next.preset = ThemePreset.tomato }
+        return next
     }
 
-    /// What the Settings row says.
+    /// What the Settings row says: "Tomato · System".
     var summary: String {
-        let name = activeKey == ThemePreset.custom ? "Custom" : ThemePreset.named(activeKey)?.name ?? "Classic"
-        switch mode {
-        case .light: return "\(name), light"
-        case .dark: return "\(name), dark"
-        default: return name
-        }
+        "\(style.name) · \((mode ?? .system).label)"
     }
 }
 
@@ -62,7 +56,7 @@ enum ThemeMode: String, Codable, CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .system: return "Auto"
+        case .system: return "System"
         case .light: return "Light"
         case .dark: return "Dark"
         }
@@ -85,167 +79,29 @@ enum ThemeMode: String, Codable, CaseIterable, Hashable {
     }
 }
 
-/// The eight pairs, in the web's order and with the web's keys (web/src/theme/theme.ts, and
-/// ThemeSettings.java on the server). Classic's colours are only for its swatch.
-struct ThemePreset: Identifiable, Hashable {
-    let key: String
-    let name: String
-    let primary: String
-    let secondary: String
-    var id: String { key }
-
+/// The preset keys the web, this app and the server share.
+enum ThemePreset {
+    static let tomato = "tomato"
     static let custom = "custom"
+    static let keys = ["tomato", "matcha", "blueberry", "brunch", "nordic"]
 
-    static let all: [ThemePreset] = [
-        ThemePreset(key: "classic", name: "Classic", primary: "#EA580C", secondary: "#FDBA74"),
-        ThemePreset(key: "basil", name: "Basil", primary: "#15803D", secondary: "#EAB308"),
-        ThemePreset(key: "lagoon", name: "Lagoon", primary: "#0F766E", secondary: "#F97316"),
-        ThemePreset(key: "ocean", name: "Ocean", primary: "#0369A1", secondary: "#14B8A6"),
-        ThemePreset(key: "blueberry", name: "Blueberry", primary: "#4F46E5", secondary: "#EC4899"),
-        ThemePreset(key: "plum", name: "Plum", primary: "#7E22CE", secondary: "#F472B6"),
-        ThemePreset(key: "mocha", name: "Mocha", primary: "#7C4A2D", secondary: "#D4A373"),
-        ThemePreset(key: "graphite", name: "Graphite", primary: "#334155", secondary: "#0EA5E9"),
+    /**
+     The eight presets of the old design, read as the theme that replaced each. The server
+     migrates its rows once, but an account can still arrive with an old key — from a server not
+     yet updated, or saved by an old build of this app — and it should look like what it became.
+     */
+    static let legacy: [String: String] = [
+        "classic": "tomato", "mocha": "tomato",
+        "basil": "matcha", "lagoon": "matcha",
+        "ocean": "blueberry", "blueberry": "blueberry", "plum": "blueberry",
+        "graphite": "nordic",
     ]
 
-    static func named(_ key: String?) -> ThemePreset? { all.first { $0.key == key } }
-}
-
-// MARK: - Working out a palette from two colours
-
-/// One mode's derived colours, as 0xRRGGBB.
-struct ModeColors: Hashable {
-    let accent: UInt32
-    let accentInk: UInt32
-    let secondary: UInt32
-    let secondarySoft: UInt32
-}
-
-/// Both modes' colours from a pair. The same steps and numbers as colors.ts's deriveColors.
-struct ThemeColors: Hashable {
-    let light: ModeColors
-    let dark: ModeColors
-
-    private static let white: UInt32 = 0xFFFFFF
-    private static let darkSurface: UInt32 = 0x1C1C1E
-    private static let darkInk: UInt32 = 0x1C1917
-
-    /// Palette's own values, for the preview of Classic.
-    static let classic = ThemeColors(
-        light: ModeColors(accent: 0xEA580C, accentInk: 0xFFFFFF, secondary: 0xEA580C, secondarySoft: 0xFFEDD5),
-        dark: ModeColors(accent: 0xFF9F40, accentInk: 0x1C1917, secondary: 0xFF9F40, secondarySoft: 0x402008)
-    )
-
-    init(light: ModeColors, dark: ModeColors) {
-        self.light = light
-        self.dark = dark
-    }
-
-    init(primary: String, secondary: String) {
-        let p = Self.rgb(primary) ?? 0xEA580C
-        let s = Self.rgb(secondary) ?? 0xFDBA74
-
-        let lightAccent = Self.untilReadable(p, against: Self.white, min: 3.5, towards: -1)
-        let lightSoft = Self.tint(s, lightness: 0.92)
-        let darkAccent = Self.untilReadable(p, against: Self.darkSurface, min: 6, towards: 1)
-        let darkSoft = Self.tint(s, lightness: 0.15, maxSaturation: 0.75)
-
-        light = ModeColors(
-            accent: lightAccent,
-            accentInk: Self.inkOn(lightAccent),
-            secondary: Self.untilReadable(s, against: lightSoft, min: 4.5, towards: -1),
-            secondarySoft: lightSoft
-        )
-        dark = ModeColors(
-            accent: darkAccent,
-            accentInk: Self.inkOn(darkAccent),
-            secondary: Self.untilReadable(s, against: darkSoft, min: 4.5, towards: 1),
-            secondarySoft: darkSoft
-        )
-    }
-
-    /// "#EA580C" or "ea580c" → 0xEA580C; anything else → nil.
-    static func rgb(_ hex: String) -> UInt32? {
-        var h = hex.trimmingCharacters(in: .whitespaces)
-        if h.hasPrefix("#") { h.removeFirst() }
-        guard h.count == 6, h.allSatisfy(\.isHexDigit) else { return nil }
-        return UInt32(h, radix: 16)
-    }
-
-    static func hex(_ rgb: UInt32) -> String { String(format: "#%06X", rgb) }
-
-    private static func channels(_ c: UInt32) -> (Double, Double, Double) {
-        (Double((c >> 16) & 0xFF), Double((c >> 8) & 0xFF), Double(c & 0xFF))
-    }
-
-    static func luminance(_ c: UInt32) -> Double {
-        func lin(_ v: Double) -> Double {
-            let s = v / 255
-            return s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
-        }
-        let (r, g, b) = channels(c)
-        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-    }
-
-    static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
-        let la = luminance(a), lb = luminance(b)
-        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
-    }
-
-    private static func hsl(_ c: UInt32) -> (Double, Double, Double) {
-        let (r, g, b) = channels(c)
-        let rn = r / 255, gn = g / 255, bn = b / 255
-        let mx = max(rn, gn, bn), mn = min(rn, gn, bn)
-        let l = (mx + mn) / 2
-        if mx == mn { return (0, 0, l) }
-        let d = mx - mn
-        let s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn)
-        var h: Double
-        if mx == rn { h = (gn - bn) / d + (gn < bn ? 6 : 0) }
-        else if mx == gn { h = (bn - rn) / d + 2 }
-        else { h = (rn - gn) / d + 4 }
-        return (h * 60, s, l)
-    }
-
-    private static func fromHsl(_ h: Double, _ s: Double, _ l: Double) -> UInt32 {
-        let c = (1 - abs(2 * l - 1)) * s
-        let hp = (h.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) / 60
-        let x = c * (1 - abs(hp.truncatingRemainder(dividingBy: 2) - 1))
-        let (r1, g1, b1): (Double, Double, Double)
-        switch hp {
-        case ..<1: (r1, g1, b1) = (c, x, 0)
-        case ..<2: (r1, g1, b1) = (x, c, 0)
-        case ..<3: (r1, g1, b1) = (0, c, x)
-        case ..<4: (r1, g1, b1) = (0, x, c)
-        case ..<5: (r1, g1, b1) = (x, 0, c)
-        default: (r1, g1, b1) = (c, 0, x)
-        }
-        let m = l - c / 2
-        // JavaScript's Math.round: halves go up, which Swift's .rounded() does not do for negatives.
-        func byte(_ v: Double) -> UInt32 { UInt32(max(0, min(255, floor((v + m) * 255 + 0.5)))) }
-        return byte(r1) << 16 | byte(g1) << 8 | byte(b1)
-    }
-
-    /// Darker (-1) or lighter (+1) a percent of lightness at a time until it reads on `against`.
-    static func untilReadable(_ color: UInt32, against: UInt32, min: Double, towards: Double) -> UInt32 {
-        let (h, s, l0) = hsl(color)
-        var out = color
-        var step = 1.0
-        while step <= 100, contrast(out, against) < min {
-            let l = Swift.min(1, Swift.max(0, l0 + towards * step / 100))
-            out = fromHsl(h, s, l)
-            if l == 0 || l == 1 { break }
-            step += 1
-        }
-        return out
-    }
-
-    private static func tint(_ color: UInt32, lightness: Double, maxSaturation: Double = 1) -> UInt32 {
-        let (h, s, _) = hsl(color)
-        return fromHsl(h, Swift.min(s, maxSaturation), lightness)
-    }
-
-    private static func inkOn(_ fill: UInt32) -> UInt32 {
-        contrast(fill, white) >= 3 ? white : darkInk
+    /// A key in the new set; anything unknown or missing is Tomato.
+    static func canonical(_ key: String?) -> String {
+        guard let key = key?.lowercased() else { return tomato }
+        if keys.contains(key) { return key }
+        return legacy[key] ?? tomato
     }
 }
 
@@ -253,7 +109,8 @@ struct ThemeColors: Hashable {
 
 /**
  The theme the whole app is drawn in. Observable, so every view that reads a Palette colour is
- redrawn when it changes — Palette's colours read from here.
+ redrawn when it changes — Palette's colours read from here. The UIKit bars, which do not watch
+ it, are repainted from `set` (Chrome.swift).
  */
 @Observable
 final class ThemeStore {
@@ -261,7 +118,7 @@ final class ThemeStore {
 
     private(set) var theme: Theme
     /// Worked out once per change rather than on every draw.
-    private(set) var colors: ThemeColors?
+    private(set) var style: ThemeStyle
 
     private static let key = "mp_theme"
     /// Bumped by every pick here. A /me fetched before the latest pick carries the theme from
@@ -269,23 +126,23 @@ final class ThemeStore {
     private var picks = 0
 
     init(theme: Theme? = nil) {
-        let start = theme ?? Self.cached()
+        let start = (theme ?? Self.cached()).normalized
         self.theme = start
-        self.colors = start.colors
+        self.style = start.style
     }
 
     /// Light or dark as chosen; nil follows the phone.
     var colorScheme: ColorScheme? { (theme.mode ?? .system).colorScheme }
 
-    /// A pick in Appearance: in force at once, kept for the next launch. Saving is separate.
+    /// A pick on the Theme screen: in force at once, kept for the next launch. Saving is separate.
     func pick(_ next: Theme) {
         picks += 1
-        set(next)
+        set(next.normalized)
     }
 
     /// What the server says, unless something has been picked since `since` was read.
     func adopt(_ server: Theme?, since: Int) {
-        guard let server, since == picks, server != theme else { return }
+        guard let server = server?.normalized, since == picks, server != theme else { return }
         set(server)
     }
 
@@ -301,13 +158,17 @@ final class ThemeStore {
             return
         }
         theme = next
-        colors = next.colors
+        style = next.style
+        // Only the shared store owns the phone's defaults and windows; a preview's own store
+        // (ThemeStore(theme:)) must not repaint the app around it.
+        guard self === ThemeStore.shared else { return }
         if next == .standard {
             UserDefaults.standard.removeObject(forKey: Self.key)
         } else if let data = try? JSONEncoder().encode(next) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
         applyInterfaceStyle()
+        Chrome.apply(style)
     }
 
     /**
@@ -319,7 +180,22 @@ final class ThemeStore {
         let style = (theme.mode ?? .system).interfaceStyle
         for scene in UIApplication.shared.connectedScenes {
             guard let scene = scene as? UIWindowScene else { continue }
-            for window in scene.windows { window.overrideUserInterfaceStyle = style }
+            for window in scene.windows {
+                window.overrideUserInterfaceStyle = style
+                // A sheet already up keeps the style it was presented with — which is where the
+                // Theme screen itself lives, so picking Dark there would change everything but it.
+                // Going back to System it needs the phone's own style spelled out: "unspecified"
+                // leaves it in the one it was pinned to.
+                let sheetStyle = style == .unspecified ? scene.screen.traitCollection.userInterfaceStyle : style
+                var presented = window.rootViewController?.presentedViewController
+                while let controller = presented {
+                    controller.overrideUserInterfaceStyle = sheetStyle
+                    // The clock and battery would otherwise stay dark on a page now dark too.
+                    controller.setNeedsStatusBarAppearanceUpdate()
+                    presented = controller.presentedViewController
+                }
+                window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+            }
         }
     }
 

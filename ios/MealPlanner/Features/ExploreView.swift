@@ -32,7 +32,8 @@ struct ExploreView: View {
                 }
                 .padding(16)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Palette.bg)
+            .pageBackground()
             .navigationTitle("Explore")
             .navigationDestination(for: Destination.self) { destination in
                 switch destination.kind {
@@ -155,7 +156,8 @@ struct NotBuiltYetView: View {
             }
             .padding(16)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Palette.bg)
+        .pageBackground()
         .navigationTitle(destination.title)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -181,6 +183,7 @@ struct PublishedRecipesScreen: View {
                 PublishedRecipeGrid(recipes: recipes, session: session)
             }
         }
+        .kitchenList()
         .navigationTitle("Global recipes")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

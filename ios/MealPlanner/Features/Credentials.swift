@@ -35,7 +35,7 @@ struct CredentialsForm: View {
 
     var body: some View {
         Group {
-            Section {
+            KitchenSection {
                 TextField("Email", text: $email)
                     .textContentType(.username)
                     .keyboardType(.emailAddress)
@@ -45,7 +45,7 @@ struct CredentialsForm: View {
                 Text("Email")
             }
 
-            Section {
+            KitchenSection {
                 SecureField(needsPassword ? "Password" : "New password", text: $password)
                     .textContentType(.newPassword)
                 if needsPassword || !password.isEmpty {
@@ -59,7 +59,7 @@ struct CredentialsForm: View {
             }
 
             if me.hasPassword {
-                Section {
+                KitchenSection {
                     SecureField("Current password", text: $current)
                         .textContentType(.password)
                 } footer: {
@@ -68,10 +68,10 @@ struct CredentialsForm: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
 
-            Section {
+            KitchenSection {
                 Button {
                     Task { await save() }
                 } label: {
@@ -123,13 +123,13 @@ struct CredentialsPrompt: View {
         NavigationStack {
             Form {
                 if let savedEmail {
-                    Section {
+                    KitchenSection {
                         Label("Saved. Next time, sign in with \(savedEmail) and your new password.",
                               systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Palette.herb)
                     }
                 } else {
-                    Section {
+                    KitchenSection {
                         Text("Next time you'll sign in with these instead of your PIN.")
                             .foregroundStyle(.secondary)
                     }
@@ -137,6 +137,7 @@ struct CredentialsPrompt: View {
                     CredentialsForm(me: me) { saved in savedEmail = saved.email ?? "" }
                 }
             }
+            .kitchenList()
             .navigationTitle(savedEmail == nil ? "Add an email and password" : "You're all set")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -165,8 +166,8 @@ struct CredentialsScreen: View {
         Form {
             if let me {
                 if saved {
-                    Section { Label("Saved. Use them next time you sign in.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green) }
+                    KitchenSection { Label("Saved. Use them next time you sign in.", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Palette.herb) }
                 }
                 CredentialsForm(me: me) { updated in
                     self.me = updated
@@ -174,11 +175,12 @@ struct CredentialsScreen: View {
                 }
                 .id(me)
             } else if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             } else {
-                Section { ProgressView() }
+                KitchenSection { ProgressView() }
             }
         }
+        .kitchenList()
         .navigationTitle("Email and password")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -207,7 +209,7 @@ struct PasswordResetSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
+                KitchenSection {
                     Text("Send \(member.shown) this link, or let them scan the code. It lets them choose a new password"
                          + (member.hasEmail == false ? " and add their email" : "")
                          + ", then signs them in. It works once, for 24 hours.")
@@ -216,7 +218,7 @@ struct PasswordResetSheet: View {
                 .listRowBackground(Color.clear)
 
                 if let link {
-                    Section {
+                    KitchenSection {
                         Text(link.absoluteString)
                             .font(.footnote.monospaced())
                             .textSelection(.enabled)
@@ -229,7 +231,7 @@ struct PasswordResetSheet: View {
                         }
                     }
                     if let qr = QRCode.image(for: link.absoluteString) {
-                        Section {
+                        KitchenSection {
                             Image(uiImage: qr)
                                 .interpolation(.none)
                                 .resizable()
@@ -243,12 +245,13 @@ struct PasswordResetSheet: View {
                         .listRowBackground(Color.clear)
                     }
                 } else if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 } else {
-                    Section { ProgressView().frame(maxWidth: .infinity) }
+                    KitchenSection { ProgressView().frame(maxWidth: .infinity) }
                 }
             }
             // Their name is in the sentence above; in the title a long one cut "password" off.
+            .kitchenList()
             .navigationTitle("Reset password")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -57,8 +57,8 @@ struct MealPlannerApp: App {
                         )
                     }
                 }
-                // Every control in the app, in the app's own colour — or the one picked in
-                // Appearance — and light or dark as chosen there.
+                // Every control in the app in the theme's colours, and light or dark, as chosen
+                // on the Theme screen.
                 .modifier(Themed())
         }
     }
@@ -72,18 +72,44 @@ struct RestockDue: Identifiable {
 }
 
 /**
- The picked colours and mode on everything below. Without the tint every control is Apple's
- blue, which is the clearest sign that nobody chose anything. A modifier rather than lines in
- the scene, so reading ThemeStore here redraws it when a new theme is picked.
+ The theme and mode on everything below: the tint, the switch's herb green, body text in the
+ text token, and the UIKit bars (Chrome). Without the tint every control is Apple's blue, which
+ is the clearest sign that nobody chose anything. A modifier rather than lines in the scene, so
+ reading ThemeStore here redraws it when a new theme is picked.
  */
 struct Themed: ViewModifier {
     var store = ThemeStore.shared
 
     func body(content: Content) -> some View {
+        // Read here so a new theme redraws everything below with its colours.
+        let _ = store.style
         content
-            .tint(Palette.accent)
+            // The accent's ink rather than the fill: tint colours text (links, Back, toolbar
+            // buttons), and Brunch's yellow fill does not read as text on cream.
+            .tint(Palette.accentInk)
+            .toggleStyle(.herb)
+            .foregroundStyle(Palette.text)
             .preferredColorScheme(store.colorScheme)
-            .onAppear { store.applyInterfaceStyle() }
+            .onAppear {
+                store.applyInterfaceStyle()
+                Chrome.apply(store.style)
+            }
+    }
+}
+
+/// A tab's label as an outline icon, like the mockup's; a tab bar fills SF Symbols unless told
+/// not to.
+private struct TabLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        Label(title, systemImage: systemImage).environment(\.symbolVariants, .none)
     }
 }
 
@@ -142,19 +168,19 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             PlanView(session: session)
-                .tabItem { Label("Plan", systemImage: "calendar") }
+                .tabItem { TabLabel("Plan", systemImage: "calendar") }
                 .tag("plan")
             RecipesView(session: session)
-                .tabItem { Label("Recipes", systemImage: "book") }
+                .tabItem { TabLabel("Recipes", systemImage: "book") }
                 .tag("recipes")
             GroceriesView(session: session)
-                .tabItem { Label("Groceries", systemImage: "cart") }
+                .tabItem { TabLabel("Groceries", systemImage: "cart") }
                 .tag("groceries")
             CupboardView(session: session)
-                .tabItem { Label("Cupboard", systemImage: "cabinet") }
+                .tabItem { TabLabel("Cupboard", systemImage: "cabinet") }
                 .tag("cupboard")
             ExploreView(session: session)
-                .tabItem { Label("Explore", systemImage: "safari") }
+                .tabItem { TabLabel("Explore", systemImage: "safari") }
                 .tag("explore")
         }
     }
@@ -269,6 +295,28 @@ struct RootView: View {
         )) {
             IdeasView(session: session)
         }
+        // Settings → Theme, and the design system's catalogue and the Gallery, for screenshots.
+        .fullScreenCover(isPresented: Binding(
+            get: { ["theme", "design", "gallery"].contains(debugSheet ?? "") },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            switch debugSheet {
+            case "theme": NavigationStack { ThemeScreen() }
+            case "design": NavigationStack { DesignSystemView() }
+            default: GalleryView()
+            }
+        }
+        // As sheets: the household switcher, and Theme the way Settings shows it (pushed in a sheet).
+        .sheet(isPresented: Binding(
+            get: { ["switch", "theme-sheet"].contains(debugSheet ?? "") },
+            set: { if !$0 { debugSheet = nil } }
+        )) {
+            if debugSheet == "switch" {
+                HouseholdPicker(session: session)
+            } else {
+                NavigationStack { ThemeScreen() }
+            }
+        }
     }
     #endif
 
@@ -339,7 +387,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("You") {
+                KitchenSection("You") {
                     LabeledContent("Signed in as", value: session.displayName ?? "—")
                     NavigationLink("Email and password") { CredentialsScreen() }
                 }
@@ -352,7 +400,7 @@ struct SettingsView: View {
                 */
                 // Everything about the house itself. A page rather than rows here, because
                 // it is where leaving and deleting live and those want room.
-                Section {
+                KitchenSection {
                     NavigationLink {
                         HouseholdScreen(session: session)
                     } label: {
@@ -360,20 +408,19 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
+                KitchenSection {
                     NavigationLink {
-                        AppearanceScreen()
+                        ThemeScreen()
                     } label: {
                         HStack {
-                            Text("Appearance")
+                            Text("Theme")
                             Spacer(minLength: 12)
-                            Text(ThemeStore.shared.theme.summary).foregroundStyle(.secondary)
-                            ThemeSwatch(pair: ThemeStore.shared.theme.pair, size: 20)
+                            Text(ThemeStore.shared.theme.summary).foregroundStyle(Palette.muted)
                         }
                     }
                 }
 
-                Section {
+                KitchenSection {
                     AppleIntelligenceStatus()
                 } header: {
                     Text("Apple Intelligence")
@@ -381,7 +428,7 @@ struct SettingsView: View {
                     Text("What the phone says it can do. Generating a cover photo needs the first one.")
                 }
 
-                Section("Server") {
+                KitchenSection("Server") {
                     Button {
                         serverDraft = Config.baseURL
                         editingServer = true
@@ -407,17 +454,18 @@ struct SettingsView: View {
                 #if DEBUG
                 // The whole interface on sample data. A debug tool, so it lives here rather
                 // than spending one of the five tabs the web has.
-                Section {
+                KitchenSection {
                     NavigationLink("Gallery — every screen") { GalleryView() }
                 }
                 #endif
 
-                Section {
+                KitchenSection {
                     Button("Sign out", role: .destructive) {
                         Task { await session.signOut() }
                     }
                 }
             }
+            .kitchenList()
             .navigationTitle("Settings")
             // It arrives as a sheet from the avatar, and a sheet needs a way out that is not
             // a swipe — swiping is a shortcut, not the control.

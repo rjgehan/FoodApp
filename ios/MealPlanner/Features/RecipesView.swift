@@ -42,7 +42,7 @@ struct RecipesView: View {
         NavigationStack {
             ScrollView {
                 if let error {
-                    Text(error).foregroundStyle(.red).font(.callout).padding(.horizontal, 16)
+                    Text(error).foregroundStyle(Palette.danger).font(.callout).padding(.horizontal, 16)
                 }
 
                 if searching {
@@ -95,6 +95,7 @@ struct RecipesView: View {
                     .padding(.top, 8)
                 }
             }
+            .pageBackground()
             .navigationTitle("Recipes")
             .searchable(text: $query, prompt: "Search recipes and ingredients")
             .refreshable {
@@ -280,6 +281,7 @@ struct DrawerView: View {
                 .padding(.top, 48)
             }
         }
+        .pageBackground()
         .navigationTitle(parent?.name ?? section.title)
         .navigationBarTitleDisplayMode(.large)
         // At every level, for the groups on this screen: inside Main is where Chicken and Beef
@@ -371,7 +373,7 @@ struct RecipeTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground))
+                RoundedRectangle(cornerRadius: 14).fill(Palette.surface)
                 if let id = recipe.coverImageId, let url = APIClient.shared.imageURL(id) {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()

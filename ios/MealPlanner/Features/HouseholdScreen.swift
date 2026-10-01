@@ -35,7 +35,7 @@ struct HouseholdScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 NavigationLink {
                     HouseholdBasicsScreen(session: session)
                 } label: {
@@ -51,7 +51,7 @@ struct HouseholdScreen: View {
                 NavigationLink("Recipe icons") { RecipeIconsScreen(session: session) }
             }
 
-            Section {
+            KitchenSection {
                 Button {
                     scanning = true
                 } label: {
@@ -64,10 +64,10 @@ struct HouseholdScreen: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
 
-            Section {
+            KitchenSection {
                 Button(alone ? "Delete “\(name)”" : "Leave “\(name)”", role: .destructive) {
                     typedName = ""
                     leaving = true
@@ -75,6 +75,7 @@ struct HouseholdScreen: View {
                 .disabled(!loaded)
             }
         }
+        .kitchenList()
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -157,10 +158,10 @@ struct HouseholdBasicsScreen: View {
 
     var body: some View {
         Form {
-            Section("Name") {
+            KitchenSection("Name") {
                 TextField("Household", text: $name)
             }
-            Section {
+            KitchenSection {
                 Stepper("Serves \(servings)", value: $servings, in: 1...40)
                 Stepper("\(horizon) days ahead", value: $horizon, in: 1...31)
             } header: {
@@ -170,9 +171,10 @@ struct HouseholdBasicsScreen: View {
                      + "days at a time.")
             }
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -235,7 +237,7 @@ struct PeopleScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 ForEach(people) { person in
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 1) {
@@ -250,10 +252,10 @@ struct PeopleScreen: View {
                         if person.neverSignedIn || person.hasEmail == false {
                             Text(person.neverSignedIn ? "Hasn't signed in yet" : "No email yet")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(Palette.secondary)
+                                .foregroundStyle(Palette.accentInk)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Palette.secondarySoft, in: Capsule())
+                                .background(Palette.accentSoft, in: Capsule())
                         }
                         if isOwner && person.userId != session.userId {
                             Menu {
@@ -281,9 +283,10 @@ struct PeopleScreen: View {
                 .id(linkGeneration)
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Who's here")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $resetting) { member in
@@ -359,7 +362,7 @@ struct InviteSection: View {
     }
 
     var body: some View {
-        Section {
+        KitchenSection {
             if let url {
                 // One line, cut in the middle: wrapped, the text would hyphenate the token and
                 // show a "-" that is not in it. Copy and Share are how the whole link travels.
@@ -395,7 +398,7 @@ struct InviteSection: View {
                     }
                 }
             } else if let error {
-                Text(error).foregroundStyle(.red)
+                Text(error).foregroundStyle(Palette.danger)
             } else {
                 ProgressView().frame(maxWidth: .infinity)
             }
@@ -459,7 +462,7 @@ struct RecipeIconsScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 ForEach(RecipeSection.allCases, id: \.self) { section in
                     let current = icons[section] ?? section.defaultIcon
                     Button {
@@ -483,9 +486,10 @@ struct RecipeIconsScreen: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Recipe icons")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -538,7 +542,7 @@ struct PlacesScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 if !loaded {
                     ProgressView()
                 } else if places.isEmpty {
@@ -558,7 +562,7 @@ struct PlacesScreen: View {
                      + "and nothing goes on the grocery list.")
             }
 
-            Section {
+            KitchenSection {
                 HStack {
                     TextField("Tony's, Chinese, pizza…", text: $adding)
                     Button("Add") { Task { await add() } }
@@ -567,9 +571,10 @@ struct PlacesScreen: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Places we eat")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -618,7 +623,7 @@ struct AislesScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 if !loaded {
                     ProgressView()
                 } else {
@@ -644,7 +649,7 @@ struct AislesScreen: View {
                      + "rather than throwing them away.")
             }
 
-            Section {
+            KitchenSection {
                 HStack {
                     TextField("New aisle", text: $adding)
                     Button("Add") { Task { await add() } }
@@ -653,9 +658,10 @@ struct AislesScreen: View {
             }
 
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Store aisles")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { EditButton() }
@@ -730,7 +736,7 @@ struct NewHouseholdScreen: View {
 
     var body: some View {
         Form {
-            Section {
+            KitchenSection {
                 TextField("Mum and Dad's", text: $name)
                 Button("Create it") { Task { await create() } }
                     .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -738,9 +744,10 @@ struct NewHouseholdScreen: View {
                 Text("You own it, and it starts empty. Nothing moves across from here.")
             }
             if let error {
-                Section { Text(error).foregroundStyle(.red) }
+                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
+        .kitchenList()
         .navigationTitle("Start another household")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $made, onDismiss: { dismiss() }) { household in

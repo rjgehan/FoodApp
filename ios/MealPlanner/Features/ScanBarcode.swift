@@ -43,7 +43,7 @@ struct ScanBarcodeSheet: View {
                             .aspectRatio(3.0 / 4.0, contentMode: .fit)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                         if let problem {
-                            Text(problem).font(.footnote).foregroundStyle(.red)
+                            Text(problem).font(.footnote).foregroundStyle(Palette.danger)
                                 .multilineTextAlignment(.center)
                         } else {
                             Text("Point at the barcode").font(.subheadline).foregroundStyle(.secondary)
@@ -60,7 +60,7 @@ struct ScanBarcodeSheet: View {
 
                 case .found(let product, let already):
                     Form {
-                        Section {
+                        KitchenSection {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(product.name).font(.title3.weight(.semibold))
                                 if !describe(product).isEmpty {
@@ -71,27 +71,27 @@ struct ScanBarcodeSheet: View {
                             .padding(.vertical, 4)
                         }
                         if let already {
-                            Section {
+                            KitchenSection {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("You already have this.")
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Palette.secondary)
+                                        .foregroundStyle(Palette.accentInk)
                                     Text("It is in the cupboard as “\(already.name)”"
                                          + (already.runningLow ? ", and it is marked running low." : "."))
                                         .font(.subheadline)
                                 }
                                 .padding(.vertical, 2)
                             }
-                            .listRowBackground(Palette.secondarySoft)
+                            .listRowBackground(Palette.accentSoft)
                         } else {
-                            Section {
+                            KitchenSection {
                                 TextField("Name", text: $name)
                             } header: {
                                 Text("Call it")
                             } footer: {
                                 Text("What you want to see on the list.")
                             }
-                            Section {
+                            KitchenSection {
                                 Button("Add to the cupboard") { Task { await add() } }
                                     .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
                             }
@@ -102,7 +102,7 @@ struct ScanBarcodeSheet: View {
 
                 case .unknown(let code):
                     Form {
-                        Section {
+                        KitchenSection {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Not in the catalogue.").font(.headline)
                                 Text("Nothing is published under \(code). Give it a name and it still goes in the cupboard.")
@@ -110,10 +110,10 @@ struct ScanBarcodeSheet: View {
                             }
                             .padding(.vertical, 4)
                         }
-                        Section("Call it") {
+                        KitchenSection("Call it") {
                             TextField("Baked beans", text: $name)
                         }
-                        Section {
+                        KitchenSection {
                             Button("Add to the cupboard") { Task { await add() } }
                                 .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
@@ -130,14 +130,14 @@ struct ScanBarcodeSheet: View {
     }
 
     private var againSection: some View {
-        Section {
+        KitchenSection {
             Button("Scan another") {
                 name = ""
                 problem = nil
                 stage = .scanning
             }
             if let problem {
-                Text(problem).foregroundStyle(.red)
+                Text(problem).foregroundStyle(Palette.danger)
             }
         }
     }

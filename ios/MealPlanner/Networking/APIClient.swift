@@ -167,12 +167,17 @@ actor APIClient {
         return try await send("PUT", "/api/users/me/credentials", body: body)
     }
 
-    /// Your colours, all four at once, so the web and your other devices follow.
+    /// Your theme, all four at once, so the web and your other devices follow. The preset goes
+    /// in the new keys (tomato, matcha, blueberry, brunch, nordic, custom). The server wants a
+    /// second colour with Custom, from when themes were pairs; the accent stands in when there is
+    /// no old one to keep.
     func updateTheme(_ theme: Theme) async throws -> Theme {
+        let theme = theme.normalized
+        let secondary = theme.secondary ?? (theme.preset == ThemePreset.custom ? theme.primary : nil)
         let body: [String: Any] = [
             "preset": theme.preset ?? NSNull(),
             "primary": theme.primary ?? NSNull(),
-            "secondary": theme.secondary ?? NSNull(),
+            "secondary": secondary ?? NSNull(),
             "mode": theme.mode?.rawValue ?? NSNull(),
         ]
         return try await send("PUT", "/api/users/me/theme", body: body)

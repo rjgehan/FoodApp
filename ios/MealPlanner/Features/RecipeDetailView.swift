@@ -30,7 +30,7 @@ struct RecipeDetailView: View {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
-                        Color(.secondarySystemGroupedBackground)
+                        Palette.surface
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 240)
@@ -81,10 +81,10 @@ struct RecipeDetailView: View {
                 if let planned {
                     Label("On the plan for \(planned)", systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.herb)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Palette.herb.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 }
 
                 // The one filled button on the screen: the step the whole app is built around.
@@ -137,6 +137,7 @@ struct RecipeDetailView: View {
             }
             .padding(16)
         }
+        .pageBackground()
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -265,7 +266,7 @@ struct AddToPlanSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Day") {
+                KitchenSection("Day") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(days, id: \.self) { candidate in
@@ -278,7 +279,7 @@ struct AddToPlanSheet: View {
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 8)
                                         .background(
-                                            picked ? Color.accentColor : Color(.tertiarySystemFill),
+                                            picked ? Color.accentColor : Palette.surface2,
                                             in: Capsule()
                                         )
                                         .foregroundStyle(picked ? Color.white : Color.primary)
@@ -291,7 +292,7 @@ struct AddToPlanSheet: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 0))
                 }
 
-                Section("Meal") {
+                KitchenSection("Meal") {
                     Picker("Meal", selection: $meal) {
                         ForEach(MealType.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
@@ -299,7 +300,7 @@ struct AddToPlanSheet: View {
                 }
 
                 if !optional.isEmpty {
-                    Section("Buying the optional extras?") {
+                    KitchenSection("Buying the optional extras?") {
                         ForEach(optional) { ingredient in
                             OptionalExtraRow(ingredient: ingredient, isOn: extras.contains(ingredient.id)) {
                                 if extras.contains(ingredient.id) { extras.remove(ingredient.id) }
@@ -310,10 +311,10 @@ struct AddToPlanSheet: View {
                 }
 
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
                 }
 
-                Section {
+                KitchenSection {
                     Button {
                         Task { await add() }
                     } label: {
@@ -326,6 +327,7 @@ struct AddToPlanSheet: View {
                     .disabled(busy)
                 }
             }
+            .kitchenList()
             .navigationTitle("Add to plan")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
