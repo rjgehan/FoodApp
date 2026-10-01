@@ -3,6 +3,8 @@ package com.gehan.mealplanner.repository;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.MealType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -30,4 +32,14 @@ public interface MealPlanEntryRepository extends JpaRepository<MealPlanEntry, UU
     /** A slot holds several recipes now — a main plus its sides — so this is a list, not an Optional. */
     List<MealPlanEntry> findByHouseholdIdAndDateAndMealTypeOrderByCreatedAtAsc(
             UUID householdId, LocalDate date, MealType mealType);
+
+    /**
+     * The planned meals that have put something on this household's grocery list, as
+     * [entry id, recipe name] — so a row can say which recipes it is for. One query for the whole
+     * list. Meals without a recipe (a single item, a recipe since deleted) are left out.
+     */
+    @Query("select e.id, r.name from MealPlanEntry e join e.recipe r "
+            + "where e.household.id = :householdId and e.id in "
+            + "(select key(m) from GroceryListItem g join g.fromMeals m where g.household.id = :householdId)")
+    List<Object[]> recipeNamesOnList(@Param("householdId") UUID householdId);
 }

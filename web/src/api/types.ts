@@ -376,6 +376,10 @@ export interface GroceryListItem {
   sorted: boolean;
   /** The cupboard says you have this. Only meals put such things on the list. */
   inCupboard: boolean;
+  /** The recipes of the planned meals that put it here. Missing from a server before it was sent. */
+  fromRecipes?: string[];
+  /** Who typed it in or pressed Buy again. Null when only meals put it here. */
+  addedByName?: string | null;
 }
 
 export type GroceryListEvent =

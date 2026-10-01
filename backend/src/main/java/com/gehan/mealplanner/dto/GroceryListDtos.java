@@ -48,7 +48,11 @@ public class GroceryListDtos {
             /** False means neither the keyword list nor Gemini has placed it — Sort would. */
             boolean sorted,
             /** The cupboard says you have this. Only meals put such things on the list. */
-            boolean inCupboard) implements Serializable {
+            boolean inCupboard,
+            /** The recipes of the planned meals that put it here, by name, each once. */
+            List<String> fromRecipes,
+            /** Who typed it in or pressed Buy again. Null when only meals put it here. */
+            String addedByName) implements Serializable {
     }
 
     /**
