@@ -155,7 +155,7 @@ struct IdeasView: View {
                 Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text)
                 Text(line).font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
                 if show == .top || show == .new, !closed {
-                    Button { suggesting = true } label: { Label("Suggest an idea", systemImage: "plus") }
+                    Button { suggesting = true } label: { Label("Suggest the first idea", systemImage: "plus") }
                         .buttonStyle(.kitchen(.primary, size: .small))
                         .padding(.top, 4)
                 }

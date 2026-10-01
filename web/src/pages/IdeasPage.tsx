@@ -234,7 +234,7 @@ export default function IdeasPage() {
               </p>
               {(view === 'top' || view === 'new') && (
                 <Button className="mt-4" icon="plus" onClick={() => setSuggesting(true)}>
-                  Suggest an idea
+                  Suggest the first idea
                 </Button>
               )}
             </div>
