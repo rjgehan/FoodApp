@@ -64,9 +64,15 @@ export async function saveRestock(
 export function RestockField({
   value,
   onChange,
+  label = 'Remind me to buy it',
+  withOff = true,
 }: {
   value: number | null;
   onChange: (everyDays: number | null) => void;
+  /** What the select is called to assistive tech. */
+  label?: string;
+  /** Without "Off", for a field under a switch that already turns it off. */
+  withOff?: boolean;
 }) {
   const [custom, setCustom] = useState(value !== null && !RESTOCK_PRESETS.includes(value));
   const [days, setDays] = useState<number | null>(value);
@@ -76,7 +82,7 @@ export function RestockField({
     <div className="space-y-2">
       <Select
         value={chosen}
-        aria-label="Remind me to buy it"
+        aria-label={label}
         onChange={(e) => {
           const picked = e.target.value;
           if (picked === 'off') {
@@ -94,7 +100,7 @@ export function RestockField({
           }
         }}
       >
-        <option value="off">Off</option>
+        {withOff && <option value="off">Off</option>}
         {RESTOCK_PRESETS.map((d) => (
           <option key={d} value={String(d)}>
             {everyTitle(d)}

@@ -84,13 +84,19 @@ test('a grocery row: swipe → Remind sets how often, and the row says so', asyn
   await page.goto('/grocery-list');
 
   await swipeLeft(page, page.getByText('dog food', { exact: true }));
-  await page.getByRole('button', { name: 'Remind', exact: true }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(sheet(page).getByRole('heading', { name: 'dog food' })).toBeVisible();
-  await sheet(page).getByLabel('Remind me to buy it').selectOption({ label: 'Every 3 weeks' });
-  await sheet(page).getByRole('button', { name: 'Save' }).click();
+  // The switch takes effect as it is flipped; how often can be changed under it.
+  const remind = sheet(page).getByRole('switch', { name: 'Remind me to buy it' });
+  await remind.click();
+  await expect(remind).toHaveAttribute('aria-checked', 'true');
+  await sheet(page).getByLabel('How often').selectOption({ label: 'Every 3 weeks' });
+  await expect(remind).toContainText('Every 3 weeks');
+  await page.keyboard.press('Escape');
 
-  await expect(page.getByText('Every 3 weeks', { exact: true })).toBeVisible();
-  expect(await reminders(hh.id, hh.owner)).toMatchObject([{ name: 'dog food', everyDays: 21 }]);
+  // The row carries a bell that says how often.
+  await expect(page.getByRole('img', { name: 'Every 3 weeks' })).toBeVisible();
+  await expect.poll(async () => reminders(hh.id, hh.owner)).toMatchObject([{ name: 'dog food', everyDays: 21 }]);
 });
 
 test('a cupboard item: its sheet sets a reminder in days, and turns it off again', async ({ page }) => {
@@ -100,18 +106,22 @@ test('a cupboard item: its sheet sets a reminder in days, and turns it off again
   await page.goto('/cupboard');
 
   await page.getByRole('button', { name: 'Edit coffee filters' }).click();
-  await sheet(page).getByLabel('Remind me to buy it').selectOption({ label: 'Every … days' });
+  await sheet(page).getByRole('switch', { name: 'Restock reminder' }).click();
+  await sheet(page).getByLabel('How often').selectOption({ label: 'Every … days' });
   await sheet(page).getByLabel('Days between').fill('10');
   await sheet(page).getByRole('button', { name: 'Save' }).click();
 
-  await expect(page.getByText('Every 10 days')).toBeVisible();
+  // The sheet says "Ask me every 10 days" too; the row is what counts, once it has closed.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('Restock every 10 days')).toBeVisible();
   expect(await reminders(hh.id, hh.owner)).toMatchObject([{ name: 'coffee filters', everyDays: 10 }]);
 
   await page.getByRole('button', { name: 'Edit coffee filters' }).click();
   await expect(sheet(page).getByLabel('Days between')).toHaveValue('10');
-  await sheet(page).getByLabel('Remind me to buy it').selectOption({ label: 'Off' });
+  await sheet(page).getByRole('switch', { name: 'Restock reminder' }).click();
   await sheet(page).getByRole('button', { name: 'Save' }).click();
 
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('Every 10 days')).toHaveCount(0);
   expect(await reminders(hh.id, hh.owner)).toEqual([]);
 });

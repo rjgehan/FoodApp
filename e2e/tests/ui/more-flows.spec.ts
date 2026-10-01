@@ -224,29 +224,31 @@ test('groceries and cupboard: the outer edges of a row are part of the row', asy
     const y = (await row.boundingBox())!.y + 10;
     return { left: card.x + 4, right: card.x + card.width - 4, y };
   };
+  const limesRow = page.getByRole('button', { name: /limes/ });
   const limes = await edgesOf('limes');
   await page.mouse.click(limes.left, limes.y);
-  await expect(page.getByText(/In the cart · 1/)).toBeVisible();
+  await expect(limesRow).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => find(await groceries(hh.id), 'limes')?.checked).toBe(true);
 
-  // Unticking it from the cart, then ticking it again from the far edge of its card.
-  await page.getByRole('button', { name: /limes/ }).click();
-  await expect(page.getByText(/In the cart/)).toHaveCount(0);
+  // Unticking it, then ticking it again from the far edge of its card.
+  await limesRow.click();
+  await expect(limesRow).toHaveAttribute('aria-pressed', 'false');
   const again = await edgesOf('limes');
   await page.mouse.click(again.right, again.y);
-  await expect(page.getByText(/In the cart · 1/)).toBeVisible();
+  await expect(limesRow).toHaveAttribute('aria-pressed', 'true');
 
   await page.goto('/cupboard');
   const rice = await edgesOf('rice');
   await page.mouse.click(rice.left, rice.y);
-  await expect(sheet(page).getByText('Edit rice')).toBeVisible();
+  await expect(sheet(page).getByRole('heading', { name: 'Edit item' })).toBeVisible();
+  await expect(sheet(page).getByLabel('Name')).toHaveValue('rice');
   await page.keyboard.press('Escape');
   await expect(sheet(page)).toHaveCount(0);
 
-  // An "Always have" row has nothing on its right, so its right edge is the row too.
+  // An "Always have" row has only its pill on the right, so its right edge is the row too.
   const salt = await edgesOf('salt');
   await page.mouse.click(salt.right, salt.y);
-  await expect(sheet(page).getByText('Edit salt')).toBeVisible();
+  await expect(sheet(page).getByLabel('Name')).toHaveValue('salt');
 });
 
 test('groceries: Move an item to another aisle and it sticks', async ({ page }) => {
@@ -255,10 +257,17 @@ test('groceries: Move an item to another aisle and it sticks', async ({ page }) 
   await call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: owner.token, body: { ingredientName: 'tortillas' } });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/grocery-list');
-  await fromMenu(page, 'List options', 'Change aisles');
-  // The aisle picker is a native <select>, which on iOS is the system wheel.
-  await page.locator('li', { hasText: 'tortillas' }).first().locator('select').selectOption({ label: 'Frozen' });
-  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  // Its sheet, from a swipe: the aisles are chips, and the one it is in is filled.
+  await swipeLeft(page, page.getByText('tortillas', { exact: true }));
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  const aisles = sheet(page).getByRole('group', { name: 'Aisle' });
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/category') && r.request().method() === 'PUT'),
+    aisles.getByRole('button', { name: 'Frozen', exact: true }).click(),
+  ]);
+  await expect(aisles.getByRole('button', { name: 'Frozen', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(sheet(page).getByText('Tortillas will always go in Frozen.')).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.reload();
   const frozenHeading = page.getByText('Frozen', { exact: true });
   await expect(frozenHeading).toBeVisible();

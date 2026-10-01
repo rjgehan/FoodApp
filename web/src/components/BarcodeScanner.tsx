@@ -31,10 +31,13 @@ export default function BarcodeScanner({
   onFound,
   onError,
   kind = 'grocery',
+  variant = 'card',
 }: {
   onFound: (barcode: string) => void;
   onError: (message: string) => void;
   kind?: ScanKind;
+  /** `fill` covers its (positioned) container, for a full-screen scanner. */
+  variant?: 'card' | 'fill';
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [starting, setStarting] = useState(true);
@@ -130,6 +133,24 @@ export default function BarcodeScanner({
     // The kind is fixed for the life of a scanner; a new kind is a new scanner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (variant === 'fill') {
+    // The whole screen is the camera (mockup 4.8): a rounded window to aim through, the accent's
+    // scan line across it, and a word of instruction underneath.
+    return (
+      <div className="absolute inset-0 overflow-hidden">
+        <video ref={videoRef} className="h-full w-full object-cover" playsInline muted aria-label="Camera" />
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-24">
+          <div className="relative h-[170px] w-[270px] max-w-[80vw] rounded-[24px] border-[3px] border-white/95 shadow-[0_0_0_100vmax_rgba(0,0,0,0.25)]">
+            <div className="absolute inset-x-[18px] top-1/2 h-0.5 bg-accent shadow-[0_0_12px_rgb(var(--accent))]" />
+          </div>
+          <p className="mt-[18px] text-[0.9375rem] font-medium text-white/90">
+            {starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at a barcode'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-black">

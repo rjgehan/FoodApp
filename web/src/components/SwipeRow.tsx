@@ -1,5 +1,6 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { cx } from './ui';
+import { Icon, type IconName } from './icons';
 import {
   animateSpring,
   prefersReducedMotion,
@@ -12,9 +13,18 @@ import {
 
 export interface SwipeAction {
   label: string;
-  tone: 'danger' | 'accent';
+  /** Danger for removing, herb for "buy again", accent for the rest. */
+  tone: 'danger' | 'accent' | 'herb';
+  /** Drawn above the label, as Mail does. */
+  icon?: IconName;
   onAction: () => void;
 }
+
+const ACTION_TONES: Record<SwipeAction['tone'], string> = {
+  danger: 'bg-danger text-bg',
+  accent: 'bg-accent text-on-accent',
+  herb: 'bg-herb text-bg',
+};
 
 const ACTION_WIDTH = 84;
 
@@ -174,11 +184,13 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
               }}
               style={last ? undefined : { width: ACTION_WIDTH }}
               className={cx(
-                'flex items-center justify-center px-3 text-sm font-semibold',
+                'flex items-center justify-center px-3 font-semibold',
+                action.icon ? 'flex-col gap-1 text-xs' : 'text-sm',
                 last ? 'flex-1' : 'shrink-0',
-                action.tone === 'danger' ? 'bg-danger text-bg' : 'bg-accent text-on-accent',
+                ACTION_TONES[action.tone],
               )}
             >
+              {action.icon && <Icon name={action.icon} size={18} />}
               {action.label}
             </button>
           );

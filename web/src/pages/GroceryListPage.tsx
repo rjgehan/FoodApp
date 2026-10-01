@@ -4,54 +4,49 @@ import { Link } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { absoluteUrl, api, ApiError, getToken } from '../api/client';
-import type { GroceryCategory, GroceryListEvent, GroceryListItem as Item, RestockReminder } from '../api/types';
+import type { CupboardItem, GroceryListEvent, GroceryListItem as Item } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import { splitAmount } from '../utils/amount';
 import { groupByCategory } from '../utils/storeSections';
 import { copyText, listAsText } from '../utils/exportList';
-import {
-  ActionMenu,
-  Button,
-  CheckCircle,
-  cx,
-  EmptyState,
-  ErrorText,
-  IconButton,
-  Input,
-  Select,
-  Sheet,
-  SubHeading,
-} from '../components/ui';
-import { PlusIcon, RepeatIcon, TrashIcon } from '../components/icons';
+import { Button, EmptyState, ErrorText, NoteBox, SectionLabel, Sheet } from '../components/ui';
+import { Icon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
-import SwipeRow from '../components/SwipeRow';
-import { RestockSheet, useRestockReminders } from '../components/Restock';
-import { everyLabel, everyTitle } from '../utils/restock';
+import { toast } from '../components/toast';
+import { useRestockReminders } from '../components/Restock';
+import { everyLabel } from '../utils/restock';
+import GroceriesMenu from '../components/groceries/GroceriesMenu';
+import GroceryRow from '../components/groceries/GroceryRow';
+import GroceryItemSheet from '../components/groceries/GroceryItemSheet';
+import DoneShoppingSheet from '../components/groceries/DoneShoppingSheet';
 
-/* Separators start after the checkbox: 24px circle + 12px gap. */
-const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
-/*
- * On a card the rows run to its edges and carry the card's 16px padding inside them. When the
- * card held the padding, a tap on the outer strip of a row — where a thumb reaching for the
- * circle often lands — hit the card and did nothing, and a swipe started there never began.
+/* Separators start where the text does: 14px padding + 24px circle + 12px gap. */
+const ROW_INSET = { '--row-inset': '50px' } as CSSProperties;
+
+/**
+ * The shared list (mockup 4.1): one box to add to it, then everything grouped by aisle in the
+ * order the household walks the store, each aisle with its count. Ticked things stay where they
+ * are, struck through at the bottom of their aisle, until Done shopping takes them off — so
+ * nothing jumps away from under a thumb mid-shop, and a second person can see what is already in
+ * the basket. Live: a tick on one phone shows on every other one.
  */
-const CARD_ROW_INSET = { '--row-inset': '3.25rem', '--row-inset-end': '1rem' } as CSSProperties;
-
 export default function GroceryListPage() {
   const { activeHouseholdId, groceryCategories } = useHousehold();
   const aiAvailable = useAiAvailable();
   const [items, setItems] = useState<Item[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [moving, setMoving] = useState(false);
-  const [sheet, setSheet] = useState<'sort' | 'putAway' | null>(null);
+  // What the cupboard holds, by ingredient, for "Cupboard says you have 1" and the item sheet.
+  const [cupboard, setCupboard] = useState<Map<string, CupboardItem>>(() => new Map());
+  const [sheet, setSheet] = useState<'sort' | 'done' | null>(null);
   // Set only when the clipboard refused, so the text can be copied by hand instead.
   const [exported, setExported] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  // The item whose "Remind me to buy it" is open.
-  const [reminding, setReminding] = useState<Item | null>(null);
+  const [adding, setAdding] = useState(false);
+  // The item whose sheet is open, by id, so a live update to it shows in the sheet too.
+  const [openId, setOpenId] = useState<string | null>(null);
   const restock = useRestockReminders(activeHouseholdId);
 
   const clientRef = useRef<Client | null>(null);
@@ -59,14 +54,23 @@ export default function GroceryListPage() {
   const refreshItems = useCallback(async () => {
     if (!activeHouseholdId) return;
     setItems(await api<Item[]>('GET', `/api/households/${activeHouseholdId}/grocery-list`));
+    setLoaded(true);
+  }, [activeHouseholdId]);
+
+  const refreshCupboard = useCallback(async () => {
+    if (!activeHouseholdId) return;
+    const list = await api<CupboardItem[]>('GET', `/api/households/${activeHouseholdId}/cupboard`);
+    setCupboard(new Map(list.map((c) => [c.ingredientId, c])));
   }, [activeHouseholdId]);
 
   useEffect(() => {
     refreshItems();
-  }, [refreshItems]);
+    refreshCupboard().catch(() => {});
+  }, [refreshItems, refreshCupboard]);
 
   useOnResume(() => {
     refreshItems().catch(() => {});
+    refreshCupboard().catch(() => {});
   });
 
   // Realtime: connect once per household and keep the socket open while this page mounts.
@@ -120,32 +124,38 @@ export default function GroceryListPage() {
    */
   async function copyForNotes() {
     const lines = listAsText(groupByCategory(items.filter((i) => !i.checked), groceryCategories).flatMap((g) => g.items));
-    if (!lines) return;
+    if (!lines) {
+      toast('Nothing left to buy.');
+      return;
+    }
     const count = lines.split('\n').length;
     if (await copyText(lines)) {
-      flash(`Copied ${count} ${count === 1 ? 'item' : 'items'}. In Notes: paste, select the lines, then tap ✓ to turn them into checkboxes.`);
+      toast(
+        `Copied ${count} ${count === 1 ? 'item' : 'items'}. In Notes: paste, select the lines, then tap ✓ to turn them into checkboxes.`,
+        { icon: 'check', duration: 5000 },
+      );
     } else {
       setExported(lines);
     }
   }
 
-  function flash(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 4000);
-  }
-
   /** One box: "2 lb chicken" becomes 2, lb, chicken; "milk" is just milk. */
   async function onAddItem(e: FormEvent) {
     e.preventDefault();
-    if (!activeHouseholdId || !draft.trim()) return;
+    if (!activeHouseholdId || !draft.trim() || adding) return;
     const { quantity, unit, name } = splitAmount(draft);
-    await api('POST', `/api/households/${activeHouseholdId}/grocery-list/items`, {
-      ingredientName: name,
-      quantity,
-      unit,
-    });
-    setDraft('');
-    await refreshItems();
+    setAdding(true);
+    try {
+      await api('POST', `/api/households/${activeHouseholdId}/grocery-list/items`, {
+        ingredientName: name,
+        quantity,
+        unit,
+      });
+      setDraft('');
+      await refreshItems();
+    } finally {
+      setAdding(false);
+    }
   }
 
   async function toggleItem(item: Item) {
@@ -176,65 +186,68 @@ export default function GroceryListPage() {
     return <NoHousehold />;
   }
 
-  const toBuy = items.filter((i) => !i.checked);
-  const inCart = items.filter((i) => i.checked);
-  const groups = groupByCategory(toBuy, groceryCategories);
+  const ticked = items.filter((i) => i.checked);
+  // Within an aisle, what is still to buy comes first and the basket sinks to the bottom.
+  const ordered = [...items.filter((i) => !i.checked), ...ticked];
+  const groups = groupByCategory(ordered, groceryCategories);
   const unsorted = new Set(items.filter((i) => !i.sorted && i.ingredientId).map((i) => i.ingredientId)).size;
+  const open = openId ? items.find((i) => i.id === openId) : undefined;
 
   return (
-    <div className="space-y-3">
-      <PageTitle
-        title="Groceries"
-        subtitle={
-          <>
-            {toBuy.length ? `${toBuy.length} to buy` : 'Nothing to buy'}
-            {/* Only worth mentioning when it is not working. */}
-            {!connected && ' · offline, changes from others may be missing'}
-          </>
-        }
-      >
-        {/* Ticking things off is the job here; arranging the list is a side trip, so it waits behind •••. */}
-        {moving ? (
-          <Button size="sm" onClick={() => setMoving(false)}>
-            Done
-          </Button>
-        ) : (
-          toBuy.length > 0 && (
-            <ActionMenu
-              label="List options"
-              items={[
-                { label: 'Copy for Notes', onSelect: copyForNotes },
-                { label: 'Change aisles', onSelect: () => setMoving(true) },
-                aiAvailable && unsorted > 0 && {
-                  label: `✨ Sort ${unsorted} ${unsorted === 1 ? 'item' : 'items'} into aisles`,
-                  onSelect: () => setSheet('sort'),
-                },
-              ]}
-            />
-          )
-        )}
+    <div className="space-y-3.5">
+      <PageTitle title="Groceries">
+        {/* Ticking things off is the job here; the rest waits behind •••. */}
+        <GroceriesMenu
+          label="List options"
+          items={[
+            { label: 'Copy for Notes', detail: 'Plain text in aisle order', icon: 'copy', onSelect: copyForNotes },
+            aiAvailable && {
+              label: 'Sort into aisles',
+              detail: unsorted
+                ? `${unsorted} ${unsorted === 1 ? 'item has' : 'items have'} no aisle yet`
+                : 'Everything has an aisle',
+              icon: 'sparkles',
+              disabled: unsorted === 0,
+              onSelect: () => setSheet('sort'),
+            },
+            {
+              label: 'Done shopping',
+              detail: ticked.length ? `${ticked.length} ticked ${ticked.length === 1 ? 'item' : 'items'}` : 'Nothing ticked yet',
+              icon: 'check',
+              disabled: ticked.length === 0,
+              onSelect: () => setSheet('done'),
+            },
+          ]}
+        />
       </PageTitle>
 
-      <form onSubmit={onAddItem} className="flex gap-2">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add something — 2 lb chicken, milk…"
-          aria-label="Add to the list"
-          enterKeyHint="done"
-        />
-        <IconButton type="submit" label="Add" variant="primary" disabled={!draft.trim()}>
-          <PlusIcon className="h-5 w-5" />
-        </IconButton>
-      </form>
-
-      {notice && <p className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">{notice}</p>}
-
-      {moving && (
-        <p className="text-[0.9375rem] text-muted">Pick the aisle each item is in — it sticks for next time.</p>
+      {/* Only worth mentioning when it is not working. */}
+      {loaded && !connected && (
+        <NoteBox tone="mustard" icon="cloudOff">
+          You're offline, so changes from others may be missing.
+        </NoteBox>
       )}
 
-      {items.length === 0 ? (
+      <form onSubmit={onAddItem}>
+        <label className="flex h-12 items-center gap-2.5 rounded-field border border-line bg-surface pl-3.5 pr-1.5 transition-[border-color,box-shadow] focus-within:border-accent focus-within:shadow-focus">
+          <Icon name="plus" size={19} className="shrink-0 text-accent-ink" />
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder='Add an item, e.g. "2 lb chicken"'
+            aria-label="Add to the list"
+            enterKeyHint="done"
+            className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-faint"
+          />
+          {draft.trim() && (
+            <Button type="submit" size="sm" disabled={adding}>
+              Add
+            </Button>
+          )}
+        </label>
+      </form>
+
+      {!loaded ? null : items.length === 0 ? (
         <EmptyState>
           Nothing on the list. Add planned meals from{' '}
           <Link to="/meal-plan" className="font-medium text-accent-ink">
@@ -243,81 +256,65 @@ export default function GroceryListPage() {
           , or type something above.
         </EmptyState>
       ) : (
-        <div>
+        // Two columns of aisles on a wide screen, rather than one long stretched list.
+        <div className="gap-x-5 lg:columns-2">
           {groups.map(({ category, items: rows }) => (
-            <section key={category?.id ?? 'unsorted'}>
-              <SubHeading>{category?.name ?? 'Unsorted'}</SubHeading>
-              <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
+            <section key={category?.id ?? 'unsorted'} className="break-inside-avoid pb-3.5">
+              <SectionLabel end={rows.length} className="!pb-1.5 !text-xs !font-bold">
+                {category?.name ?? 'Unsorted'}
+              </SectionLabel>
+              <ul className="card card-rows inset-rows" style={ROW_INSET}>
                 {rows.map((item) => (
                   <li key={item.id}>
-                    <ItemRow
+                    <GroceryRow
                       item={item}
-                      categories={groceryCategories}
-                      moving={moving}
                       reminder={item.ingredientId ? restock.reminders.get(item.ingredientId) : undefined}
-                      onToggle={toggleItem}
-                      onRemove={removeItem}
-                      onMove={moveItem}
-                      onRemind={setReminding}
+                      stock={item.ingredientId ? cupboard.get(item.ingredientId) : undefined}
+                      onToggle={() => toggleItem(item)}
+                      onOpen={() => setOpenId(item.id)}
+                      onRemove={() => removeItem(item.id)}
                     />
                   </li>
                 ))}
               </ul>
             </section>
           ))}
-
-          {inCart.length > 0 && (
-            <section className={cx(toBuy.length > 0 && 'mt-4')}>
-              <div className="flex items-center justify-between gap-2 pb-1">
-                <SubHeading className="pt-0">In the cart · {inCart.length}</SubHeading>
-                <Button size="sm" onClick={() => setSheet('putAway')}>
-                  Done shopping
-                </Button>
-              </div>
-              {/* A card like the aisles above. Without one, each row's opaque cover was a white stripe across the well. */}
-              <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
-                {inCart.map((item) => (
-                  <li key={item.id}>
-                    <ItemRow
-                      item={item}
-                      categories={groceryCategories}
-                      moving={false}
-                      reminder={item.ingredientId ? restock.reminders.get(item.ingredientId) : undefined}
-                      onToggle={toggleItem}
-                      onRemove={removeItem}
-                      onMove={moveItem}
-                      onRemind={setReminding}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
         </div>
       )}
 
+      {ticked.length > 0 && (
+        <Button variant="secondary" size="lg" full icon="check" onClick={() => setSheet('done')}>
+          Done shopping · {ticked.length} ticked
+        </Button>
+      )}
+
       {items.length > 0 && (
-        <p className="pt-2 text-[0.8125rem] text-faint">
-          Swipe an item left to remove it, or to be reminded to buy it every few weeks.
+        <p className="px-1 pt-1 text-[0.8125rem] text-faint">
+          Tap an item to tick it off.{' '}
+          <span className="[@media(hover:hover)]:hidden">Swipe it left for its aisle and a reminder, or to remove it.</span>
+          <span className="hidden [@media(hover:hover)]:inline">Its ••• has its aisle, a reminder, and Remove.</span>
         </p>
       )}
 
-      {reminding?.ingredientId && (
-        <RestockSheet
+      {open && (
+        <GroceryItemSheet
           householdId={activeHouseholdId}
-          ingredientId={reminding.ingredientId}
-          name={reminding.name}
-          current={restock.reminders.get(reminding.ingredientId) ?? null}
-          onClose={() => setReminding(null)}
-          onSaved={(reminder) => {
-            restock.saved(reminding.ingredientId!, reminder);
-            setReminding(null);
-            flash(
-              reminder
-                ? `We'll ask about ${reminding.name} ${everyLabel(reminder.everyDays)}.`
-                : `No more reminders for ${reminding.name}.`,
+          item={open}
+          categories={groceryCategories}
+          reminder={open.ingredientId ? restock.reminders.get(open.ingredientId) ?? null : null}
+          stock={open.ingredientId ? cupboard.get(open.ingredientId) : undefined}
+          onMove={(categoryId) => moveItem(open, categoryId)}
+          onReminder={(reminder) => {
+            restock.saved(open.ingredientId!, reminder);
+            toast(
+              reminder ? `We'll ask about ${open.name} ${everyLabel(reminder.everyDays)}.` : `No more reminders for ${open.name}.`,
             );
           }}
+          onRemove={() => {
+            setOpenId(null);
+            removeItem(open.id);
+          }}
+          onClose={() => setOpenId(null)}
         />
       )}
 
@@ -331,7 +328,7 @@ export default function GroceryListPage() {
             readOnly
             value={exported}
             onFocus={(e) => e.currentTarget.select()}
-            className="h-64 w-full rounded-xl border border-line bg-surface p-3 font-mono text-[0.8125rem] text-ink"
+            className="mt-3 h-64 w-full rounded-xl border border-line bg-surface p-3 font-mono text-[0.8125rem] text-ink"
           />
         </Sheet>
       )}
@@ -344,145 +341,31 @@ export default function GroceryListPage() {
           onDone={async ({ sorted, left }) => {
             setSheet(null);
             await refreshItems();
-            flash(
+            toast(
               (sorted ? `Sorted ${sorted} ${sorted === 1 ? 'item' : 'items'}.` : 'Nothing new to sort.') +
-                (left ? ` ${left} couldn't be placed — use Change aisles for those.` : ''),
+                (left ? ` ${left} couldn't be placed — swipe one left to pick its aisle.` : ''),
+              { duration: 5000 },
             );
           }}
         />
       )}
 
-      {sheet === 'putAway' && (
-        <PutAwaySheet
+      {sheet === 'done' && (
+        <DoneShoppingSheet
           householdId={activeHouseholdId}
-          items={inCart}
+          items={ticked}
           onClose={() => setSheet(null)}
           onDone={(cleared, stocked) => {
             setSheet(null);
             setItems((prev) => prev.filter((i) => !cleared.includes(i.id)));
-            flash(stocked ? `Put ${stocked} ${stocked === 1 ? 'thing' : 'things'} in the cupboard.` : 'Cleared.');
+            refreshCupboard().catch(() => {});
+            toast(stocked ? `Put ${stocked} ${stocked === 1 ? 'thing' : 'things'} in the cupboard.` : 'Cleared.', {
+              icon: 'check',
+            });
           }}
         />
       )}
     </div>
-  );
-}
-
-/**
- * One item: tap to tick it off, swipe it left to remove it. A mouse cannot swipe, so a pointer
- * that can hover gets the bin button as well — nothing is only reachable by gesture.
- */
-function ItemRow({
-  item,
-  categories,
-  moving,
-  reminder,
-  onToggle,
-  onRemove,
-  onMove,
-  onRemind,
-}: {
-  item: Item;
-  categories: GroceryCategory[];
-  moving: boolean;
-  reminder?: RestockReminder;
-  onToggle: (item: Item) => void;
-  onRemove: (itemId: string) => void;
-  onMove: (item: Item, categoryId: string) => void;
-  onRemind: (item: Item) => void;
-}) {
-  const amount = [item.quantity, item.unit].filter(Boolean).join(' ');
-  const detail = [amount, item.checked && item.checkedByName ? `got by ${item.checkedByName}` : null]
-    .filter(Boolean)
-    .join(' · ');
-  // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
-  const have = item.inCupboard && !item.checked;
-  const picking = moving && !!item.ingredientId;
-
-  const row = (
-    <div className="flex items-center gap-1">
-      {/* The whole row toggles — a 16px checkbox is not a real target on a phone. */}
-      <button
-        type="button"
-        onClick={() => onToggle(item)}
-        aria-pressed={item.checked}
-        className={cx(
-          'flex min-h-touch min-w-0 flex-1 items-center gap-3 py-2.5 text-left',
-          // The row holds its card's padding, so both edges are part of the tap — except the right
-          // one where the bin or the aisle picker sits.
-          picking ? 'pl-4' : 'px-4 [@media(hover:hover)]:pr-0',
-        )}
-      >
-        <CheckCircle checked={item.checked} />
-        {/*
-         * The name on the left, the amount on the right. Stacking them made every row two
-         * lines tall for the sake of "2 tbs", which is the smaller half of the information
-         * and the one you only read once you have found the thing.
-         */}
-        <span className="min-w-0 flex-1">
-          <span className={cx('block truncate transition-colors', item.checked && 'text-muted line-through')}>{item.name}</span>
-          {(have || reminder) && (
-            <span className="block truncate text-[0.8125rem] text-muted">
-              {have && <span className="text-herb">In the cupboard</span>}
-              {have && reminder && ' · '}
-              {/* Quiet: it matters when it is time, which is what the question on opening is for. */}
-              {reminder && everyTitle(reminder.everyDays)}
-            </span>
-          )}
-        </span>
-        {detail && (
-          <span className={cx('shrink-0 text-[0.9375rem] tabular-nums text-muted', item.checked && 'line-through')}>
-            {detail}
-          </span>
-        )}
-      </button>
-      {picking ? (
-        <Select
-          className="mr-4 h-9 w-36 shrink-0 text-sm"
-          value={item.categoryId ?? ''}
-          onChange={(e) => onMove(item, e.target.value)}
-          aria-label={`Aisle for ${item.name}`}
-        >
-          {!item.categoryId && (
-            <option value="" disabled>
-              Unsorted
-            </option>
-          )}
-          {[...categories]
-            .sort((a, b) => a.position - b.position)
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-        </Select>
-      ) : (
-        <span className="mr-4 hidden [@media(hover:hover)]:flex">
-          {item.ingredientId && (
-            <IconButton label={`Remind me to buy ${item.name}`} className="text-faint" onClick={() => onRemind(item)}>
-              <RepeatIcon className="h-5 w-5" />
-            </IconButton>
-          )}
-          <IconButton label={`Remove ${item.name}`} className="text-faint" onClick={() => onRemove(item.id)}>
-            <TrashIcon className="h-5 w-5" />
-          </IconButton>
-        </span>
-      )}
-    </div>
-  );
-
-  // While picking aisles the row stays put, so a sideways nudge on the picker is not a swipe.
-  if (moving) return row;
-  return (
-    <SwipeRow
-      actions={[
-        // Free text with no ingredient behind it has nothing for a reminder to hang on.
-        ...(item.ingredientId ? [{ label: 'Remind', tone: 'accent' as const, onAction: () => onRemind(item) }] : []),
-        { label: 'Remove', tone: 'danger' as const, onAction: () => onRemove(item.id) },
-      ]}
-    >
-      {row}
-    </SwipeRow>
   );
 }
 
@@ -532,91 +415,6 @@ function SortSheet({
           </Button>
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             Not yet
-          </Button>
-        </div>
-      </div>
-    </Sheet>
-  );
-}
-
-/**
- * "Done shopping". Everything ticked comes off the list, and what is for the house goes in the
- * cupboard. All pre-selected because most of a shop is for the house — you untick the milk you
- * picked up for someone else, rather than ticking everything else.
- */
-function PutAwaySheet({
-  householdId,
-  items,
-  onDone,
-  onClose,
-}: {
-  householdId: string;
-  items: Item[];
-  onDone: (clearedIds: string[], stocked: number) => void;
-  onClose: () => void;
-}) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(items.map((i) => i.id)));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function putAway() {
-    setBusy(true);
-    setError(null);
-    const putAwayIds = items.filter((i) => selected.has(i.id)).map((i) => i.id);
-    const leaveOutIds = items.filter((i) => !selected.has(i.id)).map((i) => i.id);
-    try {
-      await api('POST', `/api/households/${householdId}/grocery-list/put-away`, {
-        putAway: putAwayIds,
-        leaveOut: leaveOutIds,
-      });
-      onDone([...putAwayIds, ...leaveOutIds], putAwayIds.length);
-    } catch {
-      setError('Could not put that away.');
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Sheet title="Done shopping" onClose={onClose}>
-      <div className="space-y-3">
-        <p className="text-[0.9375rem] text-muted">
-          Untick anything that isn't for the house. The rest goes in the Cupboard, and all of it comes off the list.
-        </p>
-        <ul className="inset-rows" style={ROW_INSET}>
-          {items.map((item) => {
-            const on = selected.has(item.id);
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggle(item.id)}
-                  className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
-                >
-                  <CheckCircle checked={on} />
-                  <span className={cx('min-w-0 flex-1 truncate', !on && 'text-muted')}>{item.name}</span>
-                  {!on && <span className="shrink-0 text-[0.9375rem] text-muted">Not for us</span>}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" disabled={busy} onClick={putAway}>
-            {busy ? 'Putting away…' : selected.size ? `Put away ${selected.size}` : 'Just clear them'}
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={onClose}>
-            Cancel
           </Button>
         </div>
       </div>
