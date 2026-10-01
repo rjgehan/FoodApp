@@ -14,6 +14,7 @@ import RecipeSectionPage from './pages/RecipeSectionPage';
 import SavedLinksPage from './pages/SavedLinksPage';
 import ExplorePage from './pages/ExplorePage';
 import ExploreRecipesPage from './pages/ExploreRecipesPage';
+import ExploreRecipePage from './pages/ExploreRecipePage';
 import ExploreSoonPage from './pages/ExploreSoonPage';
 import NewRecipePage from './pages/NewRecipePage';
 import EditRecipePage from './pages/EditRecipePage';
@@ -122,6 +123,8 @@ export default function App() {
           <Route path="/cupboard" element={<CupboardPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/explore/recipes" element={<ExploreRecipesPage />} />
+          {/* A published recipe, read-only until it is moved into your recipes. */}
+          <Route path="/explore/recipes/:recipeId" element={<ExploreRecipePage />} />
           {/* Named rather than wildcarded, so a typo lands on the catch-all instead of a
               page explaining a feature that does not exist. */}
           <Route path="/explore/nutrition" element={<ExploreSoonPage />} />
