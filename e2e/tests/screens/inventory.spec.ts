@@ -331,34 +331,34 @@ test('capture every screen', async ({ page }) => {
   });
   await step('done shopping', async () => {
     await page.goto('/grocery-list');
-    await page.getByRole('button', { name: 'Done shopping' }).first().click();
-    await shot(page, 'Done shopping sheet', 'Amounts bought are not shown or recorded.');
+    await page.getByRole('button', { name: /^Done shopping/ }).first().click();
+    await shot(page, 'Done shopping sheet', 'Untick what is not for the house; amounts bought are not recorded.');
   });
-  await step('move', async () => {
+  await step('menu', async () => {
     await page.goto('/grocery-list');
     await page.getByRole('button', { name: 'List options' }).click();
     await shot(page, 'Groceries ••• menu');
-    await sheet(page).getByRole('button', { name: 'Change aisles' }).click();
-    await shot(page, 'Change aisles');
   });
   await step('copy for notes', async () => {
     await page.goto('/grocery-list');
     await page.getByRole('button', { name: 'List options' }).click();
-    await sheet(page).getByRole('button', { name: 'Copy for Notes' }).click();
+    await sheet(page).getByRole('button', { name: /Copy for Notes/ }).click();
     await shot(page, 'Copied for Notes', 'Plain lines, aisle order — Notes turns them into checkboxes.');
   });
   await step('swipe', async () => {
     await page.goto('/grocery-list');
     await swipeLeft(page, page.getByText('coffee', { exact: true }));
-    await shot(page, 'Swipe to remove');
+    await shot(page, 'Swipe — more / remove');
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await shot(page, 'Grocery item — aisle, reminder, cupboard', 'Picking an aisle moves that ingredient for good.');
   });
 
   group = 'Cupboard';
   await step('cupboard', async () => {
     await page.goto('/cupboard');
     await shot(page, 'Cupboard', 'Have/Low, exact amounts, and Always have.', { full: true });
-    await page.getByPlaceholder(/Do we have/).fill('flour');
-    await shot(page, 'Cupboard search — not there');
+    await page.getByRole('searchbox').fill('flour');
+    await shot(page, 'Cupboard search — not there', 'The box offers to add what it could not find.');
   });
   await step('edit item', async () => {
     await page.goto('/cupboard');

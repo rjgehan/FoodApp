@@ -72,10 +72,22 @@ struct GalleryView: View {
                     entry("Groceries", "cart") {
                         GroceriesView(
                             session: session,
-                            sample: SampleData.groceries,
-                            sampleCategories: SampleData.categories,
-                            sampleReminders: SampleData.restock
+                            sample: SampleData.groceriesMockup,
+                            sampleCategories: SampleData.aisles,
+                            sampleReminders: SampleData.groceryReminders,
+                            sampleCupboard: SampleData.cupboardMockup
                         )
+                    }
+                    entry("Grocery item — aisle & reminder", "tag") {
+                        GroceryItemSheet(item: SampleData.groceriesMockup[4], categories: SampleData.aisles,
+                                         reminder: SampleData.groceryReminders.first, stock: nil, session: session,
+                                         sample: true, onMove: { _ in }, onReminder: { _ in }, onRemove: {})
+                            .pageBackground()
+                    }
+                    entry("Done shopping", "bag") {
+                        DoneShoppingSheet(items: SampleData.groceriesMockup.filter(\.checked), session: session,
+                                          sample: true) { _, _ in }
+                            .pageBackground()
                     }
                     entry("Groceries — all bought", "cart.badge.checkmark") {
                         GroceriesView(session: session, sample: [], sampleCategories: SampleData.categories)
@@ -100,10 +112,24 @@ struct GalleryView: View {
                     entry("Cupboard", "cabinet") {
                         CupboardView(
                             session: session,
-                            sample: SampleData.cupboard,
-                            sampleCategories: SampleData.categories,
-                            sampleReminders: SampleData.restock
+                            sample: SampleData.cupboardMockup,
+                            sampleCategories: SampleData.aisles,
+                            sampleReminders: SampleData.groceryReminders
                         )
+                    }
+                    entry("Cupboard — not there, add it?", "magnifyingglass") {
+                        CupboardView(session: session, sample: SampleData.cupboardMockup, sampleCategories: SampleData.aisles,
+                                     sampleReminders: SampleData.groceryReminders, sampleQuery: "tahini")
+                    }
+                    entry("Cupboard item — edit", "slider.horizontal.3") {
+                        CupboardItemSheet(item: SampleData.cupboardMockup[0], others: SampleData.cupboardMockup,
+                                          categories: SampleData.aisles, reminder: nil, session: session, sample: true) {}
+                            .pageBackground()
+                    }
+                    entry("Barcode scanner", "barcode.viewfinder") {
+                        ScanBarcodeScreen(session: session, items: [], onDone: { _ in },
+                                          sample: .found(Product(barcode: "5012345678900", name: "Chickpeas 400g tin",
+                                                                 brand: "", size: "400 g"), nil))
                     }
                     entry("Time to restock?", "repeat") {
                         RestockPrompt(

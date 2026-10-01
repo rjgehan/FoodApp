@@ -2,7 +2,9 @@ import AVFoundation
 import SwiftUI
 
 /**
- Scan a barcode, then either put it in the cupboard or find out it is already there.
+ The barcode scanner (mockup 4.8): the whole screen is the camera, with a window to aim through
+ and the torch for a dim kitchen, and what it read rises in a card at the bottom with the two
+ places it can go — the cupboard, or the grocery list.
 
  Both halves matter. In the kitchen you are putting shopping away; in a shop you are asking
  "do we already have this", which is the question a written list answers worst. So a scan that
@@ -14,133 +16,205 @@ import SwiftUI
  better than decoding frames in software — which is what the web has to do, because Safari
  will not lend it this.
 */
-struct ScanBarcodeSheet: View {
+struct ScanBarcodeScreen: View {
     var session: Session
     /// What is already in the cupboard, so a scan can recognise it.
     let items: [CupboardItem]
-    var onAdded: (CupboardItem) -> Void
+    /// What happened, to say on the cupboard once this has closed.
+    var onDone: (String) -> Void
+    /// Previews and the gallery: start on a result rather than the camera.
+    var sample: Stage?
 
     @Environment(\.dismiss) private var dismiss
     @State private var stage: Stage = .scanning
     @State private var name = ""
     @State private var problem: String?
     @State private var busy = false
+    @State private var torch = false
 
-    private enum Stage {
+    enum Stage {
         case scanning
         case asking(String)
         case found(Product, CupboardItem?)
         case unknown(String)
     }
 
+    private var scanning: Bool { if case .scanning = stage { return true } else { return false } }
+
     var body: some View {
-        NavigationStack {
-            Group {
-                switch stage {
-                case .scanning:
-                    VStack(spacing: 12) {
-                        BarcodeCamera { code in Task { await lookUp(code) } }
-                            .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                        if let problem {
-                            Text(problem).font(.footnote).foregroundStyle(Palette.danger)
-                                .multilineTextAlignment(.center)
-                        } else {
-                            Text("Point at the barcode").font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(16)
-
-                case .asking(let code):
-                    VStack(spacing: 10) {
-                        ProgressView()
-                        Text("Looking up \(code)").font(.subheadline).foregroundStyle(.secondary)
-                    }
-
-                case .found(let product, let already):
-                    Form {
-                        KitchenSection {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(product.name).font(.title3.weight(.semibold))
-                                if !describe(product).isEmpty {
-                                    Text(describe(product)).font(.subheadline).foregroundStyle(.secondary)
-                                }
-                                Text(product.barcode).font(.caption).foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                        if let already {
-                            KitchenSection {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("You already have this.")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Palette.accentInk)
-                                    Text("It is in the cupboard as “\(already.name)”"
-                                         + (already.runningLow ? ", and it is marked running low." : "."))
-                                        .font(.subheadline)
-                                }
-                                .padding(.vertical, 2)
-                            }
-                            .listRowBackground(Palette.accentSoft)
-                        } else {
-                            KitchenSection {
-                                TextField("Name", text: $name)
-                            } header: {
-                                Text("Call it")
-                            } footer: {
-                                Text("What you want to see on the list.")
-                            }
-                            KitchenSection {
-                                Button("Add to the cupboard") { Task { await add() } }
-                                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                            }
-                        }
-                        againSection
-
-                    }
-
-                case .unknown(let code):
-                    Form {
-                        KitchenSection {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Not in the catalogue.").font(.headline)
-                                Text("Nothing is published under \(code). Give it a name and it still goes in the cupboard.")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                        KitchenSection("Call it") {
-                            TextField("Baked beans", text: $name)
-                        }
-                        KitchenSection {
-                            Button("Add to the cupboard") { Task { await add() } }
-                                .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        }
-                        againSection
+        ZStack {
+            LinearGradient(colors: [Color(red: 0x3B / 255, green: 0x30 / 255, blue: 0x29 / 255),
+                                    Color(red: 0x15 / 255, green: 0x10 / 255, blue: 0x0D / 255)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            if scanning && sample == nil {
+                BarcodeCamera(torch: torch) { code in Task { await lookUp(code) } }
+                    .ignoresSafeArea()
+            }
+            window
+            VStack(spacing: 0) {
+                HStack {
+                    round("xmark", label: "Close") { dismiss() }
+                    Spacer()
+                    round(torch ? "flashlight.on.fill" : "flashlight.off.fill", label: torch ? "Torch off" : "Torch on") {
+                        torch.toggle()
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                Spacer()
+                if !scanning {
+                    card
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .navigationTitle("Scan a barcode")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+        }
+        .animation(.snappy(duration: 0.25), value: scanning)
+        .onAppear {
+            if let sample {
+                stage = sample
+                if case .found(let product, _) = sample { name = product.name }
             }
         }
     }
 
-    private var againSection: some View {
-        KitchenSection {
+    /// The window to aim through: the screen dimmed round a rounded box, and the accent's scan line.
+    private var window: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(.white.opacity(0.95), lineWidth: 3)
+                Rectangle()
+                    .fill(Palette.accent)
+                    .frame(height: 2)
+                    .shadow(color: Palette.accent, radius: 6)
+                    .padding(.horizontal, 18)
+            }
+            .frame(width: 270, height: 170)
+            .background {
+                // Everything but the window darkens a little, so the eye goes to the window.
+                Rectangle().fill(.black.opacity(0.25))
+                    .frame(width: 4000, height: 4000)
+                    .mask {
+                        Rectangle().frame(width: 4000, height: 4000)
+                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .frame(width: 270, height: 170).blendMode(.destinationOut))
+                            .compositingGroup()
+                    }
+                    .allowsHitTesting(false)
+            }
+            Text(problem ?? "Point at a barcode")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .offset(y: -40)
+        .opacity(scanning ? 1 : 0.6)
+    }
+
+    private func round(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.18), in: Circle())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel(label)
+    }
+
+    /// What was read, and where it can go.
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            switch stage {
+            case .scanning:
+                EmptyView()
+            case .asking(let code):
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Looking up \(code)…").font(.system(size: 14)).foregroundStyle(Palette.muted)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            case .found(let product, let already):
+                productLine(title: already == nil ? nil : product.name,
+                            detail: [describe(product), product.barcode].filter { !$0.isEmpty }.joined(separator: " · "))
+                if let already {
+                    NoteBox(text: Text("**You already have this.** It is in the cupboard as “\(already.name)”"
+                                       + (already.runningLow ? ", and it is marked running low." : ".")),
+                            tone: .sky, systemImage: "cabinet")
+                }
+                actions(canStock: already == nil, listName: already?.name)
+            case .unknown(let code):
+                productLine(title: "Not in the catalogue.", detail: code)
+                Text("Give it a name and it still goes in the cupboard.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                FieldBox(nil, text: $name, prompt: "Baked beans")
+                actions(canStock: true, listName: nil)
+            }
+        }
+        .padding(16)
+        .background(Palette.bg, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+    }
+
+    private func productLine(title: String?, detail: String) -> some View {
+        HStack(spacing: 12) {
+            RecipePhotoPlaceholder(hue: .sky, systemImage: "shippingbox", size: 52, radius: 12)
+            VStack(alignment: .leading, spacing: 2) {
+                if let title {
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                } else {
+                    // The catalogue's name, editable: it sometimes answers in French, or with a
+                    // marketing name nobody would write on a list.
+                    HStack(spacing: 6) {
+                        TextField("Call it", text: $name)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Palette.text)
+                        Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Palette.faint)
+                    }
+                }
+                Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+        }
+    }
+
+    private func actions(canStock: Bool, listName: String?) -> some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                if canStock {
+                    Button {
+                        Task { await addToCupboard() }
+                    } label: {
+                        Label("Cupboard", systemImage: "cabinet").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.kitchen(.primary, size: .small))
+                    .accessibilityLabel("Add to the cupboard")
+                    .disabled(busy || named.isEmpty)
+                }
+                Button {
+                    Task { await addToList(listName ?? named) }
+                } label: {
+                    Label("Add to list", systemImage: "cart").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.kitchen(.secondary, size: .small))
+                .accessibilityLabel("Add to the list")
+                .disabled(busy || (listName ?? named).isEmpty)
+            }
             Button("Scan another") {
                 name = ""
                 problem = nil
                 stage = .scanning
             }
-            if let problem {
-                Text(problem).foregroundStyle(Palette.danger)
-            }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Palette.accentInk)
         }
     }
+
+    private var named: String { name.trimmingCharacters(in: .whitespaces) }
 
     /// The brand is usually already inside the name — the server puts it there when it is
     /// missing — so repeating it would give "Nutella · Nutella".
@@ -155,6 +229,7 @@ struct ScanBarcodeSheet: View {
     private func lookUp(_ barcode: String) async {
         stage = .asking(barcode)
         problem = nil
+        torch = false
         do {
             let product = try await APIClient.shared.product(barcode: barcode)
             name = product.name
@@ -168,16 +243,31 @@ struct ScanBarcodeSheet: View {
         }
     }
 
-    private func add() async {
-        let wanted = name.trimmingCharacters(in: .whitespaces)
+    private func addToCupboard() async {
+        guard !named.isEmpty, !busy, let household = session.household?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await APIClient.shared.addToCupboard(household: household, name: named)
+            onDone("Added \(named) to the cupboard")
+            dismiss()
+        } catch {
+            problem = error.localizedDescription
+            stage = .scanning
+        }
+    }
+
+    private func addToList(_ wanted: String) async {
         guard !wanted.isEmpty, !busy, let household = session.household?.id else { return }
         busy = true
         defer { busy = false }
         do {
-            onAdded(try await APIClient.shared.addToCupboard(household: household, name: wanted))
+            _ = try await APIClient.shared.addGroceryItem(household: household, name: wanted, quantity: nil, unit: nil)
+            onDone("Added \(wanted) to the list")
             dismiss()
         } catch {
             problem = error.localizedDescription
+            stage = .scanning
         }
     }
 
@@ -210,6 +300,8 @@ struct ScanBarcodeSheet: View {
  makes every frame slower. The invite scanner uses the same controller, looking for QR codes only.
 */
 struct BarcodeCamera: UIViewControllerRepresentable {
+    /// The torch, for a barcode in a dim cupboard.
+    var torch = false
     var onFound: (String) -> Void
 
     func makeUIViewController(context: Context) -> BarcodeCameraController {
@@ -220,6 +312,7 @@ struct BarcodeCamera: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: BarcodeCameraController, context: Context) {
         controller.onFound = onFound
+        controller.setTorch(torch)
     }
 }
 
@@ -322,4 +415,13 @@ final class BarcodeCameraController: UIViewController, AVCaptureMetadataOutputOb
         if digits.count == 12 { return "0" + digits }
         return digits
     }
+}
+
+#Preview("Barcode — found") {
+    ScanBarcodeScreen(session: .preview, items: [], onDone: { _ in },
+                      sample: .found(Product(barcode: "5012345678900", name: "Chickpeas 400g tin", brand: "", size: "400 g"), nil))
+}
+
+#Preview("Barcode — scanning") {
+    ScanBarcodeScreen(session: .preview, items: [], onDone: { _ in }, sample: .scanning)
 }

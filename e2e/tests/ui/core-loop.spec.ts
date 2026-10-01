@@ -103,14 +103,19 @@ test('check off, then Done shopping puts things in the cupboard', async ({ page 
 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/grocery-list');
-  await expect(page.getByText('2 to buy')).toBeVisible();
+  const row = (name: string) => page.getByRole('button', { name: new RegExp(name) }).first();
+  await expect(row('spaghetti')).toHaveAttribute('aria-pressed', 'false');
+  await expect(row('garlic')).toHaveAttribute('aria-pressed', 'false');
 
+  // Ticked, it stays in its aisle, struck through, until the shop is done.
   await tapRowStart(page, page.getByText('spaghetti', { exact: true }));
-  await expect(page.getByText(/In the cart · 1/)).toBeVisible();
-  await page.getByRole('button', { name: 'Done shopping' }).first().click();
-  await sheet(page).getByRole('button', { name: /Put away 1/ }).click();
+  await expect(row('spaghetti')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: /^Done shopping · 1 ticked/ }).click();
+  await expect(sheet(page).getByRole('heading', { name: 'Done shopping?' })).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Finish · 1 to cupboard' }).click();
 
-  await expect(page.getByText('1 to buy')).toBeVisible();
+  await expect(page.getByText('spaghetti', { exact: true })).toHaveCount(0);
+  await expect(row('garlic')).toHaveAttribute('aria-pressed', 'false');
   await tab(page, 'Cupboard').click();
   await expect(page.getByText('spaghetti', { exact: true })).toBeVisible();
   expect(find(await groceries(hh.id), 'spaghetti')).toBeUndefined();
@@ -132,7 +137,7 @@ test('a second phone sees ticks without refreshing', async ({ page, browser }) =
   await page.goto('/grocery-list');
   await tapRowStart(page, page.getByText('lemons', { exact: true }));
 
-  await expect(phone2.getByText(/In the cart · 1/)).toBeVisible();
+  await expect(phone2.getByRole('button', { name: /lemons/ })).toHaveAttribute('aria-pressed', 'true');
   await other.close();
 });
 

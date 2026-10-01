@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -79,7 +80,17 @@ public class GroceryListService {
      * cupboard. Loaded once per request instead of once per item.
      */
     private record Context(Map<UUID, GroceryCategory> sections, List<GroceryCategory> categories,
-                            Map<UUID, CupboardItem> cupboard) {
+                            Map<UUID, CupboardItem> cupboard, Map<UUID, String> mealRecipes) {
+
+        /** "Lemon herb chicken, Green salad": the recipes a row is for, each once, A to Z. */
+        List<String> recipesFor(GroceryListItem item) {
+            return item.getFromMeals().keySet().stream()
+                    .map(mealRecipes::get)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .toList();
+        }
 
         boolean isStaple(Ingredient ingredient) {
             CupboardItem item = cupboard.get(ingredient.getId());
@@ -96,7 +107,11 @@ public class GroceryListService {
     private Context context(UUID householdId) {
         Map<UUID, CupboardItem> cupboard = new HashMap<>();
         cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
-        return new Context(ingredientSections.overrides(householdId), ingredientSections.categories(householdId), cupboard);
+        Map<UUID, String> mealRecipes = new HashMap<>();
+        mealPlanEntryRepository.recipeNamesOnList(householdId)
+                .forEach(row -> mealRecipes.put((UUID) row[0], (String) row[1]));
+        return new Context(ingredientSections.overrides(householdId), ingredientSections.categories(householdId),
+                cupboard, mealRecipes);
     }
 
     @Transactional(readOnly = true)
@@ -111,7 +126,7 @@ public class GroceryListService {
     @Transactional
     public GroceryListItemResponse addManualItem(UUID householdId, UUID requesterId, AddItemRequest request) {
         householdService.assertMember(householdId, requesterId);
-        return addItem(householdId, request);
+        return addItem(householdId, request, userRepository.findById(requesterId).orElse(null));
     }
 
     /**
@@ -121,6 +136,10 @@ public class GroceryListService {
      */
     @Transactional
     public GroceryListItemResponse addItem(UUID householdId, AddItemRequest request) {
+        return addItem(householdId, request, null);
+    }
+
+    private GroceryListItemResponse addItem(UUID householdId, AddItemRequest request, User by) {
         Household household = locked(householdId);
         String unit = blankToNull(request.unit());
         Ingredient ingredient = request.ingredientName() != null
@@ -135,6 +154,7 @@ public class GroceryListService {
                         .unit(unit)
                         .askedFor(true)
                         .build());
+        addedBy(item, by);
 
         GroceryListItemResponse response = toItemResponse(item, context(householdId));
         eventPublisher.itemChanged(householdId, response);
@@ -191,6 +211,14 @@ public class GroceryListService {
                 .build());
     }
 
+    /** The first person to ask for a row is the one it says added it. */
+    private void addedBy(GroceryListItem row, User by) {
+        if (by != null && row.getAddedBy() == null) {
+            row.setAddedBy(by);
+            groceryListItemRepository.save(row);
+        }
+    }
+
     private GroceryListItem askedFor(GroceryListItem row) {
         row.setAskedFor(true);
         return groceryListItemRepository.save(row);
@@ -206,10 +234,10 @@ public class GroceryListService {
         Household household = locked(householdId);
         Ingredient ingredient = ingredientRepository.findById(ingredientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
-        ensureOnList(household, ingredient);
+        ensureOnList(household, ingredient, userRepository.findById(requesterId).orElse(null));
     }
 
-    private void ensureOnList(Household household, Ingredient ingredient) {
+    private void ensureOnList(Household household, Ingredient ingredient, User by) {
         List<GroceryListItem> waiting = groceryListItemRepository
                 .findByHouseholdIdAndIngredientIdAndCheckedFalse(household.getId(), ingredient.getId());
         if (!waiting.isEmpty()) {
@@ -221,6 +249,7 @@ public class GroceryListService {
                 .household(household)
                 .ingredient(ingredient)
                 .askedFor(true)
+                .addedBy(by)
                 .build());
         eventPublisher.itemChanged(household.getId(), toItemResponse(item, context(household.getId())));
     }
@@ -810,6 +839,8 @@ public class GroceryListService {
                 item.getCheckedAt(),
                 category != null ? category.getId() : null,
                 ingredient == null || category != null,
-                ingredient != null && ctx.has(ingredient));
+                ingredient != null && ctx.has(ingredient),
+                ctx.recipesFor(item),
+                item.getAddedBy() != null ? item.getAddedBy().getDisplayName() : null);
     }
 }

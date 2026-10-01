@@ -83,6 +83,14 @@ public class GroceryListItem {
 
     private Instant checkedAt;
 
+    /**
+     * Who typed it in or pressed Buy again — the first person to ask for it, kept when someone
+     * else asks again. Null for rows only meals put here, and for rows from before it was kept.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "added_by_user_id")
+    private User addedBy;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

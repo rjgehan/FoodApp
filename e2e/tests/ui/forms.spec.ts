@@ -57,7 +57,7 @@ test('the unit list is not cut off at the bottom of a sheet', async ({ page }) =
   await signIn(page, hh.owner, hh.id);
   await page.goto('/cupboard');
   await page.getByText('flour', { exact: true }).click();
-  await sheet(page).getByText('Track an exact amount').click();
+  await sheet(page).getByRole('radio', { name: 'Exact' }).click();
   await sheet(page).getByPlaceholder('unit').click();
   const list = page.getByRole('listbox');
   const box = await list.boundingBox();

@@ -73,8 +73,9 @@ test('scan a barcode and the thing it names goes in the cupboard', async ({ page
   await page.goto('/cupboard');
   await page.getByRole('button', { name: 'Scan a barcode' }).click();
 
-  // Reading it involves fetching a megabyte of WebAssembly the first time.
-  await expect(sheet(page).getByText('Nutella', { exact: true })).toBeVisible({ timeout: 30_000 });
+  // Reading it involves fetching a megabyte of WebAssembly the first time. The name it found is
+  // ready to save, and can still be changed first.
+  await expect(sheet(page).getByLabel('Call it')).toHaveValue('Nutella', { timeout: 30_000 });
   await expect(sheet(page).getByText('400 g')).toBeVisible();
 
   await sheet(page).getByRole('button', { name: 'Add to the cupboard' }).click();
@@ -110,9 +111,28 @@ test('a barcode nobody has published still gets you a cupboard item', async ({ p
   await page.getByRole('button', { name: 'Scan a barcode' }).click();
 
   await expect(sheet(page).getByText('Not in the catalogue.')).toBeVisible({ timeout: 30_000 });
-  await sheet(page).getByRole('textbox').fill('Chocolate spread');
+  await sheet(page).getByLabel('Call it').fill('Chocolate spread');
   await sheet(page).getByRole('button', { name: 'Add to the cupboard' }).click();
   await expect.poll(async () =>
     (await call('GET', `/api/households/${hh.id}/cupboard`, { token: hh.owner.token }))
       .some((item: { name: string }) => item.name === 'Chocolate spread')).toBe(true);
+});
+
+test('a scan can go on the grocery list instead', async ({ page, context }) => {
+  const hh = await newHousehold();
+  await context.grantPermissions(['camera']);
+  await cameraShowing(page, NUTELLA);
+  await catalogueSays(page, nutella);
+
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/cupboard');
+  await page.getByRole('button', { name: 'Scan a barcode' }).click();
+
+  await expect(sheet(page).getByLabel('Call it')).toHaveValue('Nutella', { timeout: 30_000 });
+  await sheet(page).getByRole('button', { name: 'Add to the list' }).click();
+  await expect.poll(async () =>
+    (await call('GET', `/api/households/${hh.id}/grocery-list`, { token: hh.owner.token }))
+      .some((item: { name: string }) => item.name.toLowerCase() === 'nutella')).toBe(true);
+  // The list, not the cupboard: it is something to buy.
+  expect(await call('GET', `/api/households/${hh.id}/cupboard`, { token: hh.owner.token })).toEqual([]);
 });

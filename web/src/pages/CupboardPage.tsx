@@ -1,59 +1,48 @@
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import NoHousehold from '../components/NoHousehold';
-import { Link } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
-import type { CupboardItem, GroceryCategory, RestockReminder } from '../api/types';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api } from '../api/client';
+import type { CupboardItem } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
 import { groupByCategory } from '../utils/storeSections';
-import {
-  ActionMenu,
-  Button,
-  Card,
-  CheckCircle,
-  cx,
-  EmptyState,
-  ErrorText,
-  Field,
-  Input,
-  NumberInput,
-  Select,
-  Sheet,
-} from '../components/ui';
-import { BarcodeIcon, PlusIcon } from '../components/icons';
+import { ActionMenu, Button, Chip, EmptyState, IconButton, SearchField, SectionLabel, Tile } from '../components/ui';
+import { Icon } from '../components/icons';
 import { PageTitle } from '../components/PageTitle';
-import SwipeRow from '../components/SwipeRow';
-import UnitInput from '../components/UnitInput';
+import { toast } from '../components/toast';
 import ScanToCupboard from '../components/ScanToCupboard';
 import StartCupboardSheet from '../components/StartCupboardSheet';
 import CopyCupboardSheet from '../components/CopyCupboardSheet';
-import { RestockField, saveRestock, useRestockReminders } from '../components/Restock';
-import { everyTitle } from '../utils/restock';
+import { useRestockReminders } from '../components/Restock';
+import { CupboardRow } from '../components/cupboard/CupboardParts';
+import CupboardItemSheet from '../components/cupboard/CupboardItemSheet';
 
-/* The rows hold the card's 16px padding, so the separators start and stop where the padding does. */
-const CARD_ROW_INSET = { '--row-inset': '1rem', '--row-inset-end': '1rem' } as CSSProperties;
+type Filter = 'all' | 'low' | 'always' | 'reminders';
 
 function byName(a: CupboardItem, b: CupboardItem) {
   return a.name.localeCompare(b.name);
 }
 
 /**
- * What is in the house, so you can check without going to look. Filled mostly by "Done
- * shopping" on the grocery list; the search box doubles as the way to add something by hand.
+ * What is in the house, so you can check without going to look (mockup 4.5). Filled mostly by
+ * "Done shopping" on the grocery list. One box does both jobs: type to see whether you have
+ * something, and if you don't, it offers to add it (4.6). The chips narrow it to what is low,
+ * what you always have, or what has a restock reminder.
  *
- * Each row shows the one thing you check at a glance — Have or Low — and keeps the rest a swipe
- * away: slide it left for Buy again and Remove, or fling it all the way to remove it outright,
- * which is what you do most. Tapping an item opens it for editing.
+ * Each row shows the one thing you check at a glance — Have or Low, or an exact count — and keeps
+ * the rest a swipe away. Tapping an item opens it for editing.
  */
 export default function CupboardPage() {
   const { activeHouseholdId, activeHousehold, households, groceryCategories } = useHousehold();
+  const [params] = useSearchParams();
   const [items, setItems] = useState<CupboardItem[] | null>(null);
-  const [query, setQuery] = useState('');
+  // Arriving from a grocery item's sheet looks that item up straight away.
+  const [query, setQuery] = useState(() => params.get('q') ?? '');
+  const [filter, setFilter] = useState<Filter>('all');
   const [editing, setEditing] = useState<CupboardItem | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [filling, setFilling] = useState<'starters' | 'copy' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const restock = useRestockReminders(activeHouseholdId);
 
   const load = useCallback(async () => {
@@ -70,11 +59,7 @@ export default function CupboardPage() {
   });
 
   if (!activeHouseholdId) {
-    return (
-      <Card>
-        <NoHousehold />
-      </Card>
-    );
+    return <NoHousehold />;
   }
 
   function replace(updated: CupboardItem) {
@@ -91,22 +76,18 @@ export default function CupboardPage() {
     setEditing(null);
   }
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
+  async function add(e?: FormEvent) {
+    e?.preventDefault();
     const name = query.trim();
     if (!name || busy) return;
     setBusy(true);
     try {
       replace(await api<CupboardItem>('POST', `/api/households/${activeHouseholdId}/cupboard`, { name }));
       setQuery('');
+      toast(`Added ${name} to the cupboard.`, { icon: 'check' });
     } finally {
       setBusy(false);
     }
-  }
-
-  function announce(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 5000);
   }
 
   async function setRunningLow(item: CupboardItem, runningLow: boolean) {
@@ -133,30 +114,37 @@ export default function CupboardPage() {
   async function buyAgain(item: CupboardItem) {
     drop(item);
     await api('POST', `/api/households/${activeHouseholdId}/cupboard/${item.id}/buy-again`);
+    toast(`${item.name} is on the list.`, { icon: 'cart' });
   }
 
   const all = items ?? [];
   const q = query.trim().toLowerCase();
-  const shown = all.filter((i) => !q || i.name.toLowerCase().includes(q));
+  const counts = {
+    low: all.filter((i) => i.runningLow && !i.staple).length,
+    always: all.filter((i) => i.staple).length,
+    reminders: all.filter((i) => restock.reminders.has(i.ingredientId)).length,
+  };
+  const filtered = all.filter((i) =>
+    filter === 'low'
+      ? i.runningLow && !i.staple
+      : filter === 'always'
+        ? i.staple
+        : filter === 'reminders'
+          ? restock.reminders.has(i.ingredientId)
+          : true,
+  );
+  // A search looks through the whole cupboard, whichever chip is on: "do we have…?" means anywhere.
+  const shown = q ? all.filter((i) => i.name.toLowerCase().includes(q)) : filtered;
   const exact = all.some((i) => i.name.toLowerCase() === q);
   const groups = groupByCategory(shown, groceryCategories);
-  const low = all.filter((i) => i.runningLow).length;
   const otherHouseholds = households.filter((h) => h.id !== activeHouseholdId);
 
   return (
-    <div className="space-y-4">
-      <PageTitle
-        title="Cupboard"
-        subtitle={
-          all.length === 0
-            ? 'What’s in the house.'
-            : [`${all.length} ${all.length === 1 ? 'thing' : 'things'}`, low && `${low} running low`]
-                .filter(Boolean)
-                .join(' · ')
-        }
-      >
+    <div className="space-y-3.5">
+      <PageTitle title="Cupboard">
         <ActionMenu
           label="Cupboard options"
+          shape="round"
           items={[
             { label: 'Start with the basics…', onSelect: () => setFilling('starters') },
             // Only for somebody with a second house to fill, which is almost nobody — so it is
@@ -164,132 +152,125 @@ export default function CupboardPage() {
             otherHouseholds.length > 0 && { label: 'Copy from another household…', onSelect: () => setFilling('copy') },
           ]}
         />
+        {/* The camera answers "do we have this?" without the typing — the question that matters
+            when you are standing in a shop holding the tin. */}
+        <IconButton label="Scan a barcode" shape="round" onClick={() => setScanning(true)}>
+          <Icon name="barcode" size={18} />
+        </IconButton>
       </PageTitle>
 
-      {/* One box: type to check whether you have something, and if you don't, add it. The
-          camera answers the same question without the typing, which is the one that matters
-          when you are standing in a shop holding the tin. */}
-      <form onSubmit={add} className="space-y-2">
-        <div className="flex gap-2">
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Do we have… ?"
-            aria-label="Search the cupboard, or add something"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-11 shrink-0 px-0"
-            aria-label="Scan a barcode"
-            onClick={() => setScanning(true)}
-          >
-            <BarcodeIcon className="h-5 w-5" />
-          </Button>
-        </div>
-        {/* Loud only when nothing matched — a partial match ("gar" → garlic) is usually the answer. */}
-        {q && !exact && (
-          <Button type="submit" full variant={shown.length ? 'ghost' : 'secondary'} disabled={busy}>
-            <PlusIcon className="h-5 w-5" />
-            Add “{query.trim()}” — we have it
-          </Button>
-        )}
+      <form onSubmit={add}>
+        <SearchField
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search or add to cupboard"
+          aria-label="Search the cupboard, or add something"
+          enterKeyHint="search"
+          className="!h-[2.625rem]"
+          end={
+            query && (
+              <button
+                type="button"
+                aria-label="Clear"
+                onClick={() => setQuery('')}
+                className="press -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted"
+              >
+                <Icon name="x" size={15} strokeWidth={2.4} />
+              </button>
+            )
+          }
+        />
       </form>
 
-      {notice && (
-        <p role="status" className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">
-          {notice}
-        </p>
+      {!q && all.length > 0 && (
+        // Bleeds to the screen's edges so the last chip scrolls out of sight rather than wrapping.
+        <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-0.5 [scrollbar-width:none] md:-mx-0 md:px-0">
+          <Chip active={filter === 'all'} onClick={() => setFilter('all')}>
+            All · {all.length}
+          </Chip>
+          <Chip active={filter === 'low'} onClick={() => setFilter('low')}>
+            Low · {counts.low}
+          </Chip>
+          <Chip active={filter === 'always'} onClick={() => setFilter('always')}>
+            Always have · {counts.always}
+          </Chip>
+          <Chip active={filter === 'reminders'} onClick={() => setFilter('reminders')}>
+            Reminders{counts.reminders ? ` · ${counts.reminders}` : ''}
+          </Chip>
+        </div>
+      )}
+
+      {q && !exact && (
+        // The search missed (or only nearly hit): the box offers to add what was typed.
+        <div className="dash flex items-center gap-3 p-3.5">
+          <Tile icon="plus" tone="accent" size={38} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[0.9375rem] font-semibold">Add “{query.trim()}”</p>
+            <p className="text-xs text-muted">Not in the cupboard yet</p>
+          </div>
+          <Button size="sm" disabled={busy} onClick={() => add()}>
+            Add
+          </Button>
+        </div>
       )}
 
       {items === null ? (
         <p className="py-6 text-center text-[0.9375rem] text-muted">Loading…</p>
       ) : all.length === 0 ? (
-        <div>
-          <EmptyState>
-            Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
-            <Link to="/grocery-list" className="font-medium text-accent-ink">
-              Groceries
-            </Link>{' '}
-            and what you bought lands here — or add things above.
-          </EmptyState>
-          {/* A new house's cupboard is the one that is empty, and ticking a list beats typing it. */}
-          <div className="-mt-2 flex justify-center">
-            <Button variant="secondary" onClick={() => setFilling('starters')}>
-              Start with the basics
-            </Button>
+        !q && (
+          <div>
+            <EmptyState>
+              Nothing here yet. Tap <span className="font-medium text-ink">Done shopping</span> in{' '}
+              <Link to="/grocery-list" className="font-medium text-accent-ink">
+                Groceries
+              </Link>{' '}
+              and what you bought lands here — or add things above.
+            </EmptyState>
+            {/* A new house's cupboard is the one that is empty, and ticking a list beats typing it. */}
+            <div className="-mt-2 flex justify-center">
+              <Button variant="secondary" onClick={() => setFilling('starters')}>
+                Start with the basics
+              </Button>
+            </div>
           </div>
-        </div>
+        )
       ) : shown.length === 0 ? (
-        <EmptyState>Not in the cupboard.</EmptyState>
+        !q && <EmptyState>{filter === 'low' ? 'Nothing is running low.' : 'Nothing here.'}</EmptyState>
       ) : (
-        groups.map(({ category, items: rows }) => (
-          <Card key={category?.id ?? 'unsorted'} title={category?.name ?? 'Unsorted'}>
-            {/*
-              * The rows run to the card's edges and carry its padding themselves, so a tap or a
-              * swipe on the outer strip of a row reaches the row instead of the card.
-              */}
-            <ul className="card card-rows inset-rows" style={CARD_ROW_INSET}>
-              {rows.map((item) => {
-                const reminder = restock.reminders.get(item.ingredientId);
-                const detail = [
-                  item.staple && 'Always have',
-                  item.onList && 'On the list',
-                  reminder && everyTitle(reminder.everyDays),
-                ]
-                  .filter(Boolean)
-                  .join(' · ');
-                // "Always have" means it is never low, so there is nothing to toggle.
-                const trailing = item.quantity != null ? (
-                  <QuantityStepper
-                    quantity={item.quantity}
-                    unit={item.unit}
-                    onAdjust={(delta) => adjustQuantity(item, delta)}
-                  />
-                ) : (
-                  !item.staple && <HaveOrLow low={item.runningLow} onChange={(v) => setRunningLow(item, v)} />
-                );
-                return (
+        <div className="gap-x-5 lg:columns-2">
+          {q && !exact && <SectionLabel className="!px-0.5">Similar</SectionLabel>}
+          {groups.map(({ category, items: rows }) => (
+            <section key={category?.id ?? 'unsorted'} className="break-inside-avoid pb-3.5">
+              {!(q && !exact) && (
+                <SectionLabel className="!pb-1.5 !pt-1 !text-xs !font-bold">{category?.name ?? 'Unsorted'}</SectionLabel>
+              )}
+              <ul className="card card-rows inset-rows">
+                {rows.map((item) => (
                   <li key={item.id}>
-                    <SwipeRow
-                      actions={[
-                        { label: 'Buy again', tone: 'accent', onAction: () => buyAgain(item) },
-                        { label: 'Remove', tone: 'danger', onAction: () => remove(item) },
-                      ]}
-                    >
-                      {/* With nothing on the right, the button reaches the card's right edge too. */}
-                      <div className={cx('flex items-center gap-2 py-2', trailing && 'pr-4')}>
-                        <button
-                          type="button"
-                          onClick={() => setEditing(item)}
-                          className={cx(
-                            'flex min-h-touch min-w-0 flex-1 flex-col justify-center text-left transition-colors active:bg-surface2/60',
-                            trailing ? 'pl-4' : 'px-4',
-                          )}
-                          aria-label={`Edit ${item.name}`}
-                        >
-                          <span className="block truncate">{item.name}</span>
-                          {detail && <span className="block truncate text-[0.8125rem] text-muted">{detail}</span>}
-                        </button>
-                        {trailing}
-                      </div>
-                    </SwipeRow>
+                    <CupboardRow
+                      item={item}
+                      reminder={restock.reminders.get(item.ingredientId)}
+                      onEdit={() => setEditing(item)}
+                      onLow={(low) => setRunningLow(item, low)}
+                      onAdjust={(delta) => adjustQuantity(item, delta)}
+                      onBuyAgain={() => buyAgain(item)}
+                      onRemove={() => remove(item)}
+                    />
                   </li>
-                );
-              })}
-            </ul>
-          </Card>
-        ))
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
 
-      {all.length > 0 && (
+      {all.length > 0 && !q && (
         <p className="px-1 text-[0.8125rem] text-faint">
           Swipe an item left to buy it again or remove it. Tap it to edit.
         </p>
       )}
 
-      {scanning && activeHouseholdId && (
+      {scanning && (
         <ScanToCupboard
           householdId={activeHouseholdId}
           items={all}
@@ -302,7 +283,7 @@ export default function CupboardPage() {
         <StartCupboardSheet
           householdId={activeHouseholdId}
           onAdded={(added) => {
-            announce(added === 0 ? 'All of those were here already.' : `Added ${added} to the cupboard.`);
+            toast(added === 0 ? 'All of those were here already.' : `Added ${added} to the cupboard.`, { duration: 5000 });
             load().catch(() => {});
           }}
           onClose={() => setFilling(null)}
@@ -316,9 +297,10 @@ export default function CupboardPage() {
           others={otherHouseholds}
           items={all}
           onCopied={(copied, skipped) => {
-            announce(
+            toast(
               `Copied ${copied} ${copied === 1 ? 'item' : 'items'}` +
                 (skipped ? `; ${skipped} ${skipped === 1 ? 'was' : 'were'} already here.` : '.'),
+              { duration: 5000 },
             );
             load().catch(() => {});
           }}
@@ -327,9 +309,10 @@ export default function CupboardPage() {
       )}
 
       {editing && (
-        <EditItemSheet
+        <CupboardItemSheet
           householdId={activeHouseholdId}
           item={editing}
+          others={all}
           categories={groceryCategories}
           reminder={restock.reminders.get(editing.ingredientId) ?? null}
           onClose={() => setEditing(null)}
@@ -346,215 +329,5 @@ export default function CupboardPage() {
         />
       )}
     </div>
-  );
-}
-
-/** An exact count instead of Have/Low — tap +/- to adjust without opening the editor. */
-function QuantityStepper({
-  quantity,
-  unit,
-  onAdjust,
-}: {
-  quantity: number;
-  unit: string | null;
-  onAdjust: (delta: number) => void;
-}) {
-  // Trims "3.00" down to "3", but keeps "2.5" as written.
-  const shown = Number.isInteger(quantity) ? String(quantity) : String(Math.round(quantity * 100) / 100);
-  return (
-    <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-surface2 px-1 py-0.5" role="group" aria-label="Amount on hand">
-      <button
-        type="button"
-        aria-label="One less"
-        onClick={() => onAdjust(-1)}
-        className="flex h-7 w-7 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface"
-      >
-        −
-      </button>
-      <span className="min-w-[2.5rem] text-center text-[0.8125rem] font-semibold tabular-nums">
-        {shown}
-        {unit ? ` ${unit}` : ''}
-      </span>
-      <button
-        type="button"
-        aria-label="One more"
-        onClick={() => onAdjust(1)}
-        className="flex h-7 w-7 items-center justify-center rounded-[7px] text-base font-semibold text-muted active:bg-surface"
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
-/** How much is left, in the two answers that stay true without anyone counting. */
-function HaveOrLow({ low, onChange }: { low: boolean; onChange: (low: boolean) => void }) {
-  return (
-    <div className="flex shrink-0 rounded-[9px] bg-surface2 p-0.5" role="group" aria-label="How much is left">
-      {[false, true].map((isLow) => (
-        <button
-          key={String(isLow)}
-          type="button"
-          aria-pressed={low === isLow}
-          onClick={() => onChange(isLow)}
-          className={cx(
-            'h-7 rounded-[7px] px-3 text-[0.8125rem] font-semibold transition-all duration-150',
-            low === isLow ? 'bg-surface shadow-sm ' + (isLow ? 'text-accent-ink' : 'text-herb') : 'text-muted',
-          )}
-        >
-          {isLow ? 'Low' : 'Have'}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Everything about one item in one place: its name, its aisle, and whether you always have it.
- * Renaming it to something already in the cupboard merges the two rather than keeping both.
- */
-function EditItemSheet({
-  householdId,
-  item,
-  categories,
-  reminder,
-  onSaved,
-  onRemove,
-  onClose,
-}: {
-  householdId: string;
-  item: CupboardItem;
-  categories: GroceryCategory[];
-  reminder: RestockReminder | null;
-  onSaved: (updated: CupboardItem) => void;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(item.name);
-  const [categoryId, setCategoryId] = useState(item.categoryId ?? categories[0]?.id ?? '');
-  const [staple, setStaple] = useState(item.staple);
-  const [trackQuantity, setTrackQuantity] = useState(item.quantity != null);
-  const [quantity, setQuantity] = useState(item.quantity ?? 1);
-  const [unit, setUnit] = useState(item.unit ?? '');
-  const [everyDays, setEveryDays] = useState<number | null>(reminder?.everyDays ?? null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const renamed = name.trim() !== item.name;
-  const quantityModeChanged = trackQuantity !== (item.quantity != null);
-  const quantityValueChanged = trackQuantity && (quantity !== (item.quantity ?? quantity) || unit !== (item.unit ?? ''));
-  const reminderChanged = everyDays !== (reminder?.everyDays ?? null);
-  const changed = renamed || categoryId !== item.categoryId || staple !== item.staple
-    || quantityModeChanged || quantityValueChanged || reminderChanged;
-
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || !changed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      let updated = item;
-      if (renamed || staple !== item.staple || quantityModeChanged || quantityValueChanged) {
-        updated = await api<CupboardItem>('PATCH', `/api/households/${householdId}/cupboard/${item.id}`, {
-          name: renamed ? name.trim() : null,
-          staple: staple !== item.staple ? staple : null,
-          trackQuantity: quantityModeChanged ? trackQuantity : null,
-          quantity: trackQuantity && (quantityModeChanged || quantityValueChanged) ? quantity : null,
-          unit: trackQuantity ? unit.trim() || null : null,
-        });
-      }
-      // The aisle belongs to the ingredient — the new one, after a rename — so it goes last.
-      if (categoryId !== item.categoryId) {
-        await api('PUT', `/api/households/${householdId}/ingredients/${updated.ingredientId}/category`, { categoryId });
-        updated = { ...updated, categoryId, sorted: true };
-      }
-      // Also after the rename, which takes the reminder along to the new ingredient first.
-      if (reminderChanged) {
-        await saveRestock(householdId, updated.ingredientId, everyDays);
-      }
-      onSaved(updated);
-    } catch (err) {
-      const message = err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null;
-      setError(message ?? 'Could not save that.');
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Sheet title={`Edit ${item.name}`} onClose={onClose}>
-      <form onSubmit={save} className="space-y-4">
-        <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label="Aisle">
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            {!categoryId && (
-              <option value="" disabled>
-                Unsorted
-              </option>
-            )}
-            {[...categories]
-              .sort((a, b) => a.position - b.position)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </Select>
-        </Field>
-        <button
-          type="button"
-          aria-pressed={staple}
-          onClick={() => setStaple((v) => !v)}
-          className="flex w-full items-start gap-3 text-left"
-        >
-          <CheckCircle checked={staple} className="mt-0.5" />
-          <span>
-            <span className="block font-medium">Always have</span>
-            <span className="block text-[0.8125rem] text-muted">For things like salt and oil — planned meals leave them off Groceries.</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-pressed={trackQuantity}
-          onClick={() => setTrackQuantity((v) => !v)}
-          className="flex w-full items-start gap-3 text-left"
-        >
-          <CheckCircle checked={trackQuantity} className="mt-0.5" />
-          <span>
-            <span className="block font-medium">Track an exact amount</span>
-            <span className="block text-[0.8125rem] text-muted">
-              A count instead of Have/Low — "3 cans", say.
-            </span>
-          </span>
-        </button>
-        {trackQuantity && (
-          <Field label="Amount">
-            <div className="flex gap-2">
-              <NumberInput
-                className="w-20"
-                min={0}
-                value={quantity}
-                onChange={(v) => setQuantity(v ?? 0)}
-                aria-label="Amount"
-              />
-              <UnitInput className="flex-1" value={unit} onChange={setUnit} aria-label="Unit" />
-            </div>
-          </Field>
-        )}
-        <Field label="Remind me to buy it" hint="Counted from the last time it was put away. When it's time, the app asks.">
-          <RestockField value={everyDays} onChange={setEveryDays} />
-        </Field>
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2">
-          <Button type="submit" className="flex-1" disabled={busy || !name.trim() || !changed}>
-            {busy ? 'Saving…' : 'Save'}
-          </Button>
-          <Button type="button" variant="danger" disabled={busy} onClick={onRemove}>
-            Remove
-          </Button>
-        </div>
-      </form>
-    </Sheet>
   );
 }

@@ -209,6 +209,26 @@ test('manual items with the same name merge', async () => {
   expect((await groceries(hh.id)).filter((i) => i.name.toLowerCase() === 'milk')).toHaveLength(1);
 });
 
+test('a row says which recipes it is for, and who typed it in', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const chicken = await newRecipe(hh.id, 'Lemon herb chicken', [{ name: 'lemons', qty: 2 }, { name: 'chicken thighs', qty: 2, unit: 'lb' }]);
+  const salad = await newRecipe(hh.id, 'Green salad', [{ name: 'lemons', qty: 1 }]);
+  await plan(hh.id, isoDate(1), 'DINNER', { recipeId: chicken.id, servings: 4 });
+  await plan(hh.id, isoDate(2), 'DINNER', { recipeId: salad.id, servings: 4 });
+  await plan(hh.id, isoDate(3), 'DINNER', { recipeId: salad.id, servings: 4 });
+  await addRangeToGroceries(hh.id, isoDate(0), isoDate(6));
+  await call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: owner.token, body: { ingredientName: 'bananas' } });
+
+  const list = await groceries(hh.id);
+  // Each recipe once, however many times it is planned, in A to Z order.
+  expect(find(list, 'lemons').fromRecipes).toEqual(['Green salad', 'Lemon herb chicken']);
+  expect(find(list, 'lemons').addedByName).toBeNull();
+  expect(find(list, 'chicken thighs').fromRecipes).toEqual(['Lemon herb chicken']);
+  expect(find(list, 'bananas').fromRecipes).toEqual([]);
+  expect(find(list, 'bananas').addedByName).toBe(owner.displayName);
+});
+
 test('a client from before "optional" existed can still save a recipe', async () => {
   // After a deploy, phones with the app already open keep running the old build for a while.
   const hh = await newHousehold();

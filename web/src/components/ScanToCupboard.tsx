@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, ApiError } from '../api/client';
 import type { CupboardItem } from '../api/types';
-import { Button, ErrorText, Field, Input, Sheet } from '../components/ui';
+import { Button, ErrorText, IconButton, Photo } from '../components/ui';
+import { Icon } from './icons';
+import { toast } from './toast';
 import BarcodeScanner from './BarcodeScanner';
+import { prefersReducedMotion } from '../utils/spring';
 
 /** What the catalogue knows about a barcode. Mirrors BarcodeLookup.Product on the server. */
 interface Product {
@@ -19,7 +23,8 @@ type Stage =
   | { at: 'unknown'; barcode: string };
 
 /**
- * Scan a barcode, then either put it in the cupboard or find out it is already there.
+ * The barcode scanner (mockup 4.8): the whole screen is the camera, and what it read rises in a
+ * card at the bottom with the two places it can go — the cupboard, or the grocery list.
  *
  * Both halves matter. Standing in the kitchen you are stocking up; standing in a shop you are
  * asking "do we have this already" — and that second question is the one a written list is
@@ -44,6 +49,29 @@ export default function ScanToCupboard({
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  // The result card rises into place each time there is a new one.
+  useLayoutEffect(() => {
+    if (stage.at === 'scanning' || prefersReducedMotion()) return;
+    card.current?.animate([{ transform: 'translateY(24px)', opacity: 0 }, { transform: 'none', opacity: 1 }], {
+      duration: 220,
+      easing: 'ease-out',
+    });
+  }, [stage.at]);
 
   async function lookUp(barcode: string) {
     setStage({ at: 'asking', barcode });
@@ -63,95 +91,159 @@ export default function ScanToCupboard({
     }
   }
 
-  async function add() {
+  async function addToCupboard() {
     const wanted = name.trim();
     if (!wanted || busy) return;
     setBusy(true);
     setError(null);
     try {
       onAdded(await api<CupboardItem>('POST', `/api/households/${householdId}/cupboard`, { name: wanted }));
+      toast(`Added ${wanted} to the cupboard.`, { icon: 'check' });
       onClose();
     } catch {
       setError('Could not add that.');
-    } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <Sheet title="Scan a barcode" onClose={onClose} tall>
-      <div className="space-y-4">
-        {stage.at === 'scanning' && (
-          <BarcodeScanner onFound={lookUp} onError={(message) => setError(message)} />
-        )}
+  async function addToList(wanted: string) {
+    if (!wanted || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api('POST', `/api/households/${householdId}/grocery-list/items`, { ingredientName: wanted });
+      toast(`Added ${wanted} to the list.`, { icon: 'cart' });
+      onClose();
+    } catch {
+      setError('Could not add that to the list.');
+      setBusy(false);
+    }
+  }
 
-        {stage.at === 'asking' && (
-          <p className="py-10 text-center text-sm text-muted">Looking up {stage.barcode}…</p>
-        )}
+  const barcode = stage.at === 'found' ? stage.product.barcode : stage.at === 'unknown' || stage.at === 'asking' ? stage.barcode : '';
 
-        {stage.at === 'found' && (
-          <>
-            <div>
-              <p className="text-lg font-semibold leading-tight">{stage.product.name}</p>
-              <p className="text-sm text-muted">{describe(stage.product)}</p>
-              <p className="mt-1 text-xs text-faint">{stage.product.barcode}</p>
-            </div>
+  // On the body, so nothing on the page that moves (a page's own transition) can carry it along.
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Scan a barcode"
+      className="fixed inset-0 z-[60] flex flex-col bg-[linear-gradient(160deg,#3b3029,#15100d)] text-white"
+    >
+      {stage.at === 'scanning' && <BarcodeScanner variant="fill" onFound={lookUp} onError={(message) => setError(message)} />}
 
-            {stage.already ? (
-              <div className="rounded-xl bg-accent-soft px-4 py-3">
-                <p className="font-medium text-accent-ink">You already have this.</p>
-                <p className="text-sm text-ink">
-                  It is in the cupboard as “{stage.already.name}”
-                  {stage.already.runningLow ? ', and it is marked running low.' : '.'}
-                </p>
-              </div>
-            ) : (
-              <Field label="Call it" hint="What you want to see on the list.">
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-              </Field>
-            )}
-
-            {error && <ErrorText>{error}</ErrorText>}
-
-            <div className="space-y-2">
-              {!stage.already && (
-                <Button full variant="secondary" disabled={busy || !name.trim()} onClick={add}>
-                  Add to the cupboard
-                </Button>
-              )}
-              <Button full variant="ghost" onClick={() => setStage({ at: 'scanning' })}>
-                Scan another
-              </Button>
-            </div>
-          </>
-        )}
-
-        {stage.at === 'unknown' && (
-          <>
-            <div>
-              <p className="font-semibold">Not in the catalogue.</p>
-              <p className="text-sm text-muted">
-                Nothing is published under {stage.barcode}. Give it a name and it still goes in the cupboard.
-              </p>
-            </div>
-            <Field label="Call it">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Baked beans" autoFocus />
-            </Field>
-            {error && <ErrorText>{error}</ErrorText>}
-            <div className="space-y-2">
-              <Button full variant="secondary" disabled={busy || !name.trim()} onClick={add}>
-                Add to the cupboard
-              </Button>
-              <Button full variant="ghost" onClick={() => setStage({ at: 'scanning' })}>
-                Scan another
-              </Button>
-            </div>
-          </>
-        )}
-
-        {stage.at === 'scanning' && error && <ErrorText>{error}</ErrorText>}
+      <div className="relative flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <IconButton label="Close" shape="plain" onClick={onClose} className="!bg-white/20 !text-white">
+          <Icon name="x" size={18} />
+        </IconButton>
       </div>
-    </Sheet>
+
+      <div className="flex-1" />
+
+      {stage.at === 'scanning' && error && (
+        <p className="relative mx-6 mb-6 rounded-2xl bg-black/50 px-4 py-3 text-center text-sm text-white">{error}</p>
+      )}
+
+      {stage.at !== 'scanning' && (
+        <div
+          ref={card}
+          className="relative mx-2.5 mb-[max(0.75rem,env(safe-area-inset-bottom))] w-auto max-w-md space-y-3.5 self-stretch rounded-[30px] bg-bg p-5 text-ink shadow-lift sm:mx-auto sm:w-full"
+        >
+          {stage.at === 'asking' ? (
+            <p className="py-4 text-center text-sm text-muted">Looking up {stage.barcode}…</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <Photo hue="sky" icon="box" className="h-[52px] w-[52px] rounded-xl" />
+                <div className="min-w-0 flex-1">
+                  {stage.at === 'found' && !stage.already ? (
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        aria-label="Call it"
+                        className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none"
+                      />
+                      <Icon name="pencil" size={14} className="shrink-0 text-faint" />
+                    </label>
+                  ) : stage.at === 'found' ? (
+                    <p className="truncate text-base font-semibold">{stage.product.name}</p>
+                  ) : (
+                    <p className="text-base font-semibold">Not in the catalogue.</p>
+                  )}
+                  <p className="truncate text-xs text-muted">
+                    {[stage.at === 'found' ? describe(stage.product) : '', barcode].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+              </div>
+
+              {stage.at === 'found' && stage.already && (
+                <div className="rounded-[14px] bg-sky-soft px-3.5 py-2.5 text-sky">
+                  <p className="text-[0.9375rem] font-semibold">You already have this.</p>
+                  <p className="text-[0.8125rem]">
+                    It is in the cupboard as “{stage.already.name}”
+                    {stage.already.runningLow ? ', and it is marked running low.' : '.'}
+                  </p>
+                </div>
+              )}
+
+              {stage.at === 'unknown' && (
+                <div className="space-y-2">
+                  <p className="text-[0.8125rem] text-muted">
+                    Nothing is published under that barcode. Give it a name and it still goes in the cupboard.
+                  </p>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Baked beans"
+                    aria-label="Call it"
+                    autoFocus
+                    className="h-11 w-full rounded-field border border-line bg-surface px-3.5 text-ink outline-none placeholder:text-faint focus:border-accent focus:shadow-focus"
+                  />
+                </div>
+              )}
+
+              {error && <ErrorText>{error}</ErrorText>}
+
+              <div className="flex gap-2">
+                {!(stage.at === 'found' && stage.already) && (
+                  <Button
+                    icon="cupboard"
+                    className="h-11 flex-1"
+                    aria-label="Add to the cupboard"
+                    disabled={busy || !name.trim()}
+                    onClick={addToCupboard}
+                  >
+                    Cupboard
+                  </Button>
+                )}
+                <Button
+                  icon="cart"
+                  variant="secondary"
+                  className="h-11 flex-1"
+                  aria-label="Add to the list"
+                  disabled={busy || !(stage.at === 'found' && stage.already ? stage.already.name : name.trim())}
+                  onClick={() => addToList(stage.at === 'found' && stage.already ? stage.already.name : name.trim())}
+                >
+                  Add to list
+                </Button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setStage({ at: 'scanning' });
+                }}
+                className="press block w-full text-center text-sm font-semibold text-accent-ink"
+              >
+                Scan another
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
