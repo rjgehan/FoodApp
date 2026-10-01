@@ -199,35 +199,43 @@ test('capture every screen', async ({ page }) => {
   group = 'Plan';
   await step('week', async () => {
     await page.goto('/meal-plan');
-    await shot(page, 'Plan — this week', '', { full: true });
+    await shot(page, 'Plan — calendar', 'The month with the planning window tinted, then Coming up.', { full: true });
+    await page.getByRole('radio', { name: 'Upcoming' }).click();
+    await shot(page, 'Plan — upcoming', 'The planning window and its one big action, then each planned meal\u2019s shopping status.', { full: true });
+    await page.getByRole('radio', { name: 'Calendar' }).click();
   });
   await step('day sheet', async () => {
     await openToday();
     await shot(page, 'Day sheet');
-    await sheet(page).getByText('Chicken Parmesan').first().click();
-    await shot(page, 'Day sheet — meal expanded', 'Change / View recipe / servings / delete.');
+    await sheet(page).getByRole('button', { name: /options$/ }).first().click();
+    await shot(page, 'Planned meal options', 'Swap, servings, time, extras, add to groceries, open, remove.');
   });
   await step('picker', async () => {
     await openToday();
     await sheet(page).getByRole('button', { name: /Add a snack/ }).click();
-    await shot(page, 'Recipe picker', 'Search, filter by group, or type anything.');
-    await sheet(page).locator('input').first().fill('toast');
-    await shot(page, 'Recipe picker — typed something new');
-    await sheet(page).getByText('Eat out', { exact: true }).click();
-    await shot(page, 'Eat out picker');
+    await sheet(page).getByRole('button', { name: 'Plan snack' }).click();
+    const slot = page.getByRole('dialog', { name: /^Snack · / });
+    await shot(page, 'Fill a slot — eat in', 'Recipes, saved links and the cupboard in one search.');
+    await slot.getByRole('searchbox').fill('toast');
+    await shot(page, 'Fill a slot — typed something new');
+    await slot.getByRole('button', { name: /^Create recipe/ }).click();
+    await shot(page, 'New recipe from the slot');
+    await sheet(page).getByRole('button', { name: 'Close' }).click();
+    await slot.getByRole('radio', { name: 'Eat out' }).click();
+    await shot(page, 'Fill a slot — eat out');
   });
   await step('optional prompt', async () => {
     await openToday();
-    await sheet(page).getByRole('button', { name: /Add side/ }).last().click();
-    await page.getByText('Steak Frites', { exact: true }).last().click();
+    await sheet(page).getByRole('button', { name: 'Add a side' }).click();
+    await page.getByRole('dialog').last().getByRole('button', { name: /^Steak Frites/ }).click();
     await shot(page, 'Optional extras prompt');
   });
   await step('next month', async () => {
     await page.goto('/meal-plan');
     await page.getByRole('button', { name: 'Next month' }).click();
-    await shot(page, 'Plan — next month', 'The rail lists that month\u2019s planned days; empty months say so.');
+    await shot(page, 'Plan — next month', 'Coming up lists that month\u2019s planned days; empty months say so.');
     await page.goto('/meal-plan');
-    await page.getByRole('button', { name: /^Add .+ to Groceries$/ }).click();
+    await page.getByRole('button', { name: /^Add the next .+ to groceries$/ }).click();
     await shot(page, 'Add planned meals to Groceries — confirm');
   });
 

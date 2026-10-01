@@ -4,6 +4,7 @@ import com.gehan.mealplanner.ai.StoreSectionAi;
 import com.gehan.mealplanner.domain.*;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
+import com.gehan.mealplanner.dto.GroceryListDtos.PlannedShoppingResponse;
 import com.gehan.mealplanner.dto.GroceryListDtos.PutAwayRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.SortResponse;
 import com.gehan.mealplanner.realtime.GroceryListEventPublisher;
@@ -367,6 +368,81 @@ public class GroceryListService {
         mealPlanEntryRepository.findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
                 .forEach(e -> addRecipe(household, e, ctx, changes, remembered(e)));
         return changes.publish(householdId, ctx);
+    }
+
+    /**
+     * Where each meal planned in the range stands with the shopping, worked out the same way
+     * {@link #addAllPlannedToList} would add it but without touching anything — so the Plan can
+     * say "On grocery list" or "Not on list" beside a meal, and the add-the-week sheet can say
+     * how much each day would add before anyone presses it.
+     *
+     * A year at most: it walks every meal's ingredients, and nothing asks for more than a month
+     * and its planning window.
+     */
+    @Transactional(readOnly = true)
+    public List<PlannedShoppingResponse> planStatus(UUID householdId, UUID requesterId, LocalDate start, LocalDate end) {
+        householdService.assertMember(householdId, requesterId);
+        if (end.isBefore(start) || start.plusDays(366).isBefore(end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ask for a year or less");
+        }
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        Context ctx = context(householdId);
+        // A single item is "on the list" while an unticked row for it is waiting there.
+        Set<UUID> waiting = groceryListItemRepository.findByHouseholdId(householdId).stream()
+                .filter(row -> !row.isChecked() && row.getIngredient() != null)
+                .map(row -> row.getIngredient().getId())
+                .collect(Collectors.toSet());
+        return mealPlanEntryRepository.findByHouseholdIdAndDateBetweenOrderByDateAscMealTypeAsc(householdId, start, end)
+                .stream().sorted(MealPlanEntry.EATING_ORDER)
+                .map(entry -> shoppingFor(household, entry, ctx, waiting))
+                .toList();
+    }
+
+    private PlannedShoppingResponse shoppingFor(Household household, MealPlanEntry entry, Context ctx, Set<UUID> waiting) {
+        UUID id = entry.getId();
+        if (entry.getPlace() != null) {
+            return new PlannedShoppingResponse(id, "EAT_OUT", List.of(), 0, 0);
+        }
+        if (entry.getSavedLink() != null) {
+            return new PlannedShoppingResponse(id, "LINK", List.of(), 0, 0);
+        }
+        if (entry.getItem() != null) {
+            Ingredient item = entry.getItem();
+            String status = waiting.contains(item.getId()) ? "ON_LIST"
+                    : ctx.has(item) || ctx.isStaple(item) ? "IN_CUPBOARD" : "NOT_ON_LIST";
+            return new PlannedShoppingResponse(id, status, List.of(), 1, ctx.has(item) ? 1 : 0);
+        }
+        if (entry.getRecipe() == null) {
+            return new PlannedShoppingResponse(id, entry.getDeletedRecipeName() != null ? "DELETED" : "NO_INGREDIENTS",
+                    List.of(), 0, 0);
+        }
+        if (entry.getRecipe().getIngredients().isEmpty()) {
+            return new PlannedShoppingResponse(id, "NO_INGREDIENTS", List.of(), 0, 0);
+        }
+
+        Map<UnitKey, Need> needs = needs(entry.getRecipe(),
+                entry.getServings() != null ? entry.getServings() : household.getDefaultServings(),
+                entry.getIncludedOptionalIngredientIds(), ctx);
+        Map<UnitKey, BigDecimal> already = remembered(entry);
+        // The same test addRecipe makes: anything new, or more of it than was added before.
+        List<Need> toAdd = needs.values().stream()
+                .filter(need -> {
+                    BigDecimal was = already.get(need.key());
+                    return was == null || need.quantity().compareTo(was) > 0;
+                })
+                .toList();
+        int inCupboard = (int) needs.values().stream().filter(need -> ctx.has(need.ingredient())).count();
+
+        String status;
+        if (needs.isEmpty() || (!toAdd.isEmpty() && toAdd.stream().allMatch(need -> ctx.has(need.ingredient())))) {
+            // Every ingredient a staple, or everything still to add already in the cupboard.
+            status = "IN_CUPBOARD";
+        } else {
+            status = toAdd.isEmpty() ? "ON_LIST" : "NOT_ON_LIST";
+        }
+        List<UUID> ingredients = toAdd.stream().map(need -> need.ingredient().getId()).distinct().toList();
+        return new PlannedShoppingResponse(id, status, ingredients, needs.size(), inCupboard);
     }
 
     /** One ingredient in one unit — "cloves of garlic" — which is what a planned meal's share is counted in. */

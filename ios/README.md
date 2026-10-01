@@ -105,8 +105,11 @@ xcrun simctl launch <udid> cloud.gehan.mealplanner \
 ```
 
 `-mp_debug_screen edit|detail|settings|household|ideas` opens that sheet on top, and `-mp_debug_screen
-day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to show the
-first dish's actions. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
+day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to open the
+first dish's options. On the Plan tab, `-mp_debug_plan upcoming` opens on Upcoming, and
+`-mp_debug_screen options|addweek|fill|fillout|create|extras` opens a planned meal's options, the
+add-the-week sheet, filling a later dinner (eat in, or the night out on eat out), a new recipe
+from a slot, or the optional-extras question. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
 down to its Links section.
 
 `-mp_debug_drawer dinner` opens that drawer on the Recipes tab; with it, `-mp_debug_screen add`

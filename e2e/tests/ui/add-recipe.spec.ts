@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { call, newHousehold } from '../../lib/api';
-import { sheet, signIn } from '../../lib/ui';
+import { fillSlot, sheet, signIn } from '../../lib/ui';
 
 /*
  * The three ways into a new recipe — Type it out, From a link, Paste — and the promise they all
@@ -131,20 +131,24 @@ test('a new recipe from the planner offers a link and an AI paste, not the write
   await page.goto('/meal-plan');
   const today = new Date().getDate();
   await page.getByText(String(today), { exact: true }).first().click();
-  await sheet(page).getByRole('button', { name: /^\+?\s*Add$/ }).nth(2).click();
-  await page.getByLabel('Search recipes, or type something to add').fill('Chickpea curry');
-  await page.getByRole('button', { name: 'New recipe “Chickpea curry”' }).click();
+  const slot = await fillSlot(page, 'Dinner');
+  await slot.getByLabel('Search recipes, or type something to add').fill('Chickpea curry');
+  await slot.getByRole('button', { name: /^Create recipe “Chickpea curry”/ }).click();
 
+  // The four ways in, as cards, with the name typed in the planner carried over.
   const newRecipe = sheet(page);
-  await expect(newRecipe.getByRole('button', { name: 'From a link' })).toBeVisible();
-  await expect(newRecipe.getByRole('button', { name: 'Paste from an AI' })).toBeVisible();
+  await expect(newRecipe.getByRole('heading', { name: 'New recipe' })).toBeVisible();
+  await expect(newRecipe.getByLabel('Name')).toHaveValue('Chickpea curry');
+  await expect(newRecipe.getByRole('radio', { name: /^From a link/ })).toBeVisible();
+  await expect(newRecipe.getByRole('radio', { name: /^Paste from an AI/ })).toBeVisible();
   await expect(newRecipe.getByText(/ChatGPT|Write it for me/)).toHaveCount(0);
 
-  await newRecipe.getByRole('button', { name: 'Paste from an AI' }).click();
+  await newRecipe.getByRole('radio', { name: /^Paste from an AI/ }).click();
+  await newRecipe.getByRole('button', { name: 'Continue' }).click();
   // The dish typed in the planner is already in the question.
   await expect(sheet(page).getByLabel('What do you want to make?')).toHaveValue('Chickpea curry');
 
   // A mis-tap is one Back away from the choices, not a closed sheet.
   await sheet(page).getByRole('button', { name: 'Back' }).click();
-  await expect(sheet(page).getByRole('button', { name: 'From a link' })).toBeVisible();
+  await expect(sheet(page).getByRole('radio', { name: /^From a link/ })).toBeVisible();
 });

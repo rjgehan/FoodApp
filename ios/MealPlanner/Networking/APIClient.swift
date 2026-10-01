@@ -845,11 +845,14 @@ actor APIClient {
 
     // MARK: - Plumbing
 
-    private func get<T: Decodable>(_ path: String, authorized: Bool = true) async throws -> T {
+    // Not private: a feature's own calls can live beside it in an extension (Plan/PlanAPI.swift)
+    // rather than all in this file.
+
+    func get<T: Decodable>(_ path: String, authorized: Bool = true) async throws -> T {
         try await perform(request(method: "GET", path: path, authorized: authorized))
     }
 
-    private func send<T: Decodable>(
+    func send<T: Decodable>(
         _ method: String,
         _ path: String,
         body: [String: Any],
@@ -894,7 +897,7 @@ actor APIClient {
     }
 
     /// For the endpoints that answer 204, or a body nothing here reads.
-    private func sendNoContent(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Bool {
+    func sendNoContent(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Bool {
         var req = request(method: method, path: path, authorized: true)
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

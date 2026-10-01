@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { admin, call, find, groceries, isoDate, newHousehold, newRecipe, plan, unique } from '../../lib/api';
-import { calendarDay, fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
+import { calendarDay, fillSlot, fromMenu, sheet, signIn, swipeLeft } from '../../lib/ui';
 
 /** The everyday paths not covered by the core loop. */
 
@@ -12,9 +12,10 @@ test('change a planned dinner to a different recipe', async ({ page }) => {
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
   await page.getByText(String(new Date().getDate()), { exact: true }).first().click();
-  await sheet(page).getByText('Pad Thai').click();
-  await sheet(page).getByRole('button', { name: 'Change' }).click();
-  await page.getByText('Fried Rice', { exact: true }).last().click();
+  await expect(sheet(page).getByText('Pad Thai')).toBeVisible();
+  await sheet(page).getByRole('button', { name: 'Swap' }).click();
+  const slot = page.getByRole('dialog', { name: /^Dinner · / });
+  await slot.getByRole('button', { name: /^Fried Rice/ }).click();
   await expect.poll(async () => {
     const [e] = await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(0)}`, { token: hh.owner.token });
     return e?.recipeName;
@@ -39,18 +40,48 @@ test('change servings on a planned meal', async ({ page }) => {
   }).toBe(8);
 });
 
-test('"Add this day to Groceries" adds just that day', async ({ page }) => {
+test('"Add breakfast to groceries" adds just that meal', async ({ page }) => {
   const hh = await newHousehold();
   const r1 = await newRecipe(hh.id, 'Omelette', [{ name: 'egg', qty: 3 }]);
   const r2 = await newRecipe(hh.id, 'Stir fry', [{ name: 'bok choy', qty: 2 }]);
+  const r3 = await newRecipe(hh.id, 'Ramen', [{ name: 'noodles', qty: 1 }]);
   await plan(hh.id, isoDate(0), 'BREAKFAST', { recipeId: r1.id });
+  await plan(hh.id, isoDate(0), 'DINNER', { recipeId: r3.id });
   await plan(hh.id, isoDate(1), 'DINNER', { recipeId: r2.id });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
   await page.getByText(String(new Date().getDate()), { exact: true }).first().click();
-  await sheet(page).getByText('Add this day to Groceries').click();
-  await sheet(page).getByRole('button', { name: 'Add to Groceries' }).click();
+  await sheet(page).getByRole('tab', { name: /^Breakfast/ }).click();
+  await sheet(page).getByRole('button', { name: 'Add breakfast to groceries' }).click();
   await expect.poll(async () => (await groceries(hh.id)).map((i) => i.name)).toEqual(['egg']);
+  // And then says so, rather than offering the same again.
+  await expect(sheet(page).getByRole('button', { name: 'Breakfast is on the list' })).toBeVisible();
+});
+
+test('adding the planning window leaves out a day you untick', async ({ page }) => {
+  const hh = await newHousehold();
+  const r1 = await newRecipe(hh.id, 'Omelette', [{ name: 'egg', qty: 3 }]);
+  const r2 = await newRecipe(hh.id, 'Stir fry', [{ name: 'bok choy', qty: 2 }]);
+  await plan(hh.id, isoDate(1), 'BREAKFAST', { recipeId: r1.id });
+  await plan(hh.id, isoDate(2), 'DINNER', { recipeId: r2.id });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByRole('radio', { name: 'Upcoming' }).click();
+  // Both meals are still to shop for, and the window card says so.
+  await expect(page.getByText('2 not on list')).toBeVisible();
+  await expect(page.getByText('2 of 7 days planned')).toBeVisible();
+  await page.getByRole('button', { name: 'Add week to groceries' }).click();
+
+  const confirm = sheet(page);
+  await expect(confirm.getByRole('heading', { name: 'Add 2 days to groceries?' })).toBeVisible();
+  await confirm.getByRole('checkbox', { name: /Stir fry/ }).click();
+  await expect(confirm.getByRole('heading', { name: 'Add 1 day to groceries?' })).toBeVisible();
+  await confirm.getByRole('button', { name: 'Add 1 item' }).click();
+  await expect.poll(async () => (await groceries(hh.id)).map((i) => i.name)).toEqual(['egg']);
+
+  // The plan now shows which is on the list and which is not.
+  await expect(page.getByText('1 not on list')).toBeVisible();
+  await expect(page.getByRole('region', { name: /^Plan for / }).first().getByText('On grocery list')).toBeVisible();
 });
 
 test('eat out: type a new place and it is saved for next time', async ({ page }) => {
@@ -58,14 +89,75 @@ test('eat out: type a new place and it is saved for next time', async ({ page })
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
   await page.getByText(String(new Date().getDate()), { exact: true }).first().click();
-  await sheet(page).getByRole('button', { name: /^\+?\s*Add$/ }).nth(1).click(); // Lunch
-  await sheet(page).getByText('Eat out', { exact: true }).click();
-  await sheet(page).getByPlaceholder(/Tony's/).fill('Noodle Bar');
-  await sheet(page).getByText(/Add “Noodle Bar”/).click();
+  const slot = await fillSlot(page, 'Lunch');
+  await slot.getByRole('radio', { name: 'Eat out' }).click();
+  await slot.getByLabel('Search or add a place').fill('Noodle Bar');
+  await slot.getByRole('radio', { name: /Add “Noodle Bar”/ }).click();
+  // A time for the booking, shown on the plan.
+  await slot.getByRole('switch', { name: /Time/ }).click();
+  await slot.getByLabel('Time', { exact: true }).fill('12:30');
+  await slot.getByRole('button', { name: 'Plan Noodle Bar' }).click();
   await expect.poll(async () =>
     (await call('GET', `/api/households/${hh.id}/places`, { token: hh.owner.token })).map((p: any) => p.name)).toEqual(['Noodle Bar']);
   const [e] = await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(0)}`, { token: hh.owner.token });
-  expect(e).toMatchObject({ mealType: 'LUNCH', placeName: 'Noodle Bar' });
+  expect(e).toMatchObject({ mealType: 'LUNCH', placeName: 'Noodle Bar', time: '12:30:00' });
+  await expect(sheet(page).getByText(/^Lunch · 12:30/i)).toBeVisible();
+});
+
+test('a meal gets a time, and its options open with a long press', async ({ page }) => {
+  const hh = await newHousehold();
+  const r = await newRecipe(hh.id, 'Lasagne', [{ name: 'pasta sheets', qty: 1, unit: 'box' }]);
+  await plan(hh.id, isoDate(0), 'DINNER', { recipeId: r.id, servings: 4 });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/meal-plan');
+
+  // The day sheet's Time sets it for the meal; the plan says "Dinner · 6:45 pm".
+  await page.getByRole('button', { name: 'Dinner: Lasagne' }).click();
+  await sheet(page).getByRole('button', { name: 'Time' }).click();
+  await sheet(page).getByLabel('Time').fill('18:45');
+  await sheet(page).getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('dialog', { name: 'Dinner time' })).toHaveCount(0);
+  await sheet(page).getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByRole('region', { name: /^Plan for / }).getByText(/^Dinner · 6:45/i)).toBeVisible();
+
+  // Held down, a planned meal opens its options; Remove from plan takes it off.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const row = page.getByRole('button', { name: 'Dinner: Lasagne' });
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  await page.mouse.up();
+  const options = page.getByRole('dialog', { name: 'Lasagne options' });
+  const now = new Date();
+  await expect(options.getByText(`${now.toLocaleDateString('en-US', { weekday: 'long' })} ${now.getDate()} · Dinner`)).toBeVisible();
+  await options.getByRole('button', { name: 'Remove from plan' }).click();
+  await expect.poll(async () =>
+    (await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(0)}`, { token: hh.owner.token })).length).toBe(0);
+  // Nothing else opened behind it.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('a dinner can be taken off in one go, after asking', async ({ page }) => {
+  const hh = await newHousehold();
+  const main = await newRecipe(hh.id, 'Roast chicken', [{ name: 'chicken', qty: 1 }]);
+  const side = await newRecipe(hh.id, 'Gravy', [{ name: 'stock', qty: 1, unit: 'cup' }]);
+  await plan(hh.id, isoDate(0), 'DINNER', { recipeId: main.id });
+  await plan(hh.id, isoDate(0), 'DINNER', { recipeId: side.id });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByRole('button', { name: 'Dinner: Roast chicken' }).click();
+  // The main and its side, each with its role.
+  const dishes = sheet(page).getByRole('list', { name: 'Dinner dishes' });
+  await expect(dishes.getByRole('listitem').first()).toContainText('Main');
+  await expect(dishes.getByRole('listitem').nth(1)).toContainText('Side');
+  await sheet(page).getByRole('button', { name: 'Remove dinner' }).click();
+  const ask = page.getByRole('alertdialog');
+  await expect(ask).toContainText('Roast chicken and 1 side come off');
+  await ask.getByRole('button', { name: 'Remove' }).click();
+  await expect.poll(async () =>
+    (await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(0)}&end=${isoDate(0)}`, { token: hh.owner.token })).length).toBe(0);
+  await expect(sheet(page).getByRole('button', { name: 'Plan dinner' })).toBeVisible();
 });
 
 test('the month calendar shows planned days and opens one', async ({ page }) => {

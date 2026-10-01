@@ -87,6 +87,18 @@ public class GroceryListController {
         return groceryListService.addAllPlannedToList(householdId, userId, start, end);
     }
 
+    /**
+     * Where each meal planned in the range stands with the shopping — read-only, nothing is
+     * added. For the Plan's "On grocery list" marks and the add-the-week sheet's counts.
+     */
+    @GetMapping("/grocery-list/plan-status")
+    public List<PlannedShoppingResponse> planStatus(@AuthenticationPrincipal UUID userId,
+                                                    @PathVariable UUID householdId,
+                                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+                                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        return groceryListService.planStatus(householdId, userId, start, end);
+    }
+
     /** Moves an ingredient to another category for this household — on the list and in the cupboard. */
     @PutMapping("/ingredients/{ingredientId}/category")
     public ResponseEntity<Void> moveToCategory(@AuthenticationPrincipal UUID userId,
