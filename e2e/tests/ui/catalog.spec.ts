@@ -186,7 +186,11 @@ test('an unfiled recipe goes in a group with one tap', async ({ page }) => {
   // The likely group comes first, filled.
   const veggie = unfiled.getByRole('button', { name: 'Put Veggie lasagne in Veggie' });
   await expect(veggie).toHaveClass(/bg-ink/);
-  await veggie.click();
+  // It leaves the card the moment it is tapped; the filing itself is on its way to the server.
+  await Promise.all([
+    page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/recipe-categories/') && r.ok()),
+    veggie.click(),
+  ]);
   await expect(unfiled).toHaveCount(0);
   const [saved] = await call('GET', `/api/households/${hh.id}/recipes`, { token: hh.owner.token });
   expect(saved.categories).toEqual(['Veggie']);
