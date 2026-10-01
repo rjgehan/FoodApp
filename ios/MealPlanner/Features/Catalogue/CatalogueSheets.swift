@@ -312,7 +312,7 @@ struct SharedWithYouView: View {
                     }
                 }
                 if !byHousehold.isEmpty {
-                    Text("Open one and choose Save to my recipes to keep it in a drawer of yours.")
+                    Text("Open one and choose Move into my recipes to keep it in a drawer of yours.")
                         .font(.system(size: 13)).foregroundStyle(Palette.muted).padding(.horizontal, 4)
                 }
             }

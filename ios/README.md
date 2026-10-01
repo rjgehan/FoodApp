@@ -129,7 +129,11 @@ reads it; `-mp_debug_paste "<text>"` fills Paste (and `-mp_debug_autoparse 1` re
 warning and the rules-only reader.
 
 `-mp_debug_screen share -mp_debug_recipe <recipe-uuid>` opens that recipe from the server with its
-Share sheet up (the public link, your other households, Explore).
+Share screen pushed (the public link, your other households, Explore). `-mp_debug_screen recipe`
+(with `-mp_debug_recipe <uuid>`) opens that recipe's page full screen as it is pushed;
+`recipe-options`, `recipe-plan`, `recipe-delete` and `recipe-method` open it with its ••• menu, Add
+to plan, the delete question or the Method tab. `-mp_debug_new link -mp_debug_link "<url>"
+-mp_debug_draft 1` shows From a link's draft card with a sample draft, without reading anything.
 
 `-mp_debug_screen household -mp_debug_scroll people` opens Who's here, with the Invite someone
 section; add `-mp_debug_expand 1` to open a password reset link for the first other person, or

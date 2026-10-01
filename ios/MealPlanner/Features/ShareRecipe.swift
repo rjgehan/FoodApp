@@ -40,9 +40,10 @@ enum SharedRecipeLink {
 }
 
 /**
- Handing a recipe on — the web's Share sheet. Three ways, from the widest to the narrowest:
- a public link anybody can open without an account (and anybody with one can save a copy from),
- your other households, and Explore.
+ Handing a recipe on (the mockup's 3.12), pushed from the recipe as "Share": from the widest to
+ the narrowest, a public link anybody can open without an account (and anybody with one can save
+ a copy from), your other households, and Explore. Every switch takes effect when it is flipped;
+ the two that break links already sent — turning the link off, making a new one — ask first.
 
  Only the household that owns a recipe sees this. The household list is only ever the other
  houses you are in: sharing is moving a recipe between your own houses, and somebody outside
@@ -53,15 +54,18 @@ struct RecipeShareSheet: View {
     /// For previews and the Gallery: what the server would have said, so nothing is fetched.
     var sample: (targets: [ShareTarget], token: String?)?
 
-    @Environment(\.dismiss) private var dismiss
     @State private var targets: [ShareTarget] = []
     @State private var token: String?
     @State private var loaded = false
     @State private var busy = false
     @State private var copied = false
     @State private var showQR = false
-    @State private var turningOff = false
+    @State private var asking: Ask?
     @State private var error: String?
+
+    enum Ask { case turnOff, newLink }
+
+    private static let houseTones: [Tone] = [.sky, .plum, .herb, .mustard, .accent]
 
     private var url: URL? {
         // The web serves /r/<token>, from the same origin as the API in production.
@@ -69,61 +73,110 @@ struct RecipeShareSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 if !loaded {
-                    ProgressView().frame(maxWidth: .infinity)
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                 } else {
-                    linkSection
-                    if !targets.isEmpty { householdsSection }
-                    exploreSection
+                    linkCard
+                    if !targets.isEmpty { households }
+                    ListGroup {
+                        switchRow("Publish to Explore", subtitle: "Any household on this server can find it",
+                                  isOn: recipe.published ?? false) { Tile("globe", tone: .herb, size: 36) } set: { on in
+                            Task { await setPublished(on) }
+                        }
+                    }
                 }
                 if let error {
-                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
+                    Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
             }
-            .kitchenList()
-            .navigationTitle("Share")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .padding(.bottom, 24)
+        }
+        .pageBackground()
+        .centeredTitle("Share")
+        .toolbar(.visible, for: .navigationBar)
+        .task { await load() }
+        .kitchenAlert(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            if asking == .newLink {
+                KitchenAlertCard(title: "Make a new link?",
+                                 message: Text("The old link will stop working for anyone you've sent it to."), centered: true) {
+                    HStack(spacing: 8) {
+                        Button("Cancel") { asking = nil }.buttonStyle(.secondary)
+                        Button("New link") { Task { await renew() } }.buttonStyle(.primary).disabled(busy)
+                    }
                 }
-            }
-            .task { await load() }
-            .confirmationDialog("Turn off the link?", isPresented: $turningOff, titleVisibility: .visible) {
-                Button("Turn off the link", role: .destructive) { Task { await revoke() } }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Anyone you sent it to won't be able to open it any more. Copies people already saved stay theirs.")
+            } else {
+                KitchenAlertCard(title: "Turn off the link?",
+                                 message: Text("Anyone you sent it to won't be able to open it any more. Copies people already saved stay theirs."),
+                                 centered: true) {
+                    HStack(spacing: 8) {
+                        Button("Cancel") { asking = nil }.buttonStyle(.secondary)
+                        Button("Turn off") { Task { await revoke() } }.buttonStyle(.primary).disabled(busy)
+                    }
+                }
             }
         }
     }
 
-    private var linkSection: some View {
-        KitchenSection {
+    private var linkCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switchRow("Public link", subtitle: "Anyone with it can view", isOn: token != nil, padded: false) {
+                Tile("link", tone: .accent, size: 36)
+            } set: { on in
+                if on { Task { await createLink() } } else { asking = .turnOff }
+            }
             if let url {
-                Text(url.absoluteString)
-                    .font(.footnote.monospaced())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                Button(copied ? "Copied" : "Copy link", systemImage: "doc.on.doc") {
-                    UIPasteboard.general.string = url.absoluteString
-                    copied = true
-                    // Back to "Copy link" after a moment, as on the web, so a second copy
-                    // later still gets its answer.
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        copied = false
+                HStack(spacing: 8) {
+                    Text(url.absoluteString.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: ""))
+                        .font(.system(size: 14))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        UIPasteboard.general.string = url.absoluteString
+                        copied = true
+                        // Back to the copy mark after a moment, so a second copy gets its answer.
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copied = false
+                        }
+                    } label: {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(copied ? Palette.herb : Palette.accentInk)
+                            .frame(width: 32, height: 32)
                     }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(copied ? "Copied" : "Copy link")
                 }
-                ShareLink(item: url, subject: Text(recipe.name)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.vertical, 4)
+                .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                HStack(spacing: 8) {
+                    ShareLink(item: url, subject: Text(recipe.name)) {
+                        Label("Share link", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.kitchen(.primary, size: .small))
+                    Button { asking = .newLink } label: { Label("New link", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.kitchen(.secondary, size: .small))
+                        .disabled(busy)
                 }
-                Button(showQR ? "Hide QR code" : "Show QR code", systemImage: "qrcode") {
+
+                Button {
                     withAnimation { showQR.toggle() }
+                } label: {
+                    Label(showQR ? "Hide QR code" : "Show QR code", systemImage: "qrcode")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Palette.accentInk)
                 }
+                .buttonStyle(PressFade())
                 if showQR, let qr = QRCode.image(for: url.absoluteString) {
                     Image(uiImage: qr)
                         .interpolation(.none)
@@ -135,55 +188,46 @@ struct RecipeShareSheet: View {
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel("QR code of the link")
                 }
-                Button("Turn off the link", systemImage: "xmark.circle", role: .destructive) {
-                    turningOff = true
-                }
-                // The icon too: a destructive row otherwise draws it in the app's orange.
-                .tint(.red)
-                .disabled(busy)
-            } else {
-                Button("Create a link", systemImage: "link") {
-                    Task { await createLink() }
-                }
-                .disabled(busy)
             }
-        } header: {
-            Text("Anyone with the link")
-        } footer: {
-            Text("Opens the recipe on its own — no account needed. Anyone with an account can save a copy to their own recipes.")
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private var households: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Share into your other households")
+            ListGroup {
+                ForEach(Array(targets.enumerated()), id: \.element.id) { i, target in
+                    switchRow(target.name, subtitle: target.shared ? "Shows in their Shared with you" : nil, isOn: target.shared) {
+                        Avatar(target.name, tone: Self.houseTones[i % Self.houseTones.count], size: 36)
+                    } set: { on in
+                        Task { await setShared(target.householdId, on) }
+                    }
+                }
+            }
         }
     }
 
-    private var householdsSection: some View {
-        KitchenSection {
-            ForEach($targets) { $target in
-                Toggle(target.name, isOn: Binding(
-                    get: { target.shared },
-                    set: { on in Task { await setShared(target.householdId, on) } }
-                ))
-                .disabled(busy)
+    /// A row that is its own switch, with what leads it, a title and a line under it.
+    private func switchRow<Lead: View>(_ title: String, subtitle: String?, isOn: Bool, padded: Bool = true,
+                                       @ViewBuilder lead: () -> Lead, set: @escaping (Bool) -> Void) -> some View {
+        Toggle(isOn: Binding(get: { isOn }, set: set)) {
+            HStack(spacing: 12) {
+                lead()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle).font(.system(size: 13)).foregroundStyle(Palette.muted).lineLimit(1)
+                    }
+                }
             }
-        } header: {
-            Text("Your other households")
-        } footer: {
-            Text("It shows up in their recipes too. Only this household can change it.")
         }
-    }
-
-    private var exploreSection: some View {
-        KitchenSection {
-            Toggle("In Explore", isOn: Binding(
-                get: { recipe.published ?? false },
-                set: { on in Task { await setPublished(on) } }
-            ))
-            .disabled(busy)
-        } header: {
-            Text("Explore")
-        } footer: {
-            Text((recipe.published ?? false)
-                 ? "Anyone signed in here can read this and keep it in their own recipes."
-                 : "Put it where every household on this server can find it.")
-        }
+        .toggleStyle(.herb)
+        .disabled(busy)
+        .padding(.horizontal, padded ? 16 : 0)
+        .padding(.vertical, padded ? 12 : 0)
     }
 
     private func load() async {
@@ -224,8 +268,26 @@ struct RecipeShareSheet: View {
             token = nil
             copied = false
             showQR = false
+            asking = nil
             error = nil
         } catch {
+            asking = nil
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// A different address: the old one turned off, a fresh one made.
+    private func renew() async {
+        busy = true
+        defer { busy = false }
+        do {
+            try await APIClient.shared.revokePublicLink(recipe: recipe.id)
+            token = nil
+            token = try await APIClient.shared.createPublicLink(recipe: recipe.id).token
+            asking = nil
+            error = nil
+        } catch {
+            asking = nil
             self.error = error.localizedDescription
         }
     }
@@ -264,13 +326,18 @@ struct RecipeShareSheet: View {
 }
 
 #Preview("Share · link and houses") {
-    RecipeShareSheet(
-        recipe: .constant(SampleData.recipes[0]),
-        sample: ([ShareTarget(householdId: UUID(), name: "The Cabin", shared: true),
-                  ShareTarget(householdId: UUID(), name: "Mum & Dad's", shared: false)],
-                 "k3J9x_pQ2v8LmZr4TtYw0aBcDeFgHiJkLmNoPqRsTuV"))
+    NavigationStack {
+        RecipeShareSheet(
+            recipe: .constant(SampleData.recipes[0]),
+            sample: ([ShareTarget(householdId: UUID(), name: "Beach crew", shared: true),
+                      ShareTarget(householdId: UUID(), name: "Uni flat", shared: false)],
+                     "k3J9x_pQ2v8LmZr4TtYw0aBcDeFgHiJkLmNoPqRsTuV"))
+    }
 }
 
-#Preview("Share · one house, no link") {
-    RecipeShareSheet(recipe: .constant(SampleData.recipes[0]), sample: ([], nil))
+#Preview("Share · one house, no link — dark") {
+    NavigationStack {
+        RecipeShareSheet(recipe: .constant(SampleData.recipes[0]), sample: ([], nil))
+    }
+    .preferredColorScheme(.dark)
 }
