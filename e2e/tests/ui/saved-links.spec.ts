@@ -57,7 +57,8 @@ test('a link that cannot be read is saved instead, and waits in Saved links', as
   // And the shelf is on the front of Recipes, after the drawers, with its count.
   await page.getByRole('button', { name: 'Recipes' }).click();
   const shelf = page.getByRole('link', { name: /Saved links/ });
-  await expect(shelf).toContainText('1 link');
+  await expect(shelf).toContainText('Recipes to try later');
+  await expect(shelf.getByText('1', { exact: true })).toBeVisible();
   await expect(shelf.locator('[data-icon="saved-links"]')).toHaveCount(1);
 });
 
@@ -69,7 +70,7 @@ test('a saved link is planned from its menu, and opens from the plan', async ({ 
   await page.goto('/recipes/saved-links');
   await expect(page.getByText('TikTok', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'More for Crispy gnocchi' }).click();
-  await sheet(page).getByRole('button', { name: 'Plan it' }).click();
+  await sheet(page).getByRole('button', { name: 'Add to plan' }).click();
 
   const planSheet = sheet(page);
   await planSheet.getByRole('button', { name: 'Tomorrow' }).click();
@@ -126,7 +127,7 @@ test('making a saved link a recipe starts the form from it, and saving takes it 
 
   await page.goto('/recipes/saved-links');
   await page.getByRole('button', { name: 'More for Gochujang noodles' }).click();
-  await sheet(page).getByRole('button', { name: 'Make it a recipe' }).click();
+  await sheet(page).getByRole('button', { name: /^Turn into a recipe/ }).click();
 
   await expect(page).toHaveURL(/\/recipes\/new/);
   await expect(page.getByPlaceholder('Recipe name')).toHaveValue('Gochujang noodles');

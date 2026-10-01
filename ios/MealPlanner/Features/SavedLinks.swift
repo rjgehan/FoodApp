@@ -12,6 +12,8 @@ struct SavedLinksView: View {
     /// Shown instead of asking the server, for previews.
     var sample: [SavedLink]?
     /// Something changed — the count on the Recipes tile is out of date.
+    /// A search to start with — the catalogue's, when a search there matched links.
+    var initialQuery: String? = nil
     var onChanged: () async -> Void = {}
 
     @Environment(\.openURL) private var openURL
@@ -28,6 +30,11 @@ struct SavedLinksView: View {
     @State private var newName = ""
     @State private var deleting: SavedLink?
     @State private var notice: String?
+    /// The link whose actions are open.
+    @State private var acting: SavedLink?
+    @State private var moving: SavedLink?
+    /// Whatever Paste found that was not a link it could save, to start the box with.
+    @State private var pastedURL: String?
 
     /// A recipe being started from a link, for `sheet(item:)`.
     struct LinkDraft: Identifiable {
@@ -59,36 +66,40 @@ struct SavedLinksView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                SearchBox(text: $query, prompt: "Search saved links")
+                if sources.count > 1 || !drawers.isEmpty {
+                    filters
+                }
+                pasteRow
                 if let error {
                     Text(error).foregroundStyle(Palette.danger).font(.callout)
                 }
                 if let notice {
-                    Label(notice, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Palette.herb)
+                    NoteBox(notice, tone: .herb, systemImage: "checkmark.circle")
                         .transition(.opacity)
-                }
-                if sources.count > 1 || !drawers.isEmpty {
-                    filters
                 }
 
                 if links == nil && error == nil {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 48)
                 } else if all.isEmpty {
-                    ContentUnavailableView {
-                        Label("Nothing saved yet", image: "SavedLinks")
-                    } description: {
+                    VStack(spacing: 10) {
+                        Tile("link", tone: .plum, size: 64)
+                        Text("Nothing saved yet").titleFont(20).foregroundStyle(Palette.text).padding(.top, 6)
                         Text("Keep the TikToks, Reels and recipe pages you mean to make. When a link won’t come through as a recipe, save it here instead — and make it a recipe later.")
-                    } actions: {
-                        Button("Save a link") { adding = true }
-                            .buttonStyle(.borderedProminent)
+                            .font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                        Button { adding = true } label: { Label("Save a link", systemImage: "plus") }
+                            .buttonStyle(.kitchen(.primary, size: .large, fill: false))
+                            .padding(.top, 8)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
                     .padding(.top, 32)
                 } else if shown.isEmpty {
-                    ContentUnavailableView.search(text: query)
+                    Text("Nothing matches that.").font(.system(size: 15)).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity).padding(.vertical, 24)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(shown) { link in
                             ZStack(alignment: .topTrailing) {
                                 Button {
@@ -96,33 +107,70 @@ struct SavedLinksView: View {
                                 } label: {
                                     SavedLinkTile(link: link)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(PressFade())
                                 .accessibilityHint("Opens it")
-                                menu(for: link)
+                                // Holding a tile is the other way to its actions, as on a photo.
+                                .contextMenu {
+                                    Button("Actions…", systemImage: "ellipsis.circle") { acting = link }
+                                }
+                                Button { acting = link } label: {
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 28, height: 28)
+                                        .background(.black.opacity(0.4), in: Circle())
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PressFade())
+                                .accessibilityLabel("More for \(link.name)")
                             }
                         }
                     }
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .padding(.bottom, 24)
         }
+        .scrollDismissesKeyboard(.immediately)
         .pageBackground()
-        .navigationTitle("Saved links")
-        .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "Search saved links")
+        .centeredTitle("Saved links")
         .refreshable { await load() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save a link", systemImage: "plus") { adding = true }
+            BareToolbarItem(placement: .topBarTrailing) {
+                Button { adding = true } label: {
+                    Image(systemName: "plus").font(.system(size: 20, weight: .medium)).foregroundStyle(Palette.accentInk)
+                }
+                .accessibilityLabel("Save a link")
             }
         }
-        .task { await load() }
+        .task {
+            if query.isEmpty, let initialQuery, !initialQuery.isEmpty { query = initialQuery }
+            await load()
+            #if DEBUG
+            if UserDefaults.standard.string(forKey: "mp_debug_screen") == "linkactions" { acting = all.first }
+            #endif
+        }
         .sheet(isPresented: $adding) {
-            SaveLinkSheet(session: session) { saved in
+            SaveLinkSheet(session: session, initialURL: pastedURL) { saved in
                 links = [saved] + all.filter { $0.id != saved.id }
                 say(saved.alreadySaved == true ? "“\(saved.name)” was already saved." : "Saved “\(saved.name)”.")
                 Task { await onChanged() }
             }
+        }
+        .sheet(item: $acting) { link in
+            SavedLinkActions(
+                link: link,
+                plan: { after { planning = link } },
+                makeRecipe: { after { making = draft(from: link) } },
+                importAgain: { after { importing = link } },
+                move: { after { moving = link } },
+                rename: { after { newName = link.name; renaming = link } },
+                justMe: { acting = nil; Task { await update(link, personal: !link.personal) } },
+                delete: { after { deleting = link } }
+            )
+            .kitchenSheet([.large])
         }
         .sheet(item: $planning) { link in
             AddToPlanSheet(savedLink: link, session: session) { when in
@@ -137,6 +185,13 @@ struct SavedLinksView: View {
         .sheet(item: $making) { made in
             EditRecipeView(recipe: nil, session: session, draft: made.draft, initialSection: made.section) { _ in
                 Task { await madeARecipe() }
+            }
+        }
+        .confirmationDialog("Move to a drawer", isPresented: Binding(get: { moving != nil }, set: { if !$0 { moving = nil } }),
+                            titleVisibility: .visible) {
+            Button("No drawer") { if let link = moving { Task { await move(link, to: nil) } } }
+            ForEach(RecipeSection.allCases, id: \.self) { section in
+                Button(section.title) { if let link = moving { Task { await move(link, to: section) } } }
             }
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -162,86 +217,97 @@ struct SavedLinksView: View {
         }
     }
 
-    /// Where it is from, then which drawer: one row, the way the web has it.
+    /// Closes the actions sheet, then opens what was picked once it has gone — one sheet at a time.
+    private func after(_ open: @escaping () -> Void) {
+        acting = nil
+        Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            open()
+        }
+    }
+
+    /// Where it is from, then the drawer as a menu, and All to clear both: one row.
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip("All", on: source == nil && drawer == nil) {
+                Chip("All", isOn: source == nil && drawer == nil) {
                     source = nil
                     drawer = nil
                 }
                 if sources.count > 1 {
                     ForEach(sources, id: \.self) { kind in
-                        chip(SavedLink.label(source: kind, url: nil) == "Website" ? "Websites" : SavedLink.label(source: kind, url: nil),
-                             on: source == kind) {
+                        let label = SavedLink.label(source: kind, url: nil)
+                        Chip(label == "Website" ? "Websites" : label, isOn: source == kind) {
                             source = source == kind ? nil : kind
                         }
                     }
                 }
-                if sources.count > 1 && !drawers.isEmpty {
-                    Divider().frame(height: 22)
-                }
-                ForEach(drawers, id: \.self) { section in
-                    chip(section.title, on: drawer == section) {
-                        drawer = drawer == section ? nil : section
+                if !drawers.isEmpty {
+                    Menu {
+                        Button("Every drawer") { drawer = nil }
+                        ForEach(drawers, id: \.self) { section in
+                            Button(section.title) { drawer = section }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                            Text(drawer?.title ?? "Drawer")
+                        }
+                        .font(.system(size: 13, weight: drawer != nil ? .semibold : .medium))
+                        .foregroundStyle(drawer != nil ? Palette.bg : Palette.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(drawer != nil ? Palette.text : Palette.surface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(drawer != nil ? Palette.text : Palette.border, lineWidth: 1))
                     }
+                    .accessibilityLabel("Drawer")
                 }
             }
+            .padding(.horizontal, 20)
         }
-        .scrollClipDisabled()
+        .padding(.horizontal, -20)
     }
 
-    private func chip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(on ? .semibold : .regular))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(on ? Palette.accent : Palette.surface2, in: Capsule())
-                .foregroundStyle(on ? Color.white : Color.primary)
+    /**
+     Paste: whatever link is on the clipboard is saved straight away. Nothing on it that looks
+     like a link opens the box to paste one into instead.
+    */
+    private var pasteRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.on.clipboard").font(.system(size: 16)).foregroundStyle(Palette.accentInk)
+            Button { pastedURL = nil; adding = true } label: {
+                Text("Paste a link to save it").font(.system(size: 14)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(PressFade())
+            Button("Paste") { Task { await paste() } }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.accentInk)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(Palette.faint, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
     }
 
-    /// The ways on first, then tidying, then the one that cannot be undone.
-    private func menu(for link: SavedLink) -> some View {
-        Menu {
-            Button("Plan it", systemImage: "calendar.badge.plus") { planning = link }
-            Button("Make it a recipe", systemImage: "square.and.pencil") { making = draft(from: link) }
-            Button("Try importing again", systemImage: "arrow.down.doc") { importing = link }
-            Divider()
-            Button("Rename", systemImage: "pencil") {
-                newName = link.name
-                renaming = link
-            }
-            Picker("Move to a drawer", systemImage: "tray", selection: Binding(
-                get: { link.section },
-                set: { section in Task { await move(link, to: section) } }
-            )) {
-                Text("No drawer").tag(RecipeSection?.none)
-                ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag(Optional($0)) }
-            }
-            .pickerStyle(.menu)
-            // Only whoever saved it: hiding somebody else's link would hide it from you too.
-            if link.mine {
-                Toggle("Just me", systemImage: "lock", isOn: Binding(
-                    get: { link.personal },
-                    set: { on in Task { await update(link, personal: on) } }
-                ))
-            }
-            Divider()
-            Button("Delete", systemImage: "trash", role: .destructive) { deleting = link }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .background(.black.opacity(0.45), in: Circle())
-                .padding(6)
-                .contentShape(Rectangle())
+    private func paste() async {
+        let text = (UIPasteboard.general.url?.absoluteString ?? UIPasteboard.general.string ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.range(of: "^https?://\\S+$", options: [.regularExpression, .caseInsensitive]) != nil,
+              let household = session.household?.id, sample == nil else {
+            pastedURL = text.isEmpty ? nil : text
+            adding = true
+            return
         }
-        .accessibilityLabel("More for \(link.name)")
+        do {
+            let saved = try await APIClient.shared.saveLink(household: household, url: text)
+            links = [saved] + all.filter { $0.id != saved.id }
+            say(saved.alreadySaved == true ? "“\(saved.name)” was already saved." : "Saved “\(saved.name)”.")
+            await onChanged()
+        } catch {
+            pastedURL = text
+            adding = true
+        }
     }
 
     /// The name, the link and its picture, for typing out the rest.
@@ -334,79 +400,159 @@ struct SavedLinksView: View {
     }
 }
 
-/// One link as its picture — the video's cover or the page's photo — with where it is from on
-/// it, and what it is called underneath.
+/// A saved link's picture: the video's cover or the page's photo, or a gradient with what kind
+/// it is drawn on it.
+struct SavedLinkPicture: View {
+    let link: SavedLink
+    var radius: CGFloat = 14
+
+    var body: some View {
+        let placeholder = RecipePhotoPlaceholder(hue: .of(link.id.uuidString.lowercased()),
+                                                 systemImage: link.source == .web ? "globe" : "play",
+                                                 radius: radius)
+        if let id = link.coverImageId, let url = APIClient.shared.imageURL(id) {
+            Color.clear
+                .overlay {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFill() } else { placeholder }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            placeholder
+        }
+    }
+}
+
+/// One link as its picture (3.17), what it is called under it, and where it is from and which
+/// drawer.
 struct SavedLinkTile: View {
     let link: SavedLink
 
-    private var detail: String? {
-        let parts = [link.section?.title, link.mine ? nil : link.savedByName.map { "from \($0)" }].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    private var detail: String {
+        [link.sourceLabel, link.section?.title, link.mine ? nil : link.savedByName.map { "from \($0)" }]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Palette.cover(for: link.id.uuidString.lowercased())
-                .aspectRatio(4 / 5, contentMode: .fit)
-                .overlay {
-                    if let id = link.coverImageId, let url = APIClient.shared.imageURL(id) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            ProgressView()
-                        }
-                    } else {
-                        // No picture: what kind of link it is, drawn big. The badge says where.
-                        Image(systemName: link.source == .web ? "globe" : "play.circle")
-                            .font(.system(size: 40, weight: .light))
-                            .foregroundStyle(.primary.opacity(0.4))
-                    }
-                }
+            SavedLinkPicture(link: link)
+                .aspectRatio(171 / 110, contentMode: .fit)
                 .overlay(alignment: .bottomLeading) {
-                    // On the picture, so they read over any cover: dark glass, white type.
-                    HStack(spacing: 4) {
-                        SavedLinkBadge(text: link.sourceLabel)
-                        if link.personal {
-                            Text("Just me")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.white.opacity(0.9), in: Capsule())
-                        }
+                    if link.personal {
+                        Text("Just me")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.white.opacity(0.9), in: Capsule())
+                            .padding(8)
                     }
-                    .padding(8)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-
-            Text(link.name).font(.subheadline.weight(.medium)).lineLimit(2)
-                .multilineTextAlignment(.leading)
-            if let detail {
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+            Text(link.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+            Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// "TikTok", "Instagram", or the site, in white on dark glass so it reads over any picture.
-struct SavedLinkBadge: View {
-    let text: String
+/**
+ Everything a saved link can do (3.18): the ways on first — plan it, make it a recipe, read it
+ again — then tidying it, then the one that cannot be undone. Just me is only for whoever saved
+ it: hiding somebody else's link would hide it from you too.
+*/
+struct SavedLinkActions: View {
+    let link: SavedLink
+    let plan: () -> Void
+    let makeRecipe: () -> Void
+    let importAgain: () -> Void
+    let move: () -> Void
+    let rename: () -> Void
+    let justMe: () -> Void
+    let delete: () -> Void
+
+    private var meta: String {
+        let by = link.mine ? "saved by you" : link.savedByName.map { "saved by \($0)" }
+        return [link.sourceLabel, by, link.savedAgo].compactMap { $0 }.joined(separator: " · ")
+    }
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .lineLimit(1)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.black.opacity(0.55), in: Capsule())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    SavedLinkPicture(link: link).frame(width: 60, height: 60)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(link.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(2)
+                        Text(meta).font(.system(size: 13)).foregroundStyle(Palette.muted).lineLimit(1)
+                    }
+                }
+                ListGroup {
+                    action(plan) { ListRow("Add to plan", tile: ("calendar", .accent)) }
+                    action(makeRecipe) {
+                        ListRow("Turn into a recipe", subtitle: "Moves any planned meals over to the new recipe",
+                                tile: ("book", .herb))
+                    }
+                    action(importAgain) { ListRow("Try importing again", tile: ("arrow.triangle.2.circlepath", .sky)) }
+                    action(move) {
+                        ListRow("Move to a drawer", detail: link.section?.title ?? "None", chevron: true, tile: ("folder", .mustard))
+                    }
+                    action(rename) { ListRow("Rename", tile: ("pencil", .plum)) }
+                    if link.mine {
+                        action(justMe) {
+                            ListRow("Just me", subtitle: link.personal ? "Only you can see it" : "Everyone in the household can see it",
+                                    tile: ("lock", .sky)) {
+                                Toggle("", isOn: .constant(link.personal)).labelsHidden().allowsHitTesting(false)
+                            }
+                        }
+                        .accessibilityValue(link.personal ? "On" : "Off")
+                    }
+                    action(delete) { ListRow("Delete", titleColor: Palette.accentInk, tile: ("trash", .accent)) }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func action<Row: View>(_ run: @escaping () -> Void, @ViewBuilder row: () -> Row) -> some View {
+        Button(action: run, label: row).buttonStyle(PressFade())
+    }
+}
+
+extension SavedLink {
+    /// "today", "3 days ago" — when it was kept, from a server new enough to say.
+    var savedAgo: String? {
+        guard let createdAt, let date = ISO8601DateFormatter.flexible(createdAt) else { return nil }
+        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: date),
+                                                   to: Calendar.current.startOfDay(for: Date())).day ?? 0
+        switch days {
+        case ..<1: return "today"
+        case 1: return "yesterday"
+        case 2..<7: return "\(days) days ago"
+        case 7..<14: return "last week"
+        default: return date.formatted(.dateTime.day().month(.abbreviated))
+        }
+    }
+}
+
+private extension ISO8601DateFormatter {
+    /// The server's timestamps, with or without fractions of a second.
+    static func flexible(_ text: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: text) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: text.replacingOccurrences(of: "\\.\\d+", with: "", options: .regularExpression))
     }
 }
 
 /// A link typed or pasted in, kept. The server fills in its name and picture.
 struct SaveLinkSheet: View {
     var session: Session
+    /// Something already pasted, to start the box with.
+    var initialURL: String? = nil
     var onSaved: (SavedLink) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -454,7 +600,10 @@ struct SaveLinkSheet: View {
                     }
                 }
             }
-            .onAppear { focused = true }
+            .onAppear {
+                if url.isEmpty, let initialURL { url = initialURL }
+                focused = true
+            }
         }
         .presentationDetents([.medium])
     }

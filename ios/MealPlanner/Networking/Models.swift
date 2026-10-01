@@ -514,6 +514,8 @@ struct SavedLink: Codable, Identifiable, Hashable {
     /// You saved it — the only one who can make it "Just me".
     let mine: Bool
     let savedByName: String?
+    /// When it was kept (an ISO instant); absent from an older server.
+    var createdAt: String? = nil
     /// On a save only: the link was already there, and that one was updated.
     var alreadySaved: Bool? = nil
 

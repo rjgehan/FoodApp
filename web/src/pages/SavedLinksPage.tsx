@@ -8,8 +8,6 @@ import type { RecipeDraft } from '../components/RecipeForm';
 import type { FromSavedLink } from './NewRecipePage';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
 import { Reading } from '../components/RecipeFromLink';
-import { PageTitle } from '../components/PageTitle';
-import { SavedLinksArt } from '../components/FoodIcons';
 import {
   Button,
   Card,
@@ -19,11 +17,18 @@ import {
   EmptyState,
   ErrorText,
   Input,
+  List,
+  NavBar,
+  NoteBox,
+  Photo,
+  Row,
+  SearchField,
   Sheet,
   SwitchKnob,
+  Tile,
 } from '../components/ui';
-import { ChevronLeftIcon, GlobeIcon, MoreIcon, PlayIcon, PlusIcon } from '../components/icons';
-import { photoClass } from '../utils/recipeFormat';
+import { Icon } from '../components/icons';
+import { usePushedScreen } from '../components/Layout';
 import { SECTION_OPTIONS, sectionLabel } from '../utils/recipeMeta';
 import { isSafeLink } from '../utils/videoLink';
 import { saveLink, sourceLabel } from '../utils/savedLinks';
@@ -54,6 +59,7 @@ export default function SavedLinksPage() {
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<{ action: Action; link: SavedLink } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  usePushedScreen();
 
   useEffect(() => {
     if (!activeHouseholdId) return;
@@ -136,125 +142,148 @@ export default function SavedLinksPage() {
 
   const close = () => setOpen(null);
 
-  /** The ••• sheet: the ways on first, then tidying, then the one that cannot be undone. */
-  function menuFor(link: SavedLink): { label: string; onSelect: () => void; danger?: boolean; on?: boolean }[] {
-    return [
-      { label: 'Plan it', onSelect: () => setOpen({ action: 'plan', link }) },
-      { label: 'Make it a recipe', onSelect: () => makeRecipe(link) },
-      { label: 'Try importing again', onSelect: () => setOpen({ action: 'import', link }) },
-      { label: 'Rename', onSelect: () => setOpen({ action: 'rename', link }) },
-      { label: 'Move to a drawer', onSelect: () => setOpen({ action: 'move', link }) },
-      // Only whoever saved it: hiding somebody else's link would hide it from you too.
-      ...(link.mine
-        ? [
-            {
-              label: 'Just me',
-              on: link.personal,
-              onSelect: async () => {
-                close();
-                const updated = await update(link, { personal: !link.personal });
-                setNotice(updated.personal ? 'Only you can see it now.' : 'Everyone in the household can see it now.');
-              },
-            },
-          ]
-        : []),
-      { label: 'Delete', onSelect: () => setOpen({ action: 'delete', link }), danger: true },
-    ];
+  /**
+   * Paste: whatever link is on the clipboard is saved straight away. A browser that will not
+   * hand the clipboard over (or has nothing on it) opens the box to paste it into instead.
+   */
+  async function pasteLink() {
+    let text = '';
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      // Not allowed here, or refused: the box below does the same job by hand.
+    }
+    if (!/^https?:\/\/\S+$/i.test(text)) {
+      setAdding(true);
+      return;
+    }
+    try {
+      const saved = await saveLink(householdId, { url: text });
+      setLinks((current) => [saved, ...(current ?? []).filter((l) => l.id !== saved.id)]);
+      setNotice(saved.alreadySaved ? `“${saved.name}” was already saved.` : `Saved “${saved.name}”.`);
+    } catch {
+      setAdding(true);
+    }
   }
 
   return (
-    <div className="space-y-4">
-      <Button variant="ghost" size="sm" className="-ml-3" onClick={() => navigate('/recipes')}>
-        <ChevronLeftIcon className="h-5 w-5" />
-        Recipes
-      </Button>
+    <>
+      <div className="space-y-3">
+        <NavBar
+          className="-mx-2.5"
+          title="Saved links"
+          backLabel="Recipes"
+          back={() => navigate('/recipes')}
+          right={
+            <button type="button" aria-label="Save a link" title="Save a link" className="press" onClick={() => setAdding(true)}>
+              <Icon name="plus" size={22} />
+            </button>
+          }
+        />
 
-      <PageTitle title="Saved links" subtitle="Recipes to try, kept as the link for now." />
-
-      <div className="flex gap-2">
-        <Input
-          type="search"
+        <SearchField
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search saved links"
           aria-label="Search saved links"
         />
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          aria-label="Save a link"
-          title="Save a link"
-          className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent"
-        >
-          <PlusIcon className="h-5 w-5" />
-        </button>
-      </div>
 
-      {/* One row, not two: where it is from, then which drawer, and All to clear both. */}
-      {(sources.length > 1 || drawers.length > 0) && (
-        <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5" role="group" aria-label="Filters">
-          <Chip
-            active={!source && !drawer}
-            onClick={() => {
-              setSource(null);
-              setDrawer(null);
-            }}
-          >
-            All
-          </Chip>
-          {sources.length > 1 &&
-            sources.map((s) => (
-              <Chip key={s.value} active={source === s.value} onClick={() => setSource(source === s.value ? null : s.value)}>
-                {s.label}
-              </Chip>
-            ))}
-          {sources.length > 1 && drawers.length > 0 && <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-line" />}
-          {drawers.map((s) => (
-            <Chip key={s.value} active={drawer === s.value} onClick={() => setDrawer(drawer === s.value ? null : s.value)}>
-              {s.label}
+        {/* One row: where it is from, then the drawer as a menu, and All to clear both. */}
+        {(sources.length > 1 || drawers.length > 0) && (
+          <div className="-mx-5 flex items-center gap-2 overflow-x-auto px-5 pb-0.5 md:-mx-8 md:px-8" role="group" aria-label="Filters">
+            <Chip
+              active={!source && !drawer}
+              onClick={() => {
+                setSource(null);
+                setDrawer(null);
+              }}
+            >
+              All
             </Chip>
-          ))}
-        </div>
-      )}
+            {sources.length > 1 &&
+              sources.map((s) => (
+                <Chip key={s.value} active={source === s.value} onClick={() => setSource(source === s.value ? null : s.value)}>
+                  {s.label}
+                </Chip>
+              ))}
+            {drawers.length > 0 && (
+              <label
+                className={cx(
+                  'press relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-[7px] text-[0.8125rem]',
+                  drawer ? 'border-ink bg-ink font-semibold text-bg' : 'border-line bg-surface font-medium text-ink',
+                )}
+              >
+                <Icon name="chevD" size={14} />
+                {drawer ? sectionLabel(drawer) : 'Drawer'}
+                {/* The phone's own picker, laid over the chip. */}
+                <select
+                  aria-label="Drawer"
+                  value={drawer ?? ''}
+                  onChange={(e) => setDrawer((e.target.value || null) as RecipeSection | null)}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                >
+                  <option value="">Every drawer</option>
+                  {drawers.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
 
-      {notice && (
-        <p role="status" className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">
-          {notice}
-        </p>
-      )}
-
-      {failed ? (
-        <Card>
-          <EmptyState>Couldn’t load your saved links.</EmptyState>
-        </Card>
-      ) : links === null ? (
-        <p className="py-8 text-center text-sm text-muted">Loading…</p>
-      ) : links.length === 0 ? (
-        <div className="flex flex-col items-center px-6 py-10 text-center">
-          <SavedLinksArt className="h-20 w-20 text-faint" />
-          <p className="mt-3 text-lg font-semibold">Nothing saved yet</p>
-          <p className="mt-1 max-w-sm text-[0.9375rem] text-muted">
-            Keep the TikToks, Reels and recipe pages you mean to make. When a link won’t come through as a recipe, save
-            it here instead — and make it a recipe later.
-          </p>
-          <Button className="mt-5" onClick={() => setAdding(true)}>
-            <PlusIcon className="h-5 w-5" />
-            Save a link
-          </Button>
+        <div className="dash flex items-center gap-2.5 px-3.5 py-3">
+          <Icon name="clipboard" size={18} className="shrink-0 text-accent-ink" />
+          <button type="button" className="min-w-0 flex-1 truncate text-left text-sm text-muted" onClick={() => setAdding(true)}>
+            Paste a link to save it
+          </button>
+          <button type="button" className="press shrink-0 text-sm font-semibold text-accent-ink" onClick={pasteLink}>
+            Paste
+          </button>
         </div>
-      ) : shown.length === 0 ? (
-        <Card>
-          <EmptyState>Nothing matches that.</EmptyState>
-        </Card>
-      ) : (
-        <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
-          {shown.map((link) => (
-            <li key={link.id}>
-              <SavedLinkTile link={link} onMenu={() => setOpen({ action: 'menu', link })} />
-            </li>
-          ))}
-        </ul>
-      )}
+
+        {notice && (
+          <div role="status">
+            <NoteBox tone="herb" icon="check">
+              {notice}
+            </NoteBox>
+          </div>
+        )}
+
+        {failed ? (
+          <Card>
+            <EmptyState>Couldn’t load your saved links.</EmptyState>
+          </Card>
+        ) : links === null ? (
+          <p className="py-8 text-center text-sm text-muted">Loading…</p>
+        ) : links.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-10 text-center">
+            <Tile icon="link" tone="plum" size={64} />
+            <p className="title-section mt-4">Nothing saved yet</p>
+            <p className="mt-1 max-w-sm text-[0.9375rem] text-muted">
+              Keep the TikToks, Reels and recipe pages you mean to make. When a link won’t come through as a recipe, save
+              it here instead — and make it a recipe later.
+            </p>
+            <Button className="mt-5" icon="plus" onClick={() => setAdding(true)}>
+              Save a link
+            </Button>
+          </div>
+        ) : shown.length === 0 ? (
+          <Card>
+            <EmptyState>Nothing matches that.</EmptyState>
+          </Card>
+        ) : (
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-3.5 pt-0.5 sm:grid-cols-3 lg:grid-cols-4">
+            {shown.map((link) => (
+              <li key={link.id}>
+                <SavedLinkTile link={link} onMenu={() => setOpen({ action: 'menu', link })} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {adding && (
         <AddLinkSheet
@@ -269,27 +298,28 @@ export default function SavedLinksPage() {
       )}
 
       {open?.action === 'menu' && (
-        <Sheet title={open.link.name} onClose={close}>
-          <ul className="divide-y divide-line">
-            {menuFor(open.link).map((item) => (
-              <li key={item.label}>
-                <button
-                  type="button"
-                  onClick={item.onSelect}
-                  className={cx(
-                    'press flex min-h-touch w-full items-center justify-between gap-3 py-3 text-left text-[1.0625rem]',
-                    item.danger ? 'text-danger' : 'text-accent-ink',
-                  )}
-                >
-                  {item.label}
-                  {item.on !== undefined && <SwitchKnob on={item.on} />}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {!open.link.mine && open.link.savedByName && (
-            <p className="pt-2 text-sm text-muted">Saved by {open.link.savedByName}</p>
-          )}
+        <Sheet
+          label={open.link.name}
+          title={<span className="font-sans text-[1.0625rem] font-semibold tracking-normal">{open.link.name}</span>}
+          subtitle={linkMeta(open.link)}
+          lead={<LinkPicture link={open.link} className="h-[60px] w-[60px] rounded-[14px]" small />}
+          onClose={close}
+        >
+          <LinkActions
+            link={open.link}
+            onPlan={() => setOpen({ action: 'plan', link: open.link })}
+            onMakeRecipe={() => makeRecipe(open.link)}
+            onImport={() => setOpen({ action: 'import', link: open.link })}
+            onMove={() => setOpen({ action: 'move', link: open.link })}
+            onRename={() => setOpen({ action: 'rename', link: open.link })}
+            onDelete={() => setOpen({ action: 'delete', link: open.link })}
+            onJustMe={async () => {
+              const link = open.link;
+              close();
+              const updated = await update(link, { personal: !link.personal });
+              setNotice(updated.personal ? 'Only you can see it now.' : 'Everyone in the household can see it now.');
+            }}
+          />
         </Sheet>
       )}
 
@@ -306,27 +336,24 @@ export default function SavedLinksPage() {
 
       {open?.action === 'move' && (
         <Sheet title="Move to a drawer" onClose={close}>
-          <ul className="divide-y divide-line">
+          <List label="Drawers">
             {[{ value: null, label: 'No drawer' }, ...SECTION_OPTIONS].map((s) => {
               const on = open.link.section === s.value;
               return (
-                <li key={s.label}>
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    onClick={async () => {
-                      close();
-                      await update(open.link, s.value ? { section: s.value } : { clearSection: true });
-                    }}
-                    className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
-                  >
-                    <CheckCircle checked={on} />
-                    <span>{s.label}</span>
-                  </button>
-                </li>
+                <Row
+                  key={s.label}
+                  aria-checked={on}
+                  role="radio"
+                  lead={<CheckCircle checked={on} />}
+                  title={s.label}
+                  onClick={async () => {
+                    close();
+                    await update(open.link, s.value ? { section: s.value } : { clearSection: true });
+                  }}
+                />
               );
             })}
-          </ul>
+          </List>
         </Sheet>
       )}
 
@@ -364,20 +391,121 @@ export default function SavedLinksPage() {
           onTypeItOut={() => makeRecipe(open.link)}
         />
       )}
-    </div>
+    </>
+  );
+}
+
+/** "TikTok · saved by Jo · 3 days ago" — where it is from, who kept it, and when. */
+function linkMeta(link: SavedLink): string {
+  const by = link.mine ? 'saved by you' : link.savedByName ? `saved by ${link.savedByName}` : null;
+  return [sourceLabel(link), by, ago(link.createdAt)].filter(Boolean).join(' · ');
+}
+
+function ago(iso: string): string | null {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return null;
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return 'last week';
+  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+/**
+ * Everything a saved link can do (3.18): the ways on first — plan it, make it a recipe, read it
+ * again — then tidying it, then the one that cannot be undone. Just me is only for whoever saved
+ * it: hiding somebody else's link would hide it from you too.
+ */
+function LinkActions({
+  link,
+  onPlan,
+  onMakeRecipe,
+  onImport,
+  onMove,
+  onRename,
+  onJustMe,
+  onDelete,
+}: {
+  link: SavedLink;
+  onPlan: () => void;
+  onMakeRecipe: () => void;
+  onImport: () => void;
+  onMove: () => void;
+  onRename: () => void;
+  onJustMe: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <List label="Saved link actions">
+      <Row lead={<Tile icon="calendar" tone="accent" size={34} />} title="Add to plan" onClick={onPlan} />
+      <Row
+        lead={<Tile icon="book" tone="herb" size={34} />}
+        title="Turn into a recipe"
+        subtitle="Moves any planned meals over to the new recipe"
+        onClick={onMakeRecipe}
+      />
+      <Row lead={<Tile icon="refresh" tone="sky" size={34} />} title="Try importing again" onClick={onImport} />
+      <Row
+        lead={<Tile icon="folder" tone="mustard" size={34} />}
+        title="Move to a drawer"
+        detail={link.section ? sectionLabel(link.section) : 'None'}
+        chevron
+        onClick={onMove}
+      />
+      <Row lead={<Tile icon="pen" tone="plum" size={34} />} title="Rename" onClick={onRename} />
+      {link.mine && (
+        <Row
+          role="switch"
+          aria-checked={link.personal}
+          lead={<Tile icon="lock" tone="sky" size={34} />}
+          title="Just me"
+          subtitle={link.personal ? 'Only you can see it' : 'Everyone in the household can see it'}
+          end={<SwitchKnob on={link.personal} />}
+          onClick={onJustMe}
+        />
+      )}
+      <Row lead={<Tile icon="trash" tone="accent" size={34} />} title="Delete" tone="danger" onClick={onDelete} />
+    </List>
+  );
+}
+
+/** A saved link's picture: the video's cover or the page's photo, or a gradient with what kind it is. */
+function LinkPicture({ link, className, small = false }: { link: SavedLink; className?: string; small?: boolean }) {
+  const [broken, setBroken] = useState(false);
+  const picture = link.coverImageId && !broken ? link.coverImageId : null;
+  if (picture) {
+    return (
+      <span className={cx('flex shrink-0 overflow-hidden bg-surface2', className)} aria-hidden="true">
+        <img
+          src={imageUrl(picture)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setBroken(true)}
+          className="h-full w-full object-cover"
+        />
+      </span>
+    );
+  }
+  return (
+    <Photo seed={link.id} icon={null} className={className}>
+      {/* What kind of link it is, drawn big: the line under it says where from. */}
+      <Icon
+        name={link.source === 'WEB' ? 'globe' : 'play'}
+        strokeWidth={small ? 2 : 1.6}
+        className={cx('relative opacity-90', small ? 'h-[40%] w-[40%]' : 'h-[34%] w-[34%]')}
+      />
+    </Photo>
   );
 }
 
 /**
- * One link as its picture: the video's cover or the page's photo, what it is called under it,
- * and where it is from on it. The whole tile opens the link; its ••• sits on the picture.
+ * One link as its picture (3.17): the cover, what it is called under it, and where it is from
+ * and which drawer. The whole tile opens the link where it lives; its ••• sits on the picture.
  */
 function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }) {
-  const [broken, setBroken] = useState(false);
-  const picture = link.coverImageId && !broken ? link.coverImageId : null;
-  const detail = [link.section && sectionLabel(link.section), !link.mine && link.savedByName && `from ${link.savedByName}`]
-    .filter(Boolean)
-    .join(' · ');
+  const from = !link.mine && link.savedByName ? `from ${link.savedByName}` : null;
 
   return (
     <div className="relative">
@@ -385,48 +513,21 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
         href={isSafeLink(link.url) ? link.url : undefined}
         target="_blank"
         rel="noopener noreferrer"
-        className="block transition-transform active:scale-[0.98]"
+        className="press flex flex-col gap-1.5"
       >
-        <span
-          className={cx(
-            'relative flex aspect-[4/5] flex-col items-center justify-center overflow-hidden rounded-[18px]',
-            !picture && photoClass(link.id),
-          )}
-        >
-          {picture ? (
-            <img
-              src={imageUrl(picture)}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={() => setBroken(true)}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <>
-              {/* No picture: what kind of link it is, drawn big. The badge below says where. */}
-              {link.source === 'WEB' ? (
-                <GlobeIcon strokeWidth={1.6} className="h-12 w-12 opacity-90" />
-              ) : (
-                <PlayIcon strokeWidth={1.6} className="h-12 w-12 opacity-90" />
-              )}
-            </>
-          )}
-          {/* On the picture, so they read over any cover: dark glass, white type. */}
-          <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] gap-1">
-            <span className="truncate rounded-full bg-black/55 px-2 py-0.5 text-[0.6875rem] font-semibold text-white backdrop-blur-sm">
-              {sourceLabel(link)}
+        <span className="relative block">
+          <LinkPicture link={link} className="aspect-[171/110] w-full rounded-[14px]" />
+          {link.personal && (
+            <span className="absolute bottom-2 left-2 rounded-full bg-white/90 px-2 py-0.5 text-[0.6875rem] font-semibold text-black">
+              Just me
             </span>
-            {link.personal && (
-              <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[0.6875rem] font-semibold text-black">
-                Just me
-              </span>
-            )}
-          </span>
+          )}
         </span>
-        <span className="block px-0.5 pt-2">
-          <span className="line-clamp-2 font-medium leading-snug">{link.name}</span>
-          {detail && <span className="mt-0.5 block truncate text-xs text-faint">{detail}</span>}
+        <span className="block truncate text-sm font-semibold">{link.name}</span>
+        <span className="-mt-1 block truncate text-xs text-muted">
+          <span>{sourceLabel(link)}</span>
+          {link.section && ` · ${sectionLabel(link.section)}`}
+          {from && ` · ${from}`}
         </span>
       </a>
       <button
@@ -434,9 +535,11 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
         aria-label={`More for ${link.name}`}
         title="More"
         onClick={onMenu}
-        className="press absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm"
+        className="press absolute right-1 top-1 flex h-9 w-9 items-center justify-center"
       >
-        <MoreIcon className="h-5 w-5" />
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm">
+          <Icon name="more" size={16} />
+        </span>
       </button>
     </div>
   );

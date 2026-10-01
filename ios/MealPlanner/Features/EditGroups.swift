@@ -1,225 +1,196 @@
 import SwiftUI
 
 /**
- The shelves at one level of a drawer: add one, rename one, take one away.
+ Edit groups (the mockup's 3.6): every group at one level of a drawer in one list, so standing in
+ Dinner and wanting Main, Soups, Sides and Batch cook drawn is one list to go down rather than
+ four groups to open. Tap a row's tile to choose its icon from the grid under the list; rename it
+ where it stands; the bin takes it away.
 
  Reached from the drawer, or the group, whose groups it edits, because "edit groups" with no
- drawer in mind is a question nobody asks — you are always looking at Dinner and deciding that
- Dinner needs a Chicken shelf, or inside Main and deciding Chicken needs a picture.
-
- Each group can wear one of the food drawings on its tile — tap the square at the start of its
- row. A new group can be given one as it is made.
+ drawer in mind is a question nobody asks.
 
  Taking a group away never takes its recipes with it. They move up a level, which is what the
  server does and what anybody would expect: a shelf is a way of arranging the drawer, not a
- thing the food lives inside.
+ thing the food lives inside. Nothing is sent until Done, so Cancel really is cancel.
 */
 struct EditGroupsView: View {
+    var store: CatalogueStore
     let section: RecipeSection
     /// The group whose groups these are; nil for the top of the drawer.
     var parent: RecipeCategory?
     let groups: [RecipeCategory]
-    var session: Session?
-    /// Reload the catalog, because renaming a group renames it on every recipe filed there.
-    var onChanged: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var drafts: [UUID: String] = [:]
-    @State private var adding = ""
-    @State private var addingIcon: String?
-    /// Icons picked here, shown straight away rather than after the catalog reloads.
-    @State private var pickedIcons: [UUID: String?] = [:]
-    @State private var choosingIconFor: IconTarget?
+    @State private var names: [UUID: String] = [:]
+    @State private var icons: [UUID: String?] = [:]
+    @State private var removed: [UUID] = []
+    @State private var selected: UUID?
     @State private var busy = false
     @State private var error: String?
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                KitchenSection {
-                    HStack {
-                        iconButton(addingIcon, label: "Icon for the new group") { choosingIconFor = .new }
-                        TextField("New group", text: $adding)
-                        Button("Add") { Task { await add() } }
-                            .disabled(busy || adding.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                } footer: {
-                    Text(parent == nil ? "A new group belongs to \(section.title)." : "A new group goes inside \(place).")
-                }
-
-                if groups.isEmpty {
-                    KitchenSection {
-                        Text("No groups in \(place) yet.").foregroundStyle(.secondary)
-                    }
-                } else {
-                    KitchenSection {
-                        ForEach(groups) { group in
-                            HStack {
-                                iconButton(icon(of: group), label: "Icon for \(group.name)") {
-                                    choosingIconFor = .group(group)
-                                }
-                                TextField(group.name, text: draft(for: group))
-                                    .submitLabel(.done)
-                                    .onSubmit { Task { await rename(group) } }
-                                Spacer(minLength: 8)
-                                Text("\(group.recipeCount)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button("Delete", systemImage: "trash", role: .destructive) {
-                                    Task { await remove(group) }
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("Groups in \(place)")
-                    } footer: {
-                        Text("Tap a square to give a group a picture. Edit a name and press return. "
-                             + "Swipe to delete — the recipes in it move up into \(place) "
-                             + "rather than going with it.")
-                    }
-                }
-
-                if let error {
-                    KitchenSection { Text(error).foregroundStyle(Palette.danger) }
-                }
-            }
-            .kitchenList()
-            .navigationTitle("Groups")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
-            }
-            .sheet(item: $choosingIconFor) { target in
-                IconChooser(
-                    title: target.title,
-                    selected: target == .new ? addingIcon : groups.first { IconTarget.group($0) == target }.flatMap(icon(of:))
-                ) { key in
-                    choosingIconFor = nil
-                    switch target {
-                    case .new: addingIcon = key
-                    case .group(let group): Task { await setIcon(key, on: group) }
-                    }
-                }
-                .presentationDetents([.medium, .large])
-            }
-        }
-    }
-
-    /// What the picker was opened for: the group being added, or one already there.
-    enum IconTarget: Identifiable, Hashable {
-        case new
-        case group(RecipeCategory)
-
-        var id: String {
-            switch self {
-            case .new: "new"
-            case .group(let group): group.id.uuidString
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .new: "New group"
-            case .group(let group): group.name
-            }
-        }
+    init(store: CatalogueStore, section: RecipeSection, parent: RecipeCategory?, groups: [RecipeCategory],
+         selected: UUID? = nil) {
+        self.store = store
+        self.section = section
+        self.parent = parent
+        self.groups = groups
+        _selected = State(initialValue: selected ?? groups.first?.id)
     }
 
     /// Where these groups sit: the drawer, or the group they are inside.
     private var place: String { parent?.name ?? section.title }
+    private var kept: [RecipeCategory] { groups.filter { !removed.contains($0.id) } }
+    private var current: RecipeCategory? { kept.first { $0.id == selected } }
 
     private func icon(of group: RecipeCategory) -> String? {
-        pickedIcons[group.id] ?? group.iconKey
+        if let picked = icons[group.id] { return picked }
+        return group.iconKey
     }
 
-    /// The group's picture as a small tile, or an empty dashed square when it has none.
-    private func iconButton(_ key: String?, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if let icon = FoodIcon.named(key) {
-                    icon.image.resizable().scaledToFit().padding(5)
+    private func name(of group: RecipeCategory) -> Binding<String> {
+        Binding(get: { names[group.id] ?? group.name }, set: { names[group.id] = $0 })
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if kept.isEmpty {
+                        Text(groups.isEmpty ? "No groups in \(place) yet." : "Done takes every group out of \(place).")
+                            .font(.system(size: 15)).foregroundStyle(Palette.muted)
+                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    } else {
+                        ListGroup {
+                            ForEach(kept) { group in row(group) }
+                        }
+                    }
+                    if let current {
+                        iconGrid(for: current)
+                    }
+                    if !removed.isEmpty {
+                        Button(removed.count == 1 ? "Undo the delete" : "Undo \(removed.count) deletes") { removed = [] }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Palette.accentInk)
+                    }
+                    NoteBox("Deleting a group moves its recipes up a level. Nothing is lost.", tone: .sky)
+                    if let error {
+                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .pageBackground()
+            .centeredTitle("Edit groups")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(Palette.accentInk)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "Saving…" : "Done") { Task { await save() } }
+                        .fontWeight(.semibold)
                         .foregroundStyle(Palette.accentInk)
-                        .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 8))
-                } else {
-                    Image(systemName: "photo.badge.plus")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [3])))
+                        .disabled(busy)
                 }
             }
-            .frame(width: 36, height: 36)
         }
-        .buttonStyle(.borderless)
-        .disabled(busy)
-        .accessibilityLabel(label)
-        .accessibilityValue(FoodIcon.named(key)?.label ?? "None")
+        .presentationBackground(Palette.bg)
     }
 
-    private func setIcon(_ key: String?, on group: RecipeCategory) async {
-        guard let household = session?.household?.id, !busy else { return }
-        let before = pickedIcons[group.id]
-        pickedIcons[group.id] = .some(key)
-        busy = true
-        do {
-            try await APIClient.shared.setRecipeCategoryIcon(household: household, category: group.id, iconKey: key)
-        } catch {
-            busy = false
-            pickedIcons[group.id] = before
-            self.error = error.localizedDescription
+    private func row(_ group: RecipeCategory) -> some View {
+        let on = group.id == selected
+        return HStack(spacing: 12) {
+            Button { selected = group.id } label: {
+                FoodTile(iconKey: icon(of: group), tone: group.tone, size: 36)
+            }
+            .buttonStyle(PressFade())
+            .accessibilityLabel("Icon for \(group.name)")
+            .accessibilityValue(FoodIcon.named(icon(of: group))?.label ?? "None")
+            TextField(group.name, text: name(of: group))
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Palette.text)
+                .submitLabel(.done)
+                .simultaneousGesture(TapGesture().onEnded { selected = group.id })
+            if on {
+                Pill("Editing", tone: .accent)
+            } else {
+                Button { withAnimation { removed.append(group.id) } } label: {
+                    Image(systemName: "trash").font(.system(size: 16)).foregroundStyle(Palette.faint)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(PressFade())
+                .accessibilityLabel("Delete \(group.name)")
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.vertical, 12)
+        .frame(minHeight: 60)
+        .background(on ? Palette.surface2.opacity(0.5) : .clear)
+    }
+
+    /// The icon for the group being edited: "No icon" and every drawing, the chosen one filled.
+    private func iconGrid(for group: RecipeCategory) -> some View {
+        let chosen = icon(of: group)
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionLabel("Icon for \(names[group.id] ?? group.name)").padding(.horizontal, -4)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                iconOption(nil, label: "No icon", on: chosen == nil) {
+                    Image(systemName: "circle.slash").font(.system(size: 17, weight: .medium))
+                } pick: { icons[group.id] = .some(nil) }
+                ForEach(FoodIcon.all) { food in
+                    iconOption(food.key, label: food.label, on: chosen == food.key) {
+                        food.image.resizable().scaledToFit().frame(width: 26, height: 26)
+                    } pick: { icons[group.id] = .some(food.key) }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func iconOption<Content: View>(_ key: String?, label: String, on: Bool,
+                                           @ViewBuilder content: () -> Content, pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            content()
+                .foregroundStyle(on ? Palette.onAccent : Palette.muted)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(on ? Palette.accent : Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func save() async {
+        guard let household = store.household else {
+            dismiss()
             return
         }
-        busy = false
-        // Saved by now: a reload that fails only leaves the catalog behind until the next one.
-        await onChanged()
-    }
-
-    /// The text being typed for one group, defaulting to the name it already has.
-    private func draft(for group: RecipeCategory) -> Binding<String> {
-        Binding(
-            get: { drafts[group.id] ?? group.name },
-            set: { drafts[group.id] = $0 }
-        )
-    }
-
-    private func add() async {
-        let wanted = adding.trimmingCharacters(in: .whitespaces)
-        guard !wanted.isEmpty, let household = session?.household?.id, !busy else { return }
         busy = true
-        defer { busy = false }
+        error = nil
         do {
-            try await APIClient.shared.createRecipeCategory(
-                household: household, name: wanted, section: section, parent: parent?.id, iconKey: addingIcon)
-            adding = ""
-            addingIcon = nil
-            await onChanged()
+            // Deleting first, so a rename cannot collide with a name that is on its way out.
+            for id in removed {
+                try await APIClient.shared.deleteRecipeCategory(household: household, category: id)
+            }
+            for group in kept {
+                let wanted = (names[group.id] ?? group.name).trimmingCharacters(in: .whitespaces)
+                if !wanted.isEmpty && wanted != group.name {
+                    try await APIClient.shared.renameRecipeCategory(household: household, category: group.id, name: wanted)
+                }
+                if let picked = icons[group.id], picked != group.iconKey {
+                    try await APIClient.shared.setRecipeCategoryIcon(household: household, category: group.id, iconKey: picked)
+                }
+            }
+            await store.load()
+            dismiss()
         } catch {
             self.error = error.localizedDescription
-        }
-    }
-
-    private func rename(_ group: RecipeCategory) async {
-        let wanted = (drafts[group.id] ?? group.name).trimmingCharacters(in: .whitespaces)
-        guard !wanted.isEmpty, wanted != group.name, let household = session?.household?.id else { return }
-        do {
-            try await APIClient.shared.renameRecipeCategory(household: household, category: group.id, name: wanted)
-            drafts[group.id] = nil
-            await onChanged()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func remove(_ group: RecipeCategory) async {
-        guard let household = session?.household?.id else { return }
-        do {
-            try await APIClient.shared.deleteRecipeCategory(household: household, category: group.id)
-            await onChanged()
-        } catch {
-            self.error = error.localizedDescription
+            busy = false
         }
     }
 }
@@ -249,22 +220,15 @@ struct IconChooser: View {
     }
 }
 
-#Preview("Groups") {
-    EditGroupsView(
-        section: .dinner,
-        groups: SampleData.recipeCategories.filter { $0.parentId == nil },
-        session: .preview,
-        onChanged: {}
-    )
+#Preview("Edit groups") {
+    let store = CatalogueStore(session: nil, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
+    return EditGroupsView(store: store, section: .dinner, parent: nil,
+                          groups: store.children(of: nil, in: .dinner))
 }
 
-#Preview("Groups inside Main") {
-    let main = SampleData.recipeCategories.first { $0.name == "Main" }
-    EditGroupsView(
-        section: .dinner,
-        parent: main,
-        groups: SampleData.recipeCategories.filter { $0.parentId == main?.id },
-        session: .preview,
-        onChanged: {}
-    )
+#Preview("Edit groups — dark") {
+    let store = CatalogueStore(session: nil, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
+    return EditGroupsView(store: store, section: .dinner, parent: nil,
+                          groups: store.children(of: nil, in: .dinner))
+        .preferredColorScheme(.dark)
 }

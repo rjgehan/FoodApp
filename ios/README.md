@@ -115,8 +115,12 @@ down to its Links section.
 `-mp_debug_drawer dinner` opens that drawer on the Recipes tab; with it, `-mp_debug_screen add`
 opens the new-recipe form from the drawer (add `-mp_debug_group Veggie` to start it in that
 group, and `-mp_debug_scroll filing` to scroll to the drawer and groups), and `-mp_debug_screen
-groups` its group editor. `-mp_debug_screen household -mp_debug_scroll icons` opens Recipe icons,
-and `-mp_debug_expand 1` its picker for Dinner.
+groups` its group editor (Edit groups). Without `add`, `-mp_debug_group Main/Chicken` opens that
+group, a level at a time (a big group with no groups inside offers to split itself the first
+time), and `-mp_debug_screen newgroup` opens New group there. On the Recipes tab,
+`-mp_debug_query pasta` searches, and `-mp_debug_screen savedlinks|shared|linkactions` opens Saved
+links, Shared with you, or the first saved link's actions. `-mp_debug_screen household
+-mp_debug_scroll icons` opens Recipe icons, and `-mp_debug_expand 1` its picker for Dinner.
 
 `-mp_debug_tab recipes -mp_debug_screen new` opens New recipe; add `-mp_debug_new link` or
 `-mp_debug_new paste` to open it on that way in. `-mp_debug_link "<url>"` fills From a link and

@@ -179,20 +179,27 @@ test('recipe groups: Not now on a split suggestion is remembered', async ({ page
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
   await page.getByText('Main dish', { exact: true }).click();
-  await expect(page.getByText(/Split Main dish up\?/)).toBeVisible();
-  await page.getByRole('button', { name: 'Not now' }).click();
+  // Offered by itself the first time; closing it is "not now".
+  const offer = page.getByRole('dialog', { name: 'Split "Main dish"?' });
+  await expect(offer).toBeVisible();
+  await expect(offer.getByRole('checkbox', { name: 'Beef' })).toHaveAttribute('aria-checked', 'true');
+  await offer.getByRole('button', { name: 'Close' }).click();
+  await expect(offer).toHaveCount(0);
   await page.reload();
   await expect(page.getByText('Beef Stew')).toBeVisible(); // loaded, so an absence means something
-  await expect(page.getByText(/Split Main dish up\?/)).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // Still there when wanted, from the group's •••.
+  await page.getByRole('button', { name: 'Options for Main dish' }).click();
+  await expect(page.getByRole('button', { name: 'Split Main dish into groups' })).toBeVisible();
 });
 
-test('group card buttons are big enough to tap', async ({ page }) => {
+test('group cards are big enough to tap', async ({ page }) => {
   const hh = await newHousehold();
   await newRecipe(hh.id, 'Stew', [{ name: 'beef', qty: 1 }], { categories: ['Main dish'] });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  // Before the fix: two 24pt buttons ("Rename or delete …"); after: one ••• ("More for …").
-  const btn = page.getByRole('button', { name: /^(Rename or delete|More for) Main dish$/ });
+  // Once two 24pt buttons on each card; now the whole card is the one thing to tap.
+  const btn = page.getByRole('button', { name: /^Main dish\b/ });
   const box = await btn.boundingBox();
   expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(44);
 });
