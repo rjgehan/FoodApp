@@ -112,6 +112,12 @@ add-the-week sheet, filling a later dinner (eat in, or the night out on eat out)
 from a slot, or the optional-extras question. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
 down to its Links section.
 
+On the Groceries tab, `-mp_debug_screen grocery-item|done-shopping` opens an item's sheet (one with
+a restock reminder, if there is one) or Done shopping. On the Cupboard tab (`-mp_debug_tab
+cupboard`), `-mp_debug_screen cupboard-edit` opens the first counted item's sheet,
+`cupboard-search` types `-mp_debug_query` (or "tahini") into the box, `barcode` opens the scanner,
+and `barcode-found` opens it on a sample result, since a simulator has no camera.
+
 `-mp_debug_drawer dinner` opens that drawer on the Recipes tab; with it, `-mp_debug_screen add`
 opens the new-recipe form from the drawer (add `-mp_debug_group Veggie` to start it in that
 group, and `-mp_debug_scroll filing` to scroll to the drawer and groups), and `-mp_debug_screen

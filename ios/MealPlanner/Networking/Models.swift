@@ -290,12 +290,18 @@ struct GroceryItem: Codable, Identifiable, Hashable {
     let checkedByName: String?
     let categoryId: UUID?
     let inCupboard: Bool
+    /// The recipes of the planned meals that put it here. Missing from a server before it was sent.
+    var fromRecipes: [String]? = nil
+    /// Who typed it in or pressed Buy again. Nil when only meals put it here.
+    var addedByName: String? = nil
 
-    /// The two newest fields carry defaults so the sample data, and anywhere else building
-    /// one of these by hand, does not have to care about them.
+    /// The newer fields carry defaults so the sample data, and anywhere else building one of
+    /// these by hand, does not have to care about them.
     init(id: UUID, ingredientId: UUID? = nil, sorted: Bool? = nil, name: String,
          quantity: Double?, unit: String?, checked: Bool, checkedByName: String?,
-         categoryId: UUID?, inCupboard: Bool) {
+         categoryId: UUID?, inCupboard: Bool, fromRecipes: [String]? = nil, addedByName: String? = nil) {
+        self.fromRecipes = fromRecipes
+        self.addedByName = addedByName
         self.id = id
         self.ingredientId = ingredientId
         self.sorted = sorted
