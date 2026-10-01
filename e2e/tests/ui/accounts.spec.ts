@@ -62,7 +62,7 @@ test('a PIN account is asked for an email and password, and can put it off until
   await page.goto('/meal-plan');
 
   const prompt = sheet(page);
-  await expect(prompt.getByText("Next time you'll sign in with these instead of your PIN")).toBeVisible();
+  await expect(prompt.getByText("PIN sign-in is being retired. Add these once and you'll use them from now on.")).toBeVisible();
   await prompt.getByRole('button', { name: 'Not now' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // Not again this session…

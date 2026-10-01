@@ -278,8 +278,8 @@ test('the owner removes someone, after asking, and their phone moves on to anoth
   // — saying why, so the switch does not look like the app losing its place.
   await theirs.getByRole('link', { name: 'Groceries', exact: true }).last().click();
   await expect.poll(() => headerHousehold(theirs)).toBe(other.name);
-  await expect(theirs.getByRole('alertdialog', { name: `You've been removed from “${hh.name}”` })).toBeVisible();
-  await expect(theirs.getByRole('alertdialog')).toContainText(`We've moved you to “${other.name}”`);
+  await expect(theirs.getByRole('alertdialog', { name: `You've been removed from ${hh.name}` })).toBeVisible();
+  await expect(theirs.getByRole('alertdialog')).toContainText(`We've moved you to ${other.name}, another of your households.`);
   await theirs.getByRole('button', { name: 'OK', exact: true }).click();
   await expect(theirs.getByRole('alertdialog')).toHaveCount(0);
   await context.close();

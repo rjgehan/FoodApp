@@ -133,6 +133,11 @@ struct SharedRecipeView: View {
     var diagnostic: String?
     /// The page the shared text was on, when the share sheet said. Saved as the recipe's link.
     var link: String?
+    /// Previews and the Gallery: draw it from what was handed in, and send nothing.
+    var sample = false
+
+    /// Read as recipe, or keep as a saved link — the share sheet's two ways (7.6).
+    enum Way: Hashable { case recipe, link }
 
     @State private var text = ""
     @State private var busy = false
@@ -154,6 +159,8 @@ struct SharedRecipeView: View {
     /// Kept so the model's rewrite can be undone — it is a guess about wording, and the
     /// steps underneath it are the ones the cook actually said.
     @State private var spokenSteps: [String]?
+    /// What was said in the video, sentence by sentence: what the rewrite was made from.
+    @State private var spokenLines: [String]?
     /// A recipe sent as one of this app's own public links, saved as a copy — to open from here.
     @State private var copy: Recipe?
     /// The link the server was asked to read, so it can be kept when it could not be.
@@ -162,7 +169,29 @@ struct SharedRecipeView: View {
     @State private var kept: SavedLink?
     @State private var keeping = false
 
-    /// What "Save the link" would keep: the link read, or the page the share sheet came from.
+    /// Read as a recipe, or kept as a link. Chosen in the share sheet, changeable here.
+    @State private var way: Way
+    /// Where it goes: which household, which drawer, and (a recipe only) which group.
+    @State private var target: UUID?
+    @State private var section: RecipeSection = .dinner
+    @State private var group: String?
+    @State private var groups: [RecipeCategory] = []
+
+    @Environment(\.dismiss) private var dismiss
+
+    init(session: Session, incoming: String? = nil, structured: StructuredRecipe? = nil, diagnostic: String? = nil,
+         link: String? = nil, keepAsLink: Bool = false, sample: Bool = false) {
+        self.session = session
+        self.incoming = incoming
+        self.structured = structured
+        self.diagnostic = diagnostic
+        self.link = link
+        self.sample = sample
+        _way = State(initialValue: keepAsLink ? .link : .recipe)
+        _target = State(initialValue: session.household?.id)
+    }
+
+    /// What "Keep as saved link" would keep: the link read, or the page the share sheet came from.
     private var linkToKeep: String? {
         // The share extension marks "all I got was a link" with a 🔗, which is the link itself.
         let marked = text.hasPrefix("\u{1F517}")
@@ -178,203 +207,132 @@ struct SharedRecipeView: View {
     private var parsed: ParsedRecipe? { parsedStore as? ParsedRecipe }
     #endif
 
+    /// A name for the card: what was read, or where it came from while it is being read.
+    private var readName: String? {
+        if let fromPage { return fromPage.name }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), let parsed { return parsed.name }
+        #endif
+        return nil
+    }
+
+    private var hasRead: Bool { readName != nil }
+
+    /// Something arrived (or was pasted and read): the card and its choices are worth showing.
+    private var arrived: Bool { incoming != nil || structured != nil || link != nil || hasRead || copy != nil }
+
+    /// How the reading went, after the source on the card.
+    private var status: String {
+        if tidying { return "\(tidyProgress ?? "reading the video")…" }
+        if busy { return "reading…" }
+        if copy != nil { return "shared from Meal Planner" }
+        if fromPage != nil {
+            if methodWasSpoken { return "spoken in the video" }
+            return SharedItemCard.isVideo(linkToKeep) ? "caption found" : "recipe found"
+        }
+        if hasRead { return "read on this phone" }
+        if error != nil { return "no recipe read" }
+        return way == .link ? "link" : ""
+    }
+
+    /// A Save that does what the two ways and the chips say — once.
+    private var canSave: Bool {
+        guard target != nil, !savingRecipe, !keeping, saved == nil, kept == nil, copy == nil else { return false }
+        return way == .link ? linkToKeep != nil : hasRead
+    }
+
+    private var finished: Bool { saved != nil || kept != nil || copy != nil }
+
     /// A long paste will not fit the context window, and the failure is unhelpful, so it is
     /// cut here and said out loud.
     private static let limit = 5000
 
+    /*
+     The mockup's 7.6, as the app's half of the share sheet: Cancel, the app's name and Save across
+     the top; a card for what arrived; Read as recipe or Keep as saved link; and chips for where it
+     goes — the household, the drawer and, for a recipe, a group. What was read follows, to check
+     before saving, with a method rewritten on the phone shown as 7.7 does.
+    */
     var body: some View {
-        List {
-            KitchenSection {
-                TextEditor(text: $text)
-                    .frame(minHeight: 160)
-                    .font(.callout)
-                    .overlay(alignment: .topLeading) {
-                        if text.isEmpty {
-                            Text("Paste a recipe here")
-                                .foregroundStyle(.tertiary)
-                                .padding(.top, 8)
-                                .allowsHitTesting(false)
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if !arrived { pasteBox }
+
+                if arrived {
+                    SharedItemCard(
+                        title: kept?.name ?? copy?.name ?? readName ?? SharedItemCard.source(of: linkToKeep) ?? "Shared text",
+                        source: SharedItemCard.source(of: linkToKeep),
+                        status: status,
+                        coverImageId: kept?.coverImageId ?? fromPage?.coverImageId,
+                        isVideo: SharedItemCard.isVideo(linkToKeep),
+                        busy: busy || tidying
+                    )
+                    if linkToKeep != nil, copy == nil, !finished {
+                        SegmentedControl(selection: $way, options: [(.recipe, "Read as recipe"), (.link, "Keep as saved link")])
                     }
-                Button(busy ? "Reading…" : "Read it", systemImage: "wand.and.stars") {
-                    Task { await parse() }
+                    if copy == nil, !finished { filing }
                 }
-                .buttonStyle(.borderless)
-                .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
-            } header: {
-                Text("Paste")
-            } footer: {
-                Text("Pasted text is read on this phone and never leaves it. A shared link is read by your server.")
-            }
 
-            if let note {
-                KitchenSection { Text(note).font(.footnote).foregroundStyle(.secondary) }
-            }
-            if let error {
-                KitchenSection { Text(error).foregroundStyle(Palette.danger) }
-            }
-
-            // Could not be read, and a link is all there is: keep it rather than lose it. The
-            // recipe is in the video, or behind a bio link, and can be made a recipe later.
-            if error != nil, fromPage == nil, copy == nil, kept == nil, linkToKeep != nil {
-                KitchenSection {
-                    Button(keeping ? "Saving…" : "Save the link", systemImage: "link") {
-                        Task { await keep(name: nil, cover: nil) }
-                    }
-                    .disabled(keeping)
-                    .fontWeight(.semibold)
-                } footer: {
-                    Text("It goes in Recipes › Saved links with its name and picture, to make into a recipe whenever you like.")
+                if let note {
+                    Text(note).font(.system(size: 13)).foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-
-            if let kept {
-                KitchenSection {
-                    HStack(spacing: 12) {
-                        PlannedLinkPicture(imageId: kept.coverImageId)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(kept.name).lineLimit(2)
-                            Text(kept.sourceLabel).font(.subheadline).foregroundStyle(.secondary)
-                        }
+                if let error {
+                    NoteBox(error, tone: .accent, systemImage: "exclamationmark.circle")
+                    // Could not be read, and a link is all there is: keep it rather than lose it.
+                    if way == .recipe, fromPage == nil, copy == nil, kept == nil, linkToKeep != nil {
+                        Button { way = .link } label: { Label("Keep it as a saved link instead", systemImage: "link") }
+                            .buttonStyle(.kitchen(.soft, size: .small, fill: false))
                     }
-                } header: {
+                }
+                if let saved {
+                    Label(saved, systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.herb)
+                }
+                if let kept {
                     Label(kept.alreadySaved == true ? "Already in Saved links" : "Saved to Saved links",
                           systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Palette.herb)
-                } footer: {
-                    Text("Find it under Recipes › Saved links.")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.herb)
+                    Text("Find it under Recipes › Saved links, to make into a recipe whenever you like.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
                 }
-            }
-
-            if let copy {
-                KitchenSection {
+                if let copy {
                     NavigationLink {
                         RecipeDetailView(recipe: copy, session: session)
                     } label: {
-                        Label(copy.name, systemImage: "checkmark.circle.fill")
+                        ListRow(copy.name, subtitle: "Saved to \(session.household?.name ?? "your recipes")", chevron: true,
+                                leading: { CheckCircle(isOn: true) }, trailing: { EmptyView() })
+                            .cardSurface()
                     }
-                } header: {
-                    Text("Saved to \(session.household?.name ?? "your recipes")")
-                } footer: {
+                    .buttonStyle(PressFade())
                     Text("A copy of your own: it stays as it is if they change theirs or turn the link off.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
                 }
-            }
 
-            if let fromPage {
-                KitchenSection("What the page published") {
-                    LabeledContent("Name", value: fromPage.name)
-                    if fromPage.servings > 0 { LabeledContent("Serves", value: "\(fromPage.servings)") }
-                    if fromPage.prep > 0 { LabeledContent("Prep", value: "\(fromPage.prep) min") }
-                    if fromPage.cook > 0 { LabeledContent("Cook", value: "\(fromPage.cook) min") }
-                }
-                KitchenSection("Ingredients · \(fromPage.ingredients.count)") {
-                    ForEach(Array(fromPage.ingredients.enumerated()), id: \.offset) { _, line in
-                        let row = Amount(line)
-                        LabeledContent(row.name.isEmpty ? line : row.name) {
-                            Text(written(row)).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                if !fromPage.steps.isEmpty {
-                    KitchenSection {
-                        ForEach(Array(fromPage.steps.enumerated()), id: \.offset) { index, step in
-                            (Text("\(index + 1). ") + IngredientMentions.text(
-                                step, names: fromPage.ingredients.map { Amount($0).name })
-                            ).font(.callout)
-                        }
-                        if let spokenSteps {
-                            Button("Use the original wording", systemImage: "arrow.uturn.backward") {
-                                self.fromPage?.steps = spokenSteps
-                                self.spokenSteps = nil
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.footnote)
-                        }
-                    } header: {
-                        HStack(spacing: 6) {
-                            Text("Steps · \(fromPage.steps.count)")
-                            // Which of the two you are looking at, said where it cannot be
-                            // scrolled past: the steps themselves look much the same either way.
-                            if tidying {
-                                ProgressView().controlSize(.mini)
-                                Text("· \(tidyProgress ?? "reading the video")…").textCase(nil)
-                            } else if spokenSteps != nil {
-                                Text("· rewritten here").textCase(nil)
-                            } else if methodWasSpoken {
-                                Text("· as spoken").textCase(nil)
-                            }
-                        }
-                    } footer: {
-                        if spokenSteps != nil {
-                            Text("Rewritten on this phone from what was said out loud. Nothing was sent anywhere.")
-                        } else if methodWasSpoken {
-                            Text("Transcribed from the video and tidied by rule. Apple Intelligence did not rewrite these.")
-                        }
-                    }
-                }
-                KitchenSection {
-                    // Once only: tapped again it used to save the same recipe again, eight times
-                    // for somebody who wasn't sure the first tap had worked.
-                    Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
-                           systemImage: saved != nil ? "checkmark" : "square.and.arrow.down") {
-                        Task { await savePage(fromPage) }
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(savingRecipe || saved != nil)
-                    // Read fine, but only the link is wanted for now.
-                    if linkToKeep != nil, kept == nil, saved == nil {
-                        Button(keeping ? "Saving…" : "Just save it as a link", systemImage: "link") {
-                            Task { await keep(name: fromPage.name, cover: fromPage.coverImageId) }
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.secondary)
-                        .disabled(keeping)
-                    }
-                    if let saved {
-                        Text(saved).font(.footnote).foregroundStyle(.secondary)
-                    }
+                if way == .recipe { whatWasRead }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .pageBackground()
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if !finished { Button("Cancel") { dismiss() }.foregroundStyle(Palette.accentInk) }
+            }
+            ToolbarItem(placement: .principal) { ShareSheetTitle() }
+            ToolbarItem(placement: .topBarTrailing) {
+                if finished {
+                    Button("Done") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.accentInk)
+                } else {
+                    Button(savingRecipe || keeping ? "Saving…" : "Save") { Task { await saveTapped() } }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(canSave ? Palette.accentInk : Palette.faint)
+                        .disabled(!canSave)
                 }
             }
-
-            #if canImport(FoundationModels)
-            if #available(iOS 26.0, *), fromPage == nil, let parsed {
-                KitchenSection("What it read") {
-                    LabeledContent("Name", value: parsed.name)
-                    LabeledContent("Serves", value: "\(parsed.servings)")
-                    if parsed.prepMinutes > 0 { LabeledContent("Prep", value: "\(parsed.prepMinutes) min") }
-                    if parsed.cookMinutes > 0 { LabeledContent("Cook", value: "\(parsed.cookMinutes) min") }
-                }
-                KitchenSection("Ingredients · \(parsed.ingredientLines.count)") {
-                    ForEach(Array(parsed.ingredientLines.enumerated()), id: \.offset) { _, line in
-                        let row = Amount(line)
-                        LabeledContent(row.name.isEmpty ? line : row.name) {
-                            HStack(spacing: 6) {
-                                if row.optional {
-                                    Text("optional").font(.caption).foregroundStyle(.tertiary)
-                                }
-                                Text(written(row)).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                KitchenSection("Steps · \(parsed.steps.count)") {
-                    ForEach(Array(parsed.steps.enumerated()), id: \.offset) { index, step in
-                        Text("\(index + 1). \(step)").font(.callout)
-                    }
-                }
-                KitchenSection {
-                    Button(saved != nil ? "Saved" : savingRecipe ? "Saving…" : "Save to this household",
-                           systemImage: saved != nil ? "checkmark" : "square.and.arrow.down") {
-                        Task { await save(parsed) }
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(savingRecipe || saved != nil)
-                    if let saved {
-                        Text(saved).font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            #endif
         }
         .confirmationDialog(
             "You already have “\(duplicate?.name ?? "")”",
@@ -389,10 +347,12 @@ struct SharedRecipeView: View {
         } message: {
             Text("It's already in your recipes — the same link or the same name.")
         }
-        .kitchenList()
-        .navigationTitle("Paste → recipe")
-        .navigationBarTitleDisplayMode(.inline)
+        .task(id: target) { await loadGroups() }
         .task {
+            if sample {
+                if let structured, fromPage == nil { fromPage = structured }
+                return
+            }
             #if DEBUG
             if let diagnostic { await session.noteShare(diagnostic) }
             #endif
@@ -409,8 +369,15 @@ struct SharedRecipeView: View {
             }
             if let incoming, text.isEmpty {
                 text = incoming
+                // Kept as a link from the share sheet: nothing to read now. The server reads the
+                // page for its name and picture when it is kept.
+                if way == .link, incoming.hasPrefix("\u{1F517}") { return }
                 await parse()
             }
+        }
+        .onChange(of: way) { _, now in
+            // Changed their mind towards reading it: read it now, if nothing has been.
+            if now == .recipe, !hasRead, !busy, error == nil, !text.isEmpty { Task { await parse() } }
         }
         #if DEBUG
         // -mp_debug_paste "<text>" fills the box, so a screenshot run can test the parse
@@ -421,6 +388,155 @@ struct SharedRecipeView: View {
             if UserDefaults.standard.bool(forKey: "mp_debug_autoparse") { await parse() }
         }
         #endif
+    }
+
+    /// Typed or pasted by hand, when nothing came from the share sheet.
+    private var pasteBox: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("Paste")
+            TextEditor(text: $text)
+                .font(.system(size: 15))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 160)
+                .padding(8)
+                .fieldSurface()
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Paste a recipe here")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.faint)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 16)
+                            .allowsHitTesting(false)
+                    }
+                }
+            Button {
+                Task { await parse() }
+            } label: {
+                Label(busy ? "Reading…" : "Read it", systemImage: "wand.and.stars")
+            }
+            .buttonStyle(.secondary)
+            .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
+            Text("Pasted text is read on this phone and never leaves it. A shared link is read by your server.")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+        }
+    }
+
+    /// Where it goes (7.6): each household as a chip, the drawer, and a group for a recipe.
+    private var filing: some View {
+        let houses = session.households.isEmpty ? [session.household].compactMap { $0 } : session.households
+        let inDrawer = groups.filter { $0.section == section }
+        return ChipFlow(spacing: 8) {
+            ForEach(houses, id: \.id) { house in
+                Button { target = house.id; group = nil } label: { ChipFace(title: house.name, isOn: target == house.id) }
+                    .buttonStyle(PressFade())
+                    .accessibilityAddTraits(target == house.id ? .isSelected : [])
+            }
+            Menu {
+                Picker("Drawer", selection: $section) {
+                    ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            } label: {
+                ChipFace(title: section.title, isOn: true)
+            }
+            .accessibilityLabel("Drawer: \(section.title)")
+            .onChange(of: section) { _, _ in group = nil }
+            if way == .recipe {
+                Menu {
+                    Button("No group") { group = nil }
+                    ForEach(inDrawer) { category in
+                        Button(category.name) { group = category.name }
+                    }
+                } label: {
+                    ChipFace(title: group ?? "+ Group", isOn: group != nil)
+                }
+                .disabled(inDrawer.isEmpty && group == nil)
+                .accessibilityLabel(group.map { "Group: \($0)" } ?? "Add to a group")
+            }
+        }
+    }
+
+    /// What was read, to check before saving: the facts, the ingredients and the method.
+    @ViewBuilder private var whatWasRead: some View {
+        if let fromPage {
+            readOut(name: fromPage.name, servings: fromPage.servings, prep: fromPage.prep, cook: fromPage.cook,
+                    ingredients: fromPage.ingredients) {
+                if let spokenSteps {
+                    RewrittenMethod(
+                        steps: fromPage.steps,
+                        original: spokenLines?.joined(separator: " "),
+                        mentions: fromPage.ingredients.map { Amount($0).name },
+                        onUndo: {
+                            self.fromPage?.steps = spokenSteps
+                            self.spokenSteps = nil
+                        })
+                } else {
+                    NumberedSteps(steps: fromPage.steps, mentions: fromPage.ingredients.map { Amount($0).name })
+                    if methodWasSpoken {
+                        Text("Transcribed from the video and tidied by rule. Apple Intelligence did not rewrite these.")
+                            .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+        }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), fromPage == nil, let parsed {
+            readOut(name: parsed.name, servings: parsed.servings, prep: parsed.prepMinutes, cook: parsed.cookMinutes,
+                    ingredients: parsed.ingredientLines) {
+                NumberedSteps(steps: parsed.steps)
+            }
+        }
+        #endif
+    }
+
+    private func readOut<Method: View>(name: String, servings: Int, prep: Int, cook: Int, ingredients: [String],
+                                       @ViewBuilder method: () -> Method) -> some View {
+        let facts = [servings > 0 ? "Serves \(servings)" : nil, prep > 0 ? "\(prep) min prep" : nil,
+                     cook > 0 ? "\(cook) min cook" : nil].compactMap { $0 }
+        return VStack(alignment: .leading, spacing: 16) {
+            if !facts.isEmpty {
+                Text(facts.joined(separator: " · ")).font(.system(size: 14)).foregroundStyle(Palette.muted)
+            }
+            if !ingredients.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel("Ingredients", trailing: "\(ingredients.count)")
+                    ListGroup {
+                        ForEach(Array(ingredients.enumerated()), id: \.offset) { _, line in
+                            let row = Amount(line)
+                            ListRow(row.name.isEmpty ? line : row.name, detail: written(row),
+                                    leading: { EmptyView() }) {
+                                if row.optional { Pill("optional", tone: .neutral) }
+                            }
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                SectionLabel("Method")
+                method()
+            }
+        }
+    }
+
+    /// Save, the way the two choices and the chips say.
+    private func saveTapped() async {
+        if way == .link {
+            await keep(name: readName, cover: fromPage?.coverImageId)
+            return
+        }
+        if let fromPage {
+            await savePage(fromPage)
+            return
+        }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), let parsed { await save(parsed) }
+        #endif
+    }
+
+    /// The groups of the household it is going to, for the group chip.
+    private func loadGroups() async {
+        guard !sample, let target else { return }
+        groups = (try? await APIClient.shared.recipeCategories(household: target)) ?? []
     }
 
     /**
@@ -447,11 +563,13 @@ struct SharedRecipeView: View {
     /// Keeps the link in Saved links. What was already read goes with it, so the page is not
     /// fetched twice; otherwise the server reads it for a name and a picture.
     private func keep(name: String?, cover: UUID?) async {
-        guard let household = session.household?.id, let url = linkToKeep else { return }
+        guard let household = target, let url = linkToKeep, !keeping else { return }
         keeping = true
         defer { keeping = false }
+        if sample { return }
         do {
-            kept = try await APIClient.shared.saveLink(household: household, url: url, name: name, coverImageId: cover)
+            kept = try await APIClient.shared.saveLink(household: household, url: url, name: name, section: section,
+                                                       coverImageId: cover)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -549,6 +667,7 @@ struct SharedRecipeView: View {
 
         guard steps.count == floor.count else { return }
         spokenSteps = floor
+        spokenLines = said
         fromPage?.steps = steps
         if let current = fromPage?.name,
            Self.isAHook(current, ingredients: fromPage?.ingredients.map { Amount($0).name } ?? []) {
@@ -808,14 +927,14 @@ struct SharedRecipeView: View {
     }
 
     private func savePage(_ recipe: StructuredRecipe, anotherCopy: Bool = false) async {
-        guard let household = session.household?.id, !savingRecipe else { return }
+        guard let household = target, !savingRecipe, !sample else { return }
         savingRecipe = true
         defer { savingRecipe = false }
         var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
-            "section": "DINNER",
-            "categories": [],
+            "section": section.rawValue,
+            "categories": group.map { [$0] } ?? [],
             "instructions": recipe.steps.joined(separator: "\n"),
             "prepTimeMinutes": recipe.prep,
             "cookTimeMinutes": recipe.cook,
@@ -856,14 +975,14 @@ struct SharedRecipeView: View {
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func save(_ recipe: ParsedRecipe, anotherCopy: Bool = false) async {
-        guard let household = session.household?.id, !savingRecipe else { return }
+        guard let household = target, !savingRecipe, !sample else { return }
         savingRecipe = true
         defer { savingRecipe = false }
         var body: [String: Any] = [
             "name": recipe.name,
             "servings": max(1, recipe.servings),
-            "section": "DINNER",
-            "categories": [],
+            "section": section.rawValue,
+            "categories": group.map { [$0] } ?? [],
             "instructions": recipe.steps.joined(separator: "\n"),
             "prepTimeMinutes": recipe.prepMinutes,
             "cookTimeMinutes": recipe.cookMinutes,

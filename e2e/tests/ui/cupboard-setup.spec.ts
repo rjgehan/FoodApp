@@ -20,7 +20,7 @@ test('a household made on the Household page starts by ticking what is in the ho
   await sheet(page).getByRole('button', { name: 'Create' }).click();
 
   const starter = sheet(page);
-  await expect(starter.getByRole('heading', { name: 'Let’s start your cupboard' })).toBeVisible();
+  await expect(starter.getByRole('heading', { name: 'Stock your cupboard' })).toBeVisible();
   await starter.getByRole('button', { name: 'salt', exact: true }).click();
   await starter.getByRole('button', { name: 'butter', exact: true }).click();
   await expect(starter.getByRole('button', { name: 'salt', exact: true })).toHaveAttribute('aria-pressed', 'true');

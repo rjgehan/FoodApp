@@ -44,7 +44,10 @@ test('opening the app asks about what is due; Add puts the ticked ones on the li
 
   // Still some soap under the sink.
   await prompt.getByRole('button', { name: /dish soap/ }).click();
-  await prompt.getByRole('button', { name: 'Add 1 to list' }).click();
+  // An unticked one says what will happen to it.
+  await expect(prompt.getByRole('button', { name: /dish soap/ })).toContainText('Skip · ask again in 3 days');
+  await expect(prompt.getByText('2 reminders are due')).toBeVisible();
+  await prompt.getByRole('button', { name: 'Add 1 to groceries' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
   // On the list straight away, from the live update.
@@ -60,7 +63,7 @@ test('opening the app asks about what is due; Add puts the ticked ones on the li
   await expect(page.getByRole('heading', { name: 'Time to restock?' })).toHaveCount(0);
 });
 
-test('Not now lets everything be for a few days', async ({ page }) => {
+test('Skip all for 3 days lets everything be for a few days', async ({ page }) => {
   const hh = await newHousehold();
   const rice = await remindedAndDue(hh.id, hh.owner, 'rice', 7, 8);
   if (!rice.wound) {
@@ -70,7 +73,7 @@ test('Not now lets everything be for a few days', async ({ page }) => {
 
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
-  await sheet(page).getByRole('button', { name: 'Not now' }).click();
+  await sheet(page).getByRole('button', { name: 'Skip all for 3 days' }).click();
   await expect(page.getByRole('heading', { name: 'Time to restock?' })).toHaveCount(0);
 
   await expect.poll(async () => (await reminders(hh.id, hh.owner))[0].snoozedUntil).not.toBeNull();

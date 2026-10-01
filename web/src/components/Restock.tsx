@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { RestockReminder } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
-import { everyLabel, everyTitle, lastBoughtLabel, RESTOCK_PRESETS } from '../utils/restock';
-import { Button, CheckCircle, cx, ErrorText, Field, NumberInput, Select, Sheet } from './ui';
-
-/* Separators start after the check circle: 24px circle + 12px gap. */
-const ROW_INSET = { '--row-inset': '2.25rem' } as CSSProperties;
+import { everyTitle, lastBoughtLabel, RESTOCK_PRESETS } from '../utils/restock';
+import { PROMPT_WAY_OUT, PromptHead } from './prompts';
+import { Button, CheckBox, cx, ErrorText, Field, List, NumberInput, Select, Sheet } from './ui';
 
 /**
  * The household's restock reminders by ingredient, so the grocery list and the cupboard can say
@@ -287,14 +285,24 @@ function RestockPromptSheet({
 
   const count = selected.size;
 
+  // The mockup's 7.2: the bell on mustard beside the question and how many are due, the due
+  // things as a ticked list in a card, then "Add 3 to groceries" and the way to put it all off.
+  // An unticked row says what will happen to it, so leaving one out is not a guess.
   return (
-    <Sheet title="Time to restock?" onClose={notNow}>
-      <div className="space-y-3">
-        <p className="text-[0.9375rem] text-muted">
-          {items.length === 1 ? 'This usually runs out about now.' : 'These usually run out about now.'} Untick
-          anything you still have.
-        </p>
-        <ul className="inset-rows" style={ROW_INSET}>
+    <Sheet
+      title="Time to restock?"
+      onClose={notNow}
+      head={
+        <PromptHead
+          icon="bell"
+          tone="mustard"
+          title="Time to restock?"
+          line={items.length === 1 ? '1 reminder is due' : `${items.length} reminders are due`}
+        />
+      }
+    >
+      <div className="space-y-4">
+        <List label="Due to restock" inset={0}>
           {items.map((item) => {
             const on = selected.has(item.ingredientId);
             return (
@@ -303,30 +311,35 @@ function RestockPromptSheet({
                   type="button"
                   aria-pressed={on}
                   onClick={() => toggle(item.ingredientId)}
-                  className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+                  className="press flex min-h-[3.875rem] w-full items-center gap-3.5 px-4 py-3 text-left active:bg-surface2"
                 >
-                  <CheckCircle checked={on} />
+                  <CheckBox checked={on} />
                   <span className="min-w-0 flex-1">
-                    <span className={cx('block truncate', !on && 'text-muted')}>{item.name}</span>
-                    <span className="block truncate text-[0.8125rem] text-muted">
-                      {everyLabel(item.everyDays)} · {lastBoughtLabel(item.lastBoughtAt)}
+                    <span className={cx('block truncate text-base font-medium first-letter:uppercase', !on && 'text-muted')}>{item.name}</span>
+                    <span className="mt-px block truncate text-[0.8125rem] text-muted">
+                      {on
+                        ? `${everyTitle(item.everyDays)} · ${lastBoughtLabel(item.lastBoughtAt)}`
+                        : `Skip · ask again in ${SNOOZE_DAYS} days`}
                     </span>
                   </span>
                 </button>
               </li>
             );
           })}
-        </ul>
+        </List>
         {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1" disabled={busy || count === 0} onClick={add}>
-            {busy ? 'Adding…' : count === items.length || count === 0 ? 'Add to list' : `Add ${count} to list`}
+        <div className="flex flex-col gap-1">
+          <Button size="lg" full icon="cart" disabled={busy || count === 0} onClick={add}>
+            {busy ? 'Adding…' : count === 0 ? 'Add to groceries' : `Add ${count} to groceries`}
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={notNow}>
-            Not now
+          <Button variant="ghost" size="lg" full className={PROMPT_WAY_OUT} disabled={busy} onClick={notNow}>
+            Skip all for {SNOOZE_DAYS} days
           </Button>
         </div>
       </div>
     </Sheet>
   );
 }
+
+/** How long a skipped reminder is left alone — the server's snooze. */
+const SNOOZE_DAYS = 3;

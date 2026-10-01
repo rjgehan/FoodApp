@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { Me } from '../api/types';
 import { CREDENTIALS_PROMPT_DISMISSED, useAuth } from '../auth/AuthContext';
 import CredentialsForm from './CredentialsForm';
+import { PROMPT_WAY_OUT, PromptHead } from './prompts';
 import { Button, Sheet } from './ui';
 
 function dismissed(): boolean {
@@ -58,29 +59,45 @@ export default function CredentialsPrompt() {
 
   if (savedEmail) {
     return (
-      <Sheet title="You're all set" onClose={() => setOpen(false)}>
-        <p className="mb-4 text-[0.9375rem]">
-          Saved. Next time, sign in with <span className="font-semibold break-all">{savedEmail}</span> and
+      <Sheet
+        title="You're all set"
+        onClose={() => setOpen(false)}
+        head={<PromptHead stacked icon="check" tone="herb" title="You're all set" />}
+      >
+        <p className="mb-5 text-[0.9375rem] leading-[1.45] text-muted">
+          Saved. Next time, sign in with <span className="break-all font-semibold text-ink">{savedEmail}</span> and
           your new password.
         </p>
-        <Button type="button" full onClick={() => setOpen(false)}>
+        <Button type="button" size="lg" full onClick={() => setOpen(false)}>
           Done
         </Button>
       </Sheet>
     );
   }
 
+  // The mockup's 7.1: the envelope on a sky tile, the question, why it is asked, two fields and
+  // Save — with "Not now" under it instead of a close button, since that is what closing means.
   return (
-    <Sheet title="Add an email and password" onClose={notNow}>
-      <p className="mb-4 text-[0.9375rem] text-muted">
-        Next time you'll sign in with these instead of your PIN.
-      </p>
+    <Sheet
+      title="Add an email and password"
+      onClose={notNow}
+      head={
+        <PromptHead
+          stacked
+          icon="mail"
+          tone="sky"
+          title="Add an email and password"
+          line="PIN sign-in is being retired. Add these once and you'll use them from now on."
+        />
+      }
+    >
       <CredentialsForm
         me={me}
+        look="prompt"
         submitLabel="Save"
         onSaved={(updated) => setSavedEmail(updated.email ?? '')}
         secondary={
-          <Button type="button" variant="secondary" onClick={notNow}>
+          <Button type="button" variant="ghost" size="lg" full className={PROMPT_WAY_OUT} onClick={notNow}>
             Not now
           </Button>
         }

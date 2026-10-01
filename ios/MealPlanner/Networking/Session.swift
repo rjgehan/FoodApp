@@ -70,6 +70,9 @@ final class Session {
     /// Something the sign-in screen should say when it next appears: that you were taken out of
     /// your last household, or that an invite you signed in for did not work any more.
     var notice: String?
+    /// Taken out of the household you were in and moved on to another of yours: the two names,
+    /// for the notice that says so once (7.4). Nil once it has been read.
+    var removedFrom: (from: String, to: String)?
     /// Whether the server has the beta's ideas board open — the lightbulb in the header — and
     /// whether you are its admin there. Both from /api/users/me, on every launch and sign-in;
     /// an older server says neither, which hides the lightbulb.
@@ -109,8 +112,10 @@ final class Session {
             if fresh != current { switchTo(fresh) }
         } else if let other = mine.first {
             // Taken out of this one (or it was deleted): carry on in another. A fallback, not
-            // a choice, so it is not remembered as one.
+            // a choice, so it is not remembered as one — and said, so the switch does not look
+            // like the app losing its place.
             switchTo(other)
+            removedFrom = (current.name, other.name)
         } else if token != nil {
             // In no household at all any more. There is nothing for the tabs to show, so back to
             // the sign-in screen — which says why, and offers to scan an invite.

@@ -128,6 +128,13 @@ test('nobody but the author can change an idea, and the admin marks one planned'
   await expect(sheet(page).getByRole('button', { name: 'Edit' })).toHaveCount(0);
   await sheet(page).getByRole('button', { name: 'Mark as planned' }).click();
   await expect(card(page, title)).toContainText('Planned');
+  // The Planned chip shows it; Done does not, until it is.
+  await page.getByRole('tab', { name: 'Planned' }).click();
+  await expect(page).toHaveURL(/show=planned/);
+  await expect(card(page, title)).toBeVisible();
+  await page.getByRole('tab', { name: 'Done' }).click();
+  await expect(card(page, title)).toHaveCount(0);
+  await page.getByRole('tab', { name: 'New' }).click();
   expect((await call('GET', '/api/ideas', { token: author.token })).find((i: any) => i.id === idea.id).status).toBe('PLANNED');
   await page.screenshot({ path: test.info().outputPath('ideas-admin.png'), fullPage: true });
 

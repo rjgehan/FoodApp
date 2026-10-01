@@ -394,7 +394,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               centered
               icon="door"
               tone="plum"
-              title={`You've been removed from “${lostHousehold}”`}
+              title={`You've been removed from ${lostHousehold}`}
               onDismiss={dismissLostHousehold}
               actions={
                 <Button className="h-[2.875rem]" full onClick={dismissLostHousehold}>
@@ -402,7 +402,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </Button>
               }
             >
-              We've moved you to <b className="font-semibold text-ink">“{activeName}”</b>, another of your households.
+              We've moved you to <b className="font-semibold text-ink">{activeName}</b>, another of your households.
             </Alert>
           )}
 

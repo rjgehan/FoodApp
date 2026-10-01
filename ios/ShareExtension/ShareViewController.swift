@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
@@ -13,55 +14,115 @@ import UniformTypeIdentifiers
  twice, the extension passes the text along and lets the app do what it already knows how to do.
  */
 final class ShareViewController: UIViewController {
-    private let label = UILabel()
+    private let model = ShareCardModel()
     private var finished = false
+    /// What was read, kept for Save: the hand-over URL is built when it is pressed.
+    private var found: (recipe: String?, text: String?, link: String?, title: String?)?
+    private var report = ""
+    /// Save was pressed: a second press must not open the app twice.
+    private var handingOver = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .clear
 
-        label.text = "Reading…"
-        label.textAlignment = .center
-        label.font = .preferredFont(forTextStyle: .body)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
+        // The card (ShareCard.swift, mockup 7.6): what arrived, and Read as recipe or Keep as
+        // saved link. Save hands it to the app, which files it.
+        let card = UIHostingController(rootView: ShareCard(
+            model: model,
+            onCancel: { [weak self] in self?.cancel() },
+            onSave: { [weak self] in self?.save() }
+        ))
+        card.view.backgroundColor = .clear
+        addChild(card)
+        card.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(card.view)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+            card.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            card.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            card.view.topAnchor.constraint(equalTo: view.topAnchor),
+            card.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        card.didMove(toParent: self)
 
         Task {
-            await handle()
+            await read()
         }
-        // Never sit there forever: a share extension that hangs is killed, and iOS quietly
-        // stops offering it afterwards.
+        // Never sit there reading forever: a share extension that hangs is killed, and iOS
+        // quietly stops offering it afterwards. Once the card is up, the person decides.
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
-            guard let self, !self.finished else { return }
+            guard let self, !self.finished, self.model.reading else { return }
             self.finish(with: "That took too long.")
         }
     }
 
-    private func handle() async {
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Half the screen, as the mockup draws it, where the host lets a sheet be that size.
+        if let sheet = sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.preferredCornerRadius = 28
+        }
+    }
+
+    /// Reads what was shared, then puts it on the card.
+    private func read() async {
         /*
          Only in a debug build. It carries a preview of whatever the share sheet handed over,
          which is the user's content, and a released app that quietly uploaded that would be
          doing something the screen it lands on promises it does not.
         */
         #if DEBUG
-        let report = await describeWhatArrived()
-        #else
-        let report = ""
+        report = await describeWhatArrived()
         #endif
         let found = await shared()
+        self.found = found
+
+        let link = found.link ?? found.text.flatMap { $0.hasPrefix("\u{1F517}") ? String($0.dropFirst()) : nil }
+        model.source = Self.source(of: link)
+        model.isVideo = Self.isVideo(link)
+        model.canKeep = link?.lowercased().hasPrefix("http") == true
+        model.title = found.title ?? model.source ?? "Shared text"
+        if found.recipe?.isEmpty == false {
+            model.status = "recipe found"
+        } else if let text = found.text, !text.hasPrefix("\u{1F517}") {
+            model.status = link == nil ? "text found" : "page found"
+        } else if link != nil {
+            model.status = model.isVideo ? "video link" : "link"
+        } else if report.isEmpty {
+            finish(with: "Nothing to read in that.")
+            return
+        }
+        model.reading = false
+    }
+
+    private func cancel() {
+        guard !finished else { return }
+        finished = true
+        extensionContext?.completeRequest(returningItems: nil)
+    }
+
+    /// Hands it to the app the way it always has, plus which of the two ways was picked.
+    private func save() {
+        guard let found, !finished, !handingOver else { return }
+        handingOver = true
+        let note = report.isEmpty ? "" : "&diag=\(encode(report))"
+        let keep = model.way == .link ? "&keep=1" : ""
+
+        // Kept as a link: the link is all the app needs. The server reads the page for its name
+        // and picture when it is kept.
+        if model.way == .link,
+           let link = found.link ?? found.text.flatMap({ $0.hasPrefix("\u{1F517}") ? String($0.dropFirst()) : nil }),
+           let url = URL(string: "mealplanner://paste?text=\(encode("\u{1F517}" + link))&link=\(encode(link))\(keep)\(note)") {
+            open(url)
+            return
+        }
 
         // The page's own recipe data beats anything read off the screen, so it goes first
         // and the app can use it without a model at all.
-        let note = report.isEmpty ? "" : "&diag=\(encode(report))"
         if let recipe = found.recipe, !recipe.isEmpty,
            let url = URL(string: "mealplanner://paste?recipe=\(encode(recipe))\(note)"),
            url.absoluteString.count < Self.longestURL {
-            label.text = "Found the recipe."
             open(url)
             return
         }
@@ -82,6 +143,21 @@ final class ShareViewController: UIViewController {
         open(url)
     }
 
+    /// "tiktok.com/@bakewithlou" for a video, the site's own name for a page.
+    private static func source(of link: String?) -> String? {
+        guard let link, let url = URL(string: link.trimmingCharacters(in: .whitespaces)), var host = url.host else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        if host.hasPrefix("m.") { host.removeFirst(2) }
+        let first = url.pathComponents.dropFirst().first ?? ""
+        return first.hasPrefix("@") ? "\(host)/\(first)" : host
+    }
+
+    private static func isVideo(_ link: String?) -> Bool {
+        guard let host = link.flatMap({ URL(string: $0.trimmingCharacters(in: .whitespaces))?.host?.lowercased() }) else {
+            return false
+        }
+        return ["tiktok.com", "instagram.com", "youtube.com", "youtu.be"].contains { host.hasSuffix($0) }
+    }
     /**
      A URL short enough that iOS will actually open it.
 
@@ -124,9 +200,10 @@ final class ShareViewController: UIViewController {
     /// they chose; a URL is neither, and passing one to a language model produces an invented
     /// recipe built out of the slug. A URL is only ever sent as a last resort, marked so the
     /// app knows to fetch it rather than read it.
-    private func shared() async -> (recipe: String?, text: String?, link: String?) {
+    private func shared() async -> (recipe: String?, text: String?, link: String?, title: String?) {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         var recipe: String?
+        var pageTitle: String?
         var pageText: String?
         var selection: String?
         var link: String?
@@ -140,6 +217,7 @@ final class ShareViewController: UIViewController {
                    let results = wrapper[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any] {
                     if let found = results["recipe"] as? String, !found.isEmpty { recipe = found }
                     let title = results["title"] as? String ?? ""
+                    if !title.isEmpty { pageTitle = title }
                     let text = results["text"] as? String ?? ""
                     if !text.isEmpty { pageText = [title, text].filter { !$0.isEmpty }.joined(separator: "\n\n") }
                     if let pageURL = results["url"] as? String, !pageURL.isEmpty { link = pageURL }
@@ -173,7 +251,21 @@ final class ShareViewController: UIViewController {
         } else {
             text = selection ?? pageText
         }
-        return (recipe, text, link)
+        return (recipe, text, link, Self.title(recipe: recipe, page: pageTitle, selection: selection))
+    }
+
+    /// A name for the card: the recipe's own, the page's title, or the first line of a selection.
+    private static func title(recipe: String?, page: String?, selection: String?) -> String? {
+        if let data = recipe?.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let name = json["name"] as? String, !name.isEmpty {
+            return name
+        }
+        if let page, !page.isEmpty { return page }
+        let line = selection?.split(whereSeparator: \.isNewline).first
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let line, !line.isEmpty, !line.lowercased().hasPrefix("http") else { return nil }
+        return line.count <= 80 ? line : String(line.prefix(80)) + "…"
     }
 
     /**
@@ -315,7 +407,8 @@ final class ShareViewController: UIViewController {
     private func finish(with message: String) {
         guard !finished else { return }
         finished = true
-        label.text = message
+        model.message = message
+        model.reading = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil)
         }

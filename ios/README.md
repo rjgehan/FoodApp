@@ -152,6 +152,10 @@ recipes, `explore-recipe` its first published recipe from another household, `ex
 recipe's Move into my recipes, and `explore-nutrition` or `explore-meal-plans` that door's
 coming-soon page.
 
+`-mp_debug_screen prompt-email|prompt-restock|prompt-starter|prompt-removed|prompt-ideas|prompt-share|prompt-rewritten`
+shows the prompts, the ideas board and the share and rewrite screens (the mockup's section 07) from
+sample data, as the Gallery's "Prompts & extras" does.
+
 `-mp_debug_screen theme` opens Settings → Theme, `theme-sheet` the same inside a sheet (as Settings
 shows it), `design` the design system's catalogue, `gallery` the Gallery and `switch` the
 household switcher.

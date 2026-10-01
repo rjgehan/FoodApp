@@ -953,6 +953,7 @@ export function Sheet({
   onClose,
   children,
   tall = false,
+  head,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -963,6 +964,12 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
   tall?: boolean;
+  /**
+   * The sheet's own heading in place of the title row and its close button — for a prompt
+   * (mockup 7.1–7.3) that leads with a tile and ends in its own "Not now". It is still the part
+   * you pull. `title` then only names the dialog to assistive tech.
+   */
+  head?: ReactNode;
 }) {
   const viewport = useVisibleViewport();
   const panel = useRef<HTMLDivElement>(null);
@@ -1083,8 +1090,8 @@ export function Sheet({
         ref={panel}
         role="dialog"
         aria-modal="true"
-        aria-label={label}
-        aria-labelledby={label ? undefined : titleId}
+        aria-label={label ?? (head && typeof title === 'string' ? title : undefined)}
+        aria-labelledby={label || head ? undefined : titleId}
         className={cx(
           'relative flex w-full flex-col rounded-t-sheet bg-bg pb-safe shadow-[0_-6px_30px_rgba(0,0,0,0.18)] will-change-transform',
           'sm:max-w-lg sm:rounded-sheet sm:shadow-lift',
@@ -1102,6 +1109,9 @@ export function Sheet({
           <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">
             <span className="h-[5px] w-[38px] rounded-full bg-faint opacity-70" />
           </div>
+          {head ? (
+            <header className="px-5 pb-1 pt-4 sm:pt-6">{head}</header>
+          ) : (
           <header className="flex items-start justify-between gap-3 px-5 pb-1 pt-3 sm:pt-5">
             {lead}
             <div className="min-w-0 flex-1 self-center">
@@ -1114,6 +1124,7 @@ export function Sheet({
               <Icon name="x" size={16} strokeWidth={2.4} />
             </IconButton>
           </header>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-3">{children}</div>
       </div>

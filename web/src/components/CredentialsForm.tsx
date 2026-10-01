@@ -3,6 +3,7 @@ import { api, ApiError } from '../api/client';
 import type { Me } from '../api/types';
 import { PASSWORD_MAX, PASSWORD_MIN, PASSWORD_RULE } from '../auth/password';
 import { Button, ErrorText, Field, Input, usernameInputProps } from './ui';
+import { IconField, PasswordField } from './welcome';
 
 /**
  * Adding or changing the email and password you sign in with. One form for both the first time
@@ -14,12 +15,19 @@ export default function CredentialsForm({
   onSaved,
   submitLabel = 'Save',
   secondary,
+  look = 'settings',
 }: {
   me: Me;
   onSaved: (me: Me) => void;
   submitLabel?: string;
   /** Another button beside Save — "Not now" on the prompt, "Cancel" in Settings. */
   secondary?: ReactNode;
+  /**
+   * `prompt` is the add-an-email sheet (mockup 7.1): fields with an icon and no label over them,
+   * the confirmation only once a password is typed, and the buttons stacked — Save, then the
+   * way out under it.
+   */
+  look?: 'settings' | 'prompt';
 }) {
   const [email, setEmail] = useState(me.email ?? '');
   const [password, setPassword] = useState('');
@@ -65,6 +73,74 @@ export default function CredentialsForm({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (look === 'prompt') {
+    const clear = () => setError(null);
+    return (
+      <form onSubmit={onSubmit} className="space-y-3.5">
+        <IconField
+          icon="mail"
+          aria-label="Email"
+          placeholder="Email"
+          type="email"
+          inputMode="email"
+          autoComplete="username"
+          {...usernameInputProps}
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            clear();
+          }}
+        />
+        <PasswordField
+          aria-label={needsPassword ? 'Password' : 'New password'}
+          placeholder="New password"
+          autoComplete="new-password"
+          maxLength={PASSWORD_MAX}
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            clear();
+          }}
+        />
+        {/* Asked for once there is something to confirm, so the sheet opens on just the two. */}
+        {password && (
+          <PasswordField
+            aria-label="Confirm password"
+            placeholder="Confirm password"
+            autoComplete="new-password"
+            maxLength={PASSWORD_MAX}
+            value={confirm}
+            onChange={(e) => {
+              setConfirm(e.target.value);
+              clear();
+            }}
+          />
+        )}
+        {me.hasPassword && (
+          <PasswordField
+            icon="key"
+            aria-label="Current password"
+            placeholder="Current password"
+            autoComplete="current-password"
+            hint="Needed to change either one."
+            value={current}
+            onChange={(e) => {
+              setCurrent(e.target.value);
+              clear();
+            }}
+          />
+        )}
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex flex-col gap-1 pt-1">
+          <Button type="submit" size="lg" full disabled={busy || nothingToSave || (me.hasPassword && !current)}>
+            {busy ? 'Saving…' : submitLabel}
+          </Button>
+          {secondary}
+        </div>
+      </form>
+    );
   }
 
   return (
