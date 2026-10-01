@@ -219,6 +219,21 @@ extension View {
     func hidesNavigationBar() -> some View {
         toolbar(.hidden, for: .navigationBar)
     }
+
+    /**
+     A bottom sheet as the mockup draws one (`.sheet`): the page colour, 28pt top corners and the
+     grab handle. On the sheet's content, with the heights it may take:
+
+         .sheet(isPresented: $open) { DaySheet(…).kitchenSheet([.medium, .large]) }
+
+     Start its content with a `SheetHeader`, 20pt in from the sides.
+     */
+    func kitchenSheet(_ detents: Set<PresentationDetent> = [.large]) -> some View {
+        presentationDetents(detents)
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+            .presentationBackground(Palette.bg)
+    }
 }
 
 #Preview("Top bar") {

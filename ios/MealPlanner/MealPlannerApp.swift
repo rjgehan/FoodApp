@@ -97,6 +97,22 @@ struct Themed: ViewModifier {
     }
 }
 
+/// A tab's label as an outline icon, like the mockup's; a tab bar fills SF Symbols unless told
+/// not to.
+private struct TabLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        Label(title, systemImage: systemImage).environment(\.symbolVariants, .none)
+    }
+}
+
 /// `sheet(item:)` needs something Identifiable, and a String is not.
 struct SharedText: Identifiable {
     let text: String
@@ -152,19 +168,19 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             PlanView(session: session)
-                .tabItem { Label("Plan", systemImage: "calendar") }
+                .tabItem { TabLabel("Plan", systemImage: "calendar") }
                 .tag("plan")
             RecipesView(session: session)
-                .tabItem { Label("Recipes", systemImage: "book") }
+                .tabItem { TabLabel("Recipes", systemImage: "book") }
                 .tag("recipes")
             GroceriesView(session: session)
-                .tabItem { Label("Groceries", systemImage: "cart") }
+                .tabItem { TabLabel("Groceries", systemImage: "cart") }
                 .tag("groceries")
             CupboardView(session: session)
-                .tabItem { Label("Cupboard", systemImage: "cabinet") }
+                .tabItem { TabLabel("Cupboard", systemImage: "cabinet") }
                 .tag("cupboard")
             ExploreView(session: session)
-                .tabItem { Label("Explore", systemImage: "safari") }
+                .tabItem { TabLabel("Explore", systemImage: "safari") }
                 .tag("explore")
         }
     }
@@ -290,11 +306,16 @@ struct RootView: View {
             default: GalleryView()
             }
         }
+        // As sheets: the household switcher, and Theme the way Settings shows it (pushed in a sheet).
         .sheet(isPresented: Binding(
-            get: { debugSheet == "switch" },
+            get: { ["switch", "theme-sheet"].contains(debugSheet ?? "") },
             set: { if !$0 { debugSheet = nil } }
         )) {
-            HouseholdPicker(session: session)
+            if debugSheet == "switch" {
+                HouseholdPicker(session: session)
+            } else {
+                NavigationStack { ThemeScreen() }
+            }
         }
     }
     #endif

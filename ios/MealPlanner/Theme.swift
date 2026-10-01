@@ -180,7 +180,19 @@ final class ThemeStore {
         let style = (theme.mode ?? .system).interfaceStyle
         for scene in UIApplication.shared.connectedScenes {
             guard let scene = scene as? UIWindowScene else { continue }
-            for window in scene.windows { window.overrideUserInterfaceStyle = style }
+            for window in scene.windows {
+                window.overrideUserInterfaceStyle = style
+                // A sheet already up keeps the style it was presented with — which is where the
+                // Theme screen itself lives, so picking Dark there would change everything but it.
+                // Going back to System it needs the phone's own style spelled out: "unspecified"
+                // leaves it in the one it was pinned to.
+                let sheetStyle = style == .unspecified ? scene.screen.traitCollection.userInterfaceStyle : style
+                var presented = window.rootViewController?.presentedViewController
+                while let controller = presented {
+                    controller.overrideUserInterfaceStyle = sheetStyle
+                    presented = controller.presentedViewController
+                }
+            }
         }
     }
 

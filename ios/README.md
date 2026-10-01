@@ -61,6 +61,33 @@ Two ways, both without a backend:
 - **The Gallery tab** — a debug-only tab listing every screen, with a light/dark switch. It is
   the app's version of the screen-inventory PDF the web has. It never calls the network.
 
+## The design system
+
+Every screen is drawn from `MealPlanner/Features/Design` — the "Tomato Kitchen" redesign — so a
+screen never spells out a colour, a corner or a font of its own:
+
+- **Colours** — `Palette.bg`, `.surface`, `.text`, `.muted`, `.accent`, `.accentInk`, `.herb`…:
+  the 21 tokens of the theme in force, light or dark as the screen is (ThemeTokens.swift has the
+  five themes). `Tone` (.accent, .herb, .mustard, .plum, .sky) pairs a soft fill with its ink, for
+  pills, tiles and notes. Herb is good / done / have it, mustard a warning, plum eating out, sky
+  the cupboard.
+- **Type** — UI text is SF Pro; titles are the theme's title face (Fraunces, or Nunito for
+  Blueberry and Inter for Nordic, bundled in `MealPlanner/Fonts`): `Text("Plan").titleFont(34)`,
+  26 for a sheet, 20 for a section head. Large navigation titles already use it.
+- **Components** — `.buttonStyle(.primary / .secondary / .soft / .ghost / .dark / .danger)` and
+  `.kitchen(_:size:.small)`, `IconButton`, `Card`, `ListGroup` + `ListRow`, `KitchenSection` and
+  `.kitchenList()` for a system List, `FieldBox`, `SearchBox`, `Pill`, `Chip`, `SegmentedControl`,
+  `CheckCircle`, `CheckBox`, `NoteBox`, `Tile`, `Avatar`, `LargeTitle`, `SectionHead`,
+  `SectionLabel`, `SheetHeader` + `.kitchenSheet()`, `RecipePhotoPlaceholder` (a recipe without a
+  photo, in one of the `Hue`s), and `TopBar` / `householdHeader()` for the row along every tab.
+- **Seeing them** — each file has light and dark `#Preview`s, and Gallery → Design system shows
+  them all in the theme in force (`-mp_debug_screen design`).
+
+Settings → Theme picks Light / Dark / System and Tomato, Matcha, Blueberry, Brunch, Nordic or a
+custom accent, saved to the account with the keys `tomato`, `matcha`, `blueberry`, `brunch`,
+`nordic`, `custom`. The old keys an account may still carry (`classic`, `basil`, `ocean`…) are read
+as the theme that replaced them.
+
 ## Landing straight in a household (debug builds)
 
 Command-line arguments become UserDefaults, so a screenshot or automation run can skip the PIN
@@ -100,6 +127,10 @@ Share sheet up (the public link, your other households, Explore).
 `-mp_debug_screen household -mp_debug_scroll people` opens Who's here, with the Invite someone
 section; add `-mp_debug_expand 1` to open a password reset link for the first other person, or
 `-mp_debug_expand remove` to ask to remove them (sign in as the owner).
+
+`-mp_debug_screen theme` opens Settings → Theme, `theme-sheet` the same inside a sheet (as Settings
+shows it), `design` the design system's catalogue, `gallery` the Gallery and `switch` the
+household switcher.
 
 Signed out, `-mp_debug_screen scan` opens the Scan screen (the simulator has no camera, so it
 shows the paste-a-link fallback); add `-mp_debug_invite <token>` to open that invite as though it
@@ -186,6 +217,8 @@ MealPlanner/
   MealPlannerApp.swift     the app, the tabs, Household
   Networking/              Models, APIClient, Session + Keychain
   Features/                SignIn, Plan, Groceries, Recipes
+  Features/Design/         the design system: tokens, type, components, bars
+  Fonts/                   the title faces (SIL OFL, licences beside them)
   Preview/                 SampleData and the Gallery
 ```
 

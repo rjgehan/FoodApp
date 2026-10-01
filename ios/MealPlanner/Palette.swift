@@ -53,10 +53,21 @@ enum Palette {
         Color(ui(key))
     }
 
-    /// A token for UIKit: the bars, the switch, the segmented control.
+    /**
+     A token for UIKit: the bars, the switch, the segmented control. Without a style it is read
+     from the theme in force each time it is drawn, not when it was made: a view that has not
+     been redrawn since the theme changed (a sheet that was already up) still paints in the new
+     one when light or dark flips under it.
+     */
     static func ui(_ key: KeyPath<ThemeTokens, RGBA>, in style: ThemeStyle? = nil) -> UIColor {
-        let style = style ?? ThemeStore.shared.style
-        return dynamic(light: style.light[keyPath: key], dark: style.dark[keyPath: key])
+        if let style {
+            return dynamic(light: style.light[keyPath: key], dark: style.dark[keyPath: key])
+        }
+        let store = ThemeStore.shared
+        return UIColor { traits in
+            let tokens = traits.userInterfaceStyle == .dark ? store.style.dark : store.style.light
+            return tokens[keyPath: key].uiColor
+        }
     }
 
     private static func dynamic(light: RGBA, dark: RGBA) -> UIColor {

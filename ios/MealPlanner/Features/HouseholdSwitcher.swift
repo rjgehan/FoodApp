@@ -7,6 +7,7 @@ import SwiftUI
 struct HouseholdPicker: View {
     @Bindable var session: Session
     @Environment(\.dismiss) private var dismiss
+    @State private var scanning = false
 
     var body: some View {
         ScrollView {
@@ -28,14 +29,19 @@ struct HouseholdPicker: View {
                         .accessibilityAddTraits(household.id == session.household?.id ? .isSelected : [])
                     }
                 }
+                // The same way in as Household → Who's here: scan or paste somebody's invite.
+                Button {
+                    scanning = true
+                } label: {
+                    Label("Join with an invite link", systemImage: "link")
+                }
+                .buttonStyle(.secondary)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
         }
-        .pageBackground()
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(28)
+        .kitchenSheet([.medium, .large])
+        .fullScreenCover(isPresented: $scanning) { ScanInviteScreen(session: session) }
     }
 
     /// Each house its own colour, in the order they are listed — the mockup's herb, sky, plum.
