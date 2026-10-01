@@ -397,13 +397,16 @@ struct RootView: View {
         guard session.isSignedIn else { return }
         let before = ThemeStore.shared.pickCount
         guard let me = try? await APIClient.shared.me() else { return }
-        var theme = me.theme
+        let theme = me.theme
         // Light or dark as answered on this phone's first run goes on an account that has
         // never said either — once, and only the first account signed in afterwards.
         if var server = theme, let asked = DeviceThemeMode.takeToSave(), server.mode == nil {
             server.mode = asked
-            theme = server
+            // Counts as a pick: another load already on its way (signing in and coming back into
+            // view both start one) still has no light or dark, and would undo this one.
+            await MainActor.run { ThemeStore.shared.pick(server) }
             _ = try? await APIClient.shared.updateTheme(server)
+            return
         }
         await MainActor.run { ThemeStore.shared.adopt(theme, since: before) }
     }
