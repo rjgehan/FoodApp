@@ -63,6 +63,18 @@ export default function App() {
     );
   }
 
+  // An invite opened while signed in is one decision, made on its own page as the mockup draws
+  // it: no tab bar or household switcher in front of the question of which house to join.
+  if (pathname.startsWith('/invite/')) {
+    return (
+      <HouseholdProvider>
+        <Routes>
+          <Route path="/invite/:token" element={<InvitePage />} />
+        </Routes>
+      </HouseholdProvider>
+    );
+  }
+
   return (
     <HouseholdProvider>
       <Layout>
@@ -70,7 +82,6 @@ export default function App() {
           {/* No home screen: the week's plan is where the day starts. */}
           <Route path="/" element={<Navigate to="/meal-plan" replace />} />
           <Route path="/household" element={<HouseholdPage />} />
-          <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />

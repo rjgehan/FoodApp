@@ -185,7 +185,7 @@ test('sign out lives under Household → You, not in the header', async ({ page 
   // The row reads "You" plus your name; the header's avatar is "Your account".
   await page.getByRole('button', { name: /^You / }).click();
   await sheet(page).getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByText('Who’s cooking?')).toBeVisible();
+  await expect(page.getByText("Plan the week together. One list, everyone's phone.")).toBeVisible();
 });
 
 test('the avatar opens Settings: your account, and the way into the household', async ({ page }) => {

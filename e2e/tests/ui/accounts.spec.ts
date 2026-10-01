@@ -155,12 +155,12 @@ test('the owner sees who has no email yet, and hands out a reset link that signs
   const theirs = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const phone = await theirs.newPage();
   await phone.goto(url);
-  await expect(phone.getByText(`Hi, ${m.displayName}`)).toBeVisible();
+  await expect(phone.getByRole('heading', { name: `New password for ${m.displayName}` })).toBeVisible();
   const email = address('resetui');
   await phone.getByLabel('Email').fill(email);
   await phone.getByLabel('New password').fill('fresh-password');
   await phone.getByLabel('Confirm password').fill('fresh-password');
-  await phone.getByRole('button', { name: 'Set password and sign in' }).click();
+  await phone.getByRole('button', { name: 'Save and sign in' }).click();
   await expect(phone.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 
   // The link is spent.
