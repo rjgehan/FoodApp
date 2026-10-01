@@ -22,7 +22,8 @@ import {
   type SortDir,
 } from '../components/AdminParts';
 import { PageTitle } from '../components/PageTitle';
-import { Badge, Button, cx, ErrorText, Input, Select, Sheet } from '../components/ui';
+import { Badge, Button, cx, ErrorText, SearchField, Select, Sheet, Tile, type Tone } from '../components/ui';
+import type { IconName } from '../components/icons';
 import { useAuth } from '../auth/AuthContext';
 import { sectionLabel } from '../utils/recipeMeta';
 import AdminThemes, { ThemeDot } from '../components/AdminThemes';
@@ -112,7 +113,8 @@ function AdminHome() {
 
       <Overview overview={overview} />
 
-      <div className="flex rounded-xl bg-surface2 p-0.5 md:max-w-lg" role="tablist" aria-label="What to look at">
+      {/* The segmented control's look, as tabs: each shows a different list below. */}
+      <div className="flex rounded-[11px] bg-surface2 p-[3px] md:max-w-lg" role="tablist" aria-label="What to look at">
         {TABS.map((t) => (
           <button
             key={t.value}
@@ -122,8 +124,8 @@ function AdminHome() {
             // A new tab starts at its own first page, with its own search.
             onClick={() => setParams(t.value === 'households' ? {} : { tab: t.value }, { replace: true })}
             className={cx(
-              'h-9 flex-1 rounded-lg px-2 text-sm font-medium transition-colors',
-              tab === t.value ? 'bg-surface text-ink shadow-sm' : 'text-muted',
+              'min-w-0 flex-1 truncate rounded-[9px] px-1 py-[7px] text-[0.8125rem] transition-colors sm:px-2 sm:text-[0.875rem]',
+              tab === t.value ? 'bg-surface font-semibold text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]' : 'font-medium text-muted',
             )}
           >
             {t.label}
@@ -142,31 +144,36 @@ function AdminHome() {
 }
 
 function Overview({ overview: o }: { overview: AdminOverview | null }) {
-  const tiles: { label: string; value: number | undefined; detail?: ReactNode }[] = [
+  const tiles: { label: string; value: number | undefined; detail?: ReactNode; icon: IconName; tone: Tone }[] = [
     {
+      icon: 'users',
+      tone: 'sky',
       label: 'People',
       value: o?.users,
       detail: o && `${o.usersWithEmail} with an email · ${o.usersWithPin} with a PIN`,
     },
     {
       // The number that says when the PIN screens can go: at zero, everyone can sign in without one.
+      icon: 'key',
+      tone: 'mustard',
       label: 'Without a password',
       value: o ? o.users - o.usersWithPassword : undefined,
       detail: o && (o.users === o.usersWithPassword ? 'Everyone has one' : `${o.usersWithPassword} of ${o.users} have one`),
     },
-    { label: 'Households', value: o?.households, detail: o && `${o.liveInvites} with a live invite link` },
-    { label: 'Recipes', value: o?.recipes, detail: o && `${o.publishedRecipes} in Explore` },
-    { label: 'Shared', value: o?.shares, detail: o && `${o.publicLinks} public links` },
+    { icon: 'home', tone: 'herb', label: 'Households', value: o?.households, detail: o && `${o.liveInvites} with a live invite link` },
+    { icon: 'book', tone: 'accent', label: 'Recipes', value: o?.recipes, detail: o && `${o.publishedRecipes} in Explore` },
+    { icon: 'share', tone: 'plum', label: 'Shared', value: o?.shares, detail: o && `${o.publicLinks} public links` },
   ];
 
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Overview">
       {tiles.map((t) => (
-        <li key={t.label} className="rounded-2xl bg-surface px-4 py-3">
-          <p className="text-[0.8125rem] font-medium text-muted">{t.label}</p>
-          <p className="text-[1.75rem] font-bold leading-tight tracking-[-0.02em] tabular-nums">
-            {t.value ?? '–'}
-          </p>
+        <li key={t.label} className="card px-4 pb-3.5 pt-3">
+          <div className="flex items-center gap-2">
+            <Tile icon={t.icon} tone={t.tone} size={26} radius={8} />
+            <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-muted">{t.label}</p>
+          </div>
+          <p className="serif mt-1.5 text-[2rem] leading-tight tabular-nums">{t.value ?? '–'}</p>
           {t.detail && <p className="mt-0.5 text-[0.8125rem] leading-snug text-muted">{t.detail}</p>}
         </li>
       ))}
@@ -214,8 +221,7 @@ function SearchBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
   return (
-    <Input
-      type="search"
+    <SearchField
       aria-label={label}
       placeholder={placeholder}
       value={text}
@@ -223,6 +229,7 @@ function SearchBox({
       autoCapitalize="none"
       autoCorrect="off"
       spellCheck={false}
+      className="h-11"
     />
   );
 }
@@ -289,7 +296,7 @@ function PeopleTab({ params, update }: TabProps) {
   // Not on your own row: the server refuses it anyway, and a button that can only fail is a trap.
   const deleteButton = (u: AdminUserRow) =>
     u.userId === session?.userId ? null : (
-      <Button variant="ghost" size="sm" className="text-danger" onClick={() => setDeleting(u)} aria-label={`Delete ${u.displayName}`}>
+      <Button variant="ghost" size="sm" icon="trash" className="text-danger" onClick={() => setDeleting(u)} aria-label={`Delete ${u.displayName}`}>
         Delete
       </Button>
     );
@@ -326,8 +333,14 @@ function PeopleTab({ params, update }: TabProps) {
               <PersonName user={u} />
               <p className="break-all text-sm">{u.email ?? <span className="text-muted">No email yet</span>}</p>
               <div className="flex flex-wrap gap-1.5">
-                <Badge tone={u.hasPassword ? 'success' : 'neutral'}>{u.hasPassword ? 'Password' : 'No password'}</Badge>
-                {u.hasPin && <Badge>PIN</Badge>}
+                <Badge tone={u.hasPassword ? 'herb' : 'neutral'} icon={u.hasPassword ? 'lock' : undefined}>
+                  {u.hasPassword ? 'Password' : 'No password'}
+                </Badge>
+                {u.hasPin && (
+                  <Badge tone="mustard" icon="key">
+                    PIN
+                  </Badge>
+                )}
               </div>
               <div className="text-sm">
                 <Memberships user={u} />
@@ -337,7 +350,11 @@ function PeopleTab({ params, update }: TabProps) {
           )}
         />
       )}
-      {deleted && <p className="text-sm text-muted" role="status">{deleted}</p>}
+      {deleted && (
+        <p className="rounded-xl bg-herb-soft px-4 py-3 text-sm font-medium text-herb" role="status">
+          {deleted}
+        </p>
+      )}
       {deleting && (
         <DeleteAccountSheet
           user={deleting}
@@ -425,11 +442,11 @@ function DeleteAccountSheet({
           </ul>
         )}
         {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2 pt-1">
-          <Button variant="danger" className="flex-1" disabled={!plan || busy} onClick={go}>
+        <div className="flex flex-col gap-2 pt-1">
+          <Button variant="danger" size="lg" full icon="trash" disabled={!plan || busy} onClick={go}>
             {busy ? 'Deleting…' : losing.length > 0 ? 'Delete account and household' : 'Delete account'}
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={onClose}>
+          <Button variant="secondary" size="lg" full disabled={busy} onClick={onClose}>
             Cancel
           </Button>
         </div>
@@ -491,9 +508,10 @@ function RecipesTab({ params, update }: TabProps) {
             onSearch={(text) => update({ q: text, page: null })}
           />
         </div>
-        <div className="relative sm:w-64">
+        <div className="sm:w-64">
           <Select
             aria-label="Household"
+            className="h-11"
             value={householdId}
             onChange={(e) => update({ household: e.target.value, page: null })}
           >
@@ -505,7 +523,6 @@ function RecipesTab({ params, update }: TabProps) {
               </option>
             ))}
           </Select>
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted">▾</span>
         </div>
       </div>
       {error ? (

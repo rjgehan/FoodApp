@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon } from './icons';
+import { ChevronDownIcon, ChevronUpIcon, Icon } from './icons';
 import { Badge, Button, cx, EmptyState, ErrorText, Select } from './ui';
 
 /*
@@ -60,9 +60,10 @@ export function AdminTable<T>({
     <>
       {sortable.length > 0 && sort && onSort && (
         <div className="mb-3 flex items-center gap-2 md:hidden">
-          <div className="relative flex-1">
+          <div className="min-w-0 flex-1">
             <Select
               aria-label="Sort by"
+              className="h-11"
               value={sort.key}
               // A different column starts in its own natural order; see the page's onSort.
               onChange={(e) => onSort(e.target.value)}
@@ -73,10 +74,10 @@ export function AdminTable<T>({
                 </option>
               ))}
             </Select>
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted">▾</span>
           </div>
           <Button
             variant="secondary"
+            className="h-11 shrink-0"
             onClick={() => onSort(sort.key)}
             aria-label={sort.dir === 'asc' ? 'Ascending — switch to descending' : 'Descending — switch to ascending'}
           >
@@ -86,10 +87,10 @@ export function AdminTable<T>({
         </div>
       )}
 
-      <div className="hidden overflow-x-auto rounded-2xl bg-surface md:block">
+      <div className="card hidden overflow-x-auto md:block">
         <table className="w-full text-left text-[0.9375rem]" aria-label={label}>
           <thead>
-            <tr className="border-b border-line text-[0.8125rem] text-muted">
+            <tr className="group-label border-b border-line bg-surface2/50">
               {columns.map((c) => {
                 const active = sort && c.sortKey === sort.key;
                 return (
@@ -97,7 +98,7 @@ export function AdminTable<T>({
                     key={c.label}
                     scope="col"
                     aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-                    className={cx('px-4 py-2.5 font-medium', c.numeric && 'text-right', c.className)}
+                    className={cx('px-4 py-2.5 font-semibold', c.numeric && 'text-right', c.className)}
                   >
                     {c.sortKey && onSort ? (
                       <button
@@ -128,7 +129,7 @@ export function AdminTable<T>({
             {rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                className={cx(href && 'cursor-pointer hover:bg-surface2/60')}
+                className={cx('transition-colors', href && 'cursor-pointer hover:bg-surface2/60')}
                 onClick={
                   href &&
                   ((e) => {
@@ -139,7 +140,7 @@ export function AdminTable<T>({
                 }
               >
                 {columns.map((c, i) => (
-                  <td key={c.label} className={cx('px-4 py-2.5 align-top', c.numeric && 'text-right tabular-nums', c.className)}>
+                  <td key={c.label} className={cx('px-4 py-3 align-top', c.numeric && 'text-right tabular-nums', c.className)}>
                     {i === 0 && href ? (
                       <Link to={href(row)} className="font-medium text-accent-ink hover:underline">
                         {c.cell(row)}
@@ -155,16 +156,16 @@ export function AdminTable<T>({
         </table>
       </div>
 
-      <ul className="divide-y divide-line rounded-2xl bg-surface px-4 md:hidden" aria-label={label}>
+      <ul className="card card-rows inset-rows md:hidden" aria-label={label}>
         {rows.map((row) => (
           <li key={rowKey(row)}>
             {href ? (
-              <Link to={href(row)} className="press flex min-h-touch items-center gap-3 py-3">
+              <Link to={href(row)} className="press flex min-h-[52px] items-center gap-3 px-4 py-3 active:bg-surface2">
                 <div className="min-w-0 flex-1">{card(row)}</div>
-                <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
+                <Icon name="chevR" size={16} className="shrink-0 text-faint" />
               </Link>
             ) : (
-              <div className="py-3">{card(row)}</div>
+              <div className="px-4 py-3">{card(row)}</div>
             )}
           </li>
         ))}
@@ -208,8 +209,8 @@ export function Pager({
 /** A yes/no cell: a tick when there is one, a quiet dash when there is not. */
 export function Yes({ value, label }: { value: boolean; label: string }) {
   return value ? (
-    <span className="font-medium text-herb" aria-label={`${label}: yes`}>
-      ✓
+    <span className="inline-flex text-herb" role="img" aria-label={`${label}: yes`}>
+      <Icon name="check" size={17} strokeWidth={2.6} />
     </span>
   ) : (
     <span className="text-faint" aria-label={`${label}: no`}>
@@ -287,13 +288,21 @@ export function RecipeBadges({
   recipe: { published: boolean; sharedWith: string[]; hasPublicLink: boolean; linkCount?: number };
 }) {
   const badges = [
-    r.published && <Badge key="explore" tone="accent">In Explore</Badge>,
+    r.published && (
+      <Badge key="explore" tone="herb" icon="globe">
+        In Explore
+      </Badge>
+    ),
     r.sharedWith.length > 0 && (
-      <Badge key="shared">
+      <Badge key="shared" tone="plum" icon="users">
         Shared with {r.sharedWith.length <= 2 ? r.sharedWith.join(', ') : plural(r.sharedWith.length, 'household')}
       </Badge>
     ),
-    r.hasPublicLink && <Badge key="link">Public link</Badge>,
+    r.hasPublicLink && (
+      <Badge key="link" tone="sky" icon="link">
+        Public link
+      </Badge>
+    ),
     !!r.linkCount && <Badge key="links">{plural(r.linkCount, 'link')}</Badge>,
   ].filter(Boolean);
   return badges.length ? <span className="flex flex-wrap gap-1.5">{badges}</span> : null;
@@ -310,15 +319,15 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 export function AdminBack({ fallback = '/admin' }: { fallback?: string }) {
   const navigate = useNavigate();
   const canGoBack = (window.history.state?.idx ?? 0) > 0;
+  // The pushed screen's back, as NavBar draws it: the chevron and a word, in the accent's ink.
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="-ml-3"
+    <button
+      type="button"
+      className="press -ml-1.5 flex h-11 items-center gap-0.5 text-[1.0625rem] text-accent-ink"
       onClick={() => (canGoBack ? navigate(-1) : navigate(fallback))}
     >
-      <ChevronLeftIcon className="h-5 w-5" />
+      <Icon name="chevL" size={26} />
       Back
-    </Button>
+    </button>
   );
 }
