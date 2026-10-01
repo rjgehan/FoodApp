@@ -15,6 +15,17 @@ import LoginPage from './LoginPage';
 const HOUSE_TONES: Tone[] = ['herb', 'sky', 'plum', 'mustard', 'accent'];
 
 /**
+ * The line under a house in "Save a copy to…": how many recipes it has, which is what tells two
+ * houses apart when the question is where a recipe goes. People, from a server too old to count.
+ * (The mockup adds "· Dinner drawer" to the ticked one; a public link does not say how the
+ * recipe was filed, so that part is left out.)
+ */
+function houseFacts(h: Household): string {
+  if (h.recipeCount != null) return `${h.recipeCount} ${h.recipeCount === 1 ? 'recipe' : 'recipes'}`;
+  return `${h.memberCount} ${h.memberCount === 1 ? 'person' : 'people'}`;
+}
+
+/**
  * A recipe opened from a share link — most often by someone with no account.
  *
  * Read-only and self-contained on purpose: no navigation, and nothing inviting the reader to
@@ -139,8 +150,17 @@ export default function PublicRecipePage() {
   }
 
   if (missing) {
+    // A way on, like the other dead links: into the app for somebody with an account here.
     return (
-      <MessageScreen icon="broken" title="This recipe is no longer shared">
+      <MessageScreen
+        icon="broken"
+        title="This recipe is no longer shared"
+        actions={
+          <Button variant="secondary" full size="lg" onClick={() => navigate(session ? '/recipes' : '/', { replace: true })}>
+            {session ? 'Open Meal Planner' : 'Go to sign in'}
+          </Button>
+        }
+      >
         Whoever sent it has turned its link off, so there is nothing to see here any more.
       </MessageScreen>
     );
@@ -291,7 +311,7 @@ export default function PublicRecipePage() {
                   onClick={() => setPicked(h.id)}
                   lead={<Avatar name={h.name} tone={HOUSE_TONES[i % HOUSE_TONES.length]} size={40} />}
                   title={h.name}
-                  subtitle={`${h.memberCount} ${h.memberCount === 1 ? 'person' : 'people'}`}
+                  subtitle={houseFacts(h)}
                   end={<CheckCircle checked={h.id === picked} />}
                 />
               ))}
@@ -360,6 +380,8 @@ function Hero({ pictures, name, onShare }: { pictures: string[]; name: string; o
         />
       )}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top),0.75rem)]">
+        {/* The mockup says "Shared by Gehan house". A public link says nothing about the house
+            that owns the recipe (RecipeLinkService.view), so the pill says what it is instead. */}
         <span className="pointer-events-auto">
           <Pill tone="mustard" icon="link">
             Shared recipe

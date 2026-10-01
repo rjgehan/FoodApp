@@ -67,6 +67,7 @@ test('a public link signs you in, lets you pick a household, and saves a copy th
   const cook = await newMember(a.id);
   await call('POST', `/api/invites/${await inviteToken(b.id)}/accept`, { token: cook.token });
   const r = await newRecipe(owners.id, 'Link Lasagna', [{ name: 'noodles', qty: 1, unit: 'box' }]);
+  await newRecipe(a.id, 'House A Hash', [{ name: 'potatoes', qty: 2 }]);
   const { token } = await call('POST', `/api/recipes/${r.id}/link`, { token: (await admin()).token });
 
   // Signed out: the recipe reads as before, with a quiet way to keep it.
@@ -92,6 +93,9 @@ test('a public link signs you in, lets you pick a household, and saves a copy th
   const picker = sheet(page);
   await expect(picker.getByText('Save a copy to…')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/r/${token}$`));
+  // Each house says how many recipes it has — what tells them apart when choosing where one goes.
+  await expect(picker.getByRole('radio', { name: a.name })).toContainText('1 recipe');
+  await expect(picker.getByRole('radio', { name: b.name })).toContainText('0 recipes');
   await page.screenshot({ path: test.info().outputPath('public-link-pick.png') });
   await picker.getByRole('radio', { name: b.name }).click();
   await picker.getByRole('button', { name: `Save to ${b.name}` }).click();
@@ -103,6 +107,19 @@ test('a public link signs you in, lets you pick a household, and saves a copy th
   const copy = await call('GET', `/api/recipes/${copyId}`, { token: cook.token });
   expect(copy.householdId).toBe(b.id);
   expect(copy.shared).toBe(false);
+});
+
+test('a link that was turned off says so, and offers a way on', async ({ page }) => {
+  const owners = await newHousehold();
+  const r = await newRecipe(owners.id, 'Withdrawn Waffles', [{ name: 'flour', qty: 1 }]);
+  const owner = await admin();
+  const { token } = await call('POST', `/api/recipes/${r.id}/link`, { token: owner.token });
+  await call('DELETE', `/api/recipes/${r.id}/link`, { token: owner.token });
+
+  await page.goto(`/r/${token}`);
+  await expect(page.getByRole('heading', { name: 'This recipe is no longer shared' })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to sign in' }).click();
+  await expect(page.getByLabel('Email')).toBeVisible();
 });
 
 test('signed in with one household, Save goes straight to the copy', async ({ page }) => {

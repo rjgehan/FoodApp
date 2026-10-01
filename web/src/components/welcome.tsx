@@ -120,18 +120,25 @@ export function PasswordField(props: Omit<Parameters<typeof IconField>[0], 'icon
 
 /**
  * Who asked and into what — the top of every invite page. The faces are the person who sent the
- * link and a count of everyone else, which is all a link is allowed to say about a house.
+ * link and a count of everyone else, which is all a link is allowed to say about a house. (The
+ * mockup draws two named faces, "J R +2"; a link may name nobody but the owner — anyone holding
+ * it could be a stranger — so the second face stays a count, on purpose.)
+ *
+ * `ownLink` is somebody already in the house opening its link: nobody invited them, so the line
+ * over the name says whose link it is instead of "Ryan invited you to join".
  */
 export function InviteHeader({
   household,
   invitedBy,
   memberCount,
   recipeCount,
+  ownLink = false,
 }: {
   household: string;
   invitedBy: string | null;
   memberCount: number | null;
   recipeCount?: number | null;
+  ownLink?: boolean;
 }) {
   const people = memberCount ?? 0;
   const others = invitedBy ? people - 1 : people;
@@ -166,7 +173,9 @@ export function InviteHeader({
       )}
       <div className="flex flex-col gap-1">
         <p className="text-[0.9375rem] text-muted">
-          {invitedBy ? (
+          {ownLink ? (
+            'The invite link for'
+          ) : invitedBy ? (
             <>
               <b className="font-semibold text-ink">{invitedBy}</b> invited you to join
             </>

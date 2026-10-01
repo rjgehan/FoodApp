@@ -52,6 +52,8 @@ export interface InviteInfo {
   householdName: string | null;
   invitedByName: string | null;
   memberCount: number | null;
+  /** How many recipes the house has. An older server leaves it out. */
+  recipeCount?: number | null;
 }
 
 /** Whether the signed-in person is in an invite's house already — and if so, which it is. */
@@ -131,6 +133,8 @@ export interface Household {
   role: HouseholdRole;
   /** How many people are in it. One means you, and means leaving is really deleting. */
   memberCount: number;
+  /** How many recipes its Recipes tab lists — what a "which household?" picker says under it. */
+  recipeCount?: number;
 }
 
 /** A household's own grocery aisle — added, renamed, reordered and deleted from Household settings. */

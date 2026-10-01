@@ -61,6 +61,14 @@ export default function InvitePage() {
 
   if (!token) return null;
 
+  // Retry, and a way out: somebody who cannot get through to the invite still has the rest of
+  // the app — signing in, or the houses they are already in.
+  const leave = (
+    <Button variant="secondary" full size="lg" onClick={() => navigate(session ? '/meal-plan' : '/', { replace: true })}>
+      {session ? 'Open Meal Planner' : 'Go to sign in'}
+    </Button>
+  );
+
   if (unreachable) {
     return (
       <MessageScreen
@@ -68,12 +76,15 @@ export default function InvitePage() {
         tone="mustard"
         title="Connection problem"
         actions={
-          <Button full size="lg" icon="refresh" onClick={load}>
-            Retry
-          </Button>
+          <>
+            <Button full size="lg" icon="refresh" onClick={load}>
+              Retry
+            </Button>
+            {leave}
+          </>
         }
       >
-        Couldn't reach Meal Planner. Your link may be fine: check your connection and try again.
+        Couldn't reach the server. Your link may be fine: check your connection and try again.
       </MessageScreen>
     );
   }
@@ -83,16 +94,7 @@ export default function InvitePage() {
       <MessageScreen
         icon="broken"
         title="This invite has expired"
-        actions={
-          <Button
-            variant="secondary"
-            full
-            size="lg"
-            onClick={() => navigate(session ? '/meal-plan' : '/', { replace: true })}
-          >
-            {session ? 'Open Meal Planner' : 'Go to sign in'}
-          </Button>
-        }
+        actions={leave}
       >
         Invite links last a week, and the owner can make a new one, which stops the old one working.
         Ask them to send you the new one.
@@ -104,12 +106,14 @@ export default function InvitePage() {
 }
 
 /** The invite's card, from what the link says about its house. */
-function Header({ info }: { info: InviteInfo }) {
+function Header({ info, ownLink = false }: { info: InviteInfo; ownLink?: boolean }) {
   return (
     <InviteHeader
       household={info.householdName ?? 'the household'}
       invitedBy={info.invitedByName}
       memberCount={info.memberCount}
+      recipeCount={info.recipeCount}
+      ownLink={ownLink}
     />
   );
 }
@@ -194,7 +198,7 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
 
   return (
     <WelcomePage className="gap-4 pt-4">
-      <Header info={info} />
+      <Header info={info} ownLink={standing.alreadyMember} />
 
       {standing.alreadyMember && standing.householdId ? (
         <>

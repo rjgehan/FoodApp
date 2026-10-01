@@ -48,6 +48,8 @@ test('the owner hands out the link, and somebody new makes an account from it an
   await phone.goto(url);
   await expect(phone.getByRole('heading', { name: hh.name, exact: true })).toBeVisible();
   await expect(phone.getByText('E2E Admin invited you to join')).toBeVisible();
+  // How big the house is: its people and its recipes, as the mockup's card has it.
+  await expect(phone.getByText('1 person · 0 recipes')).toBeVisible();
   // No app around it: a guest sees the invitation, not a tab bar.
   await expect(phone.getByRole('link', { name: 'Plan', exact: true })).toHaveCount(0);
   await phone.screenshot({ path: test.info().outputPath('invite-signed-out.png'), fullPage: true });
@@ -142,6 +144,9 @@ test('somebody already in the house is told so, not invited into it', async ({ p
   await page.goto(`/invite/${await inviteToken(hh.id)}`);
 
   await expect(page.getByText(`You're already in ${hh.name}`)).toBeVisible();
+  // Nobody invited them: the card says whose link it is instead.
+  await expect(page.getByText('The invite link for')).toBeVisible();
+  await expect(page.getByText(/invited you to join/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: `Join ${hh.name}` })).toHaveCount(0);
   await page.getByRole('button', { name: `Open ${hh.name}` }).click();
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
@@ -157,6 +162,8 @@ test('a server it cannot reach is not mistaken for a dead link', async ({ browse
   await phone.goto(`/invite/${token}`);
   await expect(phone.getByRole('heading', { name: 'Connection problem' })).toBeVisible();
   await expect(phone.getByText('This invite has expired')).toHaveCount(0);
+  // Not a dead end: signing in is still there.
+  await expect(phone.getByRole('button', { name: 'Go to sign in' })).toBeVisible();
   offline = false;
   await phone.getByRole('button', { name: 'Retry' }).click();
   await expect(phone.getByRole('heading', { name: hh.name, exact: true })).toBeVisible();
