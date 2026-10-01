@@ -7,7 +7,7 @@ import { DraftToCheck } from './RecipePaste';
 import { Button, Card, ErrorText, Input } from './ui';
 import { LinkIcon } from './icons';
 import { SAVED_LINKS_PATH, saveLink, sourceLabel } from '../utils/savedLinks';
-import { coverClass } from '../utils/recipeFormat';
+import { photoClass } from '../utils/recipeFormat';
 
 /** What the server read: a draft, and whether its steps were written down or only said. */
 type ImportedRecipe = RecipeDraft & { methodSource?: 'PUBLISHED' | 'SPOKEN' | null };
@@ -91,11 +91,11 @@ export function FromALink({
     return (
       <Card>
         <div className="flex items-center gap-3" role="status">
-          <span className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl ${coverClass(kept.id)}`}>
+          <span className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[14px] ${kept.coverImageId ? '' : photoClass(kept.id)}`}>
             {kept.coverImageId ? (
               <img src={imageUrl(kept.coverImageId)} alt="" className="h-full w-full object-cover" />
             ) : (
-              <LinkIcon className="h-6 w-6 text-ink/50" />
+              <LinkIcon className="h-6 w-6 opacity-90" />
             )}
           </span>
           <span className="min-w-0 flex-1">
@@ -192,7 +192,7 @@ export function FromALink({
           {error && (
             // A link that cannot be read is still a link worth keeping — the recipe is in the
             // video, or behind a bio — so the way on is right under the reason.
-            <div className="space-y-2.5 rounded-xl bg-elevated p-3">
+            <div className="space-y-2.5 rounded-xl bg-surface2 p-3">
               <ErrorText>{error}</ErrorText>
               <p className="text-sm text-muted">
                 Keep it in Saved links instead, with its name and picture, and make it a recipe whenever you like.
@@ -243,7 +243,7 @@ export function Reading() {
         <span className="tabular-nums text-muted">{seconds}s</span>
       </div>
       {/* Indeterminate on purpose: there is no percentage to report on one request. */}
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-elevated">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface2">
         <div className="h-full w-1/3 animate-slide rounded-full bg-accent" />
       </div>
     </div>

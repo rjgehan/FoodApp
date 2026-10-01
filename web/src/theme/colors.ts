@@ -1,62 +1,54 @@
 /*
- Working out a whole palette from the two colours somebody picked, so that any pick stays
- readable. Pure functions, no DOM: the same arithmetic runs in ios/MealPlanner/Theme.swift, step
- for step, so a custom pair looks the same on the phone as on the web. Change one, change both.
+ The Custom theme: Tomato with an accent you picked, worked out so that any pick stays readable.
+ Pure functions, no DOM. ios/MealPlanner/Theme.swift has to do the same arithmetic step for step,
+ so a custom colour looks the same on the phone as on the web: change one, change both.
 
- What the two colours drive (index.css has the tokens):
+ Only the four accent tokens come from the pick (themes.ts says what each is for):
 
-   primary   --accent        the colour that means "you can act": filled buttons, links, the
-                             active tab, ticks, switches, the focus ring.
-             --accent-ink    text on a filled button — white, or near-black when white would
-                             not read.
+   accent      filled buttons, the active tab, ticks — darkened in light mode (lightened in dark)
+               until it stands out from the surface
+   accentSoft  the same hue as a pale (in dark mode, deep) tint
+   onAccent    text on a filled accent: white, or the page's ink when white would not read
+   accentInk   accent-coloured text — the accent again, pushed further until it reads as text on
+               its own soft tint (and so on the paler page and surface too)
 
-   secondary --secondary-soft  the tinted fills: your avatar, a notice, a badge, today on the
-                               plan, a selected icon, an optional ingredient — the "this is
-                               highlighted" colour, as opposed to "tap this".
-             --secondary       text and icons on those fills — the secondary itself, darkened (or,
-                               in dark mode, lightened) until it reads on them.
-
- The recipe cover tints stay as they are in every theme: they tell recipes apart, and six tints
- bent towards one colour would stop doing that.
+ Everything else — paper, ink, herb, mustard, plum, sky — is Tomato's, so the meaning of the
+ other colours never changes with your pick.
 */
+
+import { TOMATO } from './themes';
 
 export type Rgb = readonly [number, number, number];
 
-/** One mode's worth of derived colours, as #RRGGBB. */
-export interface ModeColors {
+/** The four accent tokens of one mode, as #RRGGBB. */
+export interface AccentColors {
   accent: string;
+  accentSoft: string;
+  onAccent: string;
   accentInk: string;
-  secondary: string;
-  secondarySoft: string;
 }
 
-export interface DerivedColors {
-  light: ModeColors;
-  dark: ModeColors;
+export interface CustomColors {
+  light: AccentColors;
+  dark: AccentColors;
 }
-
-/** The surfaces the derived colours have to read against — the web's --surface in each mode. */
-const WHITE: Rgb = [255, 255, 255];
-const DARK_SURFACE: Rgb = [28, 28, 30];
-/** Text on a light filled button in dark mode: the web's dark --accent-ink. */
-const DARK_INK: Rgb = [28, 25, 23];
 
 /*
- How much contrast each role needs. Light-mode accents only have to match what the app has
- always had (orange on white is 3.6:1), since they are mostly bold labels and filled buttons;
- dark-mode accents are lifted further, the way Apple's own dark colours are lighter than their
- light ones. Text on a tinted fill is ordinary text, so it gets the full 4.5:1.
+ How much contrast each role needs. A filled accent only has to stand out as a shape with a bold
+ label on it, so 3:1 against the surface does; dark mode lifts it further, the way Apple's dark
+ colours are lighter than their light ones. Accent text is ordinary text, so it gets the full
+ 4.5:1 against its own tint.
 */
-export const MIN_ACCENT_LIGHT = 3.5;
-export const MIN_ACCENT_DARK = 6;
-export const MIN_ON_SOFT = 4.5;
-/** White text on a filled button, or near-black when white falls below this. */
-export const MIN_WHITE_INK = 3;
+export const MIN_ACCENT_LIGHT = 3;
+export const MIN_ACCENT_DARK = 4.5;
+export const MIN_INK = 4.5;
+/** White on a filled accent, or the page's ink when white falls below this. */
+export const MIN_WHITE_ON_ACCENT = 3;
 
 const SOFT_LIGHTNESS_LIGHT = 0.92;
-const SOFT_LIGHTNESS_DARK = 0.15;
+const SOFT_LIGHTNESS_DARK = 0.18;
 /** A dark-mode tint any more saturated than this glows rather than sits behind the text. */
-const SOFT_SATURATION_DARK = 0.75;
+const SOFT_SATURATION_DARK = 0.45;
 
 export const HEX = /^#[0-9A-F]{6}$/;
 
@@ -146,32 +138,27 @@ function tint(color: Rgb, lightness: number, maxSaturation = 1): Rgb {
   return hslToRgb(h, Math.min(s, maxSaturation), lightness);
 }
 
-function inkOn(fill: Rgb): Rgb {
-  return contrast(fill, WHITE) >= MIN_WHITE_INK ? WHITE : DARK_INK;
+const WHITE: Rgb = [255, 255, 255];
+
+function onAccent(fill: Rgb, ink: Rgb): Rgb {
+  return contrast(fill, WHITE) >= MIN_WHITE_ON_ACCENT ? WHITE : ink;
 }
 
-/** Both modes' colours from a primary and a secondary, each #RRGGBB. */
-export function deriveColors(primaryHex: string, secondaryHex: string): DerivedColors {
-  const primary = hexToRgb(primaryHex);
-  const secondary = hexToRgb(secondaryHex);
-
-  const lightAccent = untilReadable(primary, WHITE, MIN_ACCENT_LIGHT, -1);
-  const lightSoft = tint(secondary, SOFT_LIGHTNESS_LIGHT);
-  const darkAccent = untilReadable(primary, DARK_SURFACE, MIN_ACCENT_DARK, 1);
-  const darkSoft = tint(secondary, SOFT_LIGHTNESS_DARK, SOFT_SATURATION_DARK);
-
-  return {
-    light: {
-      accent: rgbToHex(lightAccent),
-      accentInk: rgbToHex(inkOn(lightAccent)),
-      secondary: rgbToHex(untilReadable(secondary, lightSoft, MIN_ON_SOFT, -1)),
-      secondarySoft: rgbToHex(lightSoft),
-    },
-    dark: {
-      accent: rgbToHex(darkAccent),
-      accentInk: rgbToHex(inkOn(darkAccent)),
-      secondary: rgbToHex(untilReadable(secondary, darkSoft, MIN_ON_SOFT, 1)),
-      secondarySoft: rgbToHex(darkSoft),
-    },
+/** Both modes' accent tokens from the one colour picked, #RRGGBB, on Tomato's neutrals. */
+export function deriveCustom(accentHex: string): CustomColors {
+  const picked = hexToRgb(accentHex);
+  const mode = (dark: boolean): AccentColors => {
+    const p = dark ? TOMATO.dark : TOMATO.light;
+    const surface = hexToRgb(p.surface);
+    const accent = untilReadable(picked, surface, dark ? MIN_ACCENT_DARK : MIN_ACCENT_LIGHT, dark ? 1 : -1);
+    const soft = dark ? tint(picked, SOFT_LIGHTNESS_DARK, SOFT_SATURATION_DARK) : tint(picked, SOFT_LIGHTNESS_LIGHT);
+    const ink = untilReadable(accent, soft, MIN_INK, dark ? 1 : -1);
+    return {
+      accent: rgbToHex(accent),
+      accentSoft: rgbToHex(soft),
+      onAccent: rgbToHex(onAccent(accent, hexToRgb(dark ? p.bg : p.text))),
+      accentInk: rgbToHex(ink),
+    };
   };
+  return { light: mode(false), dark: mode(true) };
 }

@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover lets the safe-area insets in index.css actually do something. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FBF6EE" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#17120F" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Meals" />
@@ -13,14 +13,17 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Meal Planner</title>
+    <!-- The UI font and the title font, served from here (public/fonts) rather than a font CDN. -->
+    <link rel="preload" href="/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/Fraunces-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <!--
       Your colours and light or dark, before anything is drawn: without this the page paints in
-      the default and then changes once the app has loaded. The app keeps both up to date from
-      then on (src/theme/theme.ts), including following the system when the mode is Auto.
+      the default (Tomato) and then changes once the app has loaded. The app keeps both up to date from
+      then on (src/theme/theme.ts), including following the system when the mode is System.
     -->
     <script>
       try {
-        var css = localStorage.getItem('mp_themeCss');
+        var css = localStorage.getItem('mp_themeStyle');
         if (css) {
           var style = document.createElement('style');
           style.id = 'mp-theme';

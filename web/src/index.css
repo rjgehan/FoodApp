@@ -2,62 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * The fonts, served from public/fonts (no font CDN). Variable fonts, so one file covers every
+ * weight. Inter is the UI; Fraunces is the titles in Tomato, Matcha and Brunch, Nunito in
+ * Blueberry, and Inter itself in Nordic (src/theme/themes.ts says which).
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/Inter-Variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fraunces Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/Fraunces-Variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito Variable';
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url('/fonts/Nunito-Variable.woff2') format('woff2');
+}
+
 @layer base {
   /*
-   * One palette, defined once. Every component reads these instead of repeating `dark:`
-   * variants, so light and dark stay in step by construction.
+   * The design system's tokens: "Tomato Kitchen", the default theme, light and dark. Every
+   * component reads these instead of repeating `dark:` variants, so light and dark stay in step
+   * by construction. src/theme/themes.ts has the same values (and says what each is for) plus
+   * the other four themes, which replace all of them at runtime — keep this block equal to
+   * Tomato there.
    *
-   * Apple's neutrals — a white page, a grey well for fills, hairline separators, and true black
-   * in dark mode — with the app's own orange kept as the one colour that means "you can act".
-   *
-   * These values are the Classic theme. Anyone who picks another has --accent, --accent-ink,
-   * --secondary and --secondary-soft replaced at runtime (src/theme/colors.ts says what each one
-   * is for); the neutrals are everyone's.
+   * Colours are "r g b" so Tailwind can add an alpha (`bg-accent/40`); the tab bar's glass and the
+   * sheet scrim already carry theirs. In Tailwind: bg, surface, surface2, ink (= --text), muted,
+   * faint, line (= --border), accent, accent-soft, on-accent, accent-ink, herb(-soft),
+   * mustard(-soft), plum(-soft), sky(-soft), danger(-soft).
    *
    * Dark mode is `data-theme="dark"` on <html> rather than the media query, so it can be forced
-   * either way from Settings. index.html sets it before the first paint, from the system setting
-   * unless you chose otherwise.
+   * either way from the Theme screen. index.html sets it before the first paint.
    */
   :root {
-    /*
-     * The page is the well and the cards sit on it. Both were white, so every card was
-     * invisible and the app read as unstyled text with rules between it — the grouped-list
-     * look depends entirely on the card being lighter than the page behind it.
-     */
-    --bg: 242 242 247;
+    --bg: 251 246 238;
     --surface: 255 255 255;
-    --elevated: 233 233 238;
-    --line: 216 216 220;
-    --ink: 29 29 31;
-    --muted: 110 110 115;
-    --subtle: 160 160 166;
-    --accent: 234 88 12;
-    --accent-ink: 255 255 255;
-    /* Classic has no second colour: its tints are the orange's own. */
-    --secondary: 234 88 12;
-    --secondary-soft: 255 237 213;
-    --danger: 215 40 47;
-    --danger-soft: 255 228 228;
-    --success: 36 138 61;
-    --success-soft: 222 247 229;
+    --surface2: 244 236 223;
+    --text: 43 33 26;
+    --muted: 124 107 92;
+    --faint: 179 165 150;
+    --border: 234 223 207;
+    --accent: 212 81 46;
+    --accent-soft: 251 228 218;
+    --on-accent: 255 255 255;
+    --accent-ink: 194 70 31;
+    --herb: 79 127 67;
+    --herb-soft: 226 238 218;
+    --mustard: 168 122 14;
+    --mustard-soft: 250 240 211;
+    --plum: 138 75 120;
+    --plum-soft: 244 227 239;
+    --sky: 63 118 163;
+    --sky-soft: 225 237 246;
+    --tab: rgba(255, 253, 249, 0.94);
+    --scrim: rgba(43, 33, 26, 0.38);
+    /* Not a mockup token: destructive things are Tomato's red in every theme (themes.ts). */
+    --danger: 194 70 31;
+    --danger-soft: 251 228 218;
+
+    --shadow: 0 2px 8px rgba(43, 33, 26, 0.06), 0 1px 2px rgba(43, 33, 26, 0.04);
+    --shadow2: 0 10px 30px rgba(43, 33, 26, 0.14);
+
+    /* How titles are set. Themes change the font as well as the colours. */
+    --title-font: 'Fraunces Variable', Georgia, serif;
+    --title-var: 'SOFT' 100, 'WONK' 0;
+    --title-ls: -0.01em;
+    --title-w: 600;
+
+    color-scheme: light;
   }
 
   :root[data-theme='dark'] {
-    --bg: 0 0 0;
-    --surface: 28 28 30;
-    --elevated: 44 44 46;
-    --line: 56 56 58;
-    --ink: 245 245 247;
-    --muted: 152 152 157;
-    --subtle: 99 99 102;
-    --accent: 255 159 64;
-    --accent-ink: 28 25 23;
-    --secondary: 255 159 64;
-    --secondary-soft: 64 32 8;
-    --danger: 255 105 97;
-    --danger-soft: 66 16 16;
-    --success: 48 209 88;
-    --success-soft: 8 44 18;
+    --bg: 23 18 15;
+    --surface: 35 28 23;
+    --surface2: 46 37 30;
+    --text: 246 237 227;
+    --muted: 169 154 139;
+    --faint: 110 97 85;
+    --border: 58 48 41;
+    --accent: 238 109 74;
+    --accent-soft: 66 37 28;
+    --on-accent: 255 255 255;
+    --accent-ink: 242 130 95;
+    --herb: 143 188 124;
+    --herb-soft: 36 50 32;
+    --mustard: 230 182 75;
+    --mustard-soft: 58 47 20;
+    --plum: 208 143 190;
+    --plum-soft: 53 33 47;
+    --sky: 134 182 221;
+    --sky-soft: 28 43 56;
+    --tab: rgba(30, 24, 20, 0.94);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --danger: 242 130 95;
+    --danger-soft: 66 37 28;
+
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+    --shadow2: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+    color-scheme: dark;
   }
 
   html {
@@ -66,12 +120,10 @@
 
   body {
     @apply bg-bg text-ink antialiased;
-    font-family:
-      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-optical-sizing: auto;
-    /* Body copy: comfortable leading, no tracking. Headings tighten themselves below. */
-    line-height: 1.47;
-    letter-spacing: -0.005em;
+    font-family: 'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    line-height: 1.45;
+    letter-spacing: -0.006em;
     /* Stops the whole page rubber-banding behind the fixed tab bar on iOS. */
     overscroll-behavior-y: none;
   }
@@ -88,6 +140,11 @@
 
   button {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  ::placeholder {
+    color: rgb(var(--faint));
+    opacity: 1;
   }
 
   :focus-visible {
@@ -111,38 +168,65 @@
 
 @layer components {
   /*
-   * Type that changes shape with size. Tracking tightens as text grows — a fixed
-   * letter-spacing is wrong somewhere — and leading tightens with it.
+   * Titles: the theme's title font with its axes, tracking and weight. `serif` on anything that
+   * is a title — page titles, sheet titles, section heads, a recipe's name on a card.
    */
-  .large-title {
-    font-size: 2.125rem;
-    line-height: 1.12;
-    letter-spacing: -0.024em;
-    font-weight: 700;
+  .serif {
+    font-family: var(--title-font);
+    font-variation-settings: var(--title-var);
+    letter-spacing: var(--title-ls);
+    font-weight: var(--title-w);
+    font-optical-sizing: auto;
   }
-  .title-3 {
+  /* The large page title (34px), a sheet's title (26px) and a section head (20px). */
+  .large-title,
+  .title-large {
+    @apply serif;
+    font-size: 2.125rem;
+    line-height: 1.05;
+  }
+  .title-sheet {
+    @apply serif;
+    font-size: 1.625rem;
+    line-height: 1.15;
+  }
+  .title-3,
+  .title-section {
+    @apply serif;
     font-size: 1.25rem;
     line-height: 1.25;
-    letter-spacing: -0.015em;
+  }
+
+  /* The label above a group of rows: small, spaced out, and quiet. */
+  .group-label {
+    font-size: 0.71875rem;
     font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--muted));
   }
 
   /*
-   * Frosted glass for the bars, with content scrolling underneath. Heavier saturation so colour
-   * shows through; the page's own background at 72% keeps text on it legible.
+   * The tab bar and the top bar once content scrolls under it: the page's own paper, nearly
+   * opaque, with whatever is underneath blurred through.
    */
   .material-bar {
-    background-color: rgb(var(--bg) / 0.72);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    backdrop-filter: blur(20px) saturate(180%);
+    background-color: rgb(var(--bg) / 0.88);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+  }
+  .tab-bar {
+    background-color: var(--tab);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
   }
 
-  /* Scroll edges: a hairline where floating chrome meets content, not a 1px border everywhere. */
+  /* Where floating chrome meets content. */
   .edge-bottom {
-    box-shadow: 0 0.5px 0 rgb(var(--line));
+    box-shadow: 0 1px 0 rgb(var(--border));
   }
   .edge-top {
-    box-shadow: 0 -0.5px 0 rgb(var(--line));
+    box-shadow: 0 -1px 0 rgb(var(--border));
   }
 
   /* Feedback on the press, not the release. */
@@ -150,16 +234,18 @@
     transition:
       transform 120ms ease-out,
       background-color 150ms ease-out,
-      color 150ms ease-out;
+      color 150ms ease-out,
+      opacity 150ms ease-out;
   }
   .press:active {
     transform: scale(0.97);
   }
 
   /*
-   * iOS separators start where the text starts, not at the screen edge. Set --row-inset on the
-   * list to the width of whatever leads each row (a checkbox, an icon). A list whose rows carry
-   * their own side padding sets --row-inset-end too, so the line stops where the text does.
+   * Separators between rows. In a grouped list they start where the text starts, not at the
+   * card's edge: set --row-inset on the list to the width of whatever leads each row (a check
+   * circle, an icon tile). A list whose rows carry their own side padding sets --row-inset-end
+   * too, so the line stops where the text does.
    */
   .inset-rows > * {
     position: relative;
@@ -171,7 +257,7 @@
     right: var(--row-inset-end, 0px);
     left: var(--row-inset, 0px);
     z-index: 1;
-    border-top: 0.5px solid rgb(var(--line));
+    border-top: 1px solid rgb(var(--border));
     pointer-events: none;
   }
 
@@ -191,32 +277,51 @@
   }
 
   /*
-   * Recipe cover tints for the catalog. Deterministic per recipe, so a given card always
-   * looks the same and becomes recognisable when you flip past it.
+   * A recipe's "photo" when it has none: a 135° gradient of a food colour with a faint white
+   * icon (the mockup's HUES), plus a soft highlight in the top left. The same in light and dark —
+   * a photo does not change with the theme either. Picked per recipe by coverClass(), so a given
+   * recipe always looks the same and becomes recognisable.
    */
-  .cover-0 { background-color: #fbe3ce; }
-  .cover-1 { background-color: #f8ead0; }
-  .cover-2 { background-color: #e2ecdb; }
-  .cover-3 { background-color: #f2dee6; }
-  .cover-4 { background-color: #dde8f1; }
-  .cover-5 { background-color: #eee4d9; }
+  .photo {
+    position: relative;
+    overflow: hidden;
+    color: rgb(255 255 255 / 0.92);
+    isolation: isolate;
+  }
+  .photo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.28), transparent 55%);
+    pointer-events: none;
+  }
+  .hue-tomato { background-image: linear-gradient(135deg, #ee7854, #c24a2d); }
+  .hue-herb { background-image: linear-gradient(135deg, #a2be7a, #577f46); }
+  .hue-mustard { background-image: linear-gradient(135deg, #f8cc6a, #d38f27); }
+  .hue-plum { background-image: linear-gradient(135deg, #c987a9, #7f426b); }
+  .hue-sky { background-image: linear-gradient(135deg, #8db8d9, #467599); }
+  .hue-bread { background-image: linear-gradient(135deg, #edcb9c, #bc8a56); }
+  .hue-choc { background-image: linear-gradient(135deg, #a0705a, #5c3a29); }
+  .hue-green { background-image: linear-gradient(135deg, #7fb38a, #3e7550); }
+  .hue-berry { background-image: linear-gradient(135deg, #d96c86, #8e2f4f); }
+  .hue-cream { background-image: linear-gradient(135deg, #f1e2c8, #cdb08a); }
 
   /*
-   * A card. One shadow, borrowed from the way iOS groups a list: barely visible on its own,
-   * and the only reason a screen full of them looks made rather than typed.
+   * A card: surface, a hairline edge and a soft shadow, 18px corners. The grouped-list look
+   * depends on the card being lighter than the paper behind it.
    */
   .card {
     background-color: rgb(var(--surface));
-    border-radius: 0.875rem;
-    box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.04),
-      0 1px 0.5px rgb(0 0 0 / 0.03);
+    border: 1px solid rgb(var(--border));
+    border-radius: 18px;
+    box-shadow: var(--shadow);
   }
 
   /*
    * A card whose rows run to its edges (so the edges are part of each row's tap and swipe).
-   * Clipped so a swipe's red button takes the card's rounded corners. Isolated so the hairline
-   * below stacks against the rows, not against the rest of the page.
+   * Clipped so a swipe's red button takes the card's rounded corners. Isolated so the
+   * separators stack against the rows, not against the rest of the page.
    */
   .card-rows {
     position: relative;
@@ -224,39 +329,11 @@
     overflow: hidden;
   }
 
-  /* Shadows do not read on black; a hairline is what separates a card from the page. */
-  [data-theme='dark'] .card {
-    box-shadow: inset 0 0 0 0.5px rgb(var(--line));
+  /* A dashed outline: an empty slot, a place to drop something. */
+  .dash {
+    border: 1.5px dashed rgb(var(--faint));
+    border-radius: 16px;
   }
-  /*
-   * An inset shadow paints under the card's children, and edge-to-edge rows are opaque, so
-   * they would cover it. Draw the same hairline over them instead.
-   */
-  [data-theme='dark'] .card-rows::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 0.5px rgb(var(--line));
-    pointer-events: none;
-  }
-
-  /* The label above a group of rows: small, spaced out, and quiet. */
-  .group-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.055em;
-    text-transform: uppercase;
-    color: rgb(var(--muted));
-  }
-
-  [data-theme='dark'] .cover-0 { background-color: #5a3620; }
-  [data-theme='dark'] .cover-1 { background-color: #53431d; }
-  [data-theme='dark'] .cover-2 { background-color: #2d4a2b; }
-  [data-theme='dark'] .cover-3 { background-color: #4c2c3c; }
-  [data-theme='dark'] .cover-4 { background-color: #27404f; }
-  [data-theme='dark'] .cover-5 { background-color: #473a2f; }
 
   /*
    * The index card. Paper stays paper in both themes — a cream card that flipped to dark
@@ -298,7 +375,8 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .material-bar {
+  .material-bar,
+  .tab-bar {
     background-color: rgb(var(--bg));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -306,18 +384,22 @@
 }
 
 @media (prefers-contrast: more) {
-  .material-bar {
+  .material-bar,
+  .tab-bar {
     background-color: rgb(var(--bg));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
   .edge-bottom {
-    box-shadow: 0 1px 0 rgb(var(--ink) / 0.5);
+    box-shadow: 0 1px 0 rgb(var(--text) / 0.5);
   }
   .edge-top {
-    box-shadow: 0 -1px 0 rgb(var(--ink) / 0.5);
+    box-shadow: 0 -1px 0 rgb(var(--text) / 0.5);
   }
   .inset-rows > * + *::before {
-    border-top: 1px solid rgb(var(--ink) / 0.35);
+    border-top: 1px solid rgb(var(--text) / 0.35);
+  }
+  .card {
+    border-color: rgb(var(--text) / 0.35);
   }
 }

@@ -2,11 +2,12 @@ import { Link } from 'react-router-dom';
 import type { Recipe } from '../api/types';
 import { imageUrl } from '../api/client';
 import { cx } from './ui';
-import { coverClass, formatMinutes, totalMinutes } from '../utils/recipeFormat';
+import { Icon } from './icons';
+import { formatMinutes, photoClass, totalMinutes } from '../utils/recipeFormat';
 
 export default function RecipeGrid({ recipes }: { recipes: Recipe[] }) {
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {recipes.map((r) => (
         <li key={r.id}>
           <RecipeTile recipe={r} />
@@ -24,20 +25,18 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
       to={`/recipes/${recipe.id}`}
       className="block transition-transform active:scale-[0.98]"
     >
-      {/* A real cover when one exists; otherwise a tinted plate with the initial set large.
+      {/* A real cover when one exists; otherwise a food-coloured gradient with a faint mark.
           The picture is the tile — no frame round it and the words, just the words under it. */}
       <div
         className={cx(
-          'relative flex aspect-[5/4] items-center justify-center overflow-hidden rounded-2xl',
-          coverClass(recipe.id),
+          'relative flex aspect-[5/4] items-center justify-center overflow-hidden rounded-[18px]',
+          !recipe.coverImageId && photoClass(recipe.id),
         )}
       >
         {recipe.coverImageId ? (
           <img src={imageUrl(recipe.coverImageId)} alt="" className="h-full w-full object-cover" />
         ) : (
-          <span className="select-none font-serif text-5xl font-semibold text-ink/40">
-            {recipe.name.charAt(0).toUpperCase()}
-          </span>
+          <Icon name="utensils" strokeWidth={1.6} className="h-[34%] w-[34%] opacity-90" />
         )}
         {/* Only when the caption below cannot say where it came from. */}
         {recipe.shared && !recipe.ownerName && (
@@ -48,16 +47,16 @@ function RecipeTile({ recipe }: { recipe: Recipe }) {
       </div>
 
       <div className="px-0.5 pt-2">
-        <p className="line-clamp-2 font-medium leading-snug">{recipe.name}</p>
+        <p className="serif line-clamp-2 text-[1.0625rem] leading-snug">{recipe.name}</p>
         <p className="mt-1 text-sm text-muted">
           Serves {recipe.servings}
           {total ? ` · ${formatMinutes(total)}` : ''}
         </p>
         {recipe.shared && recipe.ownerName ? (
-          <p className="mt-1 truncate text-xs text-subtle">from {recipe.ownerName}</p>
+          <p className="mt-1 truncate text-xs text-faint">from {recipe.ownerName}</p>
         ) : (
           recipe.categories.length > 0 && (
-            <p className="mt-1 truncate text-xs text-subtle">{recipe.categories.join(' · ')}</p>
+            <p className="mt-1 truncate text-xs text-faint">{recipe.categories.join(' · ')}</p>
           )
         )}
       </div>

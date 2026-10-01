@@ -78,7 +78,7 @@ export default function LinksEditor({
                   />
                   <IconButton
                     label={`Remove link ${i + 1}`}
-                    className="text-subtle"
+                    className="text-faint"
                     onClick={() => onChange(value.filter((r) => r.key !== row.key))}
                   >
                     <TrashIcon className="h-5 w-5" />

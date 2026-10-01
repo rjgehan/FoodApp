@@ -2,7 +2,7 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { api } from '../api/client';
 import type { Me } from '../api/types';
 import { useOnResume } from '../utils/useOnResume';
-import { DEFAULT_THEME, getTheme, sameTheme, setTheme, subscribeTheme, type Theme } from './theme';
+import { getTheme, sameTheme, setTheme, subscribeTheme, tidyTheme, type Theme } from './theme';
 
 /**
  * Bumped by every pick made here. A /me that set off before the latest pick carries the theme
@@ -15,15 +15,19 @@ export function useTheme(): Theme {
   return useSyncExternalStore(subscribeTheme, getTheme);
 }
 
-/** A pick in Appearance: on the page at once, saved separately (see saveTheme). */
+/** A pick on the Theme screen: on the page at once, saved separately (see saveTheme). */
 export function pickTheme(theme: Theme) {
   picks++;
   setTheme(theme);
 }
 
-/** Keeps it on the server, so it follows you to your other devices. */
+/**
+ * Keeps it on the server, so it follows you to your other devices. Custom goes with its colour
+ * twice: old iPhone builds draw custom from a pair, and the web only ever picks one.
+ */
 export function saveTheme(theme: Theme): Promise<Theme> {
-  return api<Theme>('PUT', '/api/users/me/theme', theme);
+  const body = theme.primary ? { ...theme, secondary: theme.primary } : theme;
+  return api<Theme>('PUT', '/api/users/me/theme', body);
 }
 
 /**
@@ -38,7 +42,7 @@ export function useThemeSync(userId: string | undefined) {
       .then((me) => {
         // An older server has no theme at all; that says nothing, so the cached one stays.
         if (!me.theme || picks !== before) return;
-        const theme = { ...DEFAULT_THEME, ...me.theme };
+        const theme = tidyTheme(me.theme);
         if (!sameTheme(theme, getTheme())) setTheme(theme);
       })
       .catch(() => {

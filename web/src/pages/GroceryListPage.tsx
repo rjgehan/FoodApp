@@ -228,7 +228,7 @@ export default function GroceryListPage() {
         </IconButton>
       </form>
 
-      {notice && <p className="rounded-xl bg-success-soft px-4 py-3 text-[0.9375rem] font-medium text-success">{notice}</p>}
+      {notice && <p className="rounded-xl bg-herb-soft px-4 py-3 text-[0.9375rem] font-medium text-herb">{notice}</p>}
 
       {moving && (
         <p className="text-[0.9375rem] text-muted">Pick the aisle each item is in — it sticks for next time.</p>
@@ -237,7 +237,7 @@ export default function GroceryListPage() {
       {items.length === 0 ? (
         <EmptyState>
           Nothing on the list. Add planned meals from{' '}
-          <Link to="/meal-plan" className="font-medium text-accent">
+          <Link to="/meal-plan" className="font-medium text-accent-ink">
             Plan
           </Link>
           , or type something above.
@@ -297,7 +297,7 @@ export default function GroceryListPage() {
       )}
 
       {items.length > 0 && (
-        <p className="pt-2 text-[0.8125rem] text-subtle">
+        <p className="pt-2 text-[0.8125rem] text-faint">
           Swipe an item left to remove it, or to be reminded to buy it every few weeks.
         </p>
       )}
@@ -423,7 +423,7 @@ function ItemRow({
           <span className={cx('block truncate transition-colors', item.checked && 'text-muted line-through')}>{item.name}</span>
           {(have || reminder) && (
             <span className="block truncate text-[0.8125rem] text-muted">
-              {have && <span className="text-success">In the cupboard</span>}
+              {have && <span className="text-herb">In the cupboard</span>}
               {have && reminder && ' · '}
               {/* Quiet: it matters when it is time, which is what the question on opening is for. */}
               {reminder && everyTitle(reminder.everyDays)}
@@ -459,11 +459,11 @@ function ItemRow({
       ) : (
         <span className="mr-4 hidden [@media(hover:hover)]:flex">
           {item.ingredientId && (
-            <IconButton label={`Remind me to buy ${item.name}`} className="text-subtle" onClick={() => onRemind(item)}>
+            <IconButton label={`Remind me to buy ${item.name}`} className="text-faint" onClick={() => onRemind(item)}>
               <RepeatIcon className="h-5 w-5" />
             </IconButton>
           )}
-          <IconButton label={`Remove ${item.name}`} className="text-subtle" onClick={() => onRemove(item.id)}>
+          <IconButton label={`Remove ${item.name}`} className="text-faint" onClick={() => onRemove(item.id)}>
             <TrashIcon className="h-5 w-5" />
           </IconButton>
         </span>

@@ -48,7 +48,7 @@ export default function HouseholdPage() {
     <div className="space-y-4">
       <PageTitle title="Household" />
       {justCreated && (
-        <div className="rounded-xl bg-success-soft px-4 py-3 text-sm font-medium text-success">
+        <div className="rounded-xl bg-herb-soft px-4 py-3 text-sm font-medium text-herb">
           “{justCreated}” created — you're in it.
         </div>
       )}
@@ -218,7 +218,7 @@ function CatalogIconsCard({ householdId }: { householdId: string }) {
                 onClick={() => setEditing(open ? null : s.value)}
                 className="flex min-h-touch w-full items-center gap-3 px-1 text-left"
               >
-                {Icon && <Icon className="h-7 w-7 shrink-0 text-accent" />}
+                {Icon && <Icon className="h-7 w-7 shrink-0 text-accent-ink" />}
                 <span className="flex-1 font-medium">{s.label}</span>
                 <span className="text-sm text-muted">{open ? 'Close' : 'Change'}</span>
               </button>
@@ -403,7 +403,7 @@ function PlacesCard({ householdId }: { householdId: string }) {
                 {place.imageId ? (
                   <img src={imageUrl(place.imageId)} alt="" className="h-10 w-10 rounded-lg object-cover" />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary-soft text-secondary">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent-ink">
                     <StoreIcon className="h-5 w-5" />
                   </span>
                 )}
@@ -644,7 +644,7 @@ function StoreLayoutCard() {
       <ol className="divide-y divide-line">
         {ordered.map((category, i) => (
           <li key={category.id} className="flex items-center gap-1 py-0.5">
-            <span className="w-6 shrink-0 text-sm tabular-nums text-subtle">{i + 1}</span>
+            <span className="w-6 shrink-0 text-sm tabular-nums text-faint">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span>
             <IconButton
               label={`Move ${category.name} earlier`}
@@ -736,7 +736,7 @@ function ManageCategorySheet({
         </Field>
 
         {confirmingDelete ? (
-          <div className="space-y-2 rounded-xl bg-elevated p-3">
+          <div className="space-y-2 rounded-xl bg-surface2 p-3">
             <p className="text-sm text-muted">
               Anything filed under {category.name} becomes unsorted — one tap to place it again, or
               Sort will pick it up.
@@ -784,8 +784,8 @@ function MembersCard({ householdId, onRemoved }: { householdId: string; onRemove
         {members.map((m) => (
           <li key={m.userId} className="flex items-center gap-3 py-2.5 first:pt-0">
             <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary-soft
-                         font-semibold text-secondary"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft
+                         font-semibold text-accent-ink"
               aria-hidden="true"
             >
               {m.displayName.charAt(0).toUpperCase()}
@@ -1013,7 +1013,7 @@ function InviteCard({ householdId, name, isOwner }: { householdId: string; name:
         {isOwner &&
           link &&
           (confirming ? (
-            <div className="space-y-3 rounded-xl bg-elevated p-3">
+            <div className="space-y-3 rounded-xl bg-surface2 p-3">
               <p className="text-sm">
                 The link you have now stops working, for everyone it was sent to. Nobody already
                 in the house is affected.

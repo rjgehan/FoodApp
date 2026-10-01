@@ -405,7 +405,7 @@ function SignedOut({ token, info }: { token: string; info: InviteInfo | null }) 
             {mode === 'sign-in' && (
               <form onSubmit={onSignIn} className="space-y-3">
                 {notice ? (
-                  <p className="rounded-xl bg-secondary-soft px-4 py-3 text-center text-sm font-medium text-secondary">
+                  <p className="rounded-xl bg-accent-soft px-4 py-3 text-center text-sm font-medium text-accent-ink">
                     {notice}
                   </p>
                 ) : (

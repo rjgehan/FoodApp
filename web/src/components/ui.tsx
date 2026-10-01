@@ -1,12 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   InputHTMLAttributes,
+  RefObject,
   PointerEvent as ReactPointerEvent,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
+import { Link } from 'react-router-dom';
 import {
   animateSpring,
   prefersReducedMotion,
@@ -16,20 +19,55 @@ import {
   velocityOf,
   type Animation,
 } from '../utils/spring';
-import { ChevronRightIcon, MoreIcon } from './icons';
+import { Icon, type IconName } from './icons';
+
+/*
+ The design system's building blocks — the mockup's components (its CSS lines 44–173), one each.
+ Everything reads the tokens in index.css, so every theme and both modes come for free.
+
+   Page        PageTitle (PageTitle.tsx), NavBar, SectionHead, SectionLabel, Card
+   Actions     Button (primary · secondary · soft · ghost · dark · danger · quiet), IconButton
+   Lists       List + Row (grouped rows in a card), ActionMenu, SheetRow
+   Forms       Field, Label, Input, NumberInput, Select, Textarea, SearchField, Segmented, Toggle
+   Marks       Pill (Badge), Chip, CheckCircle, CheckBox, Avatar, Tile, Photo, NoteBox, StepNumber
+   Overlays    Sheet, Alert (and ConfirmAlert), Toast (toast.tsx)
+*/
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
 }
 
-/**
- * A titled section of a page — deliberately not a box. A heading and some space do the grouping;
- * dividers are kept for rows in a list.
- */
+/** The five colours that carry meaning (themes.ts), for anything that takes a tone. */
+export type Tone = 'accent' | 'herb' | 'mustard' | 'plum' | 'sky';
+
+/** A tone's soft fill with its own ink on it — the mockup's pill, tile and avatar colouring. */
+export const TONE_SOFT: Record<Tone, string> = {
+  accent: 'bg-accent-soft text-accent-ink',
+  herb: 'bg-herb-soft text-herb',
+  mustard: 'bg-mustard-soft text-mustard',
+  plum: 'bg-plum-soft text-plum',
+  sky: 'bg-sky-soft text-sky',
+};
+
+/** A tone's colour for text and icons on the page. */
+export const TONE_TEXT: Record<Tone, string> = {
+  accent: 'text-accent-ink',
+  herb: 'text-herb',
+  mustard: 'text-mustard',
+  plum: 'text-plum',
+  sky: 'text-sky',
+};
+
+// --- Sections -------------------------------------------------------------------------------
+
 /** Inside a sheet the sheet already names the section, so cards there drop their own title. */
 const CardInSheet = createContext(false);
 export const CardInSheetProvider = CardInSheet.Provider;
 
+/**
+ * A titled section of a page — deliberately not a box. The serif section head and some space do
+ * the grouping; boxes are for the rows inside it (List, or `card`).
+ */
 export function Card({
   title: ownTitle,
   actions,
@@ -47,8 +85,8 @@ export function Card({
   return (
     <section className={cx('py-2', className)}>
       {(title || actions) && (
-        <header className="mb-1.5 flex min-h-9 items-center justify-between gap-3">
-          {title && <h2 className="title-3">{title}</h2>}
+        <header className="mb-2.5 flex min-h-9 items-center justify-between gap-3">
+          {title && <h2 className="title-section">{title}</h2>}
           {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
         </header>
       )}
@@ -57,42 +95,139 @@ export function Card({
   );
 }
 
+/**
+ * A section head: serif title on the left, a quiet accent action on the right ("See all").
+ * Pass `to` for a link or `onAction` for a button.
+ */
+export function SectionHead({
+  title,
+  action,
+  to,
+  onAction,
+  className,
+}: {
+  title: ReactNode;
+  action?: ReactNode;
+  to?: string;
+  onAction?: () => void;
+  className?: string;
+}) {
+  const cls = 'press shrink-0 text-[0.9375rem] font-medium text-accent-ink';
+  return (
+    <div className={cx('flex items-baseline justify-between gap-3', className)}>
+      <h2 className="title-section min-w-0">{title}</h2>
+      {action &&
+        (to ? (
+          <Link to={to} className={cls}>
+            {action}
+          </Link>
+        ) : (
+          <button type="button" onClick={onAction} className={cls}>
+            {action}
+          </button>
+        ))}
+    </div>
+  );
+}
+
+/** The small capitals above a group of rows ("COLOUR", "PRODUCE"), with an optional count. */
+export function SectionLabel({ children, end, className }: { children: ReactNode; end?: ReactNode; className?: string }) {
+  return (
+    <div className={cx('group-label flex items-baseline justify-between gap-3 px-1 pb-1.5', className)}>
+      <span className="min-w-0 truncate">{children}</span>
+      {end != null && <span className="shrink-0 tracking-normal">{end}</span>}
+    </div>
+  );
+}
+
 /** A quiet heading inside a section or sheet — the aisle names on the grocery list, say. */
 export function SubHeading({ children, className }: { children: ReactNode; className?: string }) {
   return <h3 className={cx('group-label px-4 pb-1.5 pt-5 first:pt-0', className)}>{children}</h3>;
 }
 
-/*
- * Filled rather than outlined — an outlined button is one more box. Every one answers the finger
- * the moment it lands (`press`), not when it lifts.
+/**
+ * The centred bar at the top of a pushed screen: back on the left in the accent ink, the title in
+ * the middle, an action or two on the right. `back` is a path, or a function for history.
  */
+export function NavBar({
+  title,
+  back,
+  backLabel = 'Back',
+  left,
+  right,
+  className,
+}: {
+  title?: ReactNode;
+  back?: string | (() => void);
+  backLabel?: ReactNode;
+  /** Replaces the back button, e.g. a "Cancel". */
+  left?: ReactNode;
+  right?: ReactNode;
+  className?: string;
+}) {
+  const backCls = 'press -ml-1.5 flex h-11 items-center gap-0.5 whitespace-nowrap text-[1.0625rem] text-accent-ink';
+  const backInner = (
+    <>
+      <Icon name="chevL" size={26} />
+      <span>{backLabel}</span>
+    </>
+  );
+  return (
+    <div className={cx('flex h-12 items-center justify-between gap-2', className)}>
+      <div className="flex w-28 shrink-0 items-center">
+        {left ??
+          (typeof back === 'string' ? (
+            <Link to={back} className={backCls}>
+              {backInner}
+            </Link>
+          ) : back ? (
+            <button type="button" onClick={back} className={backCls}>
+              {backInner}
+            </button>
+          ) : null)}
+      </div>
+      <h1 className="min-w-0 flex-1 truncate text-center text-[1.0625rem] font-semibold">{title}</h1>
+      <div className="flex w-28 shrink-0 items-center justify-end gap-4 text-[1.0625rem] text-accent-ink">{right}</div>
+    </div>
+  );
+}
+
+// --- Buttons --------------------------------------------------------------------------------
+
+/*
+ The mockup's buttons. Filled rather than outlined, except `secondary` and `danger`, which sit on
+ the surface with a hairline. Every one answers the finger the moment it lands (`press`).
+*/
 const BUTTON_VARIANTS = {
-  primary: 'bg-accent text-accent-ink active:brightness-95',
-  secondary: 'bg-elevated text-ink active:bg-line',
-  // Text buttons are tinted, the way iOS marks "this is tappable" without drawing a box.
-  ghost: 'text-accent active:bg-elevated',
-  // Icons in rows stay grey: a column of orange bins would be the loudest thing on the page.
-  quiet: 'text-muted active:bg-elevated',
-  danger: 'bg-danger-soft text-danger active:brightness-95',
+  primary: 'bg-accent text-on-accent active:brightness-95',
+  secondary: 'border border-line bg-surface text-ink active:bg-surface2',
+  soft: 'bg-accent-soft text-accent-ink active:brightness-95',
+  ghost: 'text-accent-ink active:bg-surface2',
+  dark: 'bg-ink text-bg active:opacity-90',
+  danger: 'border border-line bg-surface text-danger active:bg-surface2',
+  // Icons in rows stay grey: a column of tomato bins would be the loudest thing on the page.
+  quiet: 'text-muted active:bg-surface2',
 };
 
-const TEXT_COLOR = /(^|\s)text-(ink|muted|subtle|accent|danger|success)(\s|$)/;
+export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
+
+const TEXT_COLOR = /(^|\s)text-(ink|muted|faint|accent|accent-ink|on-accent|danger|herb|mustard|plum|sky|bg)(\s|$)/;
 
 /**
  * A caller's own text colour replaces the variant's, rather than racing it: which of two
  * `text-*` classes wins is decided by stylesheet order, not by the order they are written in.
  */
-function variantClass(variant: keyof typeof BUTTON_VARIANTS, className?: string) {
+function variantClass(variant: ButtonVariant, className?: string) {
   const base = BUTTON_VARIANTS[variant];
   if (!className || !TEXT_COLOR.test(className)) return base;
   return base.replace(/(^|\s)text-[\w-]+/, '');
 }
 
 const BUTTON_SIZES = {
-  // Every size clears 44px of touch target except `sm`, which is for dense rows.
-  sm: 'h-9 px-3 text-[0.9375rem] rounded-[10px] gap-1.5',
-  md: 'h-11 px-4 text-[1.0625rem] rounded-xl gap-2',
-  lg: 'h-[3.125rem] px-5 text-[1.0625rem] rounded-[14px] gap-2',
+  // `sm` is for rows and toolbars; `md` for most buttons; `lg` is the mockup's 52px main action.
+  sm: 'h-9 px-3.5 text-[0.875rem] rounded-[11px] gap-1.5',
+  md: 'h-11 px-4 text-[1rem] rounded-[13px] gap-2',
+  lg: 'h-[3.25rem] px-5 text-[1.0625rem] rounded-btn gap-2',
 };
 
 export function Button({
@@ -100,18 +235,21 @@ export function Button({
   variant = 'primary',
   size = 'md',
   full = false,
+  icon,
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: keyof typeof BUTTON_VARIANTS;
+  variant?: ButtonVariant;
   size?: keyof typeof BUTTON_SIZES;
   full?: boolean;
+  /** An icon before the label. */
+  icon?: IconName;
 }) {
   return (
     <button
       className={cx(
         'press inline-flex items-center justify-center font-semibold select-none',
-        'disabled:opacity-40 disabled:pointer-events-none',
+        'disabled:opacity-45 disabled:pointer-events-none',
         variantClass(variant, className),
         BUTTON_SIZES[size],
         full && 'w-full',
@@ -119,31 +257,49 @@ export function Button({
       )}
       {...props}
     >
+      {icon && <Icon name={icon} size={size === 'sm' ? 16 : 19} className="shrink-0" />}
       {children}
     </button>
   );
 }
 
-/** Square tap target for a bare icon. Always 44px so it is thumb-reachable. */
+const ICON_SHAPES = {
+  // A 44px target with no box: icons in rows and bars.
+  bare: 'h-11 w-11 rounded-xl',
+  // The mockup's round buttons: on the surface with a hairline, or (plain) a quiet fill.
+  round: 'h-[2.375rem] w-[2.375rem] rounded-full border border-line bg-surface text-ink',
+  plain: 'h-[2.375rem] w-[2.375rem] rounded-full bg-surface2 text-ink',
+};
+
+/**
+ * A bare icon you can tap. `shape="round"` is the mockup's 38px round button (top bar, ••• on a
+ * page); `plain` is the same without the edge, as a sheet's close button. Round ones are smaller
+ * than a thumb, so their tap target is padded out invisibly.
+ */
 export function IconButton({
   children,
   label,
   variant = 'quiet',
+  shape = 'bare',
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-  variant?: keyof typeof BUTTON_VARIANTS;
+  variant?: ButtonVariant;
+  shape?: keyof typeof ICON_SHAPES;
 }) {
+  const round = shape !== 'bare';
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       className={cx(
-        'press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+        'press relative inline-flex shrink-0 items-center justify-center',
         'disabled:opacity-40 disabled:pointer-events-none',
-        variantClass(variant, className),
+        round ? ICON_SHAPES[shape] : cx(ICON_SHAPES.bare, variantClass(variant, className)),
+        // The invisible part of a round button's target.
+        round && 'after:absolute after:-inset-[3px] after:content-[""]',
         className,
       )}
       {...props}
@@ -153,18 +309,24 @@ export function IconButton({
   );
 }
 
-/* Filled fields, like iOS's: a grey well that turns white with an accent edge while you type. */
+// --- Fields ---------------------------------------------------------------------------------
+
+/*
+ The mockup's inputs: 52px tall, 14px corners, on the surface with a hairline; focused, the edge
+ turns accent and a soft ring of the accent's tint grows round it.
+*/
 const CONTROL =
-  'h-11 rounded-xl border border-transparent bg-elevated px-3 text-ink placeholder:text-subtle ' +
-  'outline-none transition-colors focus:border-accent focus:bg-surface disabled:opacity-50';
+  'rounded-field border border-line bg-surface px-3.5 text-ink placeholder:text-faint outline-none ' +
+  'transition-[border-color,box-shadow] focus:border-accent focus:shadow-focus disabled:opacity-50';
 
 /**
- * Controls fill their container unless the caller sets a width. Tailwind emits `w-full` after
- * `w-24`, so baking `w-full` into the base would silently win over any caller override.
+ * Controls fill their container and stand 52px tall unless the caller sets a width or height.
+ * Tailwind emits `w-full` after `w-24`, so baking `w-full` into the base would silently win over
+ * any caller override; the same goes for heights.
  */
-function controlClass(extra?: string, className?: string) {
+function controlClass(extra?: string, className?: string, height = 'h-[3.25rem]') {
   const merged = cx(extra, className);
-  return cx(CONTROL, !/(^|\s)w-/.test(merged) && 'w-full', merged);
+  return cx(CONTROL, !/(^|\s)w-/.test(merged) && 'w-full', !/(^|\s)h-/.test(merged) && height, merged);
 }
 
 /**
@@ -228,21 +390,29 @@ export function NumberInput({
   );
 }
 
+/** A native select (the best picker on a phone), drawn as a field with a chevron. */
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={controlClass('appearance-none pr-8', className)} {...props}>
-      {children}
-    </select>
+    <span className={cx('relative block', /(^|\s)w-/.test(className ?? '') ? undefined : 'w-full', 'min-w-0')}>
+      <select className={controlClass('appearance-none pr-9', className)} {...props}>
+        {children}
+      </select>
+      <Icon
+        name="chevD"
+        size={16}
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted"
+      />
+    </span>
   );
 }
 
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={controlClass('h-auto py-2.5 leading-relaxed', className)} {...props} />;
+  return <textarea className={controlClass('py-3 leading-relaxed', className, 'h-auto')} {...props} />;
 }
 
 export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-[0.8125rem] font-medium text-muted">
+    <label htmlFor={htmlFor} className="mb-[7px] block text-[0.8125rem] font-semibold text-muted">
       {children}
     </label>
   );
@@ -254,10 +424,460 @@ export function Field({ label, hint, children }: { label?: ReactNode; hint?: Rea
     <div>
       {label && <Label>{label}</Label>}
       {children}
-      {hint && <p className="mt-1.5 text-[0.8125rem] text-muted">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-muted">{hint}</p>}
     </div>
   );
 }
+
+/**
+ * The search box: a quiet well rather than a field, with the magnifier in it. Everything an
+ * <input> takes passes through; `end` sits at the right (a clear button, a count).
+ */
+export function SearchField({
+  className,
+  end,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { end?: ReactNode }) {
+  return (
+    <label
+      className={cx(
+        'flex h-[2.625rem] min-w-0 items-center gap-2 rounded-xl bg-surface2 px-3 text-muted',
+        'focus-within:shadow-focus',
+        className,
+      )}
+    >
+      <Icon name="search" size={17} className="shrink-0" />
+      <input
+        type="search"
+        className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
+        {...props}
+      />
+      {end}
+    </label>
+  );
+}
+
+/**
+ * The segmented control: two to four choices on a quiet tray, the chosen one lifted onto the
+ * surface. A radio group to assistive tech.
+ */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  options: { value: T; label: ReactNode }[];
+  value: T;
+  onChange: (value: T) => void;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className={cx('flex rounded-[11px] bg-surface2 p-[3px]', className)}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={cx(
+              'min-w-0 flex-1 truncate rounded-[9px] px-2 py-[7px] text-[0.875rem] transition-colors',
+              on ? 'bg-surface font-semibold text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]' : 'font-medium text-muted',
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Marks ----------------------------------------------------------------------------------
+
+const PILL_TONES = {
+  neutral: 'bg-surface2 text-muted',
+  accent: TONE_SOFT.accent,
+  herb: TONE_SOFT.herb,
+  mustard: TONE_SOFT.mustard,
+  plum: TONE_SOFT.plum,
+  sky: TONE_SOFT.sky,
+  danger: 'bg-danger-soft text-danger',
+  // Names from before the redesign.
+  success: TONE_SOFT.herb,
+};
+
+export type PillTone = keyof typeof PILL_TONES;
+
+/**
+ * A small status mark: "On grocery list", "Beta", "2 new". The tone says what kind of thing it
+ * is (herb good, mustard warning, plum eating out, sky cupboard), never decoration.
+ */
+export function Pill({
+  children,
+  tone = 'neutral',
+  icon,
+  className,
+}: {
+  children: ReactNode;
+  tone?: PillTone;
+  icon?: IconName;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cx(
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-[3px] text-[0.6875rem] font-semibold leading-[1.35]',
+        PILL_TONES[tone],
+        className,
+      )}
+    >
+      {icon && <Icon name={icon} size={12} strokeWidth={2.4} />}
+      {children}
+    </span>
+  );
+}
+
+/** The old name for a Pill. */
+export const Badge = Pill;
+
+export function EmptyState({ children }: { children: ReactNode }) {
+  return <p className="py-6 text-center text-[0.9375rem] text-muted">{children}</p>;
+}
+
+export function ErrorText({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-danger">{children}</p>;
+}
+
+/**
+ * The round tick for "done" (a bought grocery, a picked household). Herb green when ticked; it
+ * settles in as it appears, so ticking something off registers.
+ */
+export function CheckCircle({ checked, className }: { checked: boolean; className?: string }) {
+  return (
+    <span
+      className={cx(
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-[1.6px] transition-colors duration-150',
+        checked ? 'border-herb bg-herb text-white' : 'border-faint',
+        className,
+      )}
+    >
+      {checked && <Icon name="check" size={14} strokeWidth={3} className="pop" />}
+    </span>
+  );
+}
+
+/** The square tick for choosing things in a list ("include this"), in the accent. */
+export function CheckBox({ checked, className }: { checked: boolean; className?: string }) {
+  return (
+    <span
+      className={cx(
+        'flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] border-[1.6px] transition-colors duration-150',
+        checked ? 'border-accent bg-accent text-on-accent' : 'border-faint',
+        className,
+      )}
+    >
+      {checked && <Icon name="check" size={14} strokeWidth={3} className="pop" />}
+    </span>
+  );
+}
+
+/**
+ * An on/off switch, for a setting that takes effect the moment it is flipped — no Save to hunt
+ * for. Only the drawing: the row it sits in is the button (with role="switch"), so the whole row
+ * is the thing to tap rather than a small pill at its end.
+ */
+export function SwitchKnob({ on, className }: { on: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        'relative inline-flex h-[31px] w-[51px] shrink-0 rounded-full p-[2px] transition-colors duration-150',
+        on ? 'bg-herb' : 'bg-line',
+        className,
+      )}
+    >
+      <span
+        className={cx(
+          'h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2)] transition-transform duration-150',
+          on && 'translate-x-5',
+        )}
+      />
+    </span>
+  );
+}
+
+/** The mockup's name for the same switch. */
+export const Toggle = SwitchKnob;
+
+/** A filter or choice chip. On, it fills with the text colour — the loudest a chip gets. */
+export function Chip({
+  active,
+  icon,
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; icon?: IconName }) {
+  return (
+    <button
+      type="button"
+      // A chip that can be on or off says which, so a screen reader hears "selected" too.
+      aria-pressed={active}
+      className={cx(
+        'press inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-[7px] text-[0.8125rem]',
+        active ? 'border-ink bg-ink font-semibold text-bg' : 'border-line bg-surface font-medium text-ink',
+        className,
+      )}
+      {...props}
+    >
+      {icon && <Icon name={icon} size={14} />}
+      {children}
+    </button>
+  );
+}
+
+/** Someone's (or a household's) initial in a tinted circle. */
+export function Avatar({
+  name,
+  tone = 'accent',
+  size = 36,
+  className,
+}: {
+  name: string | null | undefined;
+  tone?: Tone;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx('flex shrink-0 items-center justify-center rounded-full font-semibold', TONE_SOFT[tone], className)}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.4) }}
+    >
+      {(name ?? '').trim().charAt(0).toUpperCase() || '?'}
+    </span>
+  );
+}
+
+/** An icon on a soft square of a tone — what leads a settings row or a category card. */
+export function Tile({
+  icon,
+  tone = 'accent',
+  size = 40,
+  radius,
+  className,
+}: {
+  icon: IconName;
+  tone?: Tone;
+  size?: number;
+  radius?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx('flex shrink-0 items-center justify-center', TONE_SOFT[tone], className)}
+      style={{ width: size, height: size, borderRadius: radius ?? Math.round(size * 0.3) }}
+    >
+      <Icon name={icon} size={Math.round(size * 0.5)} />
+    </span>
+  );
+}
+
+/** The mockup's food colours for a photo that is not there (index.css `.hue-*`). */
+export const HUES = ['tomato', 'herb', 'mustard', 'plum', 'sky', 'bread', 'choc', 'green', 'berry', 'cream'] as const;
+export type Hue = (typeof HUES)[number];
+
+/** The same hue for the same id, every time. */
+export function hueFor(id: string): Hue {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return HUES[Math.abs(hash) % HUES.length];
+}
+
+/**
+ * A recipe's picture when it has no photo: a gradient of a food colour with a faint icon. Give
+ * it a `seed` (the recipe's id) to pick the colour, and a size with className. Big ones (a hero,
+ * `large`) set the icon low and to the side, the way the mockup does.
+ */
+export function Photo({
+  seed,
+  hue,
+  icon = 'utensils',
+  large = false,
+  className,
+  style,
+  children,
+}: {
+  seed?: string;
+  hue?: Hue;
+  icon?: IconName | null;
+  large?: boolean;
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}) {
+  const h = hue ?? hueFor(seed ?? '');
+  return (
+    <span
+      aria-hidden={children ? undefined : true}
+      className={cx('photo flex shrink-0 items-center justify-center', `hue-${h}`, className)}
+      style={style}
+    >
+      {icon &&
+        (large ? (
+          <Icon name={icon} strokeWidth={1.4} className="absolute -bottom-[8%] -right-[6%] h-1/2 w-auto opacity-[0.18]" />
+        ) : (
+          <Icon name={icon} strokeWidth={1.6} className="h-[36%] w-[36%] opacity-90" />
+        ))}
+      {children}
+    </span>
+  );
+}
+
+/** A tinted box with an icon and a sentence: a warning, a tip, what happens next. */
+export function NoteBox({
+  children,
+  tone = 'mustard',
+  icon = 'info',
+  className,
+}: {
+  children: ReactNode;
+  tone?: Tone;
+  icon?: IconName;
+  className?: string;
+}) {
+  return (
+    <div className={cx('flex items-start gap-2 rounded-[14px] px-3 py-2.5 text-[0.8125rem] leading-[1.35]', TONE_SOFT[tone], className)}>
+      <Icon name={icon} size={16} className="mt-px shrink-0" />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+/** A numbered step's number. */
+export function StepNumber({ n }: { n: number }) {
+  return (
+    <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-accent-soft text-[0.8125rem] font-bold text-accent-ink">
+      {n}
+    </span>
+  );
+}
+
+// --- Grouped lists --------------------------------------------------------------------------
+
+/**
+ * A grouped list: rows in one card, hairlines between them. `inset` starts the hairlines where
+ * the row's text starts (the width of what leads each row, plus its padding) — 0 runs them edge
+ * to edge, as the mockup's settings lists do.
+ */
+export function List({
+  children,
+  label,
+  inset = 0,
+  className,
+}: {
+  children: ReactNode;
+  /** Names the list for assistive tech. */
+  label?: string;
+  inset?: number;
+  className?: string;
+}) {
+  return (
+    <ul
+      aria-label={label}
+      className={cx('card card-rows inset-rows', className)}
+      style={{ '--row-inset': `${inset}px` } as CSSProperties}
+    >
+      {children}
+    </ul>
+  );
+}
+
+/**
+ * One row of a List: something leading it (a Tile, an Avatar, a CheckCircle), a title with an
+ * optional line under it, a quiet detail and whatever else at the end, and a chevron if it goes
+ * somewhere. It is a link with `to`, a button with `onClick`, or plain.
+ */
+export function Row({
+  lead,
+  title,
+  subtitle,
+  detail,
+  end,
+  chevron,
+  to,
+  onClick,
+  tone,
+  disabled,
+  wrap = false,
+  className,
+  titleClassName,
+  ...aria
+}: {
+  lead?: ReactNode;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  detail?: ReactNode;
+  end?: ReactNode;
+  chevron?: boolean;
+  to?: string;
+  onClick?: () => void;
+  /** `danger` sets the title in the destructive ink (Delete, Sign out). */
+  tone?: 'danger';
+  disabled?: boolean;
+  /** Let the subtitle wrap instead of truncating. */
+  wrap?: boolean;
+  className?: string;
+  titleClassName?: string;
+  role?: string;
+  'aria-checked'?: boolean;
+  'aria-label'?: string;
+}) {
+  const body = (
+    <>
+      {lead}
+      <span className="min-w-0 flex-1">
+        <span className={cx('block truncate text-base font-medium', tone === 'danger' && 'text-danger', titleClassName)}>{title}</span>
+        {subtitle && (
+          <span className={cx('mt-px block text-[0.8125rem] text-muted', !wrap && 'truncate')}>{subtitle}</span>
+        )}
+      </span>
+      {detail != null && <span className="shrink-0 text-[0.9375rem] text-muted">{detail}</span>}
+      {end}
+      {chevron && <Icon name="chevR" size={16} className="shrink-0 text-faint" />}
+    </>
+  );
+  const cls = cx(
+    'flex min-h-[52px] w-full items-center gap-3 px-4 py-3 text-left',
+    (to || onClick) && 'press active:bg-surface2 disabled:opacity-45',
+    className,
+  );
+  return (
+    <li>
+      {to ? (
+        <Link to={to} onClick={onClick} className={cls} {...aria}>
+          {body}
+        </Link>
+      ) : onClick ? (
+        <button type="button" onClick={onClick} disabled={disabled} className={cls} {...aria}>
+          {body}
+        </button>
+      ) : (
+        <div className={cls} {...aria}>
+          {body}
+        </div>
+      )}
+    </li>
+  );
+}
+
+// --- Sheets ---------------------------------------------------------------------------------
 
 /**
  * The part of the window the on-screen keyboard is not covering. iOS does not shrink the page
@@ -287,8 +907,29 @@ function useVisibleViewport() {
   return viewport;
 }
 
+/** Locks the page behind an overlay from scrolling, and closes the top overlay on Escape. */
+function useOverlay(panel: RefObject<HTMLElement>, onEscape: () => void) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      // With one sheet over another, Escape closes the top one — not both at once.
+      const open = document.querySelectorAll('[role="dialog"],[role="alertdialog"]');
+      if (open.length > 0 && open[open.length - 1] !== panel.current) return;
+      onEscape();
+    }
+    window.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onEscape, panel]);
+}
+
 /**
- * A bottom sheet on phones, a centred dialog on wider screens.
+ * A bottom sheet on phones, a centred dialog on wider screens: the page's paper with 28px top
+ * corners and a grab handle, its title set in the title font.
  *
  * On a phone it behaves like a physical card. It rises from the bottom on a spring and leaves
  * the same way it came. Grab the top of it and it follows the finger exactly; pull it upward
@@ -303,11 +944,19 @@ function useVisibleViewport() {
  */
 export function Sheet({
   title,
+  subtitle,
+  lead,
+  label,
   onClose,
   children,
   tall = false,
 }: {
   title: ReactNode;
+  subtitle?: ReactNode;
+  /** Something before the title, such as your avatar on Settings. */
+  lead?: ReactNode;
+  /** What the dialog is called to assistive tech, when the visible title is not its name. */
+  label?: string;
   onClose: () => void;
   children: ReactNode;
   tall?: boolean;
@@ -321,6 +970,7 @@ export function Sheet({
   const closing = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const titleId = useId();
 
   // Decided once: a sheet does not change kind while it is open.
   const [docked] = useState(() => window.matchMedia('(max-width: 639px)').matches);
@@ -376,23 +1026,7 @@ export function Sheet({
     }
   }, [physical, springTo]);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return;
-      // With one sheet over another, Escape closes the top one — not both at once.
-      const open = document.querySelectorAll('[role="dialog"]');
-      if (open.length > 0 && open[open.length - 1] !== panel.current) return;
-      dismiss();
-    }
-    window.addEventListener('keydown', onKey);
-    // Stop the page behind from scrolling while the sheet is up.
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [dismiss]);
+  useOverlay(panel, dismiss);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (!physical || closing.current || (e.target as HTMLElement).closest('button')) return;
@@ -438,22 +1072,23 @@ export function Sheet({
 
   return (
     <div
-      className="fixed inset-x-0 z-40 flex items-end justify-center sm:items-center"
+      className="fixed inset-x-0 z-40 flex items-end justify-center sm:items-center sm:p-6"
       style={{ top: viewport.top, height: viewport.height }}
     >
-      <div ref={scrim} className="absolute inset-0 bg-black/40" onClick={dismiss} aria-hidden="true" />
+      <div ref={scrim} className="absolute inset-0 bg-scrim" onClick={dismiss} aria-hidden="true" />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
+        aria-label={label}
+        aria-labelledby={label ? undefined : titleId}
         className={cx(
-          // Surface, not page: in dark mode a sheet is lifted by being lighter, as on iOS.
-          'relative flex w-full flex-col rounded-t-[14px] bg-surface pb-safe shadow-2xl will-change-transform',
-          'sm:max-w-md sm:rounded-[14px]',
-          tall ? 'h-[calc(100%-1.5rem)] sm:h-[min(40rem,85vh)]' : 'max-h-[calc(100%-1.5rem)] sm:max-h-[85vh]',
+          'relative flex w-full flex-col rounded-t-sheet bg-bg pb-safe shadow-[0_-6px_30px_rgba(0,0,0,0.18)] will-change-transform',
+          'sm:max-w-lg sm:rounded-sheet sm:shadow-lift',
+          tall ? 'h-[calc(100%-1.5rem)] sm:h-[min(44rem,88vh)]' : 'max-h-[calc(100%-1.5rem)] sm:max-h-[88vh]',
         )}
       >
-        {/* The handle: the grabber and title bar are what you pull, so the list below still scrolls. */}
+        {/* The handle: the grabber and title are what you pull, so the content below still scrolls. */}
         <div
           className="touch-none select-none"
           onPointerDown={onPointerDown}
@@ -461,130 +1096,145 @@ export function Sheet({
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <div className="flex justify-center pt-1.5 sm:hidden" aria-hidden="true">
-            <span className="h-[5px] w-9 rounded-full bg-line" />
+          <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">
+            <span className="h-[5px] w-[38px] rounded-full bg-faint opacity-70" />
           </div>
-          <header className="flex items-center justify-between gap-3 pb-1 pl-4 pr-2 pt-1 sm:pt-2">
-            <h2 className="min-w-0 truncate text-[1.0625rem] font-semibold">{title}</h2>
-            <IconButton label="Close" onClick={dismiss}>
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-elevated text-muted">
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3}
-                     strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </span>
+          <header className="flex items-start justify-between gap-3 px-5 pb-1 pt-3 sm:pt-5">
+            {lead}
+            <div className="min-w-0 flex-1 self-center">
+              <h2 id={titleId} className="title-sheet break-words">
+                {title}
+              </h2>
+              {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+            </div>
+            <IconButton label="Close" shape="plain" onClick={dismiss} className="!h-8 !w-8 shrink-0 text-ink">
+              <Icon name="x" size={16} strokeWidth={2.4} />
             </IconButton>
           </header>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-3">{children}</div>
       </div>
     </div>
   );
 }
 
-const BADGE_TONES = {
-  neutral: 'bg-elevated text-muted',
-  accent: 'bg-secondary-soft text-secondary',
-  success: 'bg-success-soft text-success',
-  danger: 'bg-danger-soft text-danger',
-};
-
-export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: keyof typeof BADGE_TONES }) {
-  return (
-    <span
-      className={cx(
-        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        BADGE_TONES[tone],
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-[0.9375rem] text-muted">{children}</p>;
-}
-
-export function ErrorText({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-danger">{children}</p>;
-}
-
 /**
- * Large, obviously-tappable checkbox — the 16px native one is far too small on a phone. The tick
- * settles in as it appears, so ticking something off registers.
+ * A centred alert over a dimmed page: an icon tile, a serif question, a sentence, and stacked
+ * buttons — for the decisions that deserve a stop ("Delete Lemon herb chicken?"). Never
+ * window.confirm. Escape and the scrim count as the last (cancelling) action.
  */
-export function CheckCircle({ checked, className }: { checked: boolean; className?: string }) {
-  return (
-    <span
-      className={cx(
-        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150',
-        checked ? 'border-accent bg-accent text-accent-ink' : 'border-subtle/60',
-        className,
-      )}
-    >
-      {checked && (
-        <svg viewBox="0 0 24 24" className="pop h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3.5}
-             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M5 12.5 10 17.5 19 7" />
-        </svg>
-      )}
-    </span>
-  );
-}
-
-/**
- * An on/off pill, for a setting that takes effect the moment it is flipped — no Save to hunt
- * for. Only the drawing: the row it sits in is the button (with role="switch"), so the whole row
- * is the thing to tap rather than a small pill at its end.
- */
-export function SwitchKnob({ on, className }: { on: boolean; className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cx(
-        'relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors duration-150',
-        on ? 'bg-accent' : 'bg-subtle/40',
-        className,
-      )}
-    >
-      <span
-        className={cx(
-          'absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-150',
-          on && 'translate-x-5',
-        )}
-      />
-    </span>
-  );
-}
-
-/** Filter pill for the recipe catalog. */
-export function Chip({
-  active,
+export function Alert({
+  title,
+  icon,
+  tone = 'accent',
   children,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  actions,
+  onDismiss,
+  centered = false,
+}: {
+  title: ReactNode;
+  icon?: IconName;
+  tone?: Tone;
+  children?: ReactNode;
+  /** The buttons, top to bottom: the main one first. */
+  actions: ReactNode;
+  onDismiss: () => void;
+  /** Centre everything — for a notice with a single OK. */
+  centered?: boolean;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useOverlay(panel, onDismiss);
+  useLayoutEffect(() => {
+    if (prefersReducedMotion()) return;
+    panel.current?.animate([{ opacity: 0, transform: 'scale(0.96)' }, { opacity: 1, transform: 'none' }], {
+      duration: 180,
+      easing: 'ease-out',
+    });
+  }, []);
   return (
-    <button
-      type="button"
-      // A chip that can be on or off says which, so a screen reader hears "selected" too.
-      aria-pressed={active}
-      className={cx(
-        'press shrink-0 rounded-full px-3.5 py-2 text-[0.9375rem] font-medium',
-        active ? 'bg-accent text-accent-ink' : 'bg-elevated text-ink',
-      )}
-      {...props}
-    >
-      {children}
-    </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-9">
+      <div className="absolute inset-0 bg-scrim" onClick={onDismiss} aria-hidden="true" />
+      <div
+        ref={panel}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={cx(
+          'relative flex w-full max-w-sm flex-col gap-3.5 rounded-[22px] bg-surface px-5 pb-4 pt-[22px] shadow-lift',
+          centered && 'items-center text-center',
+        )}
+      >
+        {icon && <Tile icon={icon} tone={tone} size={centered ? 56 : 48} />}
+        <h2 id={titleId} className="title-section !text-[1.25rem]">
+          {title}
+        </h2>
+        {children && <div className="text-sm leading-[1.45] text-muted">{children}</div>}
+        <div className={cx('flex flex-col gap-2', centered && 'self-stretch')}>{actions}</div>
+      </div>
+    </div>
   );
 }
+
+/**
+ * The usual yes-or-no Alert: a main action (destructive by default, as most confirmations are)
+ * and a way out.
+ */
+export function ConfirmAlert({
+  title,
+  children,
+  confirmLabel,
+  cancelLabel = 'Cancel',
+  icon,
+  tone,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  title: ReactNode;
+  children?: ReactNode;
+  confirmLabel: ReactNode;
+  cancelLabel?: ReactNode;
+  icon?: IconName;
+  tone?: Tone;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Alert
+      title={title}
+      icon={icon}
+      tone={tone}
+      onDismiss={onCancel}
+      actions={
+        <>
+          <Button className="h-[2.875rem]" full disabled={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+          <Button className="h-[2.875rem]" variant="secondary" full onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+        </>
+      }
+    >
+      {children}
+    </Alert>
+  );
+}
+
+// --- Menus ----------------------------------------------------------------------------------
 
 export type MenuItem = {
   label: ReactNode;
   onSelect: () => void;
   tone?: 'danger';
   disabled?: boolean;
+  /** An icon on a tile, leading the row. */
+  icon?: IconName;
+  iconTone?: Tone;
+  /** A line under the label. */
+  detail?: ReactNode;
 };
 
 /**
@@ -597,11 +1247,14 @@ export function ActionMenu({
   title,
   items,
   className,
+  shape = 'bare',
 }: {
   label: string;
   title?: ReactNode;
   items: (MenuItem | false | null | undefined)[];
   className?: string;
+  /** `round` for the mockup's ••• beside a page title. */
+  shape?: 'bare' | 'round';
 }) {
   const [open, setOpen] = useState(false);
   const shown = items.filter(Boolean) as MenuItem[];
@@ -609,34 +1262,49 @@ export function ActionMenu({
 
   return (
     <>
-      <IconButton label={label} variant="ghost" className={className} onClick={() => setOpen(true)}>
-        <MoreIcon className="h-5 w-5" />
+      <IconButton
+        label={label}
+        variant={shape === 'bare' ? 'ghost' : undefined}
+        shape={shape}
+        className={className}
+        onClick={() => setOpen(true)}
+      >
+        <Icon name="more" className="h-5 w-5" />
       </IconButton>
       {open && (
         <Sheet title={title ?? label} onClose={() => setOpen(false)}>
-          <ul className="divide-y divide-line">
-            {shown.map((item, i) => (
-              <li key={i}>
-                <button
-                  type="button"
-                  disabled={item.disabled}
-                  onClick={() => {
-                    setOpen(false);
-                    item.onSelect();
-                  }}
-                  className={cx(
-                    'press flex min-h-touch w-full items-center py-3 text-left text-[1.0625rem] disabled:opacity-40',
-                    item.tone === 'danger' ? 'text-danger' : 'text-accent',
-                  )}
-                >
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <MenuList
+            items={shown}
+            onPicked={(item) => {
+              setOpen(false);
+              item.onSelect();
+            }}
+          />
         </Sheet>
       )}
     </>
+  );
+}
+
+/** A menu's items as a grouped list. Used by ActionMenu; on its own for a sheet of choices. */
+export function MenuList({ items, onPicked }: { items: MenuItem[]; onPicked: (item: MenuItem) => void }) {
+  const anyIcon = items.some((i) => i.icon);
+  return (
+    <List inset={anyIcon ? 66 : 16}>
+      {items.map((item, i) => (
+        <Row
+          key={i}
+          lead={item.icon ? <Tile icon={item.icon} tone={item.iconTone ?? 'accent'} size={34} /> : undefined}
+          title={item.label}
+          subtitle={item.detail}
+          tone={item.tone}
+          disabled={item.disabled}
+          onClick={() => onPicked(item)}
+          // Without icons it is the iOS action sheet: every choice in the accent's ink.
+          titleClassName={!item.icon && item.tone !== 'danger' ? 'text-accent-ink' : undefined}
+        />
+      ))}
+    </List>
   );
 }
 
@@ -665,7 +1333,7 @@ export function SheetRow({
       >
         <span className={cx('min-w-0 flex-1 truncate', tone === 'danger' && 'text-danger')}>{label}</span>
         {detail && <span className="shrink-0 text-[0.9375rem] text-muted">{detail}</span>}
-        <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+        <Icon name="chevR" className="h-4 w-4 shrink-0 text-faint" />
       </button>
       {open && (
         <Sheet title={label} onClose={() => setOpen(false)}>

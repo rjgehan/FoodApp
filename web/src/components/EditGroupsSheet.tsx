@@ -97,7 +97,7 @@ export default function EditGroupsSheet({
                       className={cx(
                         'press flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl disabled:opacity-60',
                         coverClass(group.id),
-                        Icon ? 'text-ink' : 'border border-dashed border-subtle text-muted',
+                        Icon ? 'text-ink' : 'border border-dashed border-faint text-muted',
                         open && 'ring-2 ring-accent ring-offset-2 ring-offset-surface',
                       )}
                     >

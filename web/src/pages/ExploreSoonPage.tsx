@@ -35,7 +35,7 @@ export default function ExploreSoonPage() {
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-ink/80">{plan}</p>
       </div>
 
-      <p className="px-1 text-[0.8125rem] text-subtle">Not built yet. This is where it will go.</p>
+      <p className="px-1 text-[0.8125rem] text-faint">Not built yet. This is where it will go.</p>
     </div>
   );
 }

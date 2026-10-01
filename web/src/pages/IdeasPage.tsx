@@ -142,7 +142,7 @@ export default function IdeasPage() {
             </Button>
           )}
 
-          <div className="flex rounded-xl bg-elevated p-0.5" role="tablist" aria-label="Sort ideas">
+          <div className="flex rounded-xl bg-surface2 p-0.5" role="tablist" aria-label="Sort ideas">
             {SORTS.map((s) => (
               <button
                 key={s.value}
@@ -166,7 +166,7 @@ export default function IdeasPage() {
             !error && <p className="py-8 text-center text-sm text-muted">Loading…</p>
           ) : ideas.length === 0 ? (
             <div className="card flex flex-col items-center px-6 py-10 text-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent-ink">
                 <LightbulbIcon className="h-7 w-7" />
               </span>
               <p className="mt-3 font-semibold">No ideas yet</p>
@@ -270,11 +270,11 @@ function IdeaCard({
         onClick={onVote}
         className={cx(
           'press flex min-h-[3.25rem] w-12 shrink-0 flex-col items-center justify-center self-start rounded-xl py-1.5',
-          idea.votedByMe ? 'bg-accent text-accent-ink' : 'bg-elevated text-ink',
+          idea.votedByMe ? 'bg-accent text-on-accent' : 'bg-surface2 text-ink',
         )}
       >
         <UpvoteIcon
-          className={cx('h-5 w-5', !idea.votedByMe && 'text-accent')}
+          className={cx('h-5 w-5', !idea.votedByMe && 'text-accent-ink')}
           fill={idea.votedByMe ? 'currentColor' : 'none'}
         />
         <span className="sr-only">Upvote “{idea.title}”, </span>

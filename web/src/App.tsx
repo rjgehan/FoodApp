@@ -21,6 +21,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import InvitePage from './pages/InvitePage';
 import AdminRoutes from './pages/AdminPage';
 import IdeasPage from './pages/IdeasPage';
+import ThemePage from './pages/ThemePage';
 
 export default function App() {
   const { session } = useAuth();
@@ -88,6 +89,8 @@ export default function App() {
           <Route path="/admin/*" element={<AdminRoutes />} />
           {/* The beta's ideas board, for everyone. Not a tab either: the lightbulb in the header. */}
           <Route path="/ideas" element={<IdeasPage />} />
+          {/* Theme: light or dark, and which of the five themes. Reached from Settings. */}
+          <Route path="/settings/theme" element={<ThemePage />} />
           <Route path="*" element={<Navigate to="/meal-plan" replace />} />
         </Routes>
       </Layout>

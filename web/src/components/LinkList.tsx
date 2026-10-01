@@ -22,15 +22,15 @@ export default function LinkList({ links }: { links: SourceLink[] }) {
               className="press flex min-h-touch items-center gap-3 py-2.5"
             >
               {video ? (
-                <PlayIcon className="h-5 w-5 shrink-0 text-accent" />
+                <PlayIcon className="h-5 w-5 shrink-0 text-accent-ink" />
               ) : (
-                <LinkIcon className="h-5 w-5 shrink-0 text-accent" />
+                <LinkIcon className="h-5 w-5 shrink-0 text-accent-ink" />
               )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{name}</span>
                 {site && !name.includes(site) && <span className="block truncate text-sm text-muted">{site}</span>}
               </span>
-              <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+              <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
             </a>
           </li>
         );

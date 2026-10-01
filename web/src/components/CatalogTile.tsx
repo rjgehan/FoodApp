@@ -53,8 +53,8 @@ export function CatalogTileFace({
   );
 }
 
-/** Two tiles across on a phone, three once there is room for them. */
-export const CATALOG_GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3';
+/** Two tiles across on a phone, three once there is room for them, four on a computer. */
+export const CATALOG_GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4';
 
 /** The outside of a tile — its colour, its corners, the press — for a link or a button. */
 export function catalogTileClass(tint: string) {

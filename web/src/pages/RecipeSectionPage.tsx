@@ -93,7 +93,7 @@ export default function RecipeSectionPage() {
       <Card>
         <EmptyState>
           No such section.{' '}
-          <Link to="/recipes" className="font-medium text-accent underline">
+          <Link to="/recipes" className="font-medium text-accent-ink underline">
             Back to recipes
           </Link>
         </EmptyState>
@@ -151,7 +151,7 @@ export default function RecipeSectionPage() {
           <div className="flex items-center gap-1">
             <Link
               to={addHere}
-              className="flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent pl-2.5 pr-3.5 text-sm font-medium text-accent-ink active:opacity-80"
+              className="flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent pl-2.5 pr-3.5 text-sm font-medium text-on-accent active:opacity-80"
             >
               <PlusIcon className="h-4 w-4" />
               Add recipe
@@ -194,7 +194,7 @@ export default function RecipeSectionPage() {
         <Card>
           <EmptyState>
             {group ? `Nothing from ${drawerName} in ${group.name} yet.` : 'Nothing filed here yet.'}{' '}
-            <Link to={addHere} className="font-medium text-accent underline">
+            <Link to={addHere} className="font-medium text-accent-ink underline">
               Add a recipe
             </Link>
           </EmptyState>
@@ -214,7 +214,7 @@ export default function RecipeSectionPage() {
           {here.length === 0 && (
             <p className="text-[0.9375rem] text-muted">
               Nothing filed in {group?.name ?? drawerName} yet.{' '}
-              <Link to={addHere} className="font-medium text-accent underline">
+              <Link to={addHere} className="font-medium text-accent-ink underline">
                 Add a recipe
               </Link>
               , or open a group.

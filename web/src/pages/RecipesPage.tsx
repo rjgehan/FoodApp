@@ -86,7 +86,7 @@ export default function RecipesPage() {
           to="/recipes/new"
           aria-label="Add a recipe"
           title="Add a recipe"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent"
         >
           <PlusIcon className="h-5 w-5" />
         </Link>
@@ -105,7 +105,7 @@ export default function RecipesPage() {
             {linkResults.length > 0 && (
               <Link
                 to={`${SAVED_LINKS_PATH}?q=${encodeURIComponent(query.trim())}`}
-                className="flex min-h-touch items-center gap-3 rounded-2xl bg-elevated p-4 transition-transform active:scale-[0.98]"
+                className="flex min-h-touch items-center gap-3 rounded-2xl bg-surface2 p-4 transition-transform active:scale-[0.98]"
               >
                 <SavedLinksArt className="h-9 w-9 shrink-0 text-ink opacity-70" />
                 <span className="min-w-0 flex-1">
@@ -158,13 +158,13 @@ export default function RecipesPage() {
           {sharedCount > 0 && (
             <Link
               to={`/recipes/section/${SHARED_KEY}`}
-              className="block min-h-[4.5rem] rounded-2xl bg-elevated p-4 transition-transform active:scale-[0.98]"
+              className="block min-h-[4.5rem] rounded-2xl bg-surface2 p-4 transition-transform active:scale-[0.98]"
             >
               <p className="text-lg font-semibold leading-tight">Shared with you</p>
               <p className="text-sm text-muted">
                 {sharedCount} {sharedCount === 1 ? 'recipe' : 'recipes'}
               </p>
-              <p className="mt-1 text-xs text-subtle">From other households</p>
+              <p className="mt-1 text-xs text-faint">From other households</p>
             </Link>
           )}
 
@@ -172,7 +172,7 @@ export default function RecipesPage() {
             <Card>
               <EmptyState>
                 No recipes yet —{' '}
-                <Link to="/recipes/new" className="font-medium text-accent underline">
+                <Link to="/recipes/new" className="font-medium text-accent-ink underline">
                   add your first
                 </Link>
                 .

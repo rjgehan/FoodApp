@@ -112,7 +112,7 @@ function AdminHome() {
 
       <Overview overview={overview} />
 
-      <div className="flex rounded-xl bg-elevated p-0.5 md:max-w-lg" role="tablist" aria-label="What to look at">
+      <div className="flex rounded-xl bg-surface2 p-0.5 md:max-w-lg" role="tablist" aria-label="What to look at">
         {TABS.map((t) => (
           <button
             key={t.value}
@@ -457,7 +457,7 @@ function Memberships({ user: u }: { user: AdminUserRow }) {
     <span className="flex flex-wrap gap-x-2 gap-y-0.5">
       {u.households.map((h, i) => (
         <span key={h.householdId}>
-          <Link to={`/admin/households/${h.householdId}`} className="text-accent hover:underline">
+          <Link to={`/admin/households/${h.householdId}`} className="text-accent-ink hover:underline">
             {h.name}
           </Link>
           {h.role === 'OWNER' && <span className="text-muted"> (owner)</span>}

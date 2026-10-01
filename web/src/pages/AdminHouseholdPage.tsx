@@ -79,7 +79,7 @@ export default function AdminHouseholdPage() {
                   <li key={r.id}>
                     <Link to={`/admin/recipes/${r.id}`} className="press flex min-h-touch flex-col gap-1 py-3 md:flex-row md:items-center md:gap-3">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-accent">{r.name}</span>
+                        <span className="block truncate font-medium text-accent-ink">{r.name}</span>
                         <span className="block text-sm text-muted">
                           {r.section ? sectionLabel(r.section) : 'Not filed'} · added {formatDay(r.createdAt)}
                         </span>

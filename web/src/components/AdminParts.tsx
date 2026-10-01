@@ -128,7 +128,7 @@ export function AdminTable<T>({
             {rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                className={cx(href && 'cursor-pointer hover:bg-elevated/60')}
+                className={cx(href && 'cursor-pointer hover:bg-surface2/60')}
                 onClick={
                   href &&
                   ((e) => {
@@ -141,7 +141,7 @@ export function AdminTable<T>({
                 {columns.map((c, i) => (
                   <td key={c.label} className={cx('px-4 py-2.5 align-top', c.numeric && 'text-right tabular-nums', c.className)}>
                     {i === 0 && href ? (
-                      <Link to={href(row)} className="font-medium text-accent hover:underline">
+                      <Link to={href(row)} className="font-medium text-accent-ink hover:underline">
                         {c.cell(row)}
                       </Link>
                     ) : (
@@ -161,7 +161,7 @@ export function AdminTable<T>({
             {href ? (
               <Link to={href(row)} className="press flex min-h-touch items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">{card(row)}</div>
-                <ChevronRightIcon className="h-4 w-4 shrink-0 text-subtle" />
+                <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
               </Link>
             ) : (
               <div className="py-3">{card(row)}</div>
@@ -208,11 +208,11 @@ export function Pager({
 /** A yes/no cell: a tick when there is one, a quiet dash when there is not. */
 export function Yes({ value, label }: { value: boolean; label: string }) {
   return value ? (
-    <span className="font-medium text-success" aria-label={`${label}: yes`}>
+    <span className="font-medium text-herb" aria-label={`${label}: yes`}>
       ✓
     </span>
   ) : (
-    <span className="text-subtle" aria-label={`${label}: no`}>
+    <span className="text-faint" aria-label={`${label}: no`}>
       —
     </span>
   );

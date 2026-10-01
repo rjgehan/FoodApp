@@ -124,10 +124,10 @@ export default function StartCupboardSheet({
                           'press inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[0.9375rem] font-medium',
                           'transition-colors duration-150',
                           item.have
-                            ? 'bg-success-soft text-success'
+                            ? 'bg-herb-soft text-herb'
                             : on
-                              ? 'bg-accent text-accent-ink'
-                              : 'bg-elevated text-ink',
+                              ? 'bg-accent text-on-accent'
+                              : 'bg-surface2 text-ink',
                         )}
                       >
                         {on && <CheckIcon className="pop -ml-0.5 h-3.5 w-3.5" />}
