@@ -23,6 +23,11 @@ struct MealPlannerApp: App {
         #endif
     }()
 
+    init() {
+        // Before anything is drawn: somebody already signed in never gets the tutorial.
+        FirstRun.settle()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(session: session, openedLink: $openedLink)
@@ -152,6 +157,8 @@ struct RootView: View {
     @Bindable var session: Session
     /// An invite or reset link the app was opened with, until it has been dealt with.
     @Binding var openedLink: AppLink?
+    /// The first-run tutorial is still to come on this phone (Welcome/Tutorial.swift).
+    @State private var firstRun = !FirstRun.seen
 
     /// Which tab is up. Seeded from `-mp_debug_tab` in debug builds so a screenshot run can
     /// land on any tab without tapping.
@@ -184,16 +191,24 @@ struct RootView: View {
     var body: some View {
         Group {
             if session.isSignedIn {
-                signedIn
+                if firstRun {
+                    // In through an invite (or a reset link) on a phone that has not had the
+                    // tutorial: it comes now, after joining, on the way into the app.
+                    TutorialView(finish: .app) { firstRun = false }
+                } else {
+                    signedIn
+                }
             } else if let link = openedLink {
-                // Somebody sent a link sees who invited them first.
+                // Somebody sent a link sees who invited them first — not the tutorial.
                 NavigationStack { linkScreen(link) }
+            } else if firstRun {
+                TutorialView(finish: .signIn) { firstRun = false }
             } else {
                 SignInView(session: session)
             }
         }
         // A link opened while signed in: over whatever was on screen.
-        .sheet(item: Binding(get: { session.isSignedIn ? openedLink : nil },
+        .sheet(item: Binding(get: { session.isSignedIn && !firstRun ? openedLink : nil },
                              set: { openedLink = $0 })) { link in
             NavigationStack { linkScreen(link) }
         }
@@ -382,7 +397,15 @@ struct RootView: View {
         guard session.isSignedIn else { return }
         let before = ThemeStore.shared.pickCount
         guard let me = try? await APIClient.shared.me() else { return }
-        await MainActor.run { ThemeStore.shared.adopt(me.theme, since: before) }
+        var theme = me.theme
+        // Light or dark as answered on this phone's first run goes on an account that has
+        // never said either — once, and only the first account signed in afterwards.
+        if var server = theme, let asked = DeviceThemeMode.takeToSave(), server.mode == nil {
+            server.mode = asked
+            theme = server
+            _ = try? await APIClient.shared.updateTheme(server)
+        }
+        await MainActor.run { ThemeStore.shared.adopt(theme, since: before) }
     }
 
     /// Asks who you are: whether the ideas board is open (and whether you are its admin), and

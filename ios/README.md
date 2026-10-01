@@ -138,7 +138,9 @@ had just been scanned. A debug launch
 never shows the "add an email and password" prompt on top of a `-mp_debug_screen`, except
 `-mp_debug_screen credentials`, which shows just the prompt.
 
-The welcome screens: `-mp_debug_link "mealplanner://invite/<token>"` (or
+The welcome screens: `-mp_debug_first_run 1` is a phone that has never opened the app (the
+first-run tutorial; `-mp_debug_tutorial_step 2` opens it on "Light or dark?"), and
+`-mp_tutorialSeen 1` one that has. `-mp_debug_link "mealplanner://invite/<token>"` (or
 `…/reset/<token>`) launches as though opened with that link. Signed out, `-mp_debug_screen setup`
 shows first-time setup and `-mp_debug_locked 292` the locked sign-in with that many seconds left.
 Signed in, `-mp_debug_screen public -mp_debug_share_token <token>` opens a recipe's public link
@@ -176,6 +178,17 @@ code that is not ours, and an Open Settings button when camera access was refuse
 screen — and `/reset/<token>` as a native set-a-new-password form. A dead link and a server that
 cannot be reached say different things. `mealplanner://invite/<token>` and
 `mealplanner://reset/<token>` open the same screens from outside the app.
+
+## The first-run tutorial
+
+A phone that has never opened the app gets two slides (a phone-framed picture of the app, a
+title, a line), then "Light or dark?" with Match my phone, then the sign-in screen. Somebody who
+opens the app with an invite link sees the invite first, and the tutorial once they have joined.
+Never twice (UserDefaults `mp_tutorialSeen`), and never for somebody already signed in when the
+update arrives. The light or dark answer stays with the phone across sign-outs, and goes on the
+first account signed in afterwards if it has none of its own. The pictures are placeholders in the
+asset catalog, `TutorialPlanPlaceholder` and `TutorialGroceriesPlaceholder` (light and dark): swap
+in real screenshots of the redesigned app under the same names.
 
 ## A recipe's public link, shared into the app
 

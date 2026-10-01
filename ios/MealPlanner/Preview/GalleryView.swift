@@ -42,6 +42,9 @@ struct GalleryView: View {
                 }
 
                 KitchenSection("Welcome") {
+                    entry("First-run tutorial", "hand.wave") {
+                        TutorialView(finish: .signIn) {}
+                    }
                     entry("First-time setup", "house.lodge") {
                         NavigationStack { FirstTimeSetup(session: Session()) }
                     }
