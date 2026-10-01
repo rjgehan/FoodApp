@@ -293,6 +293,8 @@ struct FromALinkPage: View {
     /// What the server read, shown as a draft before the editor.
     @State private var draft: RecipeDraft?
     @State private var spoken = false
+    /// The link the draft was read from: editing the box away from it drops the draft.
+    @State private var draftLink: String?
     /// Keeping it in Saved links instead of reading it.
     @State private var keeping = false
     @State private var keepError: String?
@@ -405,7 +407,7 @@ struct FromALinkPage: View {
         .onChange(of: link) { _, _ in
             keepError = nil
             if kept != nil { kept = nil }
-            if readingSince == nil { draft = nil }
+            if readingSince == nil, link != draftLink { draft = nil }
         }
         .onChange(of: active) { _, now in
             if now && link.isEmpty { focused = true }
@@ -421,6 +423,7 @@ struct FromALinkPage: View {
                 link = seeded
                 focused = false
                 if UserDefaults.standard.bool(forKey: "mp_debug_draft") {
+                    draftLink = seeded
                     draft = RecipeDraft(name: "Creamy tuscan gnocchi", description: nil, servings: 4, prep: 10, cook: 20,
                                         instructions: "Brown the gnocchi.\nMake the sauce.\nStir in the spinach.",
                                         ingredients: [.init(line: "500 g potato gnocchi"), .init(line: "2 tbsp butter"),
@@ -559,6 +562,7 @@ struct FromALinkPage: View {
             let imported = try await APIClient.shared.importRecipe(household: household, url: typed)
             // Shown as a draft first; Review draft opens it in the editor.
             spoken = imported.methodWasSpoken
+            draftLink = link
             draft = RecipeDraft(imported: imported, link: typed)
         } catch {
             // The server says why in a sentence — a private post, a page with no recipe on it.

@@ -161,7 +161,6 @@ struct EditRecipeView: View {
                     // The quick facts the recipe page shows on its photo, in the same order.
                     HStack(spacing: 8) {
                         factField("clock", value: $prep, suffix: "min prep", label: "Prep, minutes", field: .prep)
-                            .layoutPriority(1)
                         factField("flame", value: $cook, suffix: "cook", label: "Cook, minutes", field: .cook)
                         factField("person.2", value: $servings, suffix: nil, label: "Serves", field: .serves)
                             .frame(width: 74)
@@ -343,7 +342,7 @@ struct EditRecipeView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .frame(height: 42)
         .frame(maxWidth: .infinity)
         .fieldSurface(focused: focus == field)

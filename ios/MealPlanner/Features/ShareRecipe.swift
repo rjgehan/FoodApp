@@ -161,10 +161,10 @@ struct RecipeShareSheet: View {
 
                 HStack(spacing: 8) {
                     ShareLink(item: url, subject: Text(recipe.name)) {
-                        Label("Share link", systemImage: "square.and.arrow.up")
+                        Label("Share link", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.kitchen(.primary, size: .small))
-                    Button { asking = .newLink } label: { Label("New link", systemImage: "arrow.clockwise") }
+                    Button { asking = .newLink } label: { Label("New link", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }
                         .buttonStyle(.kitchen(.secondary, size: .small))
                         .disabled(busy)
                 }
