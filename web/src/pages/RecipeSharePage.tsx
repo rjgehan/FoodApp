@@ -37,6 +37,9 @@ export default function RecipeSharePage() {
 
   useEffect(() => {
     if (!recipeId) return;
+    // An answer for a load that has been replaced is dropped: landing after a switch was
+    // flipped, it would put the switch back.
+    let live = true;
     const scope = activeHouseholdId ? `?householdId=${activeHouseholdId}` : '';
     Promise.all([
       api<Recipe>('GET', `/api/recipes/${recipeId}${scope}`),
@@ -44,11 +47,15 @@ export default function RecipeSharePage() {
       api<{ token: string | null }>('GET', `/api/recipes/${recipeId}/link`),
     ])
       .then(([r, houses, link]) => {
+        if (!live) return;
         setRecipe(r);
         setTargets(houses);
         setToken(link.token);
       })
-      .catch((err) => setLoadError(err instanceof ApiError ? err.message : 'Cannot reach the server.'));
+      .catch((err) => live && setLoadError(err instanceof ApiError ? err.message : 'Cannot reach the server.'));
+    return () => {
+      live = false;
+    };
   }, [recipeId, activeHouseholdId]);
 
   function back() {

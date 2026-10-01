@@ -60,12 +60,19 @@ export default function RecipeDetailPage() {
     setOpen(null);
     setTab('ingredients');
     setServings(null);
+    // A load that has been replaced is dropped, so a late answer cannot undo a change made since.
+    let live = true;
     const scope = activeHouseholdId ? `?householdId=${activeHouseholdId}` : '';
     api<Recipe>('GET', `/api/recipes/${recipeId}${scope}`)
-      .then(setRecipe)
-      .catch((err) =>
-        setError(err instanceof ApiError && err.status === 404 ? 'That recipe is gone.' : 'Could not load that recipe.'),
+      .then((r) => live && setRecipe(r))
+      .catch(
+        (err) =>
+          live &&
+          setError(err instanceof ApiError && err.status === 404 ? 'That recipe is gone.' : 'Could not load that recipe.'),
       );
+    return () => {
+      live = false;
+    };
   }, [recipeId, activeHouseholdId]);
 
   // The catalog order, so the arrows flip through the book rather than jumping around.
