@@ -190,8 +190,11 @@ final class ThemeStore {
                 var presented = window.rootViewController?.presentedViewController
                 while let controller = presented {
                     controller.overrideUserInterfaceStyle = sheetStyle
+                    // The clock and battery would otherwise stay dark on a page now dark too.
+                    controller.setNeedsStatusBarAppearanceUpdate()
                     presented = controller.presentedViewController
                 }
+                window.rootViewController?.setNeedsStatusBarAppearanceUpdate()
             }
         }
     }

@@ -180,16 +180,21 @@ extension ThemeStyle {
         var light = tomato.light
         var dark = tomato.dark
 
+        // The web's deriveCustom (web/src/theme/colors.ts), step for step: a filled accent that
+        // stands out from the surface (3:1 light, 4.5:1 dark), its tint, accent text pushed on
+        // until it reads 4.5:1 on that tint, and white on the fill unless white would not read.
         let lightAccent = ThemeColors.untilReadable(p, against: light.surface.rgb, min: 3, towards: -1)
+        let lightSoft = ThemeColors.tint(p, lightness: 0.92)
         light.accent = RGBA(rgb: lightAccent)
-        light.accentInk = RGBA(rgb: ThemeColors.untilReadable(p, against: light.bg.rgb, min: 4.5, towards: -1))
-        light.accentSoft = RGBA(rgb: ThemeColors.tint(p, lightness: 0.92, maxSaturation: 0.85))
+        light.accentSoft = RGBA(rgb: lightSoft)
+        light.accentInk = RGBA(rgb: ThemeColors.untilReadable(lightAccent, against: lightSoft, min: 4.5, towards: -1))
         light.onAccent = RGBA(rgb: ThemeColors.inkOn(lightAccent, dark: light.text.rgb))
 
-        let darkAccent = ThemeColors.untilReadable(p, against: dark.surface.rgb, min: 4, towards: 1)
+        let darkAccent = ThemeColors.untilReadable(p, against: dark.surface.rgb, min: 4.5, towards: 1)
+        let darkSoft = ThemeColors.tint(p, lightness: 0.18, maxSaturation: 0.45)
         dark.accent = RGBA(rgb: darkAccent)
-        dark.accentInk = RGBA(rgb: ThemeColors.untilReadable(p, against: dark.bg.rgb, min: 5.5, towards: 1))
-        dark.accentSoft = RGBA(rgb: ThemeColors.tint(p, lightness: 0.18, maxSaturation: 0.45))
+        dark.accentSoft = RGBA(rgb: darkSoft)
+        dark.accentInk = RGBA(rgb: ThemeColors.untilReadable(darkAccent, against: darkSoft, min: 4.5, towards: 1))
         dark.onAccent = RGBA(rgb: ThemeColors.inkOn(darkAccent, dark: dark.bg.rgb))
 
         return ThemeStyle(key: ThemePreset.custom, name: "Custom", fullName: "Your own colour",
