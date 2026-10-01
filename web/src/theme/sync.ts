@@ -49,6 +49,10 @@ export function useThemeSync(userId: string | undefined) {
         const asked = takeModeToSave();
         if (asked && !theme.mode) {
           theme = { ...theme, mode: asked };
+          // Counts as a pick: a second /me already on its way (React runs this effect twice in
+          // development, and coming back into view runs it again) still has no light or dark, and
+          // would put the phone's back over the one just chosen.
+          picks++;
           saveTheme(theme).catch(() => {
             // Offline: it is on the page all the same, and the Theme screen can save it later.
           });
