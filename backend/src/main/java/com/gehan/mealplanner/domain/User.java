@@ -65,7 +65,7 @@ public class User {
 
     /**
      * The app's colours, as this person picked them — the same on every device they sign in on.
-     * All four null is the app as it has always looked. `themePreset` is one of
+     * All four null is the default, Tomato. `themePreset` is one of
      * ThemeSettings.PRESETS or "custom"; the two colours are the custom pair, as #RRGGBB, and are
      * kept while a preset is on so going back to Custom finds them. See ThemeSettings.
      */

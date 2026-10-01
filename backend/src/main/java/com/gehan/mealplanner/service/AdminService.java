@@ -253,11 +253,14 @@ public class AdminService {
             if (preset == null && row[1] == null && row[2] == null && mode == null) {
                 untouched += count;
             }
-            // A key this server does not know (a newer app's, say) is still what they see as far
-            // as anyone here can tell, which is Classic.
+            // An old key not moved over yet counts as the theme it became. A key this server does
+            // not know (a newer app's, say) is still what they see as far as anyone here can
+            // tell, which is the default.
             boolean custom = ThemeSettings.CUSTOM.equals(preset) && row[1] != null && row[2] != null;
+            String current = ThemeSettings.current(preset);
             String key = custom ? ThemeSettings.CUSTOM
-                    : preset != null && ThemeSettings.PRESETS.contains(preset) ? preset : "classic";
+                    : current != null && ThemeSettings.PRESETS.contains(current) ? current
+                    : ThemeSettings.DEFAULT_PRESET;
             presets.merge(key, count, Long::sum);
             if (custom) {
                 pairs.merge(List.of((String) row[1], (String) row[2]), count, Long::sum);

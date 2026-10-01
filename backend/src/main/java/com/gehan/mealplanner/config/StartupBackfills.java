@@ -7,6 +7,7 @@ import com.gehan.mealplanner.service.FoodIcons;
 import com.gehan.mealplanner.service.GroceryCategoryService;
 import com.gehan.mealplanner.service.IngredientService;
 import com.gehan.mealplanner.service.RecipeService;
+import com.gehan.mealplanner.service.ThemeSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -29,6 +30,24 @@ import java.util.Map;
 public class StartupBackfills {
 
     private static final Logger log = LoggerFactory.getLogger(StartupBackfills.class);
+
+    /**
+     * The eight colour pairs became five whole themes: anyone still on an old key is moved to
+     * the theme it became (ThemeSettings.LEGACY_PRESETS). Only rows with an old key are touched.
+     */
+    @Bean
+    public ApplicationRunner moveOldThemePresets(ThemeSettings themeSettings, JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int moved = themeSettings.migrateStoredPresets(jdbc);
+                if (moved > 0) {
+                    log.info("Moved {} people from the old colour pairs to the new themes", moved);
+                }
+            } catch (Exception e) {
+                log.warn("Could not move people to the new themes: {}", e.getMessage());
+            }
+        };
+    }
 
     /** The grocery list's "Pantry staples" became cupboard items marked staple. */
     @Bean

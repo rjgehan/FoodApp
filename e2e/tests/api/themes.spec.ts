@@ -30,10 +30,35 @@ test('your colours are yours, kept as you set them and tidied on the way in', as
   // A preset keeps the custom pair for when they go back to it; nothing at all is the default.
   const preset = await call('PUT', '/api/users/me/theme', {
     token: me.token,
-    body: { preset: 'Ocean', primary: '#0F766E', secondary: '#F97316', mode: 'SYSTEM' },
+    body: { preset: 'Matcha', primary: '#0F766E', secondary: '#F97316', mode: 'SYSTEM' },
   });
-  expect(preset).toEqual({ preset: 'ocean', primary: '#0F766E', secondary: '#F97316', mode: 'SYSTEM' });
+  expect(preset).toEqual({ preset: 'matcha', primary: '#0F766E', secondary: '#F97316', mode: 'SYSTEM' });
   expect(await call('PUT', '/api/users/me/theme', { token: me.token, body: {} })).toEqual(DEFAULT);
+});
+
+test('an old iPhone build sending an old colour pair gets the theme it became', async () => {
+  const hh = await newHousehold();
+  const me = await newMember(hh.id);
+  const old: Record<string, string> = {
+    classic: 'tomato',
+    mocha: 'tomato',
+    basil: 'matcha',
+    lagoon: 'matcha',
+    ocean: 'blueberry',
+    blueberry: 'blueberry',
+    plum: 'blueberry',
+    graphite: 'nordic',
+  };
+  for (const [key, now] of Object.entries(old)) {
+    const saved = await call('PUT', '/api/users/me/theme', { token: me.token, body: { preset: key, mode: 'DARK' } });
+    expect(saved, key).toEqual({ preset: now, primary: null, secondary: null, mode: 'DARK' });
+    expect((await call('GET', '/api/users/me', { token: me.token })).theme.preset, key).toBe(now);
+  }
+
+  // Custom is one colour now; an old app that still expects a pair gets the colour twice.
+  expect(
+    await call('PUT', '/api/users/me/theme', { token: me.token, body: { preset: 'custom', primary: '#2f6f9f' } }),
+  ).toEqual({ preset: 'custom', primary: '#2F6F9F', secondary: '#2F6F9F', mode: null });
 });
 
 test('a theme that is not one is refused, with a sentence saying why', async () => {
@@ -51,11 +76,11 @@ test('a theme that is not one is refused, with a sentence saying why', async () 
   expect(await refused({ preset: 'neon' })).toEqual({ status: 400, message: 'There\'s no theme called "neon".' });
   expect((await refused({ preset: 'custom', primary: '#FFF', secondary: '#000000' })).message).toMatch(/main colour/);
   expect((await refused({ preset: 'custom', primary: '#FFFFFF', secondary: 'red' })).message).toMatch(/second colour/);
-  expect((await refused({ preset: 'custom', primary: '#FFFFFF' })).message).toMatch(/both of its colours/);
+  expect((await refused({ preset: 'custom', secondary: '#FFFFFF' })).message).toMatch(/needs its colour/);
   expect((await refused({ mode: 'sepia' })).message).toMatch(/SYSTEM, LIGHT or DARK/);
   // Nothing refused was kept.
   expect((await call('GET', '/api/users/me', { token: me.token })).theme).toEqual(DEFAULT);
-  expect(await statusOf('PUT', '/api/users/me/theme', { body: { preset: 'ocean' } })).toBe(401);
+  expect(await statusOf('PUT', '/api/users/me/theme', { body: { preset: 'nordic' } })).toBe(401);
 });
 
 test('the admin sees how many pick each theme; nobody else sees there is anything to see', async () => {
@@ -66,8 +91,8 @@ test('the admin sees how many pick each theme; nobody else sees there is anythin
   const b = await newMember(hh.id);
   const c = await newMember(hh.id);
 
-  await call('PUT', '/api/users/me/theme', { token: a.token, body: { preset: 'plum', mode: 'DARK' } });
-  await call('PUT', '/api/users/me/theme', { token: b.token, body: { preset: 'plum' } });
+  await call('PUT', '/api/users/me/theme', { token: a.token, body: { preset: 'brunch', mode: 'DARK' } });
+  await call('PUT', '/api/users/me/theme', { token: b.token, body: { preset: 'brunch' } });
   await call('PUT', '/api/users/me/theme', {
     token: c.token,
     body: { preset: 'custom', primary: '#123ABC', secondary: '#FEDCBA', mode: 'LIGHT' },
@@ -79,15 +104,13 @@ test('the admin sees how many pick each theme; nobody else sees there is anythin
   const pair = (u: any) => u.custom.find((p: any) => p.primary === '#123ABC' && p.secondary === '#FEDCBA')?.count ?? 0;
 
   expect(after.people - before.people).toBe(3);
-  expect(preset(after, 'plum') - preset(before, 'plum')).toBe(2);
+  expect(preset(after, 'brunch') - preset(before, 'brunch')).toBe(2);
   expect(preset(after, 'custom') - preset(before, 'custom')).toBe(1);
   expect(pair(after) - pair(before)).toBe(1);
   expect(mode(after, 'DARK') - mode(before, 'DARK')).toBe(1);
   expect(mode(after, 'LIGHT') - mode(before, 'LIGHT')).toBe(1);
-  // Every preset is listed, picked or not.
-  expect(after.presets.map((p: any) => p.key)).toEqual(
-    expect.arrayContaining(['classic', 'basil', 'lagoon', 'ocean', 'blueberry', 'plum', 'mocha', 'graphite', 'custom']),
-  );
+  // Every preset is listed, picked or not — today's five and custom, none of the old pairs.
+  expect(after.presets.map((p: any) => p.key)).toEqual(['tomato', 'matcha', 'blueberry', 'brunch', 'nordic', 'custom']);
 
   // And on the People tab, each person's own.
   const people = await call('GET', `/api/admin/users?q=${encodeURIComponent(c.email)}`, { token: boss.token });
