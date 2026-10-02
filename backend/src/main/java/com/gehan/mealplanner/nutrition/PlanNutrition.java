@@ -38,6 +38,13 @@ public class PlanNutrition {
     /** A fortnight at most: it is a look at the plan, not a food diary. */
     static final int LONGEST = 31;
 
+    /**
+     * A day with this many meals counted is near enough a whole day to average. A day with only
+     * its dinner planned is a third of a day, and averaging it in made a week of 1,200–1,500 kcal
+     * days read "1,000 kcal a day", which anyone would take for how much they eat.
+     */
+    static final int FULLER_DAY = 2;
+
     private final MealPlanEntryRepository entries;
     private final HouseholdRepository households;
     private final HouseholdService householdService;
@@ -135,21 +142,32 @@ public class PlanNutrition {
         }
 
         List<PlanDay> days = new ArrayList<>();
-        Nutrients sum = Nutrients.NONE;
-        int daysCounted = 0, mealsPlanned = 0, mealsCounted = 0;
+        Nutrients sum = Nutrients.NONE, fullerSum = Nutrients.NONE;
+        int daysCounted = 0, fullerDays = 0, mealsPlanned = 0, mealsCounted = 0;
         for (Map.Entry<LocalDate, Nutrients> day : totals.entrySet()) {
             int[] count = counts.get(day.getKey());
             mealsPlanned += count[0];
             mealsCounted += count[1];
+            boolean fuller = count[1] >= FULLER_DAY;
             if (count[1] > 0) {
                 daysCounted++;
                 sum = sum.plus(day.getValue());
             }
-            days.add(new PlanDay(day.getKey(), Values.of(day.getValue()), count[0], count[1], count[1] < count[0]));
+            if (fuller) {
+                fullerDays++;
+                fullerSum = fullerSum.plus(day.getValue());
+            }
+            days.add(new PlanDay(day.getKey(), Values.of(day.getValue()), count[0], count[1], count[1] < count[0], fuller));
         }
-        Values average = Values.of(daysCounted == 0 ? Nutrients.NONE : sum.scaled(1.0 / daysCounted));
+        // The average is of the fuller days when there are any; otherwise of every day with
+        // something counted, and it says so ("partly planned").
+        String averageOver = fullerDays > 0 ? "fuller" : daysCounted > 0 ? "partial" : "none";
+        int averageDays = fullerDays > 0 ? fullerDays : daysCounted;
+        Nutrients averaged = fullerDays > 0 ? fullerSum : sum;
+        Values average = Values.of(averageDays == 0 ? Nutrients.NONE : averaged.scaled(1.0 / averageDays));
         return new PlanNutritionResponse(from, to, days, average, daysCounted, mealsPlanned, mealsCounted, notCounted,
-                NutritionLabels.REFERENCE_DAY, note(daysCounted, mealsPlanned, mealsCounted), Attribution.USDA);
+                NutritionLabels.REFERENCE_DAY, note(daysCounted, fullerDays, mealsPlanned, mealsCounted), Attribution.USDA,
+                averageDays, averageOver);
     }
 
     /** A food planned on its own: one of it ("2 eggs" would be planned as servings: 1 each). */
@@ -164,13 +182,22 @@ public class PlanNutrition {
         return entry.getRecipe().getId() + ":" + entry.getIncludedOptionalIngredientIds().stream().sorted().toList();
     }
 
-    static String note(int daysCounted, int mealsPlanned, int mealsCounted) {
+    static String note(int daysCounted, int fullerDays, int mealsPlanned, int mealsCounted) {
         if (mealsPlanned == 0) return "Nothing is planned yet.";
         String meals = mealsCounted == mealsPlanned
                 ? "All " + mealsPlanned + " planned meals counted."
                 : mealsCounted + " of " + mealsPlanned + " planned meals counted — places, links and foods without data aren't.";
-        return "Per person, one serving of each meal. " + meals
-                + (daysCounted > 0 ? " The average is over the " + daysCounted + (daysCounted == 1 ? " day" : " days")
-                + " with meals counted." : "");
+        String average = "";
+        if (fullerDays > 0) {
+            average = " The average is over the " + days(fullerDays) + " with two or more meals counted"
+                    + (daysCounted > fullerDays ? "; days with only one meal planned are left out of it." : ".");
+        } else if (daysCounted > 0) {
+            average = " No day has more than one meal counted yet, so the average is of partly planned days.";
+        }
+        return "Per person, one serving of each meal. " + meals + average;
+    }
+
+    private static String days(int n) {
+        return n == 1 ? "1 day" : n + " days";
     }
 }

@@ -111,6 +111,9 @@ test('the plan adds up per person per day, and says which meals it could not cou
   // One egg on its own is one large egg.
   near(day2.totals.kcal, 71.5);
   expect(week.daysCounted).toBe(2);
+  // No day has two meals counted, so the average is of the two partly planned days, and says so.
+  expect([week.averageDays, week.averageOver]).toEqual([2, 'partial']);
+  expect(week.days.map((d: any) => d.fuller)).toEqual(Array(7).fill(false));
   near(week.average.kcal, (217.1 + 71.5) / 2);
   expect([week.mealsPlanned, week.mealsCounted]).toEqual([4, 2]);
   expect(week.notCounted.map((m: any) => `${m.name}:${m.reason}`).sort()).toEqual(['Diner:PLACE', 'Mystery:NO_DATA']);
@@ -120,6 +123,22 @@ test('the plan adds up per person per day, and says which meals it could not cou
   const window = await call('GET', `/api/nutrition/households/${hh.id}/plan`, { token: owner.token });
   expect(window.days).toHaveLength(7);
   expect(await statusOf('GET', `/api/nutrition/households/${hh.id}/plan?start=${isoDate(0)}&end=${isoDate(60)}`, { token: owner.token })).toBe(400);
+});
+
+test('the week\'s average is of the days with two or more meals, not dragged down by a lone dinner', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const recipe = await chickenAndEggs(hh.id);
+  // Day 1: three meals of it (646 kcal); day 2: two (431); day 3: only a dinner (215).
+  for (const meal of ['BREAKFAST', 'LUNCH', 'DINNER'] as const) await plan(hh.id, isoDate(1), meal, { recipeId: recipe.id });
+  for (const meal of ['LUNCH', 'DINNER'] as const) await plan(hh.id, isoDate(2), meal, { recipeId: recipe.id });
+  await plan(hh.id, isoDate(3), 'DINNER', { recipeId: recipe.id });
+
+  const week = await call('GET', `/api/nutrition/households/${hh.id}/plan?start=${isoDate(0)}&end=${isoDate(6)}`, { token: owner.token });
+  expect(week.days.slice(1, 4).map((d: any) => d.fuller)).toEqual([true, true, false]);
+  expect([week.daysCounted, week.averageDays, week.averageOver]).toEqual([3, 2, 'fuller']);
+  near(week.average.kcal, (646.3 + 430.9) / 2);
+  expect(week.note).toContain('The average is over the 2 days with two or more meals counted');
 });
 
 test('someone outside the household sees neither its recipes\' nutrition nor its plan', async () => {

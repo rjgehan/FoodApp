@@ -235,6 +235,14 @@ class NutritionMathsTest {
     }
 
     @Test
+    void thePlanAverageIsOfTheFullerDays() {
+        assertThat(PlanNutrition.note(5, 3, 8, 8)).isEqualTo("Per person, one serving of each meal. All 8 planned "
+                + "meals counted. The average is over the 3 days with two or more meals counted; days with only one "
+                + "meal planned are left out of it.");
+        assertThat(PlanNutrition.note(2, 0, 2, 2)).endsWith("so the average is of partly planned days.");
+    }
+
+    @Test
     void anOptionalLineIsCountedWhenThisOccasionIncludesIt() {
         RecipeNutrition maths = new RecipeNutrition(null, null, table, null, null);
         var sum = maths.add(List.of(line("coriander", "1", "bunch", 169997, true, true)));

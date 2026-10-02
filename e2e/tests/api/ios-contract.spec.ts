@@ -191,8 +191,9 @@ test('nutrition: the answers the phone decodes, and what its Apple Intelligence 
   await plan(hh.id, isoDate(1), 'DINNER', { recipeId: recipe.id });
   const week = await call('GET', `/api/nutrition/households/${hh.id}/plan?start=${isoDate(0)}&end=${isoDate(6)}`, { token });
   expect(week.days).toHaveLength(7);
-  for (const key of ['date', 'totals', 'mealsPlanned', 'mealsCounted', 'partial']) expect(week.days[0]).toHaveProperty(key);
-  expect(week).toMatchObject({ daysCounted: 1, mealsPlanned: 1, mealsCounted: 1 });
+  for (const key of ['date', 'totals', 'mealsPlanned', 'mealsCounted', 'partial', 'fuller']) expect(week.days[0]).toHaveProperty(key);
+  // averageDays and averageOver: what the phone's week card and Explore's door say the average is of.
+  expect(week).toMatchObject({ daysCounted: 1, mealsPlanned: 1, mealsCounted: 1, averageDays: 1, averageOver: 'partial' });
 
   // Recent lookups: the phone writes a recipe's id in lower case, so it is one lookup with the web's.
   await call('POST', '/api/nutrition/recent', { token, body: { kind: 'RECIPE', ref: recipe.id.toLowerCase(), householdId: hh.id } });

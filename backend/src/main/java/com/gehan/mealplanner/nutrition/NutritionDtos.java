@@ -124,17 +124,26 @@ public final class NutritionDtos {
 
     // Plans
 
-    public record PlanDay(LocalDate date, Values totals, int mealsPlanned, int mealsCounted, boolean partial) {
+    /**
+     * partial: some planned meals were not counted. fuller: two or more meals counted — the days
+     * the average is taken over, when there are any.
+     */
+    public record PlanDay(LocalDate date, Values totals, int mealsPlanned, int mealsCounted, boolean partial,
+                          boolean fuller) {
     }
 
     /** reason: PLACE, SAVED_LINK, NO_DATA, DELETED. */
     public record PlanMealNotCounted(LocalDate date, String mealType, String name, String reason) {
     }
 
+    /**
+     * average is over averageDays days: the fuller ones (averageOver "fuller"), or when there are
+     * none every day with something counted ("partial"), or nothing ("none").
+     */
     public record PlanNutritionResponse(LocalDate start, LocalDate end, List<PlanDay> days, Values average,
                                         int daysCounted, int mealsPlanned, int mealsCounted,
                                         List<PlanMealNotCounted> notCounted, Reference reference, String note,
-                                        Attribution attribution) {
+                                        Attribution attribution, int averageDays, String averageOver) {
     }
 
     // Products
