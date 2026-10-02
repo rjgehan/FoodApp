@@ -216,12 +216,18 @@ function Lead({ children }: { children: string }) {
  * "600 g", "1 knob · 15g". The grams on a contributor are for the servings shown; `scale` is
  * those servings over the recipe's, to get back to the recipe's own amount.
  */
+const METRIC_VOLUME = /^(ml|millilit|cl|dl|l$|litre|liter)/i;
+
 function eachText(c: Contributor, scale: number): string {
   const amount = c.amount?.trim() ?? '';
   const quantity = parseFloat(amount);
   if (!amount || c.gramsHow === 'WEIGHT' || !(quantity > 0) || !(scale > 0)) return amount;
-  const each = c.grams / scale / quantity;
-  const grams = `${c.estimated ? '≈' : ''}${gramsText(each)}`;
+  const mark = c.estimated ? '≈' : '';
+  // "400 ml" of coconut milk is "≈392g" in all; one millilitre each says nothing.
+  if (METRIC_VOLUME.test(amount.split(' ').slice(1).join(' '))) {
+    return `${amount} · ${mark}${gramsText(c.grams / scale)}`;
+  }
+  const grams = `${mark}${gramsText(c.grams / scale / quantity)}`;
   return `${amount} · ${quantity === 1 ? grams : `${grams} each`}`;
 }
 
