@@ -216,11 +216,40 @@ struct GalleryView: View {
                         MoveIntoMineSheet(recipe: SampleData.published[0], session: twoHouses) { _, _ in }
                             .pageBackground()
                     }
-                    entry("Nutrition facts — coming soon", "leaf") {
-                        NavigationStack { SoonScreen(destination: SoonDestination.all[0]) }
+                    entry("Nutrition facts", "leaf") {
+                        NavigationStack {
+                            NutritionScreen(session: session, sample: .init(week: NutritionSamples.week, recent: NutritionSamples.recent))
+                        }
+                    }
+                    entry("Nutrition facts — searching", "magnifyingglass") {
+                        NavigationStack {
+                            NutritionScreen(session: session, sample: .init(week: NutritionSamples.week, recent: [],
+                                                                            query: "chick", found: NutritionSamples.search))
+                        }
+                    }
+                    entry("Scan a packet", "barcode.viewfinder") {
+                        NutritionScannerScreen { _ in }
+                    }
+                    entry("A packet's label", "shippingbox") {
+                        NavigationStack {
+                            NutritionProductScreen(session: session, barcode: NutritionSamples.yogurt.barcode, scanned: true,
+                                                   sample: NutritionSamples.yogurt)
+                        }
+                    }
+                    entry("A packet nobody has added", "questionmark.square.dashed") {
+                        NavigationStack { NutritionProductScreen(session: session, barcode: "4006381333931", sampleMissing: true) }
+                    }
+                    entry("An ingredient's label", "leaf.circle") {
+                        NavigationStack { NutritionFoodScreen(session: session, fdcId: 173757, sample: NutritionSamples.chickpeas) }
+                    }
+                    entry("A recipe's nutrition", "chart.pie") {
+                        NavigationStack {
+                            RecipeNutritionScreen(session: session, recipeId: NutritionSamples.recipeId,
+                                                  sample: NutritionSamples.lemonChicken())
+                        }
                     }
                     entry("Meal plans — coming soon", "target") {
-                        NavigationStack { SoonScreen(destination: SoonDestination.all[1]) }
+                        NavigationStack { SoonScreen(destination: SoonDestination.all.first { $0.kind == .mealPlans }!) }
                     }
                 }
 
