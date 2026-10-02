@@ -149,8 +149,18 @@ opens Settings; with any of those `-mp_debug_scroll` values it goes on into the 
 
 On the Explore tab (`-mp_debug_tab explore`), `-mp_debug_screen explore-recipes` opens Global
 recipes, `explore-recipe` its first published recipe from another household, `explore-move` that
-recipe's Move into my recipes, and `explore-nutrition` or `explore-meal-plans` that door's
-coming-soon page.
+recipe's Move into my recipes, and `explore-meal-plans` that door's coming-soon page
+(and `explore-nutrition` Nutrition facts, below).
+
+Nutrition facts (Explore, the mockup's 5.4–5.6): `-mp_debug_tab explore -mp_debug_screen
+explore-nutrition` opens it (`nutrition-search` with `-mp_debug_query chicken` searches,
+`nutrition-scan` opens the barcode camera, which in the Simulator is the type-it-in card);
+`nutrition-food -mp_debug_ref <fdcId>`, `nutrition-product -mp_debug_ref <barcode>` and
+`nutrition-recipe -mp_debug_recipe <uuid>` go on to an ingredient's label, a packet's and a
+recipe's nutrition. From a recipe page, `-mp_debug_screen recipe-nutrition -mp_debug_recipe <uuid>`
+pushes its nutrition with back reading "Recipe". `-mp_debug_ai off` is a phone without Apple
+Intelligence, `-mp_debug_ai fake` a stand-in model that always answers the same way;
+`-mp_debug_label_photo <path>` reads that picture as a packet's label where the screen offers to.
 
 `-mp_debug_screen prompt-email|prompt-restock|prompt-starter|prompt-removed|prompt-ideas|prompt-share|prompt-rewritten`
 shows the prompts, the ideas board and the share and rewrite screens (the mockup's section 07) from
@@ -248,6 +258,37 @@ it back), Suggest an idea at the bottom, and swipe — or the ••• — to e
 admin, signed in with the password, also gets Where it's up to (Open, Planned, Done, Not doing)
 and Delete on every idea. A build from before the board never asks, and never shows it; if the
 board is switched off while the phone has it open, it says so and the lightbulb goes.
+
+## Nutrition facts and Apple Intelligence
+
+Explore → Nutrition facts is the web's page on the same `/api/nutrition` answers: search an
+ingredient (USDA FoodData Central) or a packet (Open Food Facts, only when you press search), scan
+a barcode, the coming week's plan a day at a time, recent lookups, a label per 100 g or per
+serving with Cupboard and Add to list, and a recipe's nutrition (also from the recipe page, under
+the ingredients). The door on Explore and the row on the recipe page only appear once the server
+has answered `GET /api/nutrition`; an older server's 404 hides them until the app is next opened.
+
+Every number comes from the server. On a phone with Apple Intelligence (FoundationModels, iOS 26+)
+the model only chooses and estimates, and only where the server was unsure
+(`Features/Nutrition/NutritionAssist.swift` has the rules):
+
+- **Which food** an ingredient is, picked from the server's own shortlist with a guided `.anyOf`
+  (or "none of these"), for lines the matcher only guessed or could not count. Sent back as
+  `PUT /api/nutrition/ingredients/{id}/match {"fdcId", "source": "ai"}`, which the server takes
+  only from the shortlist and never over a person's choice — so it improves everybody's numbers.
+- **What one weighs** for a knob, a handful or a count ("2 chicken breasts"), as grams inside a
+  range for that unit (a guided `.range`, checked again), sent as `PUT …/grams {"unit", "grams",
+  "source": "ai"}`. Tins and packs are left to the server's packaging sizes.
+- **A few words** about a serving under the ring. It is given words, never figures, and an answer
+  with a digit in it is thrown away; without the model the server's rule-made words show.
+- **A packet's label from a photo** (iOS 27, a model with vision): for a barcode Open Food Facts
+  does not know. Its figures are checked to add up (energy against the macros) before they are
+  shown, marked as read by Apple Intelligence, and are not saved anywhere.
+
+Whatever the model chose wears a small ✨ Apple Intelligence mark. Each line is asked about once
+per phone (UserDefaults `mp_nutrition_asked`). A Simulator lends the Mac's own model when the Mac
+has Apple Intelligence on. The rules are checked without any of that by `./checks/run.sh`, which
+compiles the Foundation-only files with a scripted stand-in on this Mac.
 
 ## Food icons
 
