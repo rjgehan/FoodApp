@@ -204,7 +204,7 @@ struct GalleryView: View {
 
                 KitchenSection("Explore") {
                     entry("Explore", "safari") {
-                        ExploreView(session: session, sample: SampleData.published)
+                        ExploreView(session: session, sample: SampleData.published, sampleWeek: NutritionSamples.week)
                     }
                     entry("Global recipes", "globe") {
                         NavigationStack { GlobalRecipesScreen(session: session, sample: SampleData.published) }

@@ -30,6 +30,10 @@ struct RecipeDetailView: View {
     @State private var addingPhotos = false
     /// The hero has scrolled out of sight, so the status bar gets the page behind it.
     @State private var heroGone = false
+    /// A serving's calories and its few words, for the way into the recipe's nutrition (5.6).
+    @State private var nutrition: RecipeNutrition?
+    @State private var showingNutrition = false
+    @State private var nutritionDoor = NutritionAvailability.shared
     @Environment(\.dismiss) private var dismissDetail
 
     private var mine: Bool { !recipe.shared }
@@ -101,6 +105,15 @@ struct RecipeDetailView: View {
         .navigationDestination(isPresented: $sharing) {
             RecipeShareSheet(recipe: $recipe)
         }
+        .navigationDestination(isPresented: $showingNutrition) {
+            if let session {
+                RecipeNutritionScreen(session: session, recipeId: recipe.id, backLabel: "Recipe")
+            }
+        }
+        // Asked once the recipe is here, and again only when its ingredients change.
+        .task(id: recipe.ingredients.map { "\($0.id):\($0.quantity ?? -1):\($0.unit ?? "")" }.joined(separator: "|")) {
+            await loadNutrition()
+        }
         .sheet(item: $sheet) { which in
             switch which {
             case .options:
@@ -130,7 +143,7 @@ struct RecipeDetailView: View {
         }
         .task { await loadSiblings() }
         #if DEBUG
-        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-edit
+        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-edit|recipe-nutrition
         // opens that on this recipe, for screenshot runs.
         .task {
             try? await Task.sleep(for: .milliseconds(600))
@@ -141,6 +154,7 @@ struct RecipeDetailView: View {
             case "recipe-delete" where mine: confirmingDelete = true
             case "recipe-method": tab = .method
             case "recipe-edit" where mine: sheet = .edit
+            case "recipe-nutrition": showingNutrition = true
             default: break
             }
         }
@@ -210,8 +224,35 @@ struct RecipeDetailView: View {
                 VStack(spacing: 0) {
                     ForEach(recipe.ingredients) { ingredient in ingredientRow(ingredient, scale: scale) }
                 }
+                if nutritionDoor.available == true, session != nil {
+                    nutritionRow.padding(.top, 4)
+                }
             }
         }
+    }
+
+    /// The way into its nutrition (5.6), worked out from the ingredients above. Only on a server
+    /// that has Nutrition facts; if the numbers do not come, the row still leads there.
+    private var nutritionRow: some View {
+        let kcal = nutrition?.perServing.kcal ?? 0
+        let words = (nutrition?.highlights.prefix(2).joined(separator: ", ") ?? "").lowercased()
+        let subtitle = kcal > 0
+            ? ["\(NutritionText.kcal(kcal)) kcal a serving", words].filter { !$0.isEmpty }.joined(separator: " · ")
+            : "Per serving, from the ingredients"
+        return ListGroup {
+            Button { showingNutrition = true } label: {
+                ListRow("Nutrition facts", subtitle: subtitle, chevron: true,
+                        leading: { Tile("leaf", tone: .herb, size: 36) }, trailing: { EmptyView() })
+            }
+            .buttonStyle(PressFade())
+        }
+    }
+
+    private func loadNutrition() async {
+        guard session != nil, !recipe.ingredients.isEmpty else { return }
+        await nutritionDoor.check()
+        guard nutritionDoor.available == true else { return }
+        nutrition = try? await APIClient.shared.recipeNutrition(recipe.id, household: session?.household?.id)
     }
 
     private func ingredientRow(_ item: RecipeIngredient, scale: Double) -> some View {

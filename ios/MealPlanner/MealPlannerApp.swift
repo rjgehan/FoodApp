@@ -382,7 +382,7 @@ struct RootView: View {
         )) {
             DebugRecipeDetail(session: session)
         }
-        // -mp_debug_screen recipe|recipe-options|recipe-plan|recipe-delete|recipe-method
+        // -mp_debug_screen recipe|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-nutrition
         // -mp_debug_recipe <uuid>: that recipe's page from the server, full screen as it is pushed,
         // with the named sheet or tab open.
         .fullScreenCover(isPresented: Binding(

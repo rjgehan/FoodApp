@@ -9,16 +9,22 @@ import SwiftUI
  arrive later without anything having to move.
 
  Global recipes is the open one, so it is first and biggest, with how many there are on it.
- Nutrition facts and Meal plans are not built yet, and their doors say so rather than showing
+ Nutrition facts shows what the coming week's plan adds up to, a day on average — and is only
+ there once the server has said it has Nutrition facts, so a phone ahead of its server shows no
+ door that leads nowhere. Meal plans is not built yet, and its door says so rather than showing
  numbers that are not real. The same three doors as the web, in the same order and colours.
 */
 struct ExploreView: View {
     var session: Session
     /// Published recipes to show without a server — previews and the Gallery.
     var sample: [Recipe]?
+    /// The week Nutrition's door adds up, without a server (previews and the Gallery).
+    var sampleWeek: PlanNutrition?
 
     @State private var path = NavigationPath()
     @State private var count: Int?
+    @State private var week: PlanNutrition?
+    @State private var nutrition = NutritionAvailability.shared
     @State private var switchingHousehold = false
     @State private var showingAccount = false
     @State private var showingIdeas = false
@@ -37,6 +43,12 @@ struct ExploreView: View {
                             GlobalRecipesDoor(count: count)
                         }
                         .buttonStyle(PressFade())
+                        if sampleWeek != nil || nutrition.available == true {
+                            NavigationLink(value: ExploreRoute.nutrition) {
+                                NutritionDoor(week: week)
+                            }
+                            .buttonStyle(PressFade())
+                        }
                         ForEach(SoonDestination.all) { destination in
                             NavigationLink(value: ExploreRoute.soon(destination.kind)) {
                                 SoonDoor(destination: destination)
@@ -52,12 +64,21 @@ struct ExploreView: View {
             .hidesNavigationBar()
             // The bar is hidden here, but its title is what the next screen's back button says.
             .navigationTitle("Explore")
-            .refreshable { await loadCount() }
+            .refreshable {
+                await loadCount()
+                await loadWeek()
+            }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
             .navigationDestination(for: ExploreRoute.self) { route in
                 switch route {
                 case .globalRecipes:
                     GlobalRecipesScreen(session: session, sample: sample)
+                case .nutrition:
+                    if let sampleWeek {
+                        NutritionScreen(session: session, sample: .init(week: sampleWeek, recent: NutritionSamples.recent))
+                    } else {
+                        NutritionScreen(session: session)
+                    }
                 case .soon(let kind):
                     if let destination = SoonDestination.all.first(where: { $0.kind == kind }) {
                         SoonScreen(destination: destination)
@@ -71,6 +92,20 @@ struct ExploreView: View {
             debugOpen()
             #endif
         }
+        .task(id: session.household?.id) { await loadWeek() }
+        // Back from Nutrition facts: the week may have been planned on meanwhile.
+        .onChange(of: path.count) { _, depth in
+            if depth == 0 { Task { await loadWeek() } }
+        }
+    }
+
+    /// The same seven days Nutrition's chart adds up, so the door and the page agree.
+    private func loadWeek() async {
+        if let sampleWeek { week = sampleWeek; return }
+        await nutrition.check()
+        guard nutrition.available == true, let household = session.household?.id else { return }
+        week = try? await APIClient.shared.planNutrition(household: household, start: NutritionText.day(0),
+                                                         end: NutritionText.day(6))
     }
 
     private func loadCount() async {
@@ -82,13 +117,28 @@ struct ExploreView: View {
     #if DEBUG
     /// Screenshot runs: -mp_debug_screen explore-recipes | explore-recipe | explore-move opens Global
     /// recipes (then its first published recipe from another house, then Move into my recipes on
-    /// it); explore-nutrition | explore-meal-plans opens that door's page.
+    /// it); explore-meal-plans opens that door's page. explore-nutrition opens Nutrition facts
+    /// (nutrition-search and nutrition-scan with it); nutrition-food | nutrition-product |
+    /// nutrition-recipe go on to an ingredient's label (-mp_debug_ref <fdcId>), a packet's
+    /// (-mp_debug_ref <barcode>) or a recipe's nutrition (-mp_debug_recipe <uuid>).
     private func debugOpen() {
         guard !debugOpened else { return }
         debugOpened = true
+        let ref = UserDefaults.standard.string(forKey: "mp_debug_ref") ?? ""
         switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
         case "explore-recipes", "explore-recipe", "explore-move": path.append(ExploreRoute.globalRecipes)
-        case "explore-nutrition": path.append(ExploreRoute.soon(.nutrition))
+        case "explore-nutrition", "nutrition-search", "nutrition-scan": path.append(ExploreRoute.nutrition)
+        case "nutrition-food":
+            path.append(ExploreRoute.nutrition)
+            path.append(NutritionRoute.food(Int(ref) ?? 171477))
+        case "nutrition-product":
+            path.append(ExploreRoute.nutrition)
+            path.append(NutritionRoute.product(ref.isEmpty ? "5000112637922" : ref, scanned: true))
+        case "nutrition-recipe":
+            if let id = UserDefaults.standard.string(forKey: "mp_debug_recipe").flatMap(UUID.init(uuidString:)) {
+                path.append(ExploreRoute.nutrition)
+                path.append(NutritionRoute.recipe(id))
+            }
         case "explore-meal-plans": path.append(ExploreRoute.soon(.mealPlans))
         default: break
         }
@@ -99,18 +149,19 @@ struct ExploreView: View {
 /// Where Explore's doors lead.
 enum ExploreRoute: Hashable {
     case globalRecipes
+    case nutrition
     case soon(SoonDestination.Kind)
 }
 
 // MARK: - The doors
 
 /**
- Nutrition facts and Meal plans: the mockup's 5.4–5.11, still to be built. Their doors are on
- Explore now, and each opens on a page that says what is coming, so the place the work lands
- already exists. The words come from the designer's notes for those screens, as on the web.
+ Meal plans: the mockup's 5.7–5.11, still to be built. Its door is on Explore now and opens on a
+ page that says what is coming, so the place the work lands already exists. The words come from
+ the designer's notes for those screens, as on the web.
  */
 struct SoonDestination: Identifiable, Hashable {
-    enum Kind: Hashable { case nutrition, mealPlans }
+    enum Kind: Hashable { case mealPlans }
 
     let kind: Kind
     let title: String
@@ -133,23 +184,6 @@ struct SoonDestination: Identifiable, Hashable {
     var id: Kind { kind }
 
     static let all: [SoonDestination] = [
-        SoonDestination(
-            kind: .nutrition,
-            title: "Nutrition facts",
-            blurb: "Ingredients, scanned products and your recipes",
-            symbol: "leaf",
-            tone: .herb,
-            teaser: "What your week adds up to",
-            plan: "Look up what is in the food you cook and keep, and see how the week you have planned adds up.",
-            will: [
-                Promise(symbol: "magnifyingglass", title: "Any ingredient or product",
-                        detail: "Search for it, or scan the barcode on the packet."),
-                Promise(symbol: "calendar", title: "This week's plan",
-                        detail: "Calories, protein and fibre a day, from what is on the Plan."),
-                Promise(symbol: "fork.knife", title: "Your recipes",
-                        detail: "Per serving, worked out from the ingredients, and where the calories come from."),
-            ]
-        ),
         SoonDestination(
             kind: .mealPlans,
             title: "Meal plans",
@@ -194,6 +228,41 @@ struct GlobalRecipesDoor: View {
         .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Global recipes" + (count.map { ", \($0) published" } ?? ""))
+    }
+}
+
+/**
+ Nutrition facts' door (5.1): its tile, name and line, then the week's plan as three numbers — a
+ day's calories, protein and fibre on average, for one person. Until something on the plan can be
+ counted it says how to get some numbers, rather than showing noughts.
+ */
+struct NutritionDoor: View {
+    let week: PlanNutrition?
+
+    var body: some View {
+        let average = (week?.daysCounted ?? 0) > 0 ? week?.average : nil
+        Card(padding: 16, spacing: 12) {
+            HStack(spacing: 12) {
+                Tile("leaf", tone: .herb, size: 44)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Nutrition facts").titleFont(20).foregroundStyle(Palette.text)
+                    Text("Ingredients, scanned products and your recipes").font(.system(size: 13))
+                        .foregroundStyle(Palette.muted).multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.faint)
+            }
+            HStack(spacing: 8) {
+                NutritionStat(value: average.map { NutritionText.kcal($0.kcal) } ?? "–", label: "kcal / day")
+                NutritionStat(value: average.map { NutritionText.grams($0.protein) } ?? "–", label: "Protein", tone: .herb)
+                NutritionStat(value: average.map { NutritionText.grams($0.fibre) } ?? "–", label: "Fibre", tone: .mustard)
+            }
+            Text(week == nil ? " " : average != nil ? "Daily average of this week's plan"
+                 : "Plan some meals and see what your week adds up to")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Nutrition facts" + (average.map { ", \(NutritionText.kcal($0.kcal)) kcal a day on average this week" } ?? ""))
     }
 }
 
@@ -274,12 +343,16 @@ struct SoonScreen: View {
 }
 
 #Preview("Explore") {
-    ExploreView(session: .preview, sample: SampleData.published)
+    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week)
 }
 
 #Preview("Explore — dark") {
-    ExploreView(session: .preview, sample: SampleData.published)
+    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week)
         .preferredColorScheme(.dark)
+}
+
+#Preview("Explore — nothing planned") {
+    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.emptyWeek)
 }
 
 #Preview("Coming soon") {
