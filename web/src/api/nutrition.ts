@@ -95,7 +95,10 @@ export interface Reference {
   fibre: number;
   /** "a 2,000 kcal day" */
   label: string;
+  /** "reference" (the EU/UK reference intake) or "target" (your own plan for a health target). */
   source: string;
+  /** With source "target": the plan's name, e.g. "Lean bulk". Only ever sent to its owner. */
+  plan?: string | null;
 }
 
 export interface Contributor {
@@ -105,7 +108,12 @@ export interface Contributor {
   fdcId: number;
   foodName: string;
   amount: string;
+  /** For the servings shown, not the whole recipe. */
   grams: number;
+  /** WEIGHT, PORTION, VOLUME, TYPICAL, ROUGH or LEARNED. */
+  gramsHow: string;
+  /** "a fillet ≈ 130 g", "1 large = 50 g", "1 knob = 15 g (estimated)". */
+  gramsBasis: string;
   estimated: boolean;
   kcal: number;
   protein: number;
@@ -113,6 +121,10 @@ export interface Contributor {
   fat: number;
   /** Of the whole recipe's calories, 0–1. */
   share: number;
+  /** auto (the server's matching), ai (an iPhone's Apple Intelligence chose it) or user. */
+  matchSource: string;
+  /** The food is the server's (or a model's) best guess. */
+  guess: boolean;
 }
 
 export type NotCountedReason = 'OPTIONAL' | 'NO_AMOUNT' | 'NO_MATCH' | 'NO_WEIGHT';

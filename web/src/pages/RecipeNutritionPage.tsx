@@ -7,6 +7,7 @@ import { useTablessScreen } from '../components/Layout';
 import { EmptyState, List, NavBar, NoteBox, Row, SectionLabel } from '../components/ui';
 import { ServingsStepper } from '../components/plan/PlanBits';
 import { KcalRing, MACROS, MacroBar, SourceNote } from '../components/nutrition/NutritionParts';
+import { Icon } from '../components/icons';
 
 /** Rows of contributors shown before "All N ingredients". */
 const FIRST = 5;
@@ -101,6 +102,10 @@ export default function RecipeNutritionPage() {
   const hidden = n.contributors.length - contributors.length;
   const optionalOut = n.notCounted.filter((x) => x.reason === 'OPTIONAL');
   const otherOut = n.notCounted.filter((x) => x.reason !== 'OPTIONAL');
+  // With nothing counted there is nothing to scale or rank: the list is only what was left out.
+  const nothingCounted = n.contributors.length === 0;
+  const listLabel = nothingCounted ? 'Not counted' : 'Biggest contributors';
+  const byModel = n.contributors.some((c) => c.matchSource === 'ai' || c.gramsBasis?.endsWith('(estimated)'));
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -111,14 +116,14 @@ export default function RecipeNutritionPage() {
             <span className="text-[0.875rem] text-muted">
               {n.recipeServings} {n.recipeServings === 1 ? 'serving' : 'servings'} in the recipe
             </span>
-            <ServingsStepper value={servings} onChange={setServings} label />
+            <ServingsStepper value={servings} onChange={setServings} label disabled={nothingCounted} />
           </div>
           <section aria-label="Per serving" className="card flex flex-col gap-3.5 p-4 md:p-5">
             <div className="flex items-center gap-3.5">
               <KcalRing share={(pct ?? 0) / 100} kcal={shown.kcal} />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <p className="text-[0.9375rem] font-semibold">
-                  {pct != null ? `${pct}% of ${n.reference.label}` : 'No calories counted'}
+                  {pct != null && !nothingCounted ? `${pct}% of ${n.reference.label}` : 'No calories counted'}
                 </p>
                 {n.summary && <p className="text-[0.8125rem] leading-[1.4] text-muted">{n.summary}</p>}
               </div>
@@ -131,15 +136,21 @@ export default function RecipeNutritionPage() {
 
         <div className="flex flex-col gap-3.5">
           <div>
-            <SectionLabel>Biggest contributors</SectionLabel>
+            <SectionLabel>{listLabel}</SectionLabel>
             {n.contributors.length === 0 && n.notCounted.length === 0 ? (
               <div className="card px-4">
                 <EmptyState>No ingredients to count yet.</EmptyState>
               </div>
             ) : (
-              <List label="Biggest contributors" inset={0}>
+              <List label={listLabel} inset={0}>
                 {contributors.map((c) => (
-                  <ContributorRow key={c.recipeIngredientId} c={c} included={include.includes(c.recipeIngredientId)} onToggle={toggle} />
+                  <ContributorRow
+                    key={c.recipeIngredientId}
+                    c={c}
+                    each={eachText(c, n.servings / n.recipeServings)}
+                    included={include.includes(c.recipeIngredientId)}
+                    onToggle={toggle}
+                  />
                 ))}
                 {hidden > 0 && (
                   <Row
@@ -171,6 +182,12 @@ export default function RecipeNutritionPage() {
                 ))}
               </List>
             )}
+            {byModel && (
+              <p className="mt-2 flex items-center gap-1.5 px-1 text-xs text-muted">
+                <Icon name="sparkles" size={13} className="shrink-0 text-plum" />
+                An iPhone's Apple Intelligence chose the food or the weight on lines marked so.
+              </p>
+            )}
           </div>
           <NoteBox tone="sky" icon="info">
             {n.note}
@@ -195,16 +212,48 @@ function Lead({ children }: { children: string }) {
 }
 
 /**
- * "62% · Chicken thighs · 318 kcal · 38g protein": its share of the recipe's calories, and the
- * macro that brings the most of them. An optional one that was counted in can be taken out again.
+ * What the line was weighed as, so a wrong weight can be seen: "4 fillets · ≈130g each",
+ * "600 g", "1 knob · 15g". The grams on a contributor are for the servings shown; `scale` is
+ * those servings over the recipe's, to get back to the recipe's own amount.
  */
-function ContributorRow({ c, included, onToggle }: { c: Contributor; included: boolean; onToggle: (id: string) => void }) {
+function eachText(c: Contributor, scale: number): string {
+  const amount = c.amount?.trim() ?? '';
+  const quantity = parseFloat(amount);
+  if (!amount || c.gramsHow === 'WEIGHT' || !(quantity > 0) || !(scale > 0)) return amount;
+  const each = c.grams / scale / quantity;
+  const grams = `${c.estimated ? '≈' : ''}${gramsText(each)}`;
+  return `${amount} · ${quantity === 1 ? grams : `${grams} each`}`;
+}
+
+/**
+ * "62% · Chicken thighs · 318 kcal · 38g protein": its share of the recipe's calories, and the
+ * macro that brings the most of them, then the amount and what it was weighed as. An optional
+ * one that was counted in can be taken out again. ✨ where an iPhone's model chose the food or
+ * the weight (a guess the server would not count on its own).
+ */
+function ContributorRow({
+  c,
+  each,
+  included,
+  onToggle,
+}: {
+  c: Contributor;
+  each: string;
+  included: boolean;
+  onToggle: (id: string) => void;
+}) {
   const main = [
     { kcal: 4 * c.protein, text: `${gramsText(c.protein)} protein` },
     { kcal: 4 * c.carbs, text: `${gramsText(c.carbs)} carbs` },
     { kcal: 9 * c.fat, text: `${gramsText(c.fat)} fat` },
   ].sort((a, b) => b.kcal - a.kcal)[0];
-  const subtitle = `${kcalText(c.kcal)} kcal · ${main.text}${included ? ' · optional, tap to leave out' : ''}`;
+  const byModel = c.matchSource === 'ai' || c.gramsBasis?.endsWith('(estimated)');
+  const subtitle = (
+    <>
+      <span className="block truncate">{`${kcalText(c.kcal)} kcal · ${main.text}${included ? ' · optional, tap to leave out' : ''}`}</span>
+      {each && <span className="block truncate text-[0.75rem] text-faint">{each}</span>}
+    </>
+  );
   return (
     <Row
       onClick={included ? () => onToggle(c.recipeIngredientId) : undefined}
@@ -212,6 +261,19 @@ function ContributorRow({ c, included, onToggle }: { c: Contributor; included: b
       lead={<Lead>{`${Math.round(c.share * 100)}%`}</Lead>}
       title={capitalised(c.name)}
       subtitle={subtitle}
+      wrap
+      end={
+        byModel ? (
+          <span
+            role="img"
+            aria-label={c.matchSource === 'ai' ? 'Food chosen by Apple Intelligence' : 'Weight estimated by Apple Intelligence'}
+            title={c.matchSource === 'ai' ? 'Food chosen by Apple Intelligence' : 'Weight estimated by Apple Intelligence'}
+            className="shrink-0 text-plum"
+          >
+            <Icon name="sparkles" size={14} />
+          </span>
+        ) : undefined
+      }
     />
   );
 }

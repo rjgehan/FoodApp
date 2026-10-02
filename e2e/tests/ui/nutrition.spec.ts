@@ -156,6 +156,23 @@ test('a USDA food is titled by the food, not its group, and that is what goes on
   await expect(page.getByRole('heading', { name: 'Olive oil' })).toBeVisible();
 });
 
+test('a recipe with nothing counted says so plainly, with nothing to scale', async ({ page }) => {
+  const hh = await newHousehold();
+  const recipe = await newRecipe(hh.id, unique('Mystery stew'), [
+    { name: `zzqx ${Date.now()}`, qty: 1 },
+    { name: 'salt', qty: null },
+  ]);
+  await signIn(page, hh.owner, hh.id);
+  await page.goto(`/recipes/${recipe.id}/nutrition`);
+  await expect(page.getByText('No calories counted')).toBeVisible();
+  const left = page.getByRole('list', { name: 'Not counted' });
+  await expect(left.getByText('Not counted · no amount')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Biggest contributors' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'More servings' })).toBeDisabled();
+  await expect(page.getByText('Nothing in this recipe could be counted yet.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Figures are estimates', { exact: false })).toHaveCount(0);
+});
+
 test('packets are only searched for when asked, and say where they came from', async ({ page }) => {
   const hh = await newHousehold();
   const asked: string[] = [];
@@ -251,6 +268,8 @@ test("a recipe's nutrition, from the recipe page: servings, an optional side cou
   await expect(contributors.getByRole('listitem').first()).toContainText('56%');
   await expect(contributors.getByRole('listitem').first()).toContainText('Chicken breast');
   await expect(contributors.getByText('Not counted · no amount')).toBeVisible();
+  // Each line says what it was weighed as, so a wrong weight can be seen.
+  await expect(contributors.getByText('2 · 50g each')).toBeVisible();
   await expect(page.getByText("Salt has no amount, so isn't counted.", { exact: false })).toBeVisible();
 
   // Two servings is twice one.
