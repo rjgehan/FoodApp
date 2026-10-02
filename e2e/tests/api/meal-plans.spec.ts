@@ -86,6 +86,68 @@ async function stockedKitchen() {
   return { hh, curry, traybake, stew, porridge };
 }
 
+test('something past its use-by is never pushed to be eaten, and a dated thing is used by its date or not at all', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const fish = unique('pastfish');
+  const leaf = unique('dateleaf');
+  const salmon = await cupboardAdd(hh.id, fish);
+  const spinach = await cupboardAdd(hh.id, leaf);
+  await cupboardAdd(hh.id, 'potatoes');
+  await cupboardPatch(hh.id, salmon.id, { useBy: isoDate(-1) });
+  await cupboardPatch(hh.id, spinach.id, { useBy: isoDate(1) });
+  const dish = await newRecipe(hh.id, unique('Fish, leaves and potatoes'), [
+    { name: fish, qty: 2 }, { name: leaf, qty: 100, unit: 'g' }, { name: 'potatoes', qty: 500, unit: 'g' },
+  ]);
+
+  const setup = await call('GET', `/api/households/${hh.id}/meal-plans/cupboard`, { token: owner.token });
+  // Past its date: a warning to check it, never a suggestion, a pre-tick or a highlight.
+  expect(setup.useFirst.map((u: any) => u.itemId)).not.toContain(salmon.id);
+  expect(setup.pastDate).toEqual([expect.objectContaining({ itemId: salmon.id, reason: 'past', label: 'past its date', selected: false })]);
+  expect(setup.highlights.map((h: string) => h.toLowerCase())).not.toContain(fish);
+  expect(setup.useSoon).toBe(1);
+  expect(setup.useFirst.find((u: any) => u.itemId === spinach.id)).toMatchObject({ reason: 'date', selected: true });
+
+  // Even if an older app ticks it: the fish isn't in the cupboard for any meal, so it is to buy.
+  const body = { dates: [isoDate(4)], meals: ['DINNER'], buyLimit: 5, onlyMine: true, servings: 2,
+    useFirst: [salmon.ingredientId, spinach.ingredientId] };
+  const late = await call('POST', `/api/households/${hh.id}/meal-plans/cupboard`, { token: owner.token, body });
+  expect(late.meals.map((m: any) => m.recipeId)).toEqual([dish.id]);
+  // Four days out the leaves are past their date too: neither is used, and nothing claims to save them.
+  expect(late.meals[0].uses.map((u: string) => u.toLowerCase())).toEqual(['potatoes']);
+  expect(late.meals[0].usesSoon).toEqual([]);
+  expect(late.useSoonUsed).toEqual([]);
+  expect(late.summary).not.toContain('before they go off');
+  expect(late.summary).not.toContain('before it goes off');
+
+  // Tomorrow, the leaves are still good: used, and said to be used in time. The fish never is.
+  const soon = await call('POST', `/api/households/${hh.id}/meal-plans/cupboard`, {
+    token: owner.token, body: { ...body, dates: [isoDate(1)] },
+  });
+  expect(soon.meals[0].usesSoon.map((u: string) => u.toLowerCase())).toEqual([leaf]);
+  expect(soon.useSoonUsed.map((u: string) => u.toLowerCase())).toEqual([leaf]);
+  expect(soon.meals[0].toBuy.map((u: string) => u.toLowerCase())).toEqual([fish]);
+
+  // Days that have been are not planned.
+  expect(await statusOf('POST', `/api/households/${hh.id}/meal-plans/cupboard`, {
+    token: owner.token, body: { ...body, dates: [isoDate(-1)] },
+  })).toBe(400);
+});
+
+test('a cupboard plan needs something from the cupboard, and never puts a snack at lunch', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const berry = unique('snackberry');
+  await cupboardAdd(hh.id, berry);
+  await newRecipe(hh.id, unique('Berry pot'), [{ name: berry, qty: 100, unit: 'g' }], { section: 'SNACKS' });
+  await newRecipe(hh.id, unique('Nothing in'), [{ name: unique('absentroot'), qty: 2 }], { section: 'LUNCH' });
+  const draft = await call('POST', `/api/households/${hh.id}/meal-plans/cupboard`, {
+    token: owner.token, body: { dates: [isoDate(1)], meals: ['LUNCH'], buyLimit: null, onlyMine: true, servings: 2 },
+  });
+  expect(draft.meals).toEqual([]);
+  expect(draft.open).toEqual([{ date: isoDate(1), mealType: 'LUNCH', reason: 'NOTHING_FITS' }]);
+});
+
 test('the cupboard setup lists what wants using first and the coming week', async () => {
   const { hh } = await stockedKitchen();
   const owner = await admin();
@@ -348,6 +410,22 @@ test('targets are worked out from who the plan is for, and can be set by hand', 
   });
   expect(lose).toMatchObject({ kcal: 1270, protein: 120, fat: 35 });
 
+  expect(lose.notes).toEqual([]);
+
+  // A small, older woman: her whole day is 986 kcal, so the 1,200 floor would be a surplus. The
+  // cut stops at maintenance, and says why.
+  const small = await call('POST', '/api/meal-plans/targets/calculate', {
+    token: owner.token, body: { age: 75, sex: 'female', heightCm: 150, weightKg: 42, activity: 'sedentary', goal: 'lose-fat' },
+  });
+  expect(small).toMatchObject({ tdee: 986, kcal: 990 });
+  expect(small.notes).toEqual([expect.stringContaining("won't plan below 1,200 kcal")]);
+  // Protein and fat by hand that already take more than the energy set: said plainly.
+  const tight = await call('POST', '/api/meal-plans/targets/calculate', {
+    token: owner.token, body: { ...buildMuscle, overrides: { kcal: 800, protein: 172, fat: 56 } },
+  });
+  expect(tight.carbs).toBe(0);
+  expect(tight.notes).toEqual([expect.stringContaining('1,192 kcal')]);
+
   expect(await statusOf('POST', '/api/meal-plans/targets/calculate', { token: owner.token, body: { ...buildMuscle, goal: 'bulk' } })).toBe(400);
   expect(await statusOf('POST', '/api/meal-plans/targets/calculate', { token: owner.token, body: { ...buildMuscle, age: 12 } })).toBe(400);
   expect(await statusOf('POST', '/api/meal-plans/targets/calculate', { body: buildMuscle })).toBe(401);
@@ -387,6 +465,32 @@ async function kitchenWithNutrition() {
 }
 
 const mine = { ...buildMuscle, preferences: ['no-pork'], onlyMyRecipes: true, useMyRecipesFirst: true };
+
+test('a vegetarian plan keeps kidney beans, and leaves out recipes counted only in part', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const r = (name: string, section: string, ingredients: any[], servings = 2) =>
+    newRecipe(hh.id, unique(name), ingredients, { section, servings });
+  const chilli = await r('Three-bean veggie chilli', 'DINNER', [
+    { name: 'kidney beans', qty: 2, unit: 'tins' }, { name: 'onion', qty: 1 }, { name: 'chopped tomatoes', qty: 400, unit: 'g' },
+    { name: 'rice', qty: 200, unit: 'g' }]);
+  const bacon = await r('Pea soup', 'DINNER', [
+    { name: 'frozen peas', qty: 500, unit: 'g' }, { name: 'onion', qty: 1 }, { name: 'bacon', qty: 100, unit: 'g', optional: true }]);
+  const pudding = await r('Strawberry thing', 'DINNER', [
+    { name: 'strawberries', qty: 1, unit: 'punnet' }, { name: 'double cream', qty: 300, unit: 'ml' },
+    { name: 'caster sugar', qty: 3, unit: 'heaped tsp' }], 1);
+  const preview = await call('POST', `/api/households/${hh.id}/meal-plans/targets/preview`, {
+    token: owner.token,
+    body: { details: { ...buildMuscle, preferences: ['vegetarian'], onlyMyRecipes: true, days: 3, meals: ['DINNER'] } },
+  });
+  const chosen = preview.days.flatMap((d: any) => d.meals.map((m: any) => m.recipeId));
+  expect(chosen).toContain(chilli.id);
+  // Optional bacon is still bacon; the pudding's numbers are its cream alone.
+  expect(chosen).not.toContain(bacon.id);
+  expect(chosen).not.toContain(pudding.id);
+  const nutrition = await call('GET', `/api/nutrition/recipes/${pudding.id}?householdId=${hh.id}`, { token: owner.token });
+  expect(nutrition.highlights).not.toContain('Low carb');
+});
 
 test('a private target plan is chosen from existing recipes, near the day\'s targets, honouring preferences', async () => {
   const { hh, recipes } = await kitchenWithNutrition();
@@ -488,8 +592,11 @@ test('applying a target plan puts its meals on the shared Plan from a start date
   expect(applied).toMatchObject({ added: 4, skipped: [], from: isoDate(30), to: isoDate(31) });
   const housemate = await newMember(hh.id);
   const onPlan = await call('GET', `/api/households/${hh.id}/meal-plan?start=${isoDate(30)}&end=${isoDate(31)}`, { token: housemate.token });
+  // Cooked for two: the plan's portion for its owner, plus one serving for the other person.
   expect(onPlan.map((e: any) => [e.date, e.mealType, e.recipeId, e.servings])).toEqual(
-    meals.map((m: any) => [isoDate(30 + m.day), m.mealType, m.recipeId, 2]));
+    meals.map((m: any) => [isoDate(30 + m.day), m.mealType, m.recipeId, 1 + Math.ceil(m.portion)]));
+  // Each meal says one serving's energy, so the portion behind the number can be shown.
+  for (const m of meals) expect(Math.abs(m.kcal - m.kcalPerServing * m.portion)).toBeLessThanOrEqual(1);
   expect(await statusOf('GET', base, { token: housemate.token })).toBe(404);
 
   // Again: every slot is taken, so nothing is doubled. One day of it, elsewhere, works.
