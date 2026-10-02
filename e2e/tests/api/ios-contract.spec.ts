@@ -119,3 +119,83 @@ test('restock reminders: set from a sheet, the question on opening, and its two 
   await call('DELETE', `${base}/${coffee.ingredientId}`, { token });
   expect((await call('GET', base, { token })).map((r: any) => r.name)).toEqual(['dish soap']);
 });
+
+test('nutrition: the answers the phone decodes, and what its Apple Intelligence sends back', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const recipe = await newRecipe(hh.id, 'Curry for the phone', [
+    { name: 'chicken thighs', qty: 800, unit: 'g' },
+    { name: 'butter', qty: 1, unit: 'knob' },
+    { name: 'curry paste', qty: 2, unit: 'tbsp' },
+    { name: 'parsley', qty: 1, unit: 'bunch', optional: true },
+  ]);
+  const line = (name: string) => recipe.ingredients.find((i: any) => i.ingredientName === name);
+
+  // NutritionAvailability: the doors appear only when this answers.
+  const status = await call('GET', '/api/nutrition', { token });
+  for (const key of ['ready', 'foods', 'version']) expect(status).toHaveProperty(key);
+
+  // RecipeNutritionScreen: servings, the household, and each optional line as its own include=.
+  const path = (extra = '') => `/api/nutrition/recipes/${recipe.id}?servings=2&householdId=${hh.id}${extra}`;
+  const n = await call('GET', path(`&include=${line('parsley').id}`), { token });
+  expect(n.servings).toBe(2);
+  for (const key of ['recipeServings', 'perServing', 'forServings', 'perRecipe', 'split', 'reference', 'percentOfReference',
+    'highlights', 'summary', 'contributors', 'notCounted', 'linesCounted', 'linesTotal', 'complete', 'note']) {
+    expect(n).toHaveProperty(key);
+  }
+  expect(n.reference.label).toEqual(expect.any(String));
+  for (const c of n.contributors) {
+    for (const key of ['recipeIngredientId', 'ingredientId', 'name', 'fdcId', 'foodName', 'amount', 'grams', 'gramsHow',
+      'gramsBasis', 'estimated', 'kcal', 'protein', 'carbs', 'fat', 'share', 'confidence', 'matchSource', 'guess']) {
+      expect(c).toHaveProperty(key);
+    }
+  }
+  expect(n.contributors.map((c: any) => c.name)).toContain('parsley');
+
+  // A knob is the rough kind the model is asked about: its amount reads "1 knob", the unit after the number.
+  // (Ingredients are shared by the whole server, so a run before this one may have weighed it already.)
+  const butter = n.contributors.find((c: any) => c.name === 'butter');
+  expect(butter).toMatchObject({ gramsHow: expect.stringMatching(/^(ROUGH|LEARNED)$/), amount: '1 knob' });
+
+  // The model's weight for ONE knob, as the phone sends it; the line is then LEARNED "(estimated)" — its ✨.
+  const grams = await call('PUT', `/api/nutrition/ingredients/${butter.ingredientId}/grams`, {
+    token, body: { unit: 'knob', grams: 10, source: 'ai' },
+  });
+  expect(grams).toMatchObject({ unitKey: 'knob', gramsEach: 10, source: 'ai' });
+  const weighed = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === 'butter');
+  expect(weighed.gramsHow).toBe('LEARNED');
+  expect(weighed.gramsBasis).toMatch(/\(estimated\)$/);
+
+  // The model's pick from the shortlist, as the phone sends it; the line then says matchSource "ai" — its ✨.
+  const paste = [...n.contributors, ...n.notCounted].find((c: any) => c.name === 'curry paste');
+  const match = await call('GET', `/api/nutrition/ingredients/${paste.ingredientId}/match`, { token });
+  for (const key of ['ingredientId', 'ingredientName', 'fdcId', 'foodName', 'confidence', 'source', 'counted', 'guess', 'shortlist']) {
+    expect(match).toHaveProperty(key);
+  }
+  expect(match.shortlist.length).toBeGreaterThan(0);
+  const chosen = await call('PUT', `/api/nutrition/ingredients/${paste.ingredientId}/match`, {
+    token, body: { fdcId: match.shortlist[0].fdcId, source: 'ai' },
+  });
+  expect(chosen).toMatchObject({ source: 'ai', fdcId: match.shortlist[0].fdcId, counted: true, guess: false });
+  const picked = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === 'curry paste');
+  expect(picked.matchSource).toBe('ai');
+
+  // The week card and Explore's door: the next seven days.
+  await plan(hh.id, isoDate(1), 'DINNER', { recipeId: recipe.id });
+  const week = await call('GET', `/api/nutrition/households/${hh.id}/plan?start=${isoDate(0)}&end=${isoDate(6)}`, { token });
+  expect(week.days).toHaveLength(7);
+  for (const key of ['date', 'totals', 'mealsPlanned', 'mealsCounted', 'partial']) expect(week.days[0]).toHaveProperty(key);
+  expect(week).toMatchObject({ daysCounted: 1, mealsPlanned: 1, mealsCounted: 1 });
+
+  // Recent lookups: the phone writes a recipe's id in lower case, so it is one lookup with the web's.
+  await call('POST', '/api/nutrition/recent', { token, body: { kind: 'RECIPE', ref: recipe.id.toLowerCase(), householdId: hh.id } });
+  const recent = await call('GET', '/api/nutrition/recent', { token });
+  expect(recent.filter((r: any) => r.ref === recipe.id)).toHaveLength(1);
+  expect(recent.find((r: any) => r.ref === recipe.id)).toMatchObject({ kind: 'RECIPE', label: 'Curry for the phone', per: 'serving' });
+
+  // Search as the phone types: ingredients and recipes, never packets unless asked.
+  const found = await call('GET', `/api/nutrition/search?q=curry&householdId=${hh.id}`, { token });
+  for (const key of ['query', 'ingredients', 'products', 'productsStatus', 'recipes']) expect(found).toHaveProperty(key);
+  expect(found.recipes.map((r: any) => r.name)).toContain('Curry for the phone');
+  expect(found.productsStatus).not.toBe('ok');
+});
