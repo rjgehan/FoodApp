@@ -150,14 +150,17 @@ test('a cupboard item takes an optional use-by date, and can lose it again', asy
 
   await page.getByRole('button', { name: 'Edit spinach' }).click();
   const edit = sheet(page);
-  await expect(edit.getByText('Optional · plans use it up in time')).toBeVisible();
+  // Spinach bought today has no date, but the server guesses it wants using within a few days.
+  await expect(edit.getByText('No date · we guess it wants using soon')).toBeVisible();
   await edit.getByLabel('Use by', { exact: true }).fill(isoDate(2));
-  await expect(edit.getByText('Optional · plans use it up in time')).toHaveCount(0);
+  await expect(edit.getByText('No date · we guess it wants using soon')).toHaveCount(0);
   await edit.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect
     .poll(async () => find(await cupboard(hh.id, T), 'spinach'))
     .toMatchObject({ useBy: isoDate(2), useSoon: true, useSoonGuess: false });
+  // The row says when, at a glance.
+  await expect(page.getByRole('button', { name: 'Edit spinach' }).getByText(/^by \w{3}$/)).toBeVisible();
 
   // Opened again it shows the date, and the × takes it off.
   await page.getByRole('button', { name: 'Edit spinach' }).click();

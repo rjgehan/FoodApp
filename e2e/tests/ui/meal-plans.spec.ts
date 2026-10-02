@@ -225,8 +225,12 @@ test('a private plan for a health target: details in, targets worked out, one se
   expect(planned).toHaveLength(12);
   expect(new Set(planned.map((e: any) => e.date))).toEqual(new Set([isoDate(1), isoDate(2), isoDate(3)]));
   expect(planned.some((e: any) => e.recipeId === pork.id)).toBe(false);
-  // The household's servings are 4 by default: one fewer, then two more.
-  expect(planned.every((e: any) => e.servings === 5)).toBe(true);
+  // The household's servings are 4 by default: one fewer, then two more, so five people. Each meal
+  // cooks the plan's portion for its owner plus a serving for each of the other four.
+  const kept = await call('GET', `/api/households/${hh.id}/meal-plans/targets/${planId}`, { token: hh.owner.token });
+  const portions = new Map<string, number>();
+  for (const d of kept.days) for (const m of d.meals) portions.set(`${isoDate(1 + d.day)}|${m.mealType}`, m.portion);
+  for (const e of planned) expect(e.servings).toBe(4 + Math.ceil(portions.get(`${e.date}|${e.mealType}`)!));
 
   await page.goto('/explore/meal-plans');
   const made = page.getByRole('list', { name: 'Made by you' });
@@ -238,7 +242,10 @@ test('a private plan for a health target: details in, targets worked out, one se
   await expect(page.getByText('The 20-year-old guy')).toBeVisible();
   await expect(page.getByText('Made by you')).toHaveCount(0);
   await page.goto(`/explore/meal-plans/plans/${planId}`);
-  await expect(page.getByText('There is no such plan.')).toBeVisible();
+  // Not a network problem, so no "Try again": it says the plan isn't there, and leads back.
+  await expect(page.getByText("This plan isn't available")).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Back to Meal plans' })).toBeVisible();
 });
 
 test('a ready-made plan is chosen from your recipes; swap a meal, then keep it as your own', async ({ page }) => {
