@@ -446,14 +446,11 @@ struct GlobalRecipeScreen: View {
     /// The mockup's ingredient line: the amount in bold in its own column, the name, "Optional".
     private func ingredientRow(_ item: RecipeIngredient) -> some View {
         // "2 packs", as the grocery list says it.
-        let amount = [item.quantity.map { fraction($0) }, CountUnits.unit(item.unit, for: item.quantity)]
-            .compactMap { $0 }.filter { !$0.isEmpty }
-            .joined(separator: " ")
+        let amount = AmountColumn(quantity: item.quantity.map { fraction($0) }, unit: CountUnits.unit(item.unit, for: item.quantity))
         var name = Text(item.ingredientName)
         if let notes = item.notes, !notes.isEmpty { name = name + Text(", \(notes)").foregroundColor(Palette.muted) }
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(amount).font(.system(size: 15, weight: .semibold)).monospacedDigit()
-                .frame(width: 74, alignment: .leading)
+            amount
             name.font(.system(size: 15)).frame(maxWidth: .infinity, alignment: .leading)
             if item.optional { Pill("Optional", tone: .mustard) }
         }

@@ -130,8 +130,8 @@ struct RecipeDetailView: View {
         }
         .task { await loadSiblings() }
         #if DEBUG
-        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method opens that on
-        // this recipe, for screenshot runs.
+        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-edit
+        // opens that on this recipe, for screenshot runs.
         .task {
             try? await Task.sleep(for: .milliseconds(600))
             switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
@@ -140,6 +140,7 @@ struct RecipeDetailView: View {
             case "recipe-plan": sheet = .plan
             case "recipe-delete" where mine: confirmingDelete = true
             case "recipe-method": tab = .method
+            case "recipe-edit" where mine: sheet = .edit
             default: break
             }
         }
@@ -215,14 +216,11 @@ struct RecipeDetailView: View {
 
     private func ingredientRow(_ item: RecipeIngredient, scale: Double) -> some View {
         // "2 packs", as the grocery list says it.
-        let amount = [item.quantity.map { fraction($0 * scale) }, CountUnits.unit(item.unit, for: item.quantity.map { $0 * scale })]
-            .compactMap { $0 }.filter { !$0.isEmpty }
-            .joined(separator: " ")
+        let amount = AmountColumn(quantity: item.quantity.map { fraction($0 * scale) }, unit: CountUnits.unit(item.unit, for: item.quantity.map { $0 * scale }))
         var name = Text(item.ingredientName)
         if let notes = item.notes, !notes.isEmpty { name = name + Text(", \(notes)").foregroundColor(Palette.muted) }
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(amount).font(.system(size: 15, weight: .semibold)).monospacedDigit()
-                .frame(width: 74, alignment: .leading)
+            amount
             name.font(.system(size: 15)).frame(maxWidth: .infinity, alignment: .leading)
             if item.optional { Pill("Optional", tone: .mustard) }
         }
@@ -389,4 +387,28 @@ private struct HeroBottom: PreferenceKey {
 #Preview("Recipe — dark") {
     NavigationStack { RecipeDetailView(recipe: SampleData.recipes[1], session: .preview) }
         .preferredColorScheme(.dark)
+}
+
+/**
+ An ingredient's amount in the recipe page's bold left column ("1 lb", "2 tbsp"). A long unit
+ such as "tablespoons" is wider than the column: rather than be broken mid-word ("tablespoo" /
+ "n"), it goes under the number and shrinks to fit on its one line.
+ */
+struct AmountColumn: View {
+    var quantity: String?
+    var unit: String?
+
+    var body: some View {
+        let parts = [quantity, unit].compactMap { $0 }.filter { !$0.isEmpty }
+        ViewThatFits(in: .horizontal) {
+            Text(parts.joined(separator: " ")).lineLimit(1).fixedSize()
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    Text(part).lineLimit(1).minimumScaleFactor(0.6)
+                }
+            }
+        }
+        .font(.system(size: 15, weight: .semibold)).monospacedDigit()
+        .frame(width: 74, alignment: .leading)
+    }
 }
