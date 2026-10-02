@@ -89,6 +89,42 @@ public class RecipePool {
         this.filings = filings;
     }
 
+    /**
+     * Particular recipes, for reading back a saved plan: each one the household may still use —
+     * one of its own (or shared with or filed by it), or still published — and none that has since
+     * been deleted or taken out of Explore without being kept.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, PoolRecipe> forIds(UUID householdId, java.util.Collection<UUID> ids) {
+        Set<UUID> yours = new HashSet<>();
+        for (Recipe r : recipes.findVisibleTo(householdId)) yours.add(r.getId());
+        Map<UUID, Recipe> found = new HashMap<>();
+        for (Recipe r : recipes.findAllById(ids)) {
+            if (yours.contains(r.getId()) || r.isPublished()) found.put(r.getId(), r);
+        }
+        Map<UUID, RecipeSection> sections = sections(householdId, found);
+        Map<UUID, PoolRecipe> result = new HashMap<>();
+        found.forEach((id, r) -> result.put(id, new PoolRecipe(r, sections.get(id), yours.contains(id))));
+        return result;
+    }
+
+    /** The household's own drawer for each recipe, else the drawer its owner keeps it in. */
+    private Map<UUID, RecipeSection> sections(UUID householdId, Map<UUID, Recipe> chosen) {
+        Map<UUID, RecipeSection> ownFiling = new HashMap<>();
+        Map<UUID, RecipeSection> ownerFiling = new HashMap<>();
+        if (chosen.isEmpty()) return ownFiling;
+        for (RecipeFiling f : filings.findByRecipeIdIn(chosen.keySet())) {
+            UUID recipeId = f.getRecipe().getId();
+            if (f.getHousehold().getId().equals(householdId)) {
+                ownFiling.put(recipeId, f.getSection());
+            } else if (f.getHousehold().getId().equals(chosen.get(recipeId).getHousehold().getId())) {
+                ownerFiling.put(recipeId, f.getSection());
+            }
+        }
+        ownerFiling.putAll(ownFiling);
+        return ownerFiling;
+    }
+
     /** Recipes with no ingredients are left out: there is nothing to plan or count with them. */
     @Transactional(readOnly = true)
     public List<PoolRecipe> forHousehold(UUID householdId, boolean includePublished) {
@@ -112,22 +148,12 @@ public class RecipePool {
             }
         }
 
-        Map<UUID, RecipeSection> ownFiling = new HashMap<>();
-        Map<UUID, RecipeSection> ownerFiling = new HashMap<>();
-        for (RecipeFiling f : filings.findByRecipeIdIn(chosen.keySet())) {
-            UUID recipeId = f.getRecipe().getId();
-            if (f.getHousehold().getId().equals(householdId)) {
-                ownFiling.put(recipeId, f.getSection());
-            } else if (f.getHousehold().getId().equals(chosen.get(recipeId).getHousehold().getId())) {
-                ownerFiling.put(recipeId, f.getSection());
-            }
-        }
+        Map<UUID, RecipeSection> sections = sections(householdId, chosen);
 
         List<PoolRecipe> pool = new ArrayList<>();
         for (Recipe r : ordered) {
             if (r.getIngredients().isEmpty()) continue;
-            RecipeSection section = ownFiling.getOrDefault(r.getId(), ownerFiling.get(r.getId()));
-            pool.add(new PoolRecipe(r, section, yours.contains(r.getId())));
+            pool.add(new PoolRecipe(r, sections.get(r.getId()), yours.contains(r.getId())));
         }
         return pool;
     }
