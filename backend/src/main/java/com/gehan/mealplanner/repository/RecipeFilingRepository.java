@@ -11,4 +11,7 @@ public interface RecipeFilingRepository extends JpaRepository<RecipeFiling, UUID
     List<RecipeFiling> findByHouseholdId(UUID householdId);
     Optional<RecipeFiling> findByHouseholdIdAndRecipeId(UUID householdId, UUID recipeId);
     void deleteByRecipeId(UUID recipeId);
+
+    /** Every household's filing of these recipes — for finding which drawer the owner keeps each in. */
+    List<RecipeFiling> findByRecipeIdIn(java.util.Collection<UUID> recipeIds);
 }
