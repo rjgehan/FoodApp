@@ -43,7 +43,9 @@ final class StoreSectionKeywords {
     static {
         phrases(FROZEN, "ice cream", "frozen yogurt", "ice pop", "tater tot", "french fry", "fish stick");
         phrases(DRY_GOODS, "peanut butter", "almond butter", "bread crumb", "coconut milk", "rolled oat",
-                "cream of mushroom", "cream of chicken", "cooking spray");
+                "cream of mushroom", "cream of chicken", "cooking spray",
+                // Tomatoes that come in a tin, a jar or a tube, not from the vegetable rack.
+                "chopped tomato", "crushed tomato", "diced tomato", "tomato puree");
         phrases(BAKING, "baking soda", "baking powder", "chocolate chip", "sweetened condensed milk", "evaporated milk",
                 "pie filling", "brown sugar", "powdered sugar", "cocoa powder", "cake mix", "brownie mix", "pie crust",
                 "food coloring", "graham cracker", "baking chocolate");
@@ -60,11 +62,11 @@ final class StoreSectionKeywords {
                 "corn tortilla");
         phrases(HOUSEHOLD, "paper towel", "toilet paper", "trash bag", "garbage bag", "dish soap",
                 "aluminum foil", "plastic wrap", "sandwich bag", "zip bag", "laundry detergent",
-                "hand soap", "parchment paper", "dishwasher pod");
+                "hand soap", "parchment paper", "dishwasher pod", "tin foil");
 
         words(FORMS, FROZEN, "frozen");
         words(FORMS, DRY_GOODS, "canned", "broth", "stock", "bouillon", "sauce", "paste", "oil", "vinegar", "syrup",
-                "mix", "dressing", "marinade", "jarred");
+                "mix", "dressing", "marinade", "jarred", "tinned", "tin", "passata");
         words(FORMS, SPICES, "powder", "flake", "seasoning", "spice", "rub");
         words(FORMS, BAKING, "extract", "flour", "sugar", "sprinkle");
         words(FORMS, DRINKS, "juice", "soda");

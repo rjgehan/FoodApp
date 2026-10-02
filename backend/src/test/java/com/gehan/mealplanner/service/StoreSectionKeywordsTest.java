@@ -25,6 +25,13 @@ class StoreSectionKeywordsTest {
         assertThat(StoreSectionKeywords.guess("frozen peas")).contains(FROZEN);
         assertThat(StoreSectionKeywords.guess("chicken broth")).contains(DRY_GOODS);
         assertThat(StoreSectionKeywords.guess("tomato sauce")).contains(DRY_GOODS);
+        // Tomatoes from a tin or a jar are on the shelf; fresh ones are still produce.
+        assertThat(StoreSectionKeywords.guess("tomato passata")).contains(DRY_GOODS);
+        assertThat(StoreSectionKeywords.guess("chopped tomatoes")).contains(DRY_GOODS);
+        assertThat(StoreSectionKeywords.guess("tomato puree")).contains(DRY_GOODS);
+        assertThat(StoreSectionKeywords.guess("chickpeas (tin)")).contains(DRY_GOODS);
+        assertThat(StoreSectionKeywords.guess("cherry tomatoes")).contains(PRODUCE);
+        assertThat(StoreSectionKeywords.guess("tin foil")).contains(HOUSEHOLD);
     }
 
     @Test
