@@ -112,6 +112,12 @@ enum NutritionSamples {
             attribution: .usda)
     }
 
+    /// A granola bar's label as the model would copy it off a photo, per 100 g.
+    static let readLabel = LabelReading(
+        name: "Oat & honey granola bar",
+        per100g: NutrientValues(kcal: 370, protein: 8, carbs: 55, fat: 12, fibre: 4, sugars: 20, satFat: 4, saltG: 0.5),
+        servingGrams: 30)
+
     static let search = NutritionSearchAnswer(
         query: "chick",
         ingredients: [

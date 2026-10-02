@@ -14,11 +14,18 @@ struct NutritionProductScreen: View {
     /// Previews and the Gallery: this instead of the server (nil with `sampleMissing` for 404).
     var sample: ProductLabel?
     var sampleMissing = false
+    /// Previews: a label as Apple Intelligence read it off a photo.
+    var sampleReading: LabelReading?
 
     private enum Problem { case missing, busy, failed }
 
     @State private var product: ProductLabel?
     @State private var problem: Problem?
+    @State private var reading: LabelReading?
+    /// Why the last photo gave nothing, to say under the button.
+    @State private var readingFailed: NutritionLabelReader.Outcome?
+    @State private var reads = false
+    @State private var photographing = false
     @State private var toast: String?
 
     var body: some View {
@@ -26,6 +33,8 @@ struct NutritionProductScreen: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let product {
                     loaded(product)
+                } else if let reading {
+                    read(reading)
                 } else if let problem {
                     trouble(problem)
                 } else {
@@ -53,7 +62,7 @@ struct NutritionProductScreen: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let name = product?.name {
+            if let name = product?.name ?? reading.map({ $0.name.isEmpty ? "Packet \(barcode)" : $0.name }) {
                 KeepItBar(session: session, name: name) { say($0) }
             }
         }
@@ -64,6 +73,9 @@ struct NutritionProductScreen: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: toast)
+        .sheet(isPresented: $photographing) {
+            CameraPicker { image in Task { await readLabel(image) } }.ignoresSafeArea()
+        }
         .task { await load() }
     }
 
@@ -95,6 +107,20 @@ struct NutritionProductScreen: View {
         SourceNote(attribution: product.attribution ?? .openFoodFacts)
     }
 
+    /// A label Apple Intelligence read off a photo, for a barcode nobody has added.
+    @ViewBuilder private func read(_ r: LabelReading) -> some View {
+        HStack(alignment: .top) {
+            LabelHeader(hue: .sky, symbol: "shippingbox", title: r.name.isEmpty ? "Your packet" : r.name,
+                        subtitle: "Barcode \(barcode) · read from your photo")
+        }
+        AppleIntelligenceMark(text: "Read by Apple Intelligence")
+        LabelBody(per100g: r.per100g, split: Self.split(r.per100g), details: Self.details(r.per100g), badges: [],
+                  serving: r.servingGrams.map { LabelServing(label: "Per serving (\(NutritionText.grams($0)))", grams: $0) },
+                  startOnServing: false) { EmptyView() }
+        NoteBox("Copied from your photo on this phone and checked to add up, but not saved anywhere. Check it against the packet.",
+                tone: .sky)
+    }
+
     @ViewBuilder private func trouble(_ problem: Problem) -> some View {
         VStack(spacing: 12) {
             RecipePhotoPlaceholder(hue: .sky, systemImage: "shippingbox", size: 64, radius: 16)
@@ -105,6 +131,19 @@ struct NutritionProductScreen: View {
                  : problem == .busy ? "Open Food Facts has had a lot of questions from us this minute. Try again in a moment."
                  : "Can't reach Open Food Facts just now.")
                 .font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+            if problem == .missing && reads {
+                // iOS 27 with a model that can see: the label itself, read on the phone.
+                Button { photographing = true } label: { Label("Read the label instead", systemImage: "camera.viewfinder") }
+                    .buttonStyle(.kitchen(.primary, size: .small, fill: false))
+                Text("Apple Intelligence copies the figures from a photo of the nutrition label, on this phone.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                if let readingFailed {
+                    Text(readingFailed == .misread
+                         ? "That photo didn't give figures that add up. Try again closer, flat and in good light."
+                         : "Apple Intelligence couldn't read it just now. Try again in a moment.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.accentInk).multilineTextAlignment(.center)
+                }
+            }
             if problem != .missing {
                 Button { Task { await load() } } label: { Label("Try again", systemImage: "arrow.clockwise") }
                     .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
@@ -120,9 +159,11 @@ struct NutritionProductScreen: View {
     // MARK: Doing
 
     private func load() async {
-        if sample != nil || sampleMissing {
+        reads = NutritionAI.canReadLabels
+        if sample != nil || sampleMissing || sampleReading != nil {
             product = sample
             problem = sampleMissing ? .missing : nil
+            reading = sampleReading
             return
         }
         problem = nil
@@ -138,6 +179,22 @@ struct NutritionProductScreen: View {
         } catch {
             problem = .failed
         }
+        #if DEBUG
+        // -mp_debug_label_photo <path>: read that picture as though it had just been taken, since a
+        // screenshot run cannot work the camera.
+        if problem == .missing, reads, let path = UserDefaults.standard.string(forKey: "mp_debug_label_photo"),
+           let image = UIImage(contentsOfFile: path) {
+            await readLabel(image)
+        }
+        #endif
+    }
+
+    private func readLabel(_ image: UIImage) async {
+        readingFailed = nil
+        switch await NutritionLabelReader.read(image) {
+        case .read(let r): reading = r
+        case let other: readingFailed = other
+        }
     }
 
     private func say(_ text: String) {
@@ -146,6 +203,20 @@ struct NutritionProductScreen: View {
             try? await Task.sleep(for: .seconds(3))
             if toast == text { toast = nil }
         }
+    }
+
+    /// The donut's shares for a reading: each macro's calories (4/4/9) of their total.
+    static func split(_ v: NutrientValues) -> MacroSplit {
+        let p = 4 * (v.protein ?? 0), c = 4 * (v.carbs ?? 0), f = 9 * (v.fat ?? 0)
+        let total = p + c + f
+        guard total > 0 else { return .empty }
+        let pp = Int((100 * p / total).rounded()), cc = Int((100 * c / total).rounded())
+        return MacroSplit(protein: pp, carbs: cc, fat: max(0, 100 - pp - cc))
+    }
+
+    static func details(_ v: NutrientValues) -> [LabelDetail] {
+        [("sugars", "Sugars", v.sugars), ("fibre", "Fibre", v.fibre), ("salt", "Salt", v.saltG), ("satFat", "Saturates", v.satFat)]
+            .compactMap { key, label, value in value.map { LabelDetail(key: key, label: label, amount: $0, unit: "g", percentDaily: nil) } }
     }
 }
 
@@ -336,6 +407,12 @@ struct KeepItBar: View {
 
 #Preview("A packet nobody has added") {
     NavigationStack { NutritionProductScreen(session: .preview, barcode: "4006381333931", sampleMissing: true) }
+}
+
+#Preview("A label read by Apple Intelligence") {
+    NavigationStack {
+        NutritionProductScreen(session: .preview, barcode: "4006381333931", sampleReading: NutritionSamples.readLabel)
+    }
 }
 
 #Preview("An ingredient") {

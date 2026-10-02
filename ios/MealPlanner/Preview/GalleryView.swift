@@ -239,6 +239,11 @@ struct GalleryView: View {
                     entry("A packet nobody has added", "questionmark.square.dashed") {
                         NavigationStack { NutritionProductScreen(session: session, barcode: "4006381333931", sampleMissing: true) }
                     }
+                    entry("A label read by Apple Intelligence", "camera.viewfinder") {
+                        NavigationStack {
+                            NutritionProductScreen(session: session, barcode: "4006381333931", sampleReading: NutritionSamples.readLabel)
+                        }
+                    }
                     entry("An ingredient's label", "leaf.circle") {
                         NavigationStack { NutritionFoodScreen(session: session, fdcId: 173757, sample: NutritionSamples.chickpeas) }
                     }
@@ -246,6 +251,13 @@ struct GalleryView: View {
                         NavigationStack {
                             RecipeNutritionScreen(session: session, recipeId: NutritionSamples.recipeId,
                                                   sample: NutritionSamples.lemonChicken())
+                        }
+                    }
+                    entry("A recipe's nutrition — Apple Intelligence", "sparkles") {
+                        NavigationStack {
+                            RecipeNutritionScreen(session: session, recipeId: NutritionSamples.recipeId,
+                                                  sample: NutritionSamples.lemonChicken(aiMarks: true),
+                                                  sampleWords: "High protein and low carb, a filling dinner for a busy weeknight.")
                         }
                     }
                     entry("Meal plans — coming soon", "target") {
