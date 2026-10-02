@@ -9,12 +9,34 @@ import SwiftUI
 */
 
 extension SourceLink {
-    /// Sites people know by name rather than by address — and every one of them a video site,
-    /// the same list the server uses to decide which link is the recipe's video.
+    /// Video sites, known by name — the same list the server uses to decide which link is the
+    /// recipe's video.
     private static let siteNames: [(host: String, name: String)] = [
         ("tiktok.com", "TikTok"), ("youtube.com", "YouTube"), ("youtu.be", "YouTube"),
         ("instagram.com", "Instagram"), ("vimeo.com", "Vimeo"),
     ]
+
+    /// The recipe publishers people save from most, by the name they know — "BBC Good Food", not
+    /// "bbcgoodfood.com". The web keeps the same list (videoLink.ts). These are pages, not videos.
+    private static let publishers: [(host: String, name: String)] = [
+        ("bbcgoodfood.com", "BBC Good Food"), ("cooking.nytimes.com", "NYT Cooking"), ("allrecipes.com", "Allrecipes"),
+        ("seriouseats.com", "Serious Eats"), ("bonappetit.com", "Bon Appétit"), ("epicurious.com", "Epicurious"),
+        ("foodnetwork.com", "Food Network"), ("food52.com", "Food52"), ("thekitchn.com", "The Kitchn"),
+        ("simplyrecipes.com", "Simply Recipes"), ("delish.com", "Delish"), ("tasty.co", "Tasty"),
+        ("budgetbytes.com", "Budget Bytes"), ("recipetineats.com", "RecipeTin Eats"),
+        ("smittenkitchen.com", "Smitten Kitchen"), ("jamieoliver.com", "Jamie Oliver"),
+        ("minimalistbaker.com", "Minimalist Baker"), ("halfbakedharvest.com", "Half Baked Harvest"),
+        ("kingarthurbaking.com", "King Arthur Baking"), ("cookieandkate.com", "Cookie and Kate"),
+        ("loveandlemons.com", "Love and Lemons"), ("pinchofyum.com", "Pinch of Yum"),
+        ("tasteofhome.com", "Taste of Home"), ("eatingwell.com", "EatingWell"), ("olivemagazine.com", "olive"),
+        ("nigella.com", "Nigella"), ("pinterest.com", "Pinterest"),
+    ]
+
+    /// A YouTube link, which the server files as a website.
+    static func isYouTube(_ raw: String) -> Bool {
+        guard let host = host(of: raw) else { return false }
+        return on(host, "youtube.com") || on(host, "youtu.be")
+    }
 
     /// The host, including for a link typed the way people type them — "tiktok.com/@cook/…",
     /// with no https:// — which the server accepts and fills in.
@@ -31,10 +53,10 @@ extension SourceLink {
         host == site || host.hasSuffix("." + site)
     }
 
-    /// "TikTok", "YouTube", or the address without its www.
+    /// "TikTok", "BBC Good Food", or the address without its www.
     static func siteName(of raw: String) -> String? {
         guard let host = host(of: raw) else { return nil }
-        if let known = siteNames.first(where: { on(host, $0.host) }) { return known.name }
+        if let known = (siteNames + publishers).first(where: { on(host, $0.host) }) { return known.name }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

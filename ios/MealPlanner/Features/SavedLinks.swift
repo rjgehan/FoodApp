@@ -20,7 +20,7 @@ struct SavedLinksView: View {
     @State private var links: [SavedLink]?
     @State private var error: String?
     @State private var query = ""
-    @State private var source: SavedLinkSource?
+    @State private var source: SavedLink.Kind?
     @State private var drawer: RecipeSection?
     @State private var adding = false
     @State private var planning: SavedLink?
@@ -48,8 +48,8 @@ struct SavedLinksView: View {
     private var all: [SavedLink] { links ?? [] }
 
     /// Filters only for what there is: one kind of link, or none filed, is nothing to choose between.
-    private var sources: [SavedLinkSource] {
-        [.tiktok, .instagram, .web].filter { kind in all.contains { $0.source == kind } }
+    private var sources: [SavedLink.Kind] {
+        SavedLink.Kind.allCases.filter { kind in all.contains { $0.kind == kind } }
     }
     private var drawers: [RecipeSection] {
         RecipeSection.allCases.filter { section in all.contains { $0.section == section } }
@@ -58,7 +58,7 @@ struct SavedLinksView: View {
     private var shown: [SavedLink] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         return all.filter {
-            (source == nil || $0.source == source)
+            (source == nil || $0.kind == source)
                 && (drawer == nil || $0.section == drawer)
                 && (q.isEmpty || $0.name.lowercased().contains(q) || $0.sourceLabel.lowercased().contains(q))
         }
@@ -136,6 +136,7 @@ struct SavedLinksView: View {
         .scrollDismissesKeyboard(.immediately)
         .pageBackground()
         .centeredTitle("Saved links")
+        .textBackButton("Recipes")
         .refreshable { await load() }
         .toolbar {
             BareToolbarItem(placement: .topBarTrailing) {
@@ -149,7 +150,11 @@ struct SavedLinksView: View {
             if query.isEmpty, let initialQuery, !initialQuery.isEmpty { query = initialQuery }
             await load()
             #if DEBUG
-            if UserDefaults.standard.string(forKey: "mp_debug_screen") == "linkactions" { acting = all.first }
+            // -mp_debug_saved <name>: that link's actions rather than the first one's.
+            if UserDefaults.standard.string(forKey: "mp_debug_screen") == "linkactions" {
+                let wanted = UserDefaults.standard.string(forKey: "mp_debug_saved")
+                acting = all.first { $0.name == wanted } ?? all.first
+            }
             #endif
         }
         .sheet(isPresented: $adding) {
@@ -236,8 +241,7 @@ struct SavedLinksView: View {
                 }
                 if sources.count > 1 {
                     ForEach(sources, id: \.self) { kind in
-                        let label = SavedLink.label(source: kind, url: nil)
-                        Chip(label == "Website" ? "Websites" : label, isOn: source == kind) {
+                        Chip(kind.label, isOn: source == kind) {
                             source = source == kind ? nil : kind
                         }
                     }
@@ -274,7 +278,9 @@ struct SavedLinksView: View {
     */
     private var pasteRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "doc.on.clipboard").font(.system(size: 16)).foregroundStyle(Palette.accentInk)
+            // The thin outline the web draws, not the filled two-tone one a bar would pick.
+            Image(systemName: "clipboard").symbolVariant(.none).symbolRenderingMode(.monochrome)
+                .font(.system(size: 16, weight: .regular)).foregroundStyle(Palette.accentInk)
             Button { pastedURL = nil; adding = true } label: {
                 Text("Paste a link to save it").font(.system(size: 14)).foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -408,7 +414,7 @@ struct SavedLinkPicture: View {
 
     var body: some View {
         let placeholder = RecipePhotoPlaceholder(hue: .of(link.id.uuidString.lowercased()),
-                                                 systemImage: link.source == .web ? "globe" : "play",
+                                                 systemImage: link.isVideo ? "play" : "globe",
                                                  radius: radius)
         if let id = link.coverImageId, let url = APIClient.shared.imageURL(id) {
             Color.clear
@@ -507,7 +513,15 @@ struct SavedLinkActions: View {
                         }
                         .accessibilityValue(link.personal ? "On" : "Off")
                     }
-                    action(delete) { ListRow("Delete", titleColor: Palette.accentInk, tile: ("trash", .accent)) }
+                    // Only whoever saved it can delete it (an older server lets anyone). For someone
+                    // else's it says whose call it is, rather than vanishing.
+                    if link.canDelete ?? true {
+                        action(delete) { ListRow("Delete", titleColor: Palette.accentInk, tile: ("trash", .accent)) }
+                    } else {
+                        ListRow("Delete", subtitle: "Only \(link.savedByName ?? "whoever saved it") can delete this",
+                                titleColor: Palette.accentInk.opacity(0.55), tile: ("trash", .accent))
+                            .accessibilityElement(children: .combine)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -523,21 +537,24 @@ struct SavedLinkActions: View {
 
 extension SavedLink {
     /// "today", "3 days ago" — when it was kept, from a server new enough to say.
-    var savedAgo: String? {
-        guard let createdAt, let date = ISO8601DateFormatter.flexible(createdAt) else { return nil }
-        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: date),
-                                                   to: Calendar.current.startOfDay(for: Date())).day ?? 0
-        switch days {
-        case ..<1: return "today"
-        case 1: return "yesterday"
-        case 2..<7: return "\(days) days ago"
-        case 7..<14: return "last week"
-        default: return date.formatted(.dateTime.day().month(.abbreviated))
-        }
+    var savedAgo: String? { timeAgo(createdAt) }
+}
+
+/// "today", "3 days ago", "last week" — when something was saved or shared, from an ISO instant.
+func timeAgo(_ iso: String?) -> String? {
+    guard let iso, let date = ISO8601DateFormatter.flexible(iso) else { return nil }
+    let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: date),
+                                               to: Calendar.current.startOfDay(for: Date())).day ?? 0
+    switch days {
+    case ..<1: return "today"
+    case 1: return "yesterday"
+    case 2..<7: return "\(days) days ago"
+    case 7..<14: return "last week"
+    default: return date.formatted(.dateTime.day().month(.abbreviated))
     }
 }
 
-private extension ISO8601DateFormatter {
+extension ISO8601DateFormatter {
     /// The server's timestamps, with or without fractions of a second.
     static func flexible(_ text: String) -> Date? {
         let f = ISO8601DateFormatter()

@@ -51,7 +51,7 @@ struct MealPicture: View {
     private var plate: some View {
         let key = (entry.recipeId ?? entry.savedLinkId ?? entry.id).uuidString.lowercased()
         let icon = entry.savedLinkId != nil
-            ? (entry.savedLinkSource == .web ? "globe" : "play")
+            ? (entry.savedLinkSource == .web && !SourceLink(url: entry.savedLinkUrl ?? "", label: nil).isVideo ? "globe" : "play")
             : PlanText.dishIcon(name: recipe?.name ?? entry.recipeName, section: recipe?.section,
                                 groups: recipe?.categories ?? [], meal: entry.mealType)
         return RecipePhotoPlaceholder(hue: .of(key), systemImage: icon, size: size, radius: radius)

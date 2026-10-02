@@ -215,6 +215,16 @@ extension View {
         navigationTitle(title).navigationBarTitleDisplayMode(.inline)
     }
 
+    /**
+     A pushed screen's back as the mockup's `nav` draws it: a chevron and the name of where you came
+     from — "‹ Recipes", "‹ Main dish" — in the accent's ink, with no glass bubble round it. The
+     system's own back is a bare chevron in a circle from iOS 26, which loses where Back goes.
+     Swiping in from the edge still goes back (see the navigation controller extension below).
+     */
+    func textBackButton(_ label: String) -> some View {
+        modifier(TextBackButton(label: label))
+    }
+
     /// A tab's own header in place of the system bar: hides the bar on this screen only.
     func hidesNavigationBar() -> some View {
         toolbar(.hidden, for: .navigationBar)
@@ -255,4 +265,45 @@ extension View {
     }
     .pageBackground()
     .preferredColorScheme(.dark)
+}
+
+private struct TextBackButton: ViewModifier {
+    let label: String
+    @Environment(\.dismiss) private var dismiss
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                BareToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold))
+                            Text(label).font(.system(size: 17)).lineLimit(1)
+                        }
+                        .foregroundStyle(Palette.accentInk)
+                        .padding(.vertical, 6)
+                        // Its own width: the bar would otherwise squeeze "Recipes" down to "…".
+                        .fixedSize()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(label)
+                    .accessibilityHint("Goes back")
+                }
+            }
+    }
+}
+
+/// Hiding the system back button also turns off swiping in from the left edge to go back; this
+/// keeps the swipe for every pushed screen, which is what anyone on an iPhone expects.
+extension UINavigationController: UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        gestureRecognizer === interactivePopGestureRecognizer ? viewControllers.count > 1 : true
+    }
 }

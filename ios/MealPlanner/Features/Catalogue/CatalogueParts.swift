@@ -109,7 +109,8 @@ func groupDetail(recipes: Int, groups: Int) -> String {
 
 /**
  A recipe's picture: its cover if it has one, otherwise the mockup's food-coloured gradient with a
- mark for the kind of meal — the same hue as on the web, by the recipe's id.
+ mark for the dish — a bowl for a soup, a leaf for a salad, the chef's hat for a dinner — the same
+ hue and mark as on the web, by the recipe's id and name.
 */
 struct RecipePicture: View {
     let recipe: Recipe
@@ -135,8 +136,10 @@ struct RecipePicture: View {
     }
 
     private var placeholder: some View {
+        // A shared recipe has no drawer here yet; the one it is in at home picks its mark.
         RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString.lowercased()),
-                               systemImage: PlanText.icon(section: recipe.section, meal: .dinner),
+                               systemImage: PlanText.dishIcon(name: recipe.name, section: recipe.section ?? recipe.ownerSection,
+                                                              groups: recipe.categories, meal: .dinner),
                                radius: radius)
     }
 }

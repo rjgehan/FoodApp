@@ -150,10 +150,29 @@ private struct TabLabel: View {
         self.selected = selected
     }
 
+    @Environment(\.colorScheme) private var scheme
+
+    /**
+     The icon flattened into a plain picture in its colour. Handed a symbol image, the bar draws
+     the symbol its own way — filled and black — for its first few seconds, until a later update
+     swaps the coloured one in; a picture it can only show as it is. Reading the theme's style here
+     redraws it when the theme or light and dark change.
+    */
+    private var icon: UIImage? {
+        let tokens = scheme == .dark ? ThemeStore.shared.style.dark : ThemeStore.shared.style.light
+        let color = (selected ? tokens.accentInk : tokens.muted).uiColor
+        guard let symbol = UIImage(systemName: systemImage,
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular, scale: .large))?
+            .withTintColor(color, renderingMode: .alwaysOriginal) else { return nil }
+        let format = UIGraphicsImageRendererFormat.preferred()
+        let flat = UIGraphicsImageRenderer(size: symbol.size, format: format).image { _ in
+            symbol.draw(in: CGRect(origin: .zero, size: symbol.size))
+        }
+        return flat.withRenderingMode(.alwaysOriginal)
+    }
+
     var body: some View {
-        if let icon = UIImage(systemName: systemImage,
-                              withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular, scale: .large))?
-            .withTintColor(Palette.ui(selected ? \.accentInk : \.muted), renderingMode: .alwaysOriginal) {
+        if let icon {
             Label { Text(title) } icon: { Image(uiImage: icon) }
         } else {
             Label(title, systemImage: systemImage).environment(\.symbolVariants, .none)

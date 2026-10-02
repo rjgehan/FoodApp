@@ -1,9 +1,10 @@
 import SwiftUI
 
 /**
- The recipes at a level that are in none of the groups below, each with where it most likely goes
- as the first, filled chip (3.3) — one tap files it and it drops off the card. Every other group is
- a tap further, under More. A long list starts folded to the first few.
+ The recipes at a level that are in none of the groups below, each on one line with where it most
+ likely goes as the first, filled chip and one other beside it (3.3) — one tap files it and it
+ drops off the card. Tapping the name offers every group, and the recipe itself. A long list starts
+ folded to the first few.
 */
 struct UnfiledCard: View {
     var store: CatalogueStore
@@ -16,6 +17,7 @@ struct UnfiledCard: View {
     @State private var filed: Set<UUID> = []
     @State private var showAll = false
     @State private var choosingFor: Recipe?
+    @State private var opening: Recipe?
     @State private var error: String?
 
     private var left: [Recipe] { recipes.filter { !filed.contains($0.id) } }
@@ -45,37 +47,41 @@ struct UnfiledCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.mustardSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.mustard, lineWidth: 1))
-            .confirmationDialog("Put \(choosingFor?.name ?? "it") in…", isPresented: Binding(
+            .confirmationDialog(choosingFor?.name ?? "", isPresented: Binding(
                 get: { choosingFor != nil }, set: { if !$0 { choosingFor = nil } }), titleVisibility: .visible) {
-                ForEach(groups) { group in
-                    Button(group.name) {
-                        if let recipe = choosingFor { Task { await file(recipe, in: group) } }
+                if let recipe = choosingFor {
+                    ForEach(ordered(recipe).all) { group in
+                        Button("Put it in \(group.name)") { Task { await file(recipe, in: group) } }
                     }
+                    Button("Open the recipe") { opening = recipe }
                 }
+            }
+            .navigationDestination(item: $opening) { recipe in
+                RecipeDetailView(recipe: recipe, session: store.session)
             }
         }
     }
 
+    /// Likeliest first, then the rest in their usual order.
+    private func ordered(_ recipe: Recipe) -> (likely: [RecipeCategory], all: [RecipeCategory]) {
+        let likely = CategoryKinds.suggestGroups(recipe, among: groups) { store.namesWithin($0, in: section) }
+        return (likely, likely + groups.filter { g in !likely.contains { $0.id == g.id } })
+    }
+
     private func row(_ recipe: Recipe) -> some View {
-        let likely = CategoryKinds.suggestGroup(recipe, among: groups)
-        let ordered = likely.map { l in [l] + groups.filter { $0.id != l.id } } ?? groups
+        let (likely, all) = ordered(recipe)
         return HStack(spacing: 8) {
-            NavigationLink {
-                RecipeDetailView(recipe: recipe, session: store.session)
-            } label: {
+            Button { choosingFor = recipe } label: {
                 Text(recipe.name).font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.text)
                     .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(PressFade())
-            ForEach(Array(ordered.prefix(2).enumerated()), id: \.element.id) { index, group in
-                smallChip(group.name, filled: index == 0 && likely != nil) {
+            .accessibilityLabel("Every group for \(recipe.name)")
+            ForEach(Array(all.prefix(2).enumerated()), id: \.element.id) { index, group in
+                smallChip(group.name, filled: index == 0 && !likely.isEmpty) {
                     Task { await file(recipe, in: group) }
                 }
                 .accessibilityLabel("Put \(recipe.name) in \(group.name)")
-            }
-            if ordered.count > 2 {
-                smallChip("More", filled: false) { choosingFor = recipe }
-                    .accessibilityLabel("Other groups for \(recipe.name)")
             }
         }
     }
@@ -127,6 +133,8 @@ struct SplitSheet: View {
     @State private var unticked: Set<String> = []
     @State private var busy = false
     @State private var error: String?
+    /// As tall as what is in it, with the group still showing behind, dimmed (the mockup's 3.5).
+    @State private var height: CGFloat = 480
 
     private var picked: [(name: String, recipeIds: [UUID])] { suggestions.filter { !unticked.contains($0.name) } }
 
@@ -172,7 +180,10 @@ struct SplitSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 24)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 + 8 }
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.height(height)])
     }
 
     private func apply() async {
@@ -275,6 +286,9 @@ struct NewGroupSheet: View {
 */
 struct SharedWithYouView: View {
     var store: CatalogueStore
+    /// What counted as new when the list opened stays new while you look at it; next time it won't.
+    @State private var seenAt: Date? = SharedNews.seenAt(nil)
+    @State private var marked = false
 
     private var byHousehold: [(String, [Recipe])] {
         let shared = store.recipes.filter { $0.section == nil }
@@ -299,11 +313,10 @@ struct SharedWithYouView: View {
                                 NavigationLink {
                                     RecipeDetailView(recipe: recipe, session: store.session)
                                 } label: {
-                                    ListRow(recipe.name, subtitle: ["Serves \(recipe.servings)", recipe.totalTime]
-                                        .compactMap { $0 }.joined(separator: " · ")) {
+                                    ListRow(recipe.name, subtitle: subtitle(recipe)) {
                                         RecipePicture(recipe: recipe, radius: 12).frame(width: 48, height: 48)
                                     } trailing: {
-                                        EmptyView()
+                                        if SharedNews.isNew(recipe, seenAt: seenAt) { Pill("New", tone: .accent) }
                                     }
                                 }
                                 .buttonStyle(PressFade())
@@ -322,7 +335,48 @@ struct SharedWithYouView: View {
         }
         .pageBackground()
         .centeredTitle("Shared with you")
+        .textBackButton("Recipes")
         .refreshable { await store.load() }
+        .task(id: store.loaded) {
+            guard !marked else { return }
+            seenAt = SharedNews.seenAt(store.household)
+            if store.loaded {
+                marked = true
+                SharedNews.markSeen(store.household)
+            }
+        }
+    }
+
+    /// Where it lives over there and when it came: "Dinner · shared 2 days ago".
+    private func subtitle(_ recipe: Recipe) -> String? {
+        let parts = [recipe.ownerSection?.title, timeAgo(recipe.sharedAt).map { "shared \($0)" }].compactMap { $0 }
+        return parts.isEmpty ? recipe.totalTime : parts.joined(separator: " · ")
+    }
+}
+
+/**
+ Which shared recipes are new to you: shared since this phone last opened Shared with you. Kept
+ on the phone rather than the server, the same as the web — it is only a nudge. Before the list
+ has ever been opened here, anything shared in the last week counts.
+*/
+enum SharedNews {
+    private static func key(_ household: UUID) -> String { "mp_sharedSeenAt_\(household.uuidString.lowercased())" }
+
+    static func seenAt(_ household: UUID?) -> Date? {
+        guard let household else { return nil }
+        let stored = UserDefaults.standard.double(forKey: key(household))
+        return stored > 0 ? Date(timeIntervalSince1970: stored) : nil
+    }
+
+    static func markSeen(_ household: UUID?) {
+        guard let household else { return }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: key(household))
+    }
+
+    static func isNew(_ recipe: Recipe, seenAt: Date?) -> Bool {
+        guard let iso = recipe.sharedAt, let at = ISO8601DateFormatter.flexible(iso) else { return false }
+        if let seenAt { return at > seenAt }
+        return Date().timeIntervalSince(at) < 7 * 86_400
     }
 }
 
@@ -332,7 +386,6 @@ struct SharedWithYouView: View {
         SplitSheet(store: store, group: SampleData.recipeCategories[0], total: 41,
                    suggestions: [("Chicken", [SampleData.recipes[0].id]), ("Beef", [SampleData.recipes[1].id])],
                    examples: SampleData.recipes)
-            .kitchenSheet()
     }
 }
 

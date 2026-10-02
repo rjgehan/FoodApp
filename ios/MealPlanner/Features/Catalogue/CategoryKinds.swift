@@ -78,17 +78,44 @@ enum CategoryKinds {
         return all.compactMap { k in buckets[k.name].map { (k.name, $0) } }
     }
 
-    /// Which of these groups a recipe most likely belongs in, for filing by hand.
-    static func suggestGroup(_ recipe: Recipe, among groups: [RecipeCategory]) -> RecipeCategory? {
-        if let kind = kind(of: recipe), let byKind = groups.first(where: { $0.name.lowercased() == kind.lowercased() }) {
-            return byKind
-        }
-        // A group of their own making — "Tacos" — still matches on its name.
+    /**
+     The groups a recipe most likely belongs in, likeliest first, for filing by hand (3.3) — the
+     web's suggestGroups. A group is a match on its own name — the kind of dish the recipe is, or a
+     word of a group the household made up, like "Tacos" — or on a group inside it: a chicken pot
+     pie goes in Main dish when Chicken is one of Main dish's groups. A main with nowhere better
+     goes in a "Main…" group. `within` gives the names of the groups inside one, lowercased.
+    */
+    static func suggestGroups(_ recipe: Recipe, among groups: [RecipeCategory],
+                              within: (RecipeCategory) -> Set<String> = { _ in [] }) -> [RecipeCategory] {
+        let kind = kind(of: recipe)?.lowercased()
         let text = ([recipe.name] + recipe.ingredients.map(\.ingredientName)).joined(separator: " | ").lowercased()
-        return groups.first { group in
-            var word = group.name.lowercased()
+        func said(_ name: String) -> Bool {
+            var word = name.lowercased()
             if word.hasSuffix("s") { word.removeLast() }
             return hasWord(text, word)
         }
+        var insides: [UUID: Set<String>] = [:]
+        for g in groups { insides[g.id] = within(g).subtracting([g.name.lowercased()]) }
+        func inside(_ g: RecipeCategory) -> Set<String> { insides[g.id] ?? [] }
+        let isMain = kind.map { k in proteins.contains { $0.name.lowercased() == k } } ?? false
+
+        let tests: [(RecipeCategory) -> Bool] = [
+            { g in kind != nil && g.name.lowercased() == kind },
+            { g in kind.map { inside(g).contains($0) } ?? false },
+            { g in said(g.name) },
+            { g in inside(g).contains(where: said) },
+            { g in isMain && g.name.range(of: "\\bmains?\\b", options: [.regularExpression, .caseInsensitive]) != nil },
+        ]
+        var found: [RecipeCategory] = []
+        for test in tests {
+            for g in groups where !found.contains(where: { $0.id == g.id }) && test(g) { found.append(g) }
+        }
+        return found
+    }
+
+    /// The group a recipe most likely belongs in, or nil.
+    static func suggestGroup(_ recipe: Recipe, among groups: [RecipeCategory],
+                             within: (RecipeCategory) -> Set<String> = { _ in [] }) -> RecipeCategory? {
+        suggestGroups(recipe, among: groups, within: within).first
     }
 }

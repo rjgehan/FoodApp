@@ -464,7 +464,7 @@ private struct LinkPicture: View {
 
     var body: some View {
         let plate = RecipePhotoPlaceholder(hue: .of(link.id.uuidString.lowercased()),
-                                           systemImage: link.source == .web ? "globe" : "play", size: 40, radius: 10)
+                                           systemImage: link.isVideo ? "play" : "globe", size: 40, radius: 10)
         if let id = link.coverImageId, let url = APIClient.shared.imageURL(id) {
             AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { plate }
                 .frame(width: 40, height: 40)

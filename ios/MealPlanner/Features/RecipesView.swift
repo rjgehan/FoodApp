@@ -172,8 +172,12 @@ struct RecipesView: View {
                     }
                     if !shared.isEmpty {
                         NavigationLink(value: CatalogueRoute.shared) {
+                            let seenAt = SharedNews.seenAt(store.household)
+                            let fresh = shared.filter { SharedNews.isNew($0, seenAt: seenAt) }.count
                             ListRow("Shared with you", subtitle: fromWhom(shared), detail: "\(shared.count)",
-                                    chevron: true, tile: ("person.2", .sky))
+                                    chevron: true, tile: ("person.2", .sky)) {
+                                if fresh > 0 { Pill("\(fresh) new", tone: .accent) }
+                            }
                         }
                         .buttonStyle(PressFade())
                     }
@@ -311,6 +315,12 @@ struct DrawerView: View {
     private var parent: RecipeCategory? { parentId.flatMap { id in store.categories.first { $0.id == id } } }
     private var place: String { parent?.name ?? section.title }
 
+    /// Where Back goes: up a level — the group above, the drawer, or Recipes from a drawer.
+    private var backLabel: String {
+        guard let parent else { return "Recipes" }
+        return parent.parentId.flatMap { id in store.categories.first { $0.id == id }?.name } ?? section.title
+    }
+
     private var inSection: [Recipe] {
         store.recipes.filter { $0.section == section }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -383,6 +393,7 @@ struct DrawerView: View {
             if parent != nil { FloatingAddRecipe { addingRecipe = true } }
         }
         .centeredTitle(place)
+        .textBackButton(backLabel)
         .toolbar { toolbar }
         .refreshable { await store.load() }
         .sheet(item: Binding(get: { editingGroups.map { EditingTarget(selected: $0) } },
@@ -401,8 +412,8 @@ struct DrawerView: View {
         }
         .sheet(isPresented: $splitting, onDismiss: rememberSplit) {
             if let parent {
+                // It sizes itself to what it says, with the group showing behind.
                 SplitSheet(store: store, group: parent, total: here.count, suggestions: splits, examples: here)
-                    .kitchenSheet([.large])
             }
         }
         .task(id: store.loaded) { offerSplit() }

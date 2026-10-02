@@ -378,6 +378,10 @@ struct Recipe: Codable, Identifiable, Hashable {
     var published: Bool? = nil
     /// The households it is shared with. Only meaningful to the household that owns it.
     var sharedWith: [UUID]? = nil
+    /// Shared with you: the drawer it is in at the household that owns it. Absent from older servers.
+    var ownerSection: RecipeSection? = nil
+    /// Shared with you: when it was sent here (an ISO instant), if the server knows.
+    var sharedAt: String? = nil
 
     /// The links to show and to edit, from the list when the server sends one.
     var allLinks: [SourceLink] {
@@ -536,19 +540,47 @@ struct SavedLink: Codable, Identifiable, Hashable {
     var createdAt: String? = nil
     /// On a save only: the link was already there, and that one was updated.
     var alreadySaved: Bool? = nil
+    /// Whether you may delete it: whoever saved it, or anyone once they have gone. Absent from
+    /// older servers, which let anyone.
+    var canDelete: Bool? = nil
 
-    /// "TikTok", "Instagram", or the site's address — what its badge says.
+    /// "TikTok", "Instagram", "YouTube", "BBC Good Food" or the site's address — what its badge
+    /// says, the same as the web.
     var sourceLabel: String { Self.label(source: source, url: url) }
 
     static func label(source: SavedLinkSource?, url: String?) -> String {
         switch source {
         case .tiktok: return "TikTok"
         case .instagram: return "Instagram"
-        default:
-            let host = url.flatMap { URL(string: $0)?.host() } ?? ""
-            return host.isEmpty ? "Website" : host.replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
+        default: return url.flatMap(SourceLink.siteName(of:)) ?? "Website"
         }
     }
+
+    /// The kinds the filter chips offer: the server's three, with YouTube told apart from the rest
+    /// of the web by its address.
+    enum Kind: CaseIterable {
+        case tiktok, youtube, instagram, web
+
+        var label: String {
+            switch self {
+            case .tiktok: return "TikTok"
+            case .youtube: return "YouTube"
+            case .instagram: return "Instagram"
+            case .web: return "Websites"
+            }
+        }
+    }
+
+    var kind: Kind {
+        switch source {
+        case .tiktok: return .tiktok
+        case .instagram: return .instagram
+        default: return SourceLink.isYouTube(url) ? .youtube : .web
+        }
+    }
+
+    /// A video rather than a page: drawn with a play mark rather than a globe.
+    var isVideo: Bool { source != .web || SourceLink(url: url, label: nil).isVideo }
 }
 
 /// A draft read off a link by the server, to be checked in the editor before it is saved.
