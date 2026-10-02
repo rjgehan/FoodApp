@@ -10,6 +10,8 @@ import { mealIcon } from '../plan/planModel';
 import { HeroButton } from '../recipe/RecipeHero';
 import RecipeClassifier from '../RecipeClassifier';
 import { Icon, type IconName } from '../icons';
+import { gramsText, kcalText, type PlanNutrition } from '../../api/nutrition';
+import { Stat } from '../nutrition/NutritionParts';
 import { toast } from '../toast';
 import { Avatar, Button, CheckCircle, ErrorText, List, Photo, Pill, Row, SectionLabel, Sheet, Tile, type Tone } from '../ui';
 
@@ -39,25 +41,11 @@ export interface SoonDestination {
 }
 
 /**
- * Nutrition facts and Meal plans: the mockup's 5.4–5.11, still to be built. Their doors are on
- * Explore now, and each opens on a page that says what is coming, so the place the work lands
- * already exists. The words come from the designer's notes for those screens.
+ * Meal plans: the mockup's 5.7–5.11, still to be built. Its door is on Explore now and opens on a
+ * page that says what is coming, so the place the work lands already exists. The words come from
+ * the designer's notes for those screens.
  */
 export const SOON: SoonDestination[] = [
-  {
-    to: '/explore/nutrition',
-    title: 'Nutrition facts',
-    blurb: 'Ingredients, scanned products and your recipes',
-    icon: 'leaf',
-    tone: 'herb',
-    teaser: 'What your week adds up to',
-    plan: 'Look up what is in the food you cook and keep, and see how the week you have planned adds up.',
-    will: [
-      { icon: 'search', title: 'Any ingredient or product', detail: 'Search for it, or scan the barcode on the packet.' },
-      { icon: 'calendar', title: "This week's plan", detail: 'Calories, protein and fibre a day, from what is on the Plan.' },
-      { icon: 'chef', title: 'Your recipes', detail: 'Per serving, worked out from the ingredients, and where the calories come from.' },
-    ],
-  },
   {
     to: '/explore/meal-plans',
     title: 'Meal plans',
@@ -103,7 +91,40 @@ export function GlobalRecipesDoor({ count }: { count: number | null }) {
 }
 
 /**
- * A door that is not open yet (5.1's Nutrition facts and Meal plans cards): its tile, name and
+ * Nutrition facts' door (5.1): its tile, name and line, then the week's plan as three numbers —
+ * a day's calories, protein and fibre on average, for one person. Until something on the plan
+ * can be counted it says how to get some numbers, rather than showing noughts.
+ */
+export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
+  const avg = week != null && week.daysCounted > 0 ? week.average : null;
+  return (
+    <Link
+      to="/explore/nutrition"
+      aria-label="Nutrition facts"
+      className="card press flex flex-col gap-3 p-4 active:bg-surface2"
+    >
+      <span className="flex items-center gap-3">
+        <Tile icon="leaf" tone="herb" size={44} />
+        <span className="min-w-0 flex-1">
+          <span className="title-section block">Nutrition facts</span>
+          <span className="block text-[0.8125rem] leading-snug text-muted">Ingredients, scanned products and your recipes</span>
+        </span>
+        <Icon name="chevR" size={18} className="shrink-0 text-faint" />
+      </span>
+      <span className="flex gap-2">
+        <Stat value={avg ? kcalText(avg.kcal) : '–'} label="kcal / day" />
+        <Stat value={avg ? gramsText(avg.protein) : '–'} label="Protein" tone="herb" />
+        <Stat value={avg ? gramsText(avg.fibre) : '–'} label="Fibre" tone="mustard" />
+      </span>
+      <span className="text-xs text-muted">
+        {week == null ? '\u00a0' : avg ? "Daily average of this week's plan" : 'Plan some meals and see what your week adds up to'}
+      </span>
+    </Link>
+  );
+}
+
+/**
+ * A door that is not open yet (5.1's Meal plans card): its tile, name and
  * line, and in place of the teaser of your own numbers, a plain note that it is coming.
  */
 export function SoonDoor({ destination }: { destination: SoonDestination }) {

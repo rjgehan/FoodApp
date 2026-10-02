@@ -422,7 +422,7 @@ test('capture every screen', async ({ page }) => {
   await call('PUT', `/api/recipes/${ramen.id}/published`, { token: T, body: { published: true } });
   await step('explore', async () => {
     await page.goto('/explore');
-    await shot(page, 'Explore', 'Three doors: Global recipes, and Nutrition facts and Meal plans, still being built.');
+    await shot(page, 'Explore', "Three doors: Global recipes, Nutrition facts with the week's plan, and Meal plans, still being built.");
     await page.goto('/explore/recipes');
     await shot(page, 'Global recipes', 'What every household here has published. The + moves one into your recipes.');
     await page.goto(`/explore/recipes/${ramen.id}`);
@@ -430,7 +430,11 @@ test('capture every screen', async ({ page }) => {
     await page.getByRole('button', { name: 'Move into my recipes' }).click();
     await shot(page, 'Move into my recipes', 'Asks which household when you are in more than one.');
     await page.goto('/explore/nutrition');
-    await shot(page, 'Nutrition facts (coming soon)');
+    await shot(page, 'Nutrition facts', "Search or scan; the next seven days of the plan, a day at a time, for one person.");
+    await page.goto('/explore/nutrition/foods/171287');
+    await shot(page, 'An ingredient', 'USDA figures per 100 g or per household measure, with the cupboard and the list a tap away.');
+    await page.goto(`/recipes/${parm.id}/nutrition`);
+    await shot(page, "A recipe's nutrition", "Per serving, from the ingredients: a day's share, macros, where the calories come from.");
   });
 
   // The board is the whole server's, so this only looks: nothing is posted to it.
