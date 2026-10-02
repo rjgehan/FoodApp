@@ -4,7 +4,8 @@ import type { Recipe } from '../api/types';
 import { isoDay, type PlanNutrition } from '../api/nutrition';
 import { useHousehold } from '../household/HouseholdContext';
 import { PageTitle } from '../components/PageTitle';
-import { GlobalRecipesDoor, NutritionDoor, SOON, SoonDoor } from '../components/explore/ExploreParts';
+import type { MealPlansHome } from '../api/mealPlans';
+import { GlobalRecipesDoor, MealPlansDoor, NutritionDoor } from '../components/explore/ExploreParts';
 
 /**
  * The front door of Explore (the mockup's 5.1): three doors.
@@ -15,14 +16,14 @@ import { GlobalRecipesDoor, NutritionDoor, SOON, SoonDoor } from '../components/
  * which also means a new kind can arrive without anything having to move.
  *
  * Global recipes is first and biggest, with how many there are on it. Nutrition facts shows what
- * the coming week's plan adds up to, a day on average. Meal plans is not built yet, and its door
- * says so rather than showing numbers that are not real — a door marked with what is behind it
- * is worth more than no door, because it is where the work will land.
+ * the coming week's plan adds up to, a day on average. Meal plans leads straight into cooking
+ * from the cupboard or into a plan, and says what the cupboard has to cook from.
  */
 export default function ExplorePage() {
   const { activeHouseholdId } = useHousehold();
   const [count, setCount] = useState<number | null>(null);
   const [week, setWeek] = useState<PlanNutrition | null>(null);
+  const [plans, setPlans] = useState<MealPlansHome | null>(null);
 
   useEffect(() => {
     if (!activeHouseholdId) return;
@@ -34,6 +35,10 @@ export default function ExplorePage() {
     api<PlanNutrition>('GET', `/api/nutrition/households/${activeHouseholdId}/plan?start=${isoDay(0)}&end=${isoDay(6)}`)
       .then((w) => live && setWeek(w))
       .catch(() => live && setWeek(null));
+    // The same answer the Meal plans page opens with, so the door's count and the page agree.
+    api<MealPlansHome>('GET', `/api/households/${activeHouseholdId}/meal-plans`)
+      .then((h) => live && setPlans(h))
+      .catch(() => live && setPlans(null));
     return () => {
       live = false;
     };
@@ -45,9 +50,7 @@ export default function ExplorePage() {
       <div className="grid gap-3.5 md:grid-cols-[3fr_2fr] md:grid-rows-[auto_auto]">
         <GlobalRecipesDoor count={count} />
         <NutritionDoor week={week} />
-        {SOON.map((d) => (
-          <SoonDoor key={d.to} destination={d} />
-        ))}
+        <MealPlansDoor home={plans} />
       </div>
     </div>
   );

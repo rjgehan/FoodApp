@@ -11,6 +11,7 @@ import { HeroButton } from '../recipe/RecipeHero';
 import RecipeClassifier from '../RecipeClassifier';
 import { Icon, type IconName } from '../icons';
 import { gramsText, kcalText, type PlanNutrition } from '../../api/nutrition';
+import { MEAL_PLANS, planIcon, planPath, type MealPlansHome } from '../../api/mealPlans';
 import { Stat } from '../nutrition/NutritionParts';
 import { toast } from '../toast';
 import { Avatar, Button, CheckCircle, ErrorText, List, Photo, Pill, Row, SectionLabel, Sheet, Tile, type Tone } from '../ui';
@@ -23,44 +24,6 @@ import { Avatar, Button, CheckCircle, ErrorText, List, Photo, Pill, Row, Section
 */
 
 // --- The doors -------------------------------------------------------------------------------
-
-/** One of the things Explore leads to that is not built yet, and what it will do once it is. */
-export interface SoonDestination {
-  to: string;
-  title: string;
-  /** The line under the title on its door. */
-  blurb: string;
-  icon: IconName;
-  tone: Tone;
-  /** Its door's one line about what is coming, where the finished one shows a teaser of your own data. */
-  teaser: string;
-  /** What it is for, in a sentence, on the page behind the door. */
-  plan: string;
-  /** What it will do, a row each, on the page behind the door. */
-  will: { icon: IconName; title: string; detail: string }[];
-}
-
-/**
- * Meal plans: the mockup's 5.7–5.11, still to be built. Its door is on Explore now and opens on a
- * page that says what is coming, so the place the work lands already exists. The words come from
- * the designer's notes for those screens.
- */
-export const SOON: SoonDestination[] = [
-  {
-    to: '/explore/meal-plans',
-    title: 'Meal plans',
-    blurb: 'From your cupboard, or built for a goal',
-    icon: 'target',
-    tone: 'plum',
-    teaser: 'A week made for you',
-    plan: 'A week of meals made for you, from your own recipes first, ready to put on the Plan in one go.',
-    will: [
-      { icon: 'cupboard', title: 'Cook from cupboard', detail: 'Meals that use what you already have, and the few things to buy for them.' },
-      { icon: 'heart', title: 'Plans for a health target', detail: 'Ready-made or your own, with daily targets worked out for you.' },
-      { icon: 'calendar', title: 'Apply it to your Plan', detail: 'Every meal goes on the Plan; swap any you do not fancy first.' },
-    ],
-  },
-];
 
 /**
  * Global recipes' door (5.1): a big green picture with how many there are on it, set first and
@@ -124,28 +87,51 @@ export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
 }
 
 /**
- * A door that is not open yet (5.1's Meal plans card): its tile, name and
- * line, and in place of the teaser of your own numbers, a plain note that it is coming.
+ * Meal plans' door (5.1): its tile, name and line, then chips straight into cooking from the
+ * cupboard and into a couple of plans (your own first, else ready-made ones), and a line on what
+ * the cupboard holds. The chips are links of their own, laid over the door's.
  */
-export function SoonDoor({ destination }: { destination: SoonDestination }) {
-  const { to, title, blurb, icon, tone, teaser } = destination;
+export function MealPlansDoor({ home }: { home: MealPlansHome | null }) {
+  const plans = home?.plans.slice(0, 2) ?? [];
+  const cupboard = home?.cupboard;
+  const chip =
+    'press relative z-[1] inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3 py-[7px] text-[0.8125rem] font-medium text-ink active:bg-surface2';
   return (
-    <Link to={to} className="card press flex flex-col gap-3 p-4 active:bg-surface2">
-      <span className="flex items-center gap-3">
-        <Tile icon={icon} tone={tone} size={44} />
+    <div className="card relative flex flex-col gap-3 p-4">
+      <Link
+        to={MEAL_PLANS}
+        aria-label="Meal plans"
+        className="press flex items-center gap-3 after:absolute after:inset-0 after:rounded-card after:content-['']"
+      >
+        <Tile icon="target" tone="plum" size={44} />
         <span className="min-w-0 flex-1">
-          <span className="title-section block">{title}</span>
-          <span className="block text-[0.8125rem] leading-snug text-muted">{blurb}</span>
+          <span className="title-section block">Meal plans</span>
+          <span className="block text-[0.8125rem] leading-snug text-muted">From your cupboard, or built for a goal</span>
         </span>
         <Icon name="chevR" size={18} className="shrink-0 text-faint" />
+      </Link>
+      <span className="flex flex-wrap gap-2">
+        <Link to={`${MEAL_PLANS}/cupboard`} className={chip}>
+          <Icon name="cupboard" size={14} />
+          Cook from cupboard
+        </Link>
+        {plans.map((p) => (
+          <Link key={p.id ?? p.preset} to={planPath(p)} className={chip}>
+            <Icon name={planIcon(p.icon)} size={14} />
+            {p.name}
+          </Link>
+        ))}
       </span>
-      <span className="flex items-center gap-2.5 rounded-[14px] bg-surface2 px-3 py-2.5">
-        <Pill tone={tone} icon="clock">
-          Coming soon
-        </Pill>
-        <span className="min-w-0 flex-1 text-[0.8125rem] leading-snug text-muted">{teaser}</span>
+      <span className="text-xs text-muted">
+        {cupboard == null
+          ? '\u00a0'
+          : cupboard.items === 0
+            ? 'Cook from your cupboard once it has a few things in'
+            : `Cook from your cupboard: ${cupboard.items} ${cupboard.items === 1 ? 'thing' : 'things'}${
+                cupboard.useSoon > 0 ? `, ${cupboard.useSoon} ${cupboard.useSoon === 1 ? 'needs' : 'need'} using soon` : ''
+              }`}
       </span>
-    </Link>
+    </div>
   );
 }
 
@@ -439,38 +425,4 @@ export function useMoveIntoMine(onMovedHere: (saved: Recipe) => void) {
   ) : null;
 
   return { start: setMoving, sheet };
-}
-
-// --- Behind a door that is not open yet ------------------------------------------------------
-
-/** The page behind Nutrition facts or Meal plans until they are built: what is coming there. */
-export function SoonPanel({ destination }: { destination: SoonDestination }) {
-  const { title, icon, tone, plan, will } = destination;
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="card flex flex-col items-center gap-3 px-5 pb-6 pt-7 text-center">
-        <Tile icon={icon} tone={tone} size={64} />
-        <Pill tone={tone} icon="clock">
-          Coming soon
-        </Pill>
-        <h2 className="title-sheet">{title}</h2>
-        <p className="max-w-md text-[0.9375rem] leading-normal text-muted">{plan}</p>
-      </div>
-      <div>
-        <SectionLabel>What it will do</SectionLabel>
-        <List label="What it will do" inset={66}>
-          {will.map((w) => (
-            <Row
-              key={w.title}
-              lead={<Tile icon={w.icon} tone={tone} size={36} />}
-              title={w.title}
-              subtitle={w.detail}
-              wrap
-            />
-          ))}
-        </List>
-      </div>
-      <p className="px-1 text-[0.8125rem] text-faint">Not built yet. This is where it will go.</p>
-    </div>
-  );
 }

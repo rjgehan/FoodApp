@@ -20,10 +20,13 @@ async function published(householdId: string, name: string) {
 const keeps = async (householdId: string, token: string, recipeId: string) =>
   (await call('GET', `/api/households/${householdId}/recipes`, { token })).some((x: any) => x.id === recipeId);
 
-test('Explore opens on three doors, and the one still being built says what is coming', async ({ page }) => {
+test('Explore opens on three doors, each with a teaser of its own', async ({ page }) => {
   const hh = await newHousehold();
   const cook = await newMember(hh.id);
   await published((await newHousehold()).id, unique('Door Ramen'));
+  const owner = await admin();
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'onions' } });
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: 'salmon fillets' } });
 
   await signIn(page, cook, hh.id);
   await page.goto('/explore');
@@ -32,19 +35,21 @@ test('Explore opens on three doors, and the one still being built says what is c
   const global = page.getByRole('link', { name: /^Global recipes, \d+ published$/ });
   await expect(global).toBeVisible();
   await expect(global.getByText(/^\d+ recipes?$/)).toBeVisible();
-  // Nutrition facts is open (tests/ui/nutrition.spec.ts goes through it).
-  await expect(page.getByRole('link', { name: 'Nutrition facts' }).getByText('Coming soon')).toHaveCount(0);
+  // Nutrition facts and Meal plans are open (tests/ui/nutrition.spec.ts and meal-plans.spec.ts go through them).
+  await expect(page.getByText('Coming soon')).toHaveCount(0);
+  // Meal plans says what the cupboard has to cook from: fish bought today wants using soon.
+  await expect(page.getByText('Cook from your cupboard: 2 things, 1 needs using soon')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'The 20-year-old guy' })).toBeVisible();
 
-  const link = page.getByRole('link', { name: /^Meal plans/ });
-  await expect(link.getByText('Coming soon')).toBeVisible();
-  await link.click();
+  await page.getByRole('link', { name: 'Meal plans', exact: true }).click();
   await expect(page).toHaveURL(/\/explore\/meal-plans$/);
   await expect(page.getByRole('heading', { name: 'Meal plans' }).first()).toBeVisible();
-  await expect(page.getByText('Coming soon')).toBeVisible();
-  await expect(page.getByText('Cook from cupboard')).toBeVisible();
-  await expect(page.getByText('Not built yet. This is where it will go.')).toBeVisible();
   await page.getByRole('link', { name: 'Explore' }).first().click();
   await expect(page).toHaveURL(/\/explore$/);
+  // Its chip goes straight into cooking from the cupboard.
+  await page.getByRole('link', { name: 'Cook from cupboard' }).click();
+  await expect(page).toHaveURL(/\/explore\/meal-plans\/cupboard$/);
+  await expect(page.getByRole('heading', { name: 'From your cupboard' })).toBeVisible();
 });
 
 test('in one household, the + on a published recipe moves it in without opening it', async ({ page }) => {

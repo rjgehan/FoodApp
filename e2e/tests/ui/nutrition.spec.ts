@@ -74,8 +74,6 @@ test("Explore's Nutrition door shows the week's plan, and opens on the week a da
   await expect(door.getByText('26g', { exact: true })).toBeVisible();
   await expect(door.getByText("Daily average of this week's plan")).toBeVisible();
   await expect(door.getByText('Coming soon')).toHaveCount(0);
-  // Meal plans is still to come.
-  await expect(page.getByRole('link', { name: /^Meal plans/ }).getByText('Coming soon')).toBeVisible();
 
   await door.click();
   await expect(page).toHaveURL(/\/explore\/nutrition$/);
