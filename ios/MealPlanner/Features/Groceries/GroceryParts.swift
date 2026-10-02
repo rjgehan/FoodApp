@@ -173,36 +173,40 @@ enum GroceryWords {
     }
 
     /// The line under a row: the recipes that put it on the list, or who typed it in — and who
-    /// ticked it off, since two people can shop one list at once.
-    static func detail(_ item: GroceryItem) -> String? {
+    /// ticked it off, since two people can shop one list at once ("you" when it was you).
+    static func detail(_ item: GroceryItem, me: UUID? = nil) -> String? {
         let recipes = item.fromRecipes ?? []
         var parts: [String] = []
+        let added = recipes.isEmpty ? item.addedByName : nil
         if !recipes.isEmpty {
             parts.append(recipes.joined(separator: ", "))
-        } else if let who = item.addedByName {
-            parts.append("Added by \(who)")
+        } else if let added {
+            parts.append("Added by \(added)")
         }
-        if item.checked, let who = item.checkedByName, who != item.addedByName {
-            parts.append("got by \(who)")
+        let gotBy = item.checkedByUserId != nil && item.checkedByUserId == me ? "you" : item.checkedByName
+        // "Added by Jo · got by Jo" says one thing twice — but only when "Added by Jo" is showing.
+        if item.checked, let gotBy, !(added != nil && item.checkedByName == added) {
+            parts.append("got by \(gotBy)")
         }
-        guard let line = parts.first.map({ _ in parts.joined(separator: " · ") }) else { return nil }
+        guard !parts.isEmpty else { return nil }
+        let line = parts.joined(separator: " · ")
         return line.prefix(1).uppercased() + line.dropFirst()
     }
 
     /// "Cupboard says you have 1".
     static func cupboardSays(_ stock: CupboardItem?) -> String {
         if let quantity = stock?.quantity {
-            return "Cupboard says you have \(number(quantity))" + (stock?.unit.map { " \($0)" } ?? "")
+            return "Cupboard says you have \(number(quantity))" + (CountUnits.unit(stock?.unit, for: quantity).map { " \($0)" } ?? "")
         }
         return "Cupboard says you have some"
     }
 
-    /// The Cupboard row in an item's sheet.
+    /// The Cupboard row in an item's sheet: "None recorded", "Always have", "Have 3 tins", "Running low".
     static func cupboardState(_ stock: CupboardItem?) -> String {
         guard let stock else { return "None recorded" }
         if stock.staple { return "Always have" }
         if let quantity = stock.quantity {
-            return quantity > 0 ? number(quantity) + (stock.unit.map { " \($0)" } ?? "") : "None left"
+            return quantity > 0 ? "Have " + (stock.amount ?? number(quantity)) : "None left"
         }
         return stock.runningLow ? "Running low" : "Have some"
     }

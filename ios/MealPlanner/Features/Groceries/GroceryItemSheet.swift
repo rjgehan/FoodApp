@@ -24,6 +24,8 @@ struct GroceryItemSheet: View {
     @State private var aisle: UUID?
     @State private var current: RestockReminder?
     @State private var error: String?
+    /// The content's own height: the sheet hugs "Remove from list", edge to edge, as the mockup's does.
+    @State private var height: CGFloat = 540
 
     init(item: GroceryItem, categories: [GroceryCategory], reminder: RestockReminder?, stock: CupboardItem?,
          session: Session, sample: Bool = false, onMove: @escaping (UUID) -> Void,
@@ -124,10 +126,13 @@ struct GroceryItemSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
-            .padding(.bottom, 20)
+            // The sheet adds the home indicator's inset below this on its own.
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .tint(Palette.herb)
-        .kitchenSheet([.fraction(0.8), .large])
+        .kitchenSheet([.height(height)])
     }
 
     private var aisleNote: String {
@@ -197,6 +202,9 @@ struct DoneShoppingSheet: View {
     @State private var selected: Set<UUID>
     @State private var busy = false
     @State private var error: String?
+    /// Sized to what it lists, with the list dimmed above (mockup 4.4); a long shop grows it to
+    /// full height, and then it scrolls.
+    @State private var height: CGFloat = 560
 
     init(items: [GroceryItem], session: Session, sample: Bool = false,
          onDone: @escaping (_ cleared: [UUID], _ stocked: Int) -> Void) {
@@ -240,8 +248,8 @@ struct DoneShoppingSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 CheckBox(isOn: on && toCupboard)
-                                (item.amount.map { Text($0 + " ").fontWeight(.semibold) } ?? Text(""))
-                                    .font(.system(size: 16))
+                                // The amount in bold, then the name (`<b>2 lb</b> chicken thighs`).
+                                (item.amount.map { Text($0 + " ").font(.system(size: 16, weight: .bold)) } ?? Text(""))
                                     + Text(item.name).font(.system(size: 16, weight: .medium))
                                 Spacer(minLength: 8)
                                 if !on && toCupboard {
@@ -276,9 +284,11 @@ struct DoneShoppingSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
-            .padding(.bottom, 20)
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .kitchenSheet([.large])
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.height(height)])
     }
 
     private func finish() async {

@@ -91,6 +91,7 @@ struct GroceriesView: View {
                             item: item,
                             reminder: item.ingredientId.flatMap { reminders[$0] },
                             stock: item.ingredientId.flatMap { cupboard[$0] },
+                            me: session.userId,
                             onToggle: { Task { await toggle(item) } },
                             onOpen: { open = item }
                         )
@@ -99,6 +100,8 @@ struct GroceriesView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 Task { await remove(item) }
                             }
+                            // The theme's tomato, as the mockup draws Remove, not the system red.
+                            .tint(Palette.accent)
                         }
                     }
                     Color.clear.frame(height: 14).pageRow()
@@ -359,6 +362,8 @@ struct GroceryRow: View {
     let item: GroceryItem
     var reminder: RestockReminder?
     var stock: CupboardItem?
+    /// Who is looking, so a row they ticked says "got by you".
+    var me: UUID? = nil
     var onToggle: () -> Void
     var onOpen: () -> Void
 
@@ -379,7 +384,7 @@ struct GroceryRow: View {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         title
-                        if let detail = GroceryWords.detail(item) {
+                        if let detail = GroceryWords.detail(item, me: me) {
                             Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
                         }
                         if item.inCupboard && !item.checked {

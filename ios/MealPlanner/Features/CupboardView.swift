@@ -166,6 +166,8 @@ struct CupboardView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 Task { await remove(item) }
                             }
+                            // The theme's tomato, as the mockup draws Remove, not the system red.
+                            .tint(Palette.accent)
                             Button("Buy again", systemImage: "cart") {
                                 Task { await buyAgain(item) }
                             }
@@ -475,7 +477,8 @@ struct CupboardItemSheet: View {
         self.session = session
         self.sample = sample
         self.onChanged = onChanged
-        _name = State(initialValue: item.name)
+        // As the row it was opened from says it: "Chickpeas (tin)", not the stored "chickpeas (tin)".
+        _name = State(initialValue: GroceryWords.titled(item.name))
         _aisle = State(initialValue: item.categoryId)
         _amount = State(initialValue: item.tracksQuantity ? .exact : item.runningLow ? .low : .have)
         _quantity = State(initialValue: item.quantity ?? 1)
@@ -633,7 +636,8 @@ struct CupboardItemSheet: View {
             var saved = try await APIClient.shared.editCupboard(
                 household: household,
                 item: item.id,
-                name: named == item.name ? nil : named,
+                // Only a change of letters is a rename: the capital is how it is shown anyway.
+                name: named.lowercased() == item.name.lowercased() ? nil : named,
                 staple: staple == item.staple ? nil : staple,
                 trackQuantity: modeChanged ? exact : nil,
                 quantity: exact ? quantity : nil,

@@ -300,6 +300,8 @@ struct GroceryItem: Codable, Identifiable, Hashable {
     let unit: String?
     let checked: Bool
     let checkedByName: String?
+    /// Who ticked it, to say "got by you". Missing from a server before it was sent.
+    var checkedByUserId: UUID? = nil
     let categoryId: UUID?
     let inCupboard: Bool
     /// The recipes of the planned meals that put it here. Missing from a server before it was sent.
@@ -326,11 +328,32 @@ struct GroceryItem: Codable, Identifiable, Hashable {
         self.inCupboard = inCupboard
     }
 
-    /** "450 g", "2 cloves", or nothing at all. */
+    /** "450 g", "2 bags", or nothing at all. */
     var amount: String? {
         let number = quantity.map { $0 == $0.rounded() ? String(Int($0)) : String($0) }
-        let parts = [number, unit].compactMap { $0 }.filter { !$0.isEmpty }
+        let parts = [number, CountUnits.unit(unit, for: quantity)].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+}
+
+/**
+ The count words a list is written in, and their plurals: "2 bags baby spinach", not "2 bag".
+ Only these — weights and measures ("2 lb", "500 g") stay as they are. The web keeps the same list.
+ */
+enum CountUnits {
+    static let plurals: [String: String] = [
+        "bag": "bags", "tin": "tins", "can": "cans", "jar": "jars", "cup": "cups", "bottle": "bottles",
+        "box": "boxes", "pack": "packs", "packet": "packets", "carton": "cartons", "tub": "tubs", "pot": "pots",
+        "punnet": "punnets", "bunch": "bunches", "head": "heads", "clove": "cloves", "slice": "slices",
+        "loaf": "loaves", "piece": "pieces", "stick": "sticks", "sprig": "sprigs", "handful": "handfuls",
+        "pinch": "pinches", "fillet": "fillets", "block": "blocks", "bar": "bars", "roll": "rolls",
+        "sheet": "sheets", "tray": "trays", "bulb": "bulbs",
+    ]
+
+    /// "bags" for 2 bags; a unit the list does not know, or one already plural, is left alone.
+    static func unit(_ unit: String?, for quantity: Double?) -> String? {
+        guard let unit, let quantity, quantity > 1 else { return unit }
+        return plurals[unit.lowercased()] ?? unit
     }
 }
 
@@ -471,7 +494,7 @@ struct CupboardItem: Codable, Identifiable, Hashable {
     var amount: String? {
         guard let quantity else { return nil }
         let number = quantity == quantity.rounded() ? String(Int(quantity)) : String(quantity)
-        return [number, unit].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        return [number, CountUnits.unit(unit, for: quantity)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 }
 

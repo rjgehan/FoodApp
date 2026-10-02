@@ -312,12 +312,57 @@ struct CheckBox: View {
 }
 
 /**
- The system switch, herb green when on (`.toggle.on`) rather than the accent: on is "good" in
- this app's colours. Set for the whole app in Themed, so a plain Toggle already looks right.
+ The mockup's switch (`.toggle`): herb green when on rather than the accent — on is "good" in this
+ app's colours — and the warm border colour when off, not the system's cold grey. Set for the
+ whole app in Themed, so a plain Toggle already looks right.
+
+ Drawn by hand from iOS 18, which is when a style can see `.labelsHidden()`; before that it is the
+ system switch with the herb tint.
  */
 struct HerbSwitchStyle: ToggleStyle {
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        Toggle(configuration).toggleStyle(.switch).tint(Palette.herb)
+        if #available(iOS 18, *) {
+            KitchenSwitch(configuration: configuration)
+        } else {
+            Toggle(configuration).toggleStyle(.switch).tint(Palette.herb)
+        }
+    }
+}
+
+/// 51 × 31, a 27pt white knob with a soft shadow — the system switch's size, in the theme's colours.
+@available(iOS 18, *)
+private struct KitchenSwitch: View {
+    let configuration: ToggleStyleConfiguration
+    @Environment(\.labelsVisibility) private var labels
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if labels != .hidden {
+                configuration.label
+                Spacer(minLength: 0)
+            }
+            Capsule()
+                .fill(configuration.isOn ? Palette.herb : Palette.border)
+                .frame(width: 51, height: 31)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 27, height: 27)
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 2)
+                        .padding(2)
+                }
+                .contentShape(Capsule())
+                .onTapGesture {
+                    withAnimation(.snappy(duration: 0.2)) { configuration.isOn.toggle() }
+                }
+                .opacity(isEnabled ? 1 : 0.5)
+        }
+        // VoiceOver hears the system switch: its label, On or Off, and double-tap to change.
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
+        }
     }
 }
 
