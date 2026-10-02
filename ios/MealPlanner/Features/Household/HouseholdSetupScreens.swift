@@ -89,10 +89,11 @@ struct HouseholdBasicsScreen: View {
         .pageBackground()
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
+        // "Back" rather than "‹ Household": the title already says Household.
+        .textBackButton("Back")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { Task { await save() } } label: { Text("Save").fontWeight(.semibold) }
-                    .disabled(busy || !loaded)
+            BarTextButton("Save", placement: .topBarTrailing, bold: true, disabled: busy || !loaded) {
+                Task { await save() }
             }
         }
         .task { await load() }
@@ -154,75 +155,69 @@ struct AislesScreen: View {
     @State private var error: String?
 
     var body: some View {
+        // A plain List of card rows, as Groceries and Cupboard draw theirs: one 18pt bordered card
+        // 20pt in from the sides like every other group, while each row stays a real list row
+        // that can be dragged and swiped.
         List {
-            Section {
-                ForEach(Array(aisles.enumerated()), id: \.element.id) { index, aisle in
-                    HStack(spacing: 12) {
-                        Text("\(index + 1)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(Palette.faint)
-                            .frame(width: 20, alignment: .leading)
-                        Text(aisle.name)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Palette.text)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        GripDots()
-                    }
-                    .frame(minHeight: 30)
-                    // The mockup's hairlines run the width of the card, past the numbers.
-                    .alignmentGuide(.listRowSeparatorLeading) { _ in -16 }
-                    .alignmentGuide(.listRowSeparatorTrailing) { d in d.width + 16 }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        renameTo = aisle.name
-                        renaming = aisle
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityHint("Tap to rename or delete; press and hold to move")
-                    .accessibilityAction(named: "Move up") { move(aisle, by: -1) }
-                    .accessibilityAction(named: "Move down") { move(aisle, by: 1) }
+            Text("Drag into the order you walk the store. Groceries follow this order.")
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.muted)
+                .pageRow(top: 6, bottom: 8)
+            ForEach(Array(aisles.enumerated()), id: \.element.id) { index, aisle in
+                HStack(spacing: 12) {
+                    Text("\(index + 1)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.faint)
+                        .frame(width: 20, alignment: .leading)
+                    Text(aisle.name)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Palette.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    GripDots()
                 }
-                .onMove { from, to in
-                    aisles.move(fromOffsets: from, toOffset: to)
-                    Task { await saveOrder() }
+                .frame(minHeight: 46)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    renameTo = aisle.name
+                    renaming = aisle
                 }
-                .onDelete { offsets in
-                    let going = offsets.map { aisles[$0] }
-                    aisles.remove(atOffsets: offsets)
-                    Task { for aisle in going { await remove(aisle) } }
-                }
-                .kitchenRows()
-            } header: {
-                Text("Drag into the order you walk the store. Groceries follow this order.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.muted)
-                    .textCase(nil)
-                    .padding(.horizontal, -16)
-                    .padding(.bottom, 4)
-            } footer: {
-                VStack(alignment: .leading, spacing: 10) {
-                    DashedAddButton(title: "Add aisle") {
-                        newName = ""
-                        adding = true
-                    }
-                    if let error {
-                        NoteBox(error, tone: .accent, systemImage: "exclamationmark.triangle")
-                    }
-                }
-                .padding(.horizontal, -16)
-                .padding(.top, 10)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint("Tap to rename or delete; press and hold to move")
+                .accessibilityAction(named: "Move up") { move(aisle, by: -1) }
+                .accessibilityAction(named: "Move down") { move(aisle, by: 1) }
+                .cardRow(first: index == 0, last: index == aisles.count - 1)
             }
+            .onMove { from, to in
+                aisles.move(fromOffsets: from, toOffset: to)
+                Task { await saveOrder() }
+            }
+            .onDelete { offsets in
+                let going = offsets.map { aisles[$0] }
+                aisles.remove(atOffsets: offsets)
+                Task { for aisle in going { await remove(aisle) } }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                DashedAddButton(title: "Add aisle") {
+                    newName = ""
+                    adding = true
+                }
+                if let error {
+                    NoteBox(error, tone: .accent, systemImage: "exclamationmark.triangle")
+                }
+            }
+            .pageRow(top: 14, bottom: 28)
         }
-        .kitchenList()
-        .environment(\.defaultMinListRowHeight, 46)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Palette.bg.ignoresSafeArea())
+        .environment(\.defaultMinListRowHeight, 0)
         .overlay { if !loaded { ProgressView() } }
         .navigationTitle("Store aisles")
         .navigationBarTitleDisplayMode(.inline)
+        .textBackButton("Household")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { dismiss() } label: { Text("Done").fontWeight(.semibold) }
-            }
+            BarTextButton("Done", placement: .topBarTrailing, bold: true) { dismiss() }
         }
         .task { await load() }
         .alert("Add aisle", isPresented: $adding) {
@@ -367,6 +362,7 @@ struct RecipeIconsScreen: View {
         }
         .kitchenList()
         .navigationTitle("Recipe icons")
+        .textBackButton("Household")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await load()
@@ -436,6 +432,7 @@ struct NewHouseholdScreen: View {
         .pageBackground()
         .navigationTitle("Start another household")
         .navigationBarTitleDisplayMode(.inline)
+        .textBackButton("Household")
         .sheet(item: $made, onDismiss: { dismiss() }) { household in
             StartCupboardSheet(household: household.id, first: true)
         }

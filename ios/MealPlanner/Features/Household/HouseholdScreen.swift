@@ -107,6 +107,8 @@ struct HouseholdScreen: View {
         // "Household" is what the pages under this one say to come back; the bar shows the name.
         .navigationTitle("Household")
         .navigationBarTitleDisplayMode(.inline)
+        // It covers the screen over Settings, so going back is closing it, onto Settings again.
+        .textBackButton("Settings")
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(name).font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
@@ -173,7 +175,7 @@ struct HouseholdScreen: View {
         let you = person.userId == session.userId
         let canAct = isOwner && !you
         let row = ListRow(you ? "\(person.shown) (you)" : person.shown,
-                          subtitle: person.role == "OWNER" ? "Owner" : person.username,
+                          subtitle: person.role == "OWNER" ? "Owner" : person.distinctUsername,
                           chevron: canAct,
                           leading: { Avatar(person.shown, tone: tone, size: 38) },
                           trailing: { SignInPill(member: person) })
@@ -375,6 +377,8 @@ struct InviteQRSheet: View {
     @State private var current: InviteLink?
     @State private var confirming = false
     @State private var error: String?
+    /// The content's own height, so the sheet ends under "Replacing stops…" with the page above.
+    @State private var height: CGFloat = 640
 
     private var shown: InviteLink { current ?? link }
     private var name: String { session.household?.name ?? "this household" }
@@ -417,9 +421,12 @@ struct InviteQRSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 24)
+            // The sheet adds the home indicator's inset below this on its own.
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .kitchenSheet([.large])
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.height(height)])
         .alert("Replace the invite link?", isPresented: $confirming) {
             Button("Cancel", role: .cancel) {}
             Button("Replace link", role: .destructive) { Task { await replace() } }
@@ -466,6 +473,8 @@ struct MemberSheet: View {
     @State private var showQR = false
     @State private var removing = false
     @State private var error: String?
+    /// The content's own height: it grows when a reset link is made, and scrolls past the screen.
+    @State private var height: CGFloat = 400
 
     var body: some View {
         ScrollView {
@@ -475,7 +484,7 @@ struct MemberSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(member.shown).titleFont(22).foregroundStyle(Palette.text)
                             .accessibilityAddTraits(.isHeader)
-                        Text("\(member.signInSentence) · \(member.username)")
+                        Text([member.signInSentence, member.distinctUsername].compactMap { $0 }.joined(separator: " · "))
                             .font(.system(size: 13)).foregroundStyle(Palette.muted)
                     }
                     Spacer(minLength: 8)
@@ -539,9 +548,11 @@ struct MemberSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .kitchenSheet([.large])
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.height(height)])
         .confirmationDialog("Remove \(member.shown)?", isPresented: $removing, titleVisibility: .visible) {
             Button("Remove \(member.shown)", role: .destructive) { Task { await remove() } }
             Button("Cancel", role: .cancel) {}

@@ -43,8 +43,11 @@ struct SettingsView: View {
                     .padding(.bottom, 4)
 
                     ListGroup {
-                        NavigationLink {
-                            HouseholdScreen(session: session)
+                        // A page of its own over the whole screen, as the mockup draws it, rather than
+                        // pushed inside this sheet with the Plan peeking above it. Its "‹ Settings"
+                        // closes it, back onto this menu.
+                        Button {
+                            household = true
                         } label: {
                             ListRow("Household settings", subtitle: session.household?.name, chevron: true,
                                     tile: ("house", .herb))
@@ -102,7 +105,6 @@ struct SettingsView: View {
             // The rows push their screens, whose back button says where they came from.
             .navigationTitle("Settings")
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(isPresented: $household) { HouseholdScreen(session: session) }
             .alert("Kitchen server", isPresented: $editingServer) {
                 TextField(Config.fallback, text: $serverDraft)
                     .textInputAutocapitalization(.never)
@@ -120,6 +122,9 @@ struct SettingsView: View {
             }
         }
         .kitchenSheet([.large])
+        .fullScreenCover(isPresented: $household) {
+            NavigationStack { HouseholdScreen(session: session) }
+        }
         .task { me = try? await APIClient.shared.me() }
         .sheet(isPresented: $switching) { HouseholdPicker(session: session) }
         .sheet(isPresented: $ideas) { IdeasView(session: session) }
@@ -157,7 +162,9 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
-                    Tile("sparkles", tone: .plum, size: 34)
+                    // The same 40pt tile as Server and Gallery, so the column of tiles and titles
+                    // runs straight down the group.
+                    Tile("sparkles", tone: .plum)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Apple Intelligence").font(.rowTitle).foregroundStyle(Palette.text)
                         Text("Generating a cover photo needs the first one.")
@@ -167,7 +174,7 @@ struct SettingsView: View {
                 AppleIntelligenceStatus()
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.text)
-                    .padding(.leading, 46)
+                    .padding(.leading, 52)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

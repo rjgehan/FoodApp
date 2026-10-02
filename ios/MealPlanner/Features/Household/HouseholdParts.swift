@@ -35,6 +35,16 @@ extension HouseholdMember {
         if neverSignedIn { return "Hasn't signed in yet" }
         return hasEmail == false ? "Signs in with a PIN" : "Signs in with email"
     }
+
+    /// Their username, where it says something their name does not. For most people it is just
+    /// their name in lower case ("Sam" / "sam"), and saying it twice reads like a mistake.
+    var distinctUsername: String? {
+        let username = self.username.trimmingCharacters(in: .whitespaces)
+        guard !username.isEmpty,
+              username.caseInsensitiveCompare(shown.trimmingCharacters(in: .whitespaces)) != .orderedSame
+        else { return nil }
+        return username
+    }
 }
 
 /// How someone signs in, as the mockup's pill: email (herb), a PIN only (mustard) — the owner's

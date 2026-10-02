@@ -8,6 +8,8 @@ struct HouseholdPicker: View {
     @Bindable var session: Session
     @Environment(\.dismiss) private var dismiss
     @State private var scanning = false
+    /// The list's own height, so the sheet ends just under "Join with an invite link".
+    @State private var height: CGFloat = 440
 
     var body: some View {
         ScrollView {
@@ -39,8 +41,12 @@ struct HouseholdPicker: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
+            // The sheet adds the home indicator's inset below this on its own.
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .kitchenSheet([.medium, .large])
+        .scrollBounceBehavior(.basedOnSize)
+        .kitchenSheet([.height(height)])
         .fullScreenCover(isPresented: $scanning) { ScanInviteScreen(session: session) }
     }
 

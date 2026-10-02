@@ -62,14 +62,20 @@ struct PlacesScreen: View {
         .pageBackground()
         .navigationTitle("Places we eat")
         .navigationBarTitleDisplayMode(.inline)
+        .textBackButton("Household")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            // A bare plus in the accent, as the mockup's bar has it — no glass capsule round it.
+            BareToolbarItem(placement: .topBarTrailing) {
                 Button {
                     newName = ""
                     adding = true
                 } label: {
-                    Image(systemName: "plus").font(.system(size: 19, weight: .medium))
+                    Image(systemName: "plus").font(.system(size: 21, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(PressFade())
                 .accessibilityLabel("Add a place")
             }
         }

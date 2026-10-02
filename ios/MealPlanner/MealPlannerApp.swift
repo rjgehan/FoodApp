@@ -398,7 +398,8 @@ struct RootView: View {
         )) {
             SettingsView(session: session)
         }
-        .sheet(isPresented: Binding(
+        // Over the whole screen, as Settings → Household settings opens it.
+        .fullScreenCover(isPresented: Binding(
             get: { debugSheet == "household" },
             set: { if !$0 { debugSheet = nil } }
         )) {
