@@ -178,7 +178,8 @@ struct ExploreView: View {
             path.append(NutritionRoute.food(Int(ref) ?? 171477))
         case "nutrition-product":
             path.append(ExploreRoute.nutrition)
-            path.append(NutritionRoute.product(ref.isEmpty ? "5000112637922" : ref, scanned: true))
+            // Opened, not scanned: the label says "scanned" only after the camera read it.
+            path.append(NutritionRoute.product(ref.isEmpty ? "5000112637922" : ref, scanned: false))
         case "nutrition-recipe":
             if let id = UserDefaults.standard.string(forKey: "mp_debug_recipe").flatMap(UUID.init(uuidString:)) {
                 path.append(ExploreRoute.nutrition)

@@ -39,8 +39,10 @@ extension APIClient {
         try await get("/api/nutrition/households/\(household.uuidString)/plan?start=\(start)&end=\(end)")
     }
 
-    func recentLookups() async throws -> [RecentLookup] {
-        try await get("/api/nutrition/recent")
+    /// Your latest lookups; with a household, only the recipes it can open (a recipe looked up in
+    /// another house stays there). An older server ignores the household and lists everything.
+    func recentLookups(household: UUID? = nil) async throws -> [RecentLookup] {
+        try await get("/api/nutrition/recent" + (household.map { "?householdId=\($0.uuidString)" } ?? ""))
     }
 
     /// Puts something at the top of your recent lookups. The server fills in a food's or a

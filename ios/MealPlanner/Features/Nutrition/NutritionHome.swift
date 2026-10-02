@@ -287,7 +287,7 @@ struct NutritionScreen: View {
             }
             return
         }
-        async let recentAnswer = try? APIClient.shared.recentLookups()
+        async let recentAnswer = try? APIClient.shared.recentLookups(household: session.household?.id)
         if let household = session.household?.id {
             do {
                 // The next seven days from today, so the chart is always a week, whatever the
