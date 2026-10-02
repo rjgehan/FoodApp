@@ -101,7 +101,30 @@ class FoodMatcherTest {
         assertThat(matcher.best("paper towels").confidence()).isLessThan(FoodMatcher.COUNTABLE);
         // One letter from "carissa", a plum: a near-miss in spelling alone is never trusted.
         assertThat(matcher.best("harissa").confidence()).isLessThan(FoodMatcher.COUNTABLE);
-        assertThat(matcher.best("creme fraiche").confidence()).isLessThan(FoodMatcher.COUNTABLE);
+        assertThat(matcher.best("xyzzy sauce").confidence()).isLessThan(FoodMatcher.COUNTABLE);
+    }
+
+    @Test
+    void britishNamesUSDAHasNoRowForUseTheNearestStandIn() {
+        assertThat(best("crème fraîche")).isEqualTo(170858);
+        assertThat(best("halloumi")).isEqualTo(2647442);
+        assertThat(best("garam masala")).isEqualTo(170924);
+        // An ordinary cube, with an ordinary cube's salt; low-salt only when it says so.
+        assertThat(best("chicken stock cube")).isEqualTo(171563);
+        assertThat(best("stock cubes")).isEqualTo(171563);
+        assertThat(best("low salt stock cube")).isEqualTo(171613);
+        assertThat(best("cooked chicken")).isEqualTo(171054);
+    }
+
+    @Test
+    void offalAndHumanMilkComeLastUnlessTheyAreAskedFor() {
+        List<String> milk = matcher.shortlist("milk").stream().map(c -> c.food().name()).toList();
+        assertThat(milk.subList(0, 2)).allMatch(n -> n.startsWith("Milk, reduced fat") || n.startsWith("Milk, whole"));
+        assertThat(milk).noneMatch(n -> n.contains("human"));
+        List<String> chicken = matcher.shortlist("chicken").stream().map(c -> c.food().name()).toList();
+        assertThat(chicken.subList(0, 4)).noneMatch(n -> n.contains("giblets") || n.contains("capons"));
+        assertThat(chicken.subList(0, 4)).anyMatch(n -> n.contains("breast") || n.contains("thigh"));
+        assertThat(name("chicken livers")).startsWith("Chicken, liver");
     }
 
     @Test
@@ -131,4 +154,5 @@ class FoodMatcherTest {
     private static String name(String query) {
         return matcher.best(query).food().name();
     }
+
 }

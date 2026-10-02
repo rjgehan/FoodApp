@@ -25,7 +25,7 @@ import java.util.Set;
 public class FoodMatcher {
 
     /** Bumped when matching changes enough that stored automatic matches should be redone. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     /** Below this an automatic match is not counted at all: a wrong number is worse than none. */
     public static final double COUNTABLE = 0.45;
@@ -36,6 +36,15 @@ public class FoodMatcher {
 
     public record Candidate(Food food, double score, double confidence) {
     }
+
+    /**
+     * Parts and kinds hardly any recipe means by a plain name: "cooked chicken" is not capon
+     * giblets, and "milk" is not human milk. Pushed well down unless the name asks for them.
+     */
+    static final Set<String> ODD = Set.of(
+            "giblet", "capon", "stewing", "liver", "heart", "gizzard", "tongue", "brain", "spleen", "lung", "tripe",
+            "feet", "neck", "human", "infant", "babyfood", "toddler", "mechanically", "chitterling", "pancrea",
+            "thymus", "producer", "filled");
 
     private final FoodTable table;
     private volatile List<Indexed> index;
@@ -114,6 +123,10 @@ public class FoodMatcher {
             if (FoodWords.PROCESSED.contains(word)) processed++;
         }
         boolean raw = food.words.contains("raw");
+        long odd = food.words.stream().filter(w -> ODD.contains(w) && !asked.contains(w)).count();
+        // The hand-picked basic rows of other names come before obscure ones: "milk" lists whole
+        // and skimmed milk, "chicken" a breast and a thigh.
+        boolean staple = Staples.isStaple(food.food.fdcId());
 
         double score = coverage
                 + 0.25 * headShare
@@ -122,7 +135,9 @@ public class FoodMatcher {
                 - Math.min(0.24, 0.08 * processed)
                 + (raw ? 0.06 : 0)
                 - food.categoryPenalty
-                - (food.branded ? 0.2 : 0)
+                - (food.branded ? 0.3 : 0)
+                - Math.min(0.4, 0.25 * odd)
+                + (staple && aboutIt ? 0.2 : 0)
                 + (food.food.portions().isEmpty() ? 0 : 0.01);
 
         double confidence = coverage
@@ -131,6 +146,7 @@ public class FoodMatcher {
                 * (processed > 0 ? 0.88 : 1.0)
                 * (food.categoryPenalty >= 0.3 ? 0.6 : food.categoryPenalty > 0 ? 0.9 : 1.0)
                 * (food.branded ? 0.75 : 1.0)
+                * (odd > 0 ? 0.8 : 1.0)
                 // Only near-misses in spelling: "harissa" is one letter from "carissa", a plum.
                 * (exactHit ? 1.0 : 0.5);
         return new Candidate(food.food, score, Math.min(0.92, confidence));

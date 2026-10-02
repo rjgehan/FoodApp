@@ -166,6 +166,45 @@ test('an ingredient\'s food can be chosen from its shortlist — by a model, the
   expect(again.contributors[0].matchSource).toBe('user');
 });
 
+test('counted fish fillets are shop-sized, and the UK names USDA lacks are counted', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const traybake = await newRecipe(hh.id, unique('Salmon traybake'), [
+    { name: 'salmon fillets', qty: 4 },
+    { name: 'new potatoes', qty: 600, unit: 'g' },
+    { name: 'green beans', qty: 200, unit: 'g' },
+    { name: 'lemon', qty: 1 },
+    { name: 'olive oil', qty: 2, unit: 'tbsp' },
+  ]);
+  const n = await call('GET', `/api/nutrition/recipes/${traybake.id}?householdId=${hh.id}`, { token: owner.token });
+  const salmon = n.contributors.find((c: any) => c.name === 'salmon fillets');
+  // Four shop fillets of 130 g, not four of USDA's 396 g "fillet" (half a side is 198 g).
+  expect([salmon.gramsHow, salmon.gramsBasis, salmon.estimated]).toEqual(['TYPICAL', 'a fillet ≈ 130 g', true]);
+  near(salmon.grams, 130, 0.5);
+  near(n.perServing.kcal, 467, 15);
+
+  const fish = await newRecipe(hh.id, unique('Cod and tuna'), [
+    { name: 'cod fillets', qty: 4 },
+    { name: 'tuna', qty: 1, unit: 'tin' },
+    { name: 'creme fraiche', qty: 200, unit: 'ml' },
+    { name: 'halloumi', qty: 250, unit: 'g' },
+    { name: 'garam masala', qty: 1, unit: 'tsp' },
+    { name: 'chicken stock cube', qty: 1 },
+    { name: 'broccoli', qty: 1, unit: 'head' },
+  ]);
+  const m = await call('GET', `/api/nutrition/recipes/${fish.id}?householdId=${hh.id}&servings=4`, { token: owner.token });
+  const by = (name: string) => m.contributors.find((c: any) => c.name === name);
+  near(by('cod fillets').grams, 560, 1);
+  near(by('tuna').grams, 110, 1);
+  near(by('broccoli').grams, 300, 1);
+  expect(by('creme fraiche').foodName).toMatch(/^Cream/);
+  expect(by('halloumi').fdcId).toBe(2647442);
+  expect(by('garam masala').foodName).toBe('Spices, curry powder');
+  // An ordinary stock cube's salt, not the low-sodium one's.
+  expect(by('chicken stock cube').foodName).toBe('Soup, chicken broth cubes, dry');
+  expect(m.notCounted).toEqual([]);
+});
+
 test('what a vague amount weighs can be learned, within sense', async () => {
   const hh = await newHousehold();
   const owner = await admin();

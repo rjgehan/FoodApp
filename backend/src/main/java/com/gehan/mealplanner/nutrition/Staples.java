@@ -33,6 +33,11 @@ final class Staples {
             Map.entry(170859, List.of("double cream", "heavy cream", "whipping cream", "heavy whipping cream", "cream")),
             Map.entry(170857, List.of("single cream", "light cream")),
             Map.entry(171257, List.of("sour cream", "soured cream")),
+            // No crème fraîche in USDA. Full-fat crème fraîche (about 290 kcal and 30 g fat per
+            // 100 g on UK labels) is closest to light whipping cream; half-fat to reduced-fat sour cream.
+            Map.entry(170858, List.of("creme fraiche", "full fat creme fraiche", "light whipping cream")),
+            Map.entry(171256, List.of("half fat creme fraiche", "low fat creme fraiche", "reduced fat sour cream",
+                    "light sour cream")),
             Map.entry(173414, List.of("cheddar", "cheddar cheese", "mature cheddar", "grated cheese", "cheese")),
             Map.entry(171247, List.of("parmesan", "parmesan cheese", "parmigiano reggiano", "grated parmesan")),
             Map.entry(170845, List.of("mozzarella", "mozzarella cheese")),
@@ -42,6 +47,9 @@ final class Staples {
             Map.entry(171251, List.of("swiss cheese", "emmental")),
             Map.entry(171242, List.of("gruyere", "gruyere cheese")),
             Map.entry(173435, List.of("goats cheese", "goat cheese")),
+            // No halloumi in USDA either: queso fresco is the nearest firm, salted, fresh cheese
+            // (about 300 kcal, 19 g protein, 23 g fat; halloumi labels say about 320, 22 and 25).
+            Map.entry(2647442, List.of("halloumi", "halloumi cheese", "haloumi", "queso fresco", "paneer")),
             Map.entry(171304, List.of("greek yogurt", "greek yoghurt", "greek style yogurt", "greek style yoghurt")),
             Map.entry(171284, List.of("yogurt", "yoghurt", "plain yogurt", "natural yogurt", "natural yoghurt")),
             // Fats and oils
@@ -141,7 +149,8 @@ final class Staples {
             Map.entry(171327, List.of("onion powder")),
             Map.entry(172231, List.of("turmeric", "ground turmeric")),
             Map.entry(170926, List.of("ground ginger")),
-            Map.entry(170924, List.of("curry powder")),
+            // Garam masala is a blend of the same dried spices, near enough in its numbers.
+            Map.entry(170924, List.of("curry powder", "garam masala")),
             Map.entry(170922, List.of("ground coriander", "coriander seeds")),
             Map.entry(171321, List.of("cloves ground", "ground cloves")),
             // Baking and the store cupboard
@@ -205,6 +214,9 @@ final class Staples {
             Map.entry(172385, List.of("chicken thighs skin on", "skin on chicken thighs", "bone in chicken thighs")),
             Map.entry(172373, List.of("chicken drumsticks", "chicken drumstick", "drumsticks")),
             Map.entry(171447, List.of("chicken", "whole chicken")),
+            Map.entry(171054, List.of("cooked chicken", "roast chicken", "leftover chicken", "rotisserie chicken",
+                    "shredded cooked chicken", "cooked chicken pieces")),
+            Map.entry(171477, List.of("cooked chicken breast", "cooked chicken breasts", "roast chicken breast")),
             Map.entry(171796, List.of("beef mince", "minced beef", "mince", "ground beef")),
             Map.entry(174030, List.of("lean mince", "lean beef mince", "5% beef mince", "extra lean beef mince")),
             Map.entry(167902, List.of("pork mince", "minced pork", "ground pork")),
@@ -238,8 +250,13 @@ final class Staples {
             Map.entry(172884, List.of("chicken stock", "chicken broth")),
             Map.entry(172883, List.of("beef stock", "beef broth")),
             Map.entry(171583, List.of("vegetable stock", "veg stock", "vegetable broth", "stock")),
-            Map.entry(171613, List.of("stock cube", "stock cubes", "chicken stock cube", "beef stock cube",
-                    "vegetable stock cube", "bouillon", "bouillon cube")),
+            // An ordinary stock cube is salty: the low-sodium row understated a cube's salt ten times.
+            Map.entry(171563, List.of("stock cube", "stock cubes", "chicken stock cube", "chicken stock cubes",
+                    "vegetable stock cube", "vegetable stock cubes", "veg stock cube", "bouillon", "bouillon cube",
+                    "chicken bouillon")),
+            Map.entry(171560, List.of("beef stock cube", "beef stock cubes", "beef bouillon", "beef bouillon cube")),
+            Map.entry(171613, List.of("low salt stock cube", "low sodium stock cube", "reduced salt stock cube",
+                    "low salt stock cubes", "reduced salt stock cubes")),
             Map.entry(173190, List.of("red wine")),
             Map.entry(173185, List.of("wine", "white wine", "dry white wine")),
             Map.entry(171410, List.of("peanut oil", "groundnut oil")),
@@ -279,6 +296,11 @@ final class Staples {
 
     static Integer find(String name) {
         return BY_PHRASE.get(key(name));
+    }
+
+    /** Whether this food is one of the hand-picked basics. */
+    static boolean isStaple(int fdcId) {
+        return BY_FOOD.containsKey(fdcId);
     }
 
     static Map<Integer, List<String>> all() {
