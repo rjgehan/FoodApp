@@ -222,7 +222,10 @@ test('the avatar opens Settings: your account, and the way into the household', 
   const account = page.getByRole('dialog', { name: 'Password & sign-in' });
   await expect(account.getByText('Username')).toBeVisible();
   await expect(account.getByRole('heading', { name: 'You', exact: true })).toHaveCount(0);
-  await account.getByRole('button', { name: 'Close' }).click();
+  // It opens inside the Settings sheet rather than as a second one, and "‹ Settings" goes back.
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await account.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(settings.getByRole('button', { name: /^Password & sign-in/ })).toBeVisible();
   // Household lost its tab and lives in here now.
   await settings.getByRole('button', { name: /^Household settings/ }).click();
   await expect(page).toHaveURL(/\/household$/);

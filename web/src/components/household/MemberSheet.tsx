@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { api, ApiError } from '../../api/client';
 import type { HouseholdMember } from '../../api/types';
-import { Avatar, Button, ConfirmAlert, ErrorText, List, Pill, Row, Sheet, Tile, type Tone } from '../ui';
-import { LinkWell, QrCode, sendLink, signInSentence } from './HouseholdParts';
+import { Avatar, Button, ConfirmAlert, List, NoteBox, Pill, Row, Sheet, Tile, type Tone } from '../ui';
+import { distinctUsername, LinkWell, QrCode, sendLink, signInSentence } from './HouseholdParts';
 
 /**
  * What the owner can do for somebody else in the house (mockup 6.4): make them a password-reset
@@ -75,7 +75,7 @@ export function MemberSheet({
   return (
     <Sheet
       title={name}
-      subtitle={`${signInSentence(member)} · ${member.username}`}
+      subtitle={[signInSentence(member), distinctUsername(member)].filter(Boolean).join(' · ')}
       lead={<Avatar name={name} tone={tone} size={52} />}
       onClose={onClose}
     >
@@ -117,7 +117,15 @@ export function MemberSheet({
           </section>
         )}
 
-        {error && <ErrorText>{error}</ErrorText>}
+        {/* The same soft notice as the iPhone: the server's reason ("They're in another household
+            too…") is advice for the owner, not a failure in red. */}
+        {error && (
+          <div role="alert">
+            <NoteBox tone="accent" icon="alert" className="!text-[0.875rem]">
+              {error}
+            </NoteBox>
+          </div>
+        )}
 
         <List>
           <Row

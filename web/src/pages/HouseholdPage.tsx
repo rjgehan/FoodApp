@@ -24,7 +24,7 @@ import {
 import { InviteCard, InviteQrSheet, useInviteLink } from '../components/household/Invite';
 import { MemberSheet } from '../components/household/MemberSheet';
 import { JoinHouseholdForm } from '../components/household/JoinHousehold';
-import { personTone, SignInPill, type HouseholdScreenState } from '../components/household/HouseholdParts';
+import { distinctUsername, personTone, SignInPill, type HouseholdScreenState } from '../components/household/HouseholdParts';
 
 type Open = 'qr' | 'icons' | 'join' | 'new' | 'leave' | null;
 
@@ -125,7 +125,7 @@ function HouseholdHome() {
                     key={m.userId}
                     lead={<Avatar name={m.displayName} tone={toneOf(m)} size={38} />}
                     title={you ? `${m.displayName} (you)` : m.displayName}
-                    subtitle={m.role === 'OWNER' ? 'Owner' : m.username}
+                    subtitle={m.role === 'OWNER' ? 'Owner' : distinctUsername(m)}
                     end={<SignInPill member={m} />}
                     chevron={canAct}
                     onClick={canAct ? () => setActionsFor(m) : undefined}

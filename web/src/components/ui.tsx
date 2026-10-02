@@ -9,6 +9,7 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   animateSpring,
@@ -130,10 +131,13 @@ export function SectionHead({
   );
 }
 
-/** The small capitals above a group of rows ("COLOUR", "PRODUCE"), with an optional count. */
+/**
+ * The small capitals above a group of rows ("COLOUR", "PRODUCE"), with an optional count. It
+ * starts at the card's outer edge, as the mockup's labels do, not a few pixels in.
+ */
 export function SectionLabel({ children, end, className }: { children: ReactNode; end?: ReactNode; className?: string }) {
   return (
-    <div className={cx('group-label flex items-baseline justify-between gap-3 px-1 pb-1.5', className)}>
+    <div className={cx('group-label flex items-baseline justify-between gap-3 pb-1.5', className)}>
       <span className="min-w-0 truncate">{children}</span>
       {end != null && <span className="shrink-0 tracking-normal">{end}</span>}
     </div>
@@ -1184,7 +1188,10 @@ export function Alert({
       easing: 'ease-out',
     });
   }, []);
-  return (
+  // Drawn on <body>, not where it is declared: a confirm opened from inside a sheet would
+  // otherwise take the sheet panel (it has a transform) as its box, so the scrim would dim only
+  // the sheet and the dialog would centre on it, half off the screen.
+  return createPortal(
     <div className="fixed inset-0 z-50 !m-0 flex items-center justify-center px-9">
       <div className="absolute inset-0 bg-scrim" onClick={onDismiss} aria-hidden="true" />
       <div
@@ -1204,7 +1211,8 @@ export function Alert({
         {children && <div className="text-sm leading-[1.45] text-muted">{children}</div>}
         <div className={cx('flex flex-col gap-2', centered && 'self-stretch')}>{actions}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

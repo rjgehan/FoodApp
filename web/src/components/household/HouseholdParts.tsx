@@ -145,3 +145,13 @@ export function QrCode({ url, size = 220 }: { url: string; size?: number }) {
     />
   );
 }
+
+/**
+ * Their username, where it says something their name does not. For most people it is just their
+ * name in lower case ("Sam" / "sam"), and saying it twice reads like a mistake.
+ */
+export function distinctUsername(m: HouseholdMember): string | undefined {
+  const username = m.username?.trim();
+  if (!username || username.toLowerCase() === m.displayName.trim().toLowerCase()) return undefined;
+  return username;
+}

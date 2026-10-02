@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import type { Me } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useHousehold } from '../household/HouseholdContext';
-import { Alert, Avatar, Button, CardInSheetProvider, CheckCircle, cx, List, Pill, Row, Sheet, Tile, type Tone } from './ui';
+import { Alert, Avatar, Button, CardInSheetProvider, CheckCircle, cx, IconButton, List, Pill, Row, Sheet, Tile, type Tone } from './ui';
 import ProfileCard from './ProfileCard';
 import { useThemeSync, useTheme } from '../theme/sync';
 import { themeSummary } from '../theme/theme';
@@ -84,6 +84,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const closeSettings = () => {
+    setShowSettings(false);
+    setShowAccount(false);
+  };
   const [joining, setJoining] = useState(false);
   const [pushed, setPushed] = useState(false);
   const [tabless, setTabless] = useState(false);
@@ -262,16 +266,43 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
           </header>
 
+          {/* Password & sign-in opens inside this same sheet, with "‹ Settings" to come back,
+              rather than as a second sheet stacked on it (two handles, a doubled scrim). */}
           {showSettings && (
             <Sheet
-              label="Settings"
+              label={showAccount ? 'Password & sign-in' : 'Settings'}
               title={session?.displayName ?? 'Settings'}
               subtitle={[me?.email, activeHousehold?.role === 'OWNER' ? 'Owner' : activeHousehold ? 'Member' : null]
                 .filter(Boolean)
                 .join(' · ')}
               lead={<Avatar name={session?.displayName} size={56} />}
-              onClose={() => setShowSettings(false)}
+              head={
+                showAccount ? (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setShowAccount(false)}
+                        className="press -ml-1.5 flex h-9 items-center gap-0.5 text-[1.0625rem] text-accent-ink"
+                      >
+                        <Icon name="chevL" size={24} />
+                        <span>Settings</span>
+                      </button>
+                      <IconButton label="Close" shape="plain" onClick={closeSettings} className="!h-8 !w-8 shrink-0 text-ink">
+                        <Icon name="x" size={16} strokeWidth={2.4} />
+                      </IconButton>
+                    </div>
+                    <h2 className="title-sheet mt-1">Password &amp; sign-in</h2>
+                  </div>
+                ) : undefined
+              }
+              onClose={closeSettings}
             >
+              {showAccount ? (
+                <CardInSheetProvider value={true}>
+                  <ProfileCard showSignOut={false} />
+                </CardInSheetProvider>
+              ) : (
               <div className="space-y-4">
                 <List label="Your household">
                   {/* Everything about the house itself — aisles, places, who is here — is a page
@@ -343,14 +374,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <Row onClick={logout} lead={<Tile icon="logout" tone="accent" size={34} />} title="Sign out" tone="danger" />
                 </List>
               </div>
-            </Sheet>
-          )}
-
-          {showAccount && (
-            <Sheet title="Password & sign-in" onClose={() => setShowAccount(false)}>
-              <CardInSheetProvider value={true}>
-                <ProfileCard showSignOut={false} />
-              </CardInSheetProvider>
+              )}
             </Sheet>
           )}
 
