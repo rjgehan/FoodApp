@@ -197,7 +197,7 @@ test('nutrition: the answers the phone decodes, and what its Apple Intelligence 
 
   // Recent lookups: the phone writes a recipe's id in lower case, so it is one lookup with the web's.
   await call('POST', '/api/nutrition/recent', { token, body: { kind: 'RECIPE', ref: recipe.id.toLowerCase(), householdId: hh.id } });
-  const recent = await call('GET', '/api/nutrition/recent', { token });
+  const recent = await call('GET', `/api/nutrition/recent?householdId=${hh.id}`, { token });
   expect(recent.filter((r: any) => r.ref === recipe.id)).toHaveLength(1);
   expect(recent.find((r: any) => r.ref === recipe.id)).toMatchObject({ kind: 'RECIPE', label: 'Curry for the phone', per: 'serving' });
 

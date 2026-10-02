@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { admin, call, isoDate, newHousehold, newMember, newRecipe, plan, statusOf, unique } from '../../lib/api';
+import { admin, call, inviteToken, isoDate, newHousehold, newMember, newRecipe, plan, statusOf, unique } from '../../lib/api';
 
 /**
  * Nutrition facts from the server's own data: the USDA table, recipe and plan totals, matching
@@ -371,6 +371,15 @@ test('recent lookups are each person\'s own, newest first', async () => {
 
   const outsider = await newMember((await newHousehold()).id);
   expect(await statusOf('POST', '/api/nutrition/recent', { token: outsider.token, body: { kind: 'recipe', ref: recipe.id } })).toBe(403);
+
+  // Looked at from another of their households, a recipe from this one is not listed there.
+  const elsewhere = await newHousehold();
+  await call('POST', `/api/invites/${await inviteToken(elsewhere.id)}/accept`, { token: member.token });
+  const fromHere = await call('GET', `/api/nutrition/recent?householdId=${hh.id}`, { token: member.token });
+  expect(fromHere.map((l: any) => l.ref)).toContain(recipe.id);
+  const fromThere = await call('GET', `/api/nutrition/recent?householdId=${elsewhere.id}`, { token: member.token });
+  expect(fromThere.map((l: any) => l.kind)).toEqual(['FOOD']);
+  expect(await statusOf('GET', `/api/nutrition/recent?householdId=${elsewhere.id}`, { token: outsider.token })).toBe(403);
 
   await call('DELETE', '/api/nutrition/recent', { token: member.token });
   expect(await call('GET', '/api/nutrition/recent', { token: member.token })).toEqual([]);

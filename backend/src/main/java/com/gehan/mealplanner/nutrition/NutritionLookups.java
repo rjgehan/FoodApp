@@ -143,7 +143,46 @@ public class NutritionLookups {
 
     // Recent lookups
 
-    public List<RecentLookup> recent(UUID userId) {
+    /**
+     * This person's latest lookups. A recipe is listed only if it can be opened from here: from
+     * the given household (its own, shared with it, filed in it or published), or with none
+     * given, from a household they are still in — so a recipe looked up in another house does
+     * not turn up in this one's list, and one from a house they left does not linger.
+     */
+    @Transactional(readOnly = true)
+    public List<RecentLookup> recent(UUID userId, UUID householdId) {
+        if (householdId != null) householdService.assertMember(householdId, userId);
+        List<RecentLookup> all = recent(userId);
+        List<UUID> recipeIds = new ArrayList<>();
+        for (RecentLookup r : all) {
+            if (!r.kind().equals("RECIPE")) continue;
+            try {
+                recipeIds.add(UUID.fromString(r.ref()));
+            } catch (IllegalArgumentException ignored) {
+                // Not a recipe id; dropped below.
+            }
+        }
+        Set<String> open = new java.util.HashSet<>();
+        if (!recipeIds.isEmpty()) {
+            jdbc.query("""
+                    WITH here AS (SELECT household_id FROM household_members
+                                  WHERE user_id = ? AND (CAST(? AS uuid) IS NULL OR household_id = CAST(? AS uuid)))
+                    SELECT r.id FROM recipes r WHERE r.id = ANY(?) AND (
+                        (r.published AND CAST(? AS uuid) IS NOT NULL)
+                        OR r.household_id IN (SELECT household_id FROM here)
+                        OR EXISTS (SELECT 1 FROM recipe_shares s
+                                   WHERE s.recipe_id = r.id AND s.household_id IN (SELECT household_id FROM here))
+                        OR EXISTS (SELECT 1 FROM recipe_filings f
+                                   WHERE f.recipe_id = r.id AND f.household_id IN (SELECT household_id FROM here)))
+                    """, rs -> {
+                open.add(rs.getObject(1, UUID.class).toString());
+            }, userId, householdId, householdId, recipeIds.toArray(UUID[]::new), householdId);
+        }
+        return all.stream().filter(r -> !r.kind().equals("RECIPE") || open.contains(r.ref().toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private List<RecentLookup> recent(UUID userId) {
         return jdbc.query("""
                 SELECT kind, ref, label, kcal, protein, looked_at FROM nutrition_lookups
                 WHERE user_id = ? ORDER BY looked_at DESC LIMIT ?

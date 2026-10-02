@@ -172,9 +172,11 @@ public class NutritionController {
         return plans.forPlan(householdId, userId, start, end);
     }
 
+    /** householdId: only recipes that household can open are listed (foods and packets always are). */
     @GetMapping("/recent")
-    public List<RecentLookup> recent(@AuthenticationPrincipal UUID userId) {
-        return lookups.recent(userId);
+    public List<RecentLookup> recent(@AuthenticationPrincipal UUID userId,
+                                     @RequestParam(required = false) UUID householdId) {
+        return lookups.recent(userId, householdId);
     }
 
     @PostMapping("/recent")
