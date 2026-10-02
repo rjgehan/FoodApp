@@ -104,7 +104,7 @@ public class BarcodeLookup {
     }
 
     /** Null when the catalogue does not know this barcode, or knows it only as an empty record. */
-    Product productFrom(String barcode, String body) {
+    public Product productFrom(String barcode, String body) {
         JsonNode root;
         try {
             root = mapper.readTree(body);
