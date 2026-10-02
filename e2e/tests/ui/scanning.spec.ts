@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { call, newHousehold } from '../../lib/api';
 import { sheet, signIn } from '../../lib/ui';
+import { cameraShowing, NUTELLA, ON_THE_JAR } from '../../lib/camera';
 
 /**
  * Scanning a barcode into the cupboard.
@@ -16,33 +16,6 @@ import { sheet, signIn } from '../../lib/ui';
  * a WebAssembly build of ZXing — is the path that most of this household's phones will take,
  * so it is the one worth testing.
  */
-
-const ON_THE_JAR = '3017620422003';
-const NUTELLA = readFileSync(new URL('../fixtures/ean13-3017620422003.svg', import.meta.url), 'utf8');
-
-/** A camera permanently pointed at a jar of Nutella. */
-async function cameraShowing(page: Page, svg: string) {
-  await page.addInitScript((barcode) => {
-    delete (window as unknown as Record<string, unknown>).BarcodeDetector;
-    const image = new Image();
-    image.src = 'data:image/svg+xml;base64,' + btoa(barcode);
-    const canvas = document.createElement('canvas');
-    canvas.width = 1280;
-    canvas.height = 720;
-    const paper = canvas.getContext('2d')!;
-    (function paint() {
-      paper.fillStyle = '#fff';
-      paper.fillRect(0, 0, 1280, 720);
-      if (image.complete && image.naturalWidth) {
-        const width = 900;
-        const height = width * (image.naturalHeight / image.naturalWidth);
-        paper.drawImage(image, (1280 - width) / 2, (720 - height) / 2, width, height);
-      }
-      requestAnimationFrame(paint);
-    })();
-    navigator.mediaDevices.getUserMedia = async () => canvas.captureStream(20);
-  }, svg);
-}
 
 /**
  * The catalogue, without the catalogue. Answers only for the barcode actually printed on the
