@@ -142,6 +142,20 @@ test('look up an ingredient: per 100 g or per egg, onto the list, and into recen
   await expect(recent.getByRole('link', { name: /Egg, whole, raw, fresh.*Ingredient · 143 kcal per 100g/ })).toBeVisible();
 });
 
+test('a USDA food is titled by the food, not its group, and that is what goes on the list', async ({ page }) => {
+  const hh = await newHousehold();
+  await signIn(page, hh.owner, hh.id);
+  // "Fish, salmon, Atlantic, farmed, raw" is salmon.
+  await page.goto('/explore/nutrition/foods/175167');
+  await expect(page.getByRole('heading', { name: 'Salmon' })).toBeVisible();
+  await expect(page.getByText('Atlantic, farmed, raw')).toBeVisible();
+  await page.getByRole('button', { name: 'Add to the grocery list' }).click();
+  await expect(page.getByText('Added Salmon to the list')).toBeVisible();
+  // "Oil, olive, salad or cooking" is olive oil.
+  await page.goto('/explore/nutrition/foods/171413');
+  await expect(page.getByRole('heading', { name: 'Olive oil' })).toBeVisible();
+});
+
 test('packets are only searched for when asked, and say where they came from', async ({ page }) => {
   const hh = await newHousehold();
   const asked: string[] = [];

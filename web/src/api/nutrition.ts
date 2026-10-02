@@ -245,16 +245,44 @@ export function detailText(detail: LabelDetail, scale = 1): string {
   return `${amount >= 10 ? Math.round(amount) : Math.round(amount * 10) / 10} ${detail.unit}`;
 }
 
+/** USDA's group words: the food is the next part ("Fish, salmon" is salmon, "Nuts, coconut milk" coconut milk). */
+const GROUP_ONLY = new Set([
+  'fish', 'nuts', 'spices', 'seeds', 'snacks', 'cereals', 'beverages', 'alcoholic beverage', 'alcoholic beverages',
+  'candies', 'crustaceans', 'mollusks', 'leavening agents', 'game meat', 'sweeteners', 'soup', 'babyfood',
+]);
+/** Group words that are also the end of the food's name: "Oil, olive" is olive oil, "Cheese, cheddar" cheddar cheese. */
+const GROUP_AFTER = new Set(['oil', 'cheese', 'sauce', 'beans', 'vinegar', 'rice', 'milk', 'yogurt']);
+/** Meats, said first: "Chicken, broilers or fryers, breast" is chicken breast. */
+const GROUP_BEFORE = new Set(['beef', 'pork', 'chicken', 'lamb', 'veal', 'turkey', 'duck']);
+/** Parts of a USDA name that say how it was bred, sold or cooked rather than what it is. */
+const NOT_THE_FOOD = /^(raw|cooked|fresh|frozen|canned|dry|dried|boiled|roasted|fluid|mature seeds|broilers? or fryers|roasting|fryers|all classes|retail parts|all grades|composite of .*|variety meats and by-products|new zealand|australian|imported|domestic|commercial|regular|plain|whole|nfs)$/i;
+
 /**
  * A USDA name made readable: "Chickpeas (garbanzo beans, bengal gram), mature seeds, canned,
  * drained solids" is "Chickpeas", with "mature seeds, canned, drained solids" to say which.
- * The bracketed other names and the first comma are where USDA puts the food and its kind.
+ * The bracketed other names and the first comma are where USDA puts the food and its kind —
+ * except where the first part is only a group ("Fish, salmon, Atlantic"), when the food is the
+ * next part: Salmon, Olive oil, Coconut milk, Curry powder, Cheddar cheese, Chicken breast. The
+ * title is also what Add to list and Cupboard add, so it must be the food, never "Fish".
  */
 export function foodTitle(name: string): { title: string; detail: string } {
   const plain = name.replace(/\s*\([^)]*\)/g, '').replace(/\s+,/g, ',').trim();
-  const comma = plain.indexOf(',');
-  if (comma === -1) return { title: plain, detail: '' };
-  return { title: plain.slice(0, comma).trim(), detail: plain.slice(comma + 1).trim() };
+  const parts = plain.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return { title: plain, detail: '' };
+  const group = parts[0].toLowerCase();
+  const next = parts.findIndex((p, i) => i > 0 && !NOT_THE_FOOD.test(p));
+  if (next > 0 && (GROUP_ONLY.has(group) || GROUP_AFTER.has(group) || GROUP_BEFORE.has(group))) {
+    const what = parts[next];
+    const title = GROUP_ONLY.has(group)
+      ? capitalised(what)
+      : GROUP_AFTER.has(group)
+        ? `${capitalised(what)} ${group}`
+        : what.toLowerCase() === 'ground'
+          ? `Ground ${group}`
+          : `${parts[0]} ${what.toLowerCase()}`;
+    return { title, detail: parts.filter((_, i) => i !== 0 && i !== next).join(', ') };
+  }
+  return { title: parts[0], detail: parts.slice(1).join(', ') };
 }
 
 /** The first letter up: ingredient names are stored as typed ("chicken breast"). */
