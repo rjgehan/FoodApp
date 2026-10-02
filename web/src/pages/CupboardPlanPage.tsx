@@ -119,10 +119,18 @@ export function CupboardSetupPage() {
 
   const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
   const count = dates.length * meals.length;
+  // Only the slots with nothing on the Plan yet: the draft never goes over a planned meal.
+  const open = setup
+    ? dates.reduce((n, date) => {
+        const planned = setup.days.find((d) => d.date === date)?.planned ?? [];
+        return n + meals.filter((m) => !planned.includes(m)).length;
+      }, 0)
+    : count;
+  const pastDate = setup?.pastDate ?? [];
   const chosen = setup?.useFirst.filter((u) => useFirst.includes(u.ingredientId)) ?? [];
 
   async function generate() {
-    if (!activeHouseholdId || count === 0) return;
+    if (!activeHouseholdId || open === 0) return;
     const request: CupboardPlanRequest = {
       dates: [...dates].sort(),
       meals: MEAL_ORDER.filter((m) => meals.includes(m)),
@@ -222,6 +230,18 @@ export function CupboardSetupPage() {
                     : 'Nothing needs using up soon.'}
               </p>
             )}
+            {pastDate.length > 0 && (
+              <div role="note" className="flex flex-col gap-1.5 rounded-[14px] bg-danger-soft px-3 py-2.5">
+                <span className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-danger">
+                  <Icon name="triangleAlert" size={15} />
+                  Past its date: check before eating
+                </span>
+                <span className="text-[0.8125rem] text-ink">
+                  {pastDate.map((u) => u.name).join(', ')}. {pastDate.length === 1 ? "It isn't" : "They aren't"} used in
+                  the plan.
+                </span>
+              </div>
+            )}
           </section>
         </div>
 
@@ -240,9 +260,20 @@ export function CupboardSetupPage() {
             </div>
           </section>
           {error && <ErrorText>{error}</ErrorText>}
-          <Button size="lg" full icon="sparkles" disabled={busy || count === 0} onClick={generate}>
-            {busy ? 'Building…' : count === 0 ? 'Choose days and meals' : `Generate ${count} ${count === 1 ? 'meal' : 'meals'}`}
+          <Button size="lg" full icon="sparkles" disabled={busy || open === 0} onClick={generate}>
+            {busy
+              ? 'Building…'
+              : count === 0
+                ? 'Choose days and meals'
+                : open === 0
+                  ? 'Those meals are planned already'
+                  : `Generate ${open} ${open === 1 ? 'meal' : 'meals'}`}
           </Button>
+          {open > 0 && open < count && (
+            <p className="-mt-1.5 text-center text-xs text-muted">
+              {count - open} of the {count} are on the Plan already and stay as they are.
+            </p>
+          )}
         </div>
       </div>
 

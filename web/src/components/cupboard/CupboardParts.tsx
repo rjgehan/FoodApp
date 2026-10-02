@@ -87,6 +87,24 @@ export function cupboardDetail(item: CupboardItem, reminder?: RestockReminder): 
 }
 
 /**
+ * When to use it, at a glance: "by Thu" for a date on the packet, "soon" for the server's guess,
+ * and "past its date" in the danger tone — that one is to check, not to cook first.
+ */
+export function UseSoonPill({ item }: { item: CupboardItem }) {
+  const past = item.useSoonLabel === 'past its date';
+  if (!item.useSoonLabel || (!item.useSoon && !past)) return null;
+  return (
+    <Pill
+      tone={past ? 'danger' : 'mustard'}
+      icon={past ? 'triangleAlert' : item.useSoonGuess ? undefined : 'clock'}
+      className="!shrink-0 !px-2.5 !py-1 !text-xs"
+    >
+      {past ? 'Past date' : item.useSoonLabel}
+    </Pill>
+  );
+}
+
+/**
  * One cupboard row (mockup 4.5 / 4.6): the name, a quiet line under it, and on the right the one
  * thing you check at a glance — Have/Low, an exact count with its stepper, or "Always" for the
  * things that are never low. Tap it to edit; swipe it left for Buy again and Remove, or fling it
@@ -143,6 +161,7 @@ export function CupboardRow({
             <span className="block truncate text-base font-medium first-letter:uppercase">{item.name}</span>
             {detail && <span className="mt-px block truncate text-[0.8125rem] text-muted">{detail}</span>}
           </span>
+          <UseSoonPill item={item} />
           {item.staple && (
             <Pill tone="herb" icon="check" className="!px-2.5 !py-1 !text-xs">
               Always

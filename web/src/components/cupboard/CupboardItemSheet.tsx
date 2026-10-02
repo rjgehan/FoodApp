@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../api/client';
 import type { CupboardItem, GroceryCategory, RestockReminder } from '../../api/types';
-import { ErrorText, Field, Input, List, NoteBox, Row, Segmented, Select, Sheet, Tile, Toggle } from '../ui';
+import { cx, ErrorText, Field, Input, List, NoteBox, Row, Segmented, Select, Sheet, Tile, Toggle } from '../ui';
 import UnitInput from '../UnitInput';
 import { RestockField, saveRestock } from '../Restock';
 import { everyLabel } from '../../utils/restock';
@@ -207,7 +207,18 @@ export default function CupboardItemSheet({
           {hasUseBy && (
             <Row
               title="Use by"
-              subtitle={useBy ? useByText(useBy) : 'Optional · plans use it up in time'}
+              wrap
+              subtitle={
+                useBy ? (
+                  <span className={cx(useByPast(useBy) && 'font-semibold text-danger')}>
+                    {useByPast(useBy) ? 'Past its date: check it' : useByText(useBy)}
+                  </span>
+                ) : item.useSoonGuess ? (
+                  <span className="font-medium text-mustard">No date · we guess it wants using soon</span>
+                ) : (
+                  'Optional · plans use it by then'
+                )
+              }
               end={
                 <span className="flex shrink-0 items-center gap-1.5">
                   <Input
@@ -252,6 +263,14 @@ export default function CupboardItemSheet({
       </form>
     </Sheet>
   );
+}
+
+function useByPast(iso: string): boolean {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(y, m - 1, d).getTime() < today.getTime();
 }
 
 /** "Thu 8 Oct", or "Today" / "Tomorrow" / "Past its date" — the date read the way the cupboard says it. */

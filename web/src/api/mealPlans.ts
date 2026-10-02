@@ -16,7 +16,7 @@ export interface UseFirstItem {
   itemId: string;
   ingredientId: string;
   name: string;
-  reason: 'date' | 'guess' | 'low' | 'plenty';
+  reason: 'date' | 'guess' | 'low' | 'plenty' | 'past';
   label: string;
   useBy: string | null;
   selected: boolean;
@@ -35,6 +35,8 @@ export interface CupboardSetup {
   defaultBuyLimit: number | null;
   defaultOnlyMine: boolean;
   defaultServings: number;
+  /** Past the date on the packet: shown as "check it", never suggested. Absent from older servers. */
+  pastDate?: UseFirstItem[];
 }
 
 export interface CupboardPlanRequest {
@@ -128,6 +130,8 @@ export interface Targets {
   overridden: ('kcal' | 'protein' | 'carbs' | 'fat')[];
   bmr: number;
   tdee: number;
+  /** Plain sentences for under the numbers: a safety floor reached, or no room left for carbs. */
+  notes?: string[];
 }
 
 export interface PlanMeal {
@@ -145,6 +149,10 @@ export interface PlanMeal {
   fat: number;
   /** Deleted, or no longer readable: its numbers are nought. */
   missing: boolean;
+  /** Some ingredients couldn't be counted, so the numbers are too low. */
+  partial?: boolean;
+  /** One serving's kcal: `kcal` is this times `portion`. */
+  kcalPerServing?: number;
 }
 
 export interface TargetPlan {
@@ -259,7 +267,7 @@ export function addDaysIso(start: string, days: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** "1½ servings", for a portion that is not one. */
+/** "1½ servings", "1 serving": how much of the recipe a plan's numbers are for. */
 export function portionText(portion: number): string {
   const whole = Math.floor(portion);
   const half = portion - whole >= 0.5;
