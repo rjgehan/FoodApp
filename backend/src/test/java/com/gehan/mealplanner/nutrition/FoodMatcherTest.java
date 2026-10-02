@@ -117,6 +117,19 @@ class FoodMatcherTest {
     }
 
     @Test
+    void aModelsPickMustShareARealWordWithTheLine() {
+        // What an iPhone's model picked for lines that are no food: refused.
+        assertThat(FoodMatcher.sharesARealWord("grandma's secret mix", food("Snacks, trail mix, regular"))).isFalse();
+        assertThat(FoodMatcher.sharesARealWord("xyzzy sauce", food("Sauce, barbecue"))).isFalse();
+        // A real choice between close foods: taken.
+        assertThat(FoodMatcher.sharesARealWord("curry paste", table.find(170924).orElseThrow())).isTrue();
+        assertThat(FoodMatcher.sharesARealWord("chicken thighs, skin on", table.find(172385).orElseThrow())).isTrue();
+        assertThat(FoodMatcher.sharesARealWord("parmesean", table.find(171247).orElseThrow())).isTrue();
+        // And the matcher itself thinks little of them.
+        assertThat(matcher.shortlist("grandma's secret mix")).allMatch(c -> c.confidence() < 0.4);
+    }
+
+    @Test
     void offalAndHumanMilkComeLastUnlessTheyAreAskedFor() {
         List<String> milk = matcher.shortlist("milk").stream().map(c -> c.food().name()).toList();
         assertThat(milk.subList(0, 2)).allMatch(n -> n.startsWith("Milk, reduced fat") || n.startsWith("Milk, whole"));
@@ -155,4 +168,7 @@ class FoodMatcherTest {
         return matcher.best(query).food().name();
     }
 
+    private static Food food(String name) {
+        return table.all().stream().filter(f -> f.name().equals(name)).findFirst().orElseThrow();
+    }
 }

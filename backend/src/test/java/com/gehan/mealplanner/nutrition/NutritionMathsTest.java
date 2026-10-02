@@ -171,6 +171,45 @@ class NutritionMathsTest {
         assertThat(learned.estimated()).isFalse();
     }
 
+    @Test
+    void aModelsWeightIsTakenOnlyNearTheServersOwn() {
+        // A handful of spinach is 30 g by the rule; the model's 10 g is a third of that.
+        assertThat(IngredientMatches.aiGramsAccepted(10, 30.0)).isFalse();
+        assertThat(IngredientMatches.aiGramsAccepted(25, 30.0)).isTrue();
+        assertThat(IngredientMatches.aiGramsAccepted(60, 30.0)).isTrue();
+        assertThat(IngredientMatches.aiGramsAccepted(61, 30.0)).isFalse();
+        // Nothing to compare with: anything up to a kilo.
+        assertThat(IngredientMatches.aiGramsAccepted(100, null)).isTrue();
+        assertThat(IngredientMatches.aiGramsAccepted(1500, null)).isFalse();
+    }
+
+    @Test
+    void aModelsPickOfAFoodTheMatcherDoubtedIsCountedAsAGuess() {
+        Food curry = table.find(170924).orElseThrow();
+        var sure = new IngredientMatches.Match(UUID.randomUUID(), curry, 0.8, IngredientFoodMatch.Source.AI);
+        var doubted = new IngredientMatches.Match(UUID.randomUUID(), curry, 0.42, IngredientFoodMatch.Source.AI);
+        var far = new IngredientMatches.Match(UUID.randomUUID(), curry, 0.3, IngredientFoodMatch.Source.AI);
+        assertThat(sure.countable()).isTrue();
+        assertThat(sure.guess()).isFalse();
+        assertThat(doubted.countable()).isTrue();
+        assertThat(doubted.guess()).isTrue();
+        assertThat(far.countable()).isFalse();
+    }
+
+    @Test
+    void aModelsOldWeightFarFromTheRuleIsNotUsed() {
+        RecipeNutrition maths = new RecipeNutrition(null, null, table, null, null);
+        Food spinach = table.find(168462).orElseThrow();
+        var match = new IngredientMatches.Match(UUID.randomUUID(), spinach, 0.95, IngredientFoodMatch.Source.AUTO);
+        var tenGrams = new IngredientMatches.Learned(10, IngredientUnitGrams.Source.AI);
+        var line = new RecipeNutrition.Line(UUID.randomUUID(), null, "spinach", new BigDecimal("2"), "handfuls", null,
+                false, true, match, tenGrams);
+        assertThat(maths.add(List.of(line)).counted().get(0).amount().grams()).isEqualTo(60);
+        var byHand = new RecipeNutrition.Line(UUID.randomUUID(), null, "spinach", new BigDecimal("2"), "handfuls", null,
+                false, true, match, new IngredientMatches.Learned(10, IngredientUnitGrams.Source.USER));
+        assertThat(maths.add(List.of(byHand)).counted().get(0).amount().grams()).isEqualTo(20);
+    }
+
     // A recipe's totals
 
     @Test

@@ -82,6 +82,43 @@ class NutritionDatabaseTest {
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("409");
     }
 
+    @Test
+    void aModelsPickOfSomethingThatIsNoFoodIsRefused() {
+        Ingredient mix = fresh("grandma's secret mix");
+        for (FoodMatcher.Candidate c : matches.shortlist(mix)) {
+            assertThatThrownBy(() -> matches.setMatch(mix.getId(), c.food().fdcId(), IngredientFoodMatch.Source.AI, null))
+                    .isInstanceOf(ResponseStatusException.class).hasMessageContaining("422");
+        }
+        // A pick the matcher was unsure of is counted, but stays a guess at the matcher's own confidence.
+        // Digits are not words to the matcher, so this one scores exactly as "curry paste" does.
+        Ingredient paste = ingredients.findOrCreate("curry paste " + (System.nanoTime() % 1_000_000_000L), null);
+        FoodMatcher.Candidate powder = matches.shortlist(paste).get(0);
+        IngredientMatches.Match picked = matches.setMatch(paste.getId(), powder.food().fdcId(),
+                IngredientFoodMatch.Source.AI, null);
+        assertThat(picked.confidence()).isEqualTo(powder.confidence(), org.assertj.core.api.Assertions.within(0.001));
+        assertThat(matches.matchFor(paste).countable()).isTrue();
+        assertThat(matches.matchFor(paste).guess()).isTrue();
+    }
+
+    @Test
+    void aModelsWeightFarFromTheRuleIsRefused() {
+        Ingredient spinach = fresh("spinach");
+        // A handful is 30 g by the rule: the model's 10 g is refused, 25 g taken.
+        assertThatThrownBy(() -> matches.setGrams(spinach.getId(), "handful", 10, IngredientUnitGrams.Source.AI, null))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("422");
+        matches.setGrams(spinach.getId(), "handful", 25, IngredientUnitGrams.Source.AI, null);
+        // A person may say anything sensible.
+        matches.setGrams(spinach.getId(), "handful", 10, IngredientUnitGrams.Source.USER, null);
+        assertThat(matches.learnedFor(List.of(spinach.getId())).get(spinach.getId()).get("handful").gramsEach()).isEqualTo(10);
+    }
+
+    @Test
+    void onlySomeoneWhoseHouseholdsUseAnIngredientMayChangeIt() {
+        Ingredient nobodys = fresh("saffron");
+        assertThatThrownBy(() -> matches.assertUsedBy(nobodys.getId(), UUID.randomUUID()))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+    }
+
     /** A name of its own, so a shared ingredient's real match is never touched. */
     private Ingredient fresh(String name) {
         return ingredients.findOrCreate(name + " " + UUID.randomUUID().toString().substring(0, 6), null);

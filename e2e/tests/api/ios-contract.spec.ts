@@ -123,10 +123,16 @@ test('restock reminders: set from a sheet, the question on opening, and its two 
 test('nutrition: the answers the phone decodes, and what its Apple Intelligence sends back', async () => {
   const hh = await newHousehold();
   const { token } = await admin();
+  // Matches and weights are shared by every household on the server, so the lines the phone
+  // changes have names of their own (digits are not words to the matcher): the real "butter"
+  // and "curry paste" are left as they were.
+  const stamp = Date.now();
+  const butterName = `butter ${stamp}`;
+  const pasteName = `curry paste ${stamp}`;
   const recipe = await newRecipe(hh.id, 'Curry for the phone', [
     { name: 'chicken thighs', qty: 800, unit: 'g' },
-    { name: 'butter', qty: 1, unit: 'knob' },
-    { name: 'curry paste', qty: 2, unit: 'tbsp' },
+    { name: butterName, qty: 1, unit: 'knob' },
+    { name: pasteName, qty: 2, unit: 'tbsp' },
     { name: 'parsley', qty: 1, unit: 'bunch', optional: true },
   ]);
   const line = (name: string) => recipe.ingredients.find((i: any) => i.ingredientName === name);
@@ -153,21 +159,20 @@ test('nutrition: the answers the phone decodes, and what its Apple Intelligence 
   expect(n.contributors.map((c: any) => c.name)).toContain('parsley');
 
   // A knob is the rough kind the model is asked about: its amount reads "1 knob", the unit after the number.
-  // (Ingredients are shared by the whole server, so a run before this one may have weighed it already.)
-  const butter = n.contributors.find((c: any) => c.name === 'butter');
-  expect(butter).toMatchObject({ gramsHow: expect.stringMatching(/^(ROUGH|LEARNED)$/), amount: '1 knob' });
+  const butter = n.contributors.find((c: any) => c.name === butterName);
+  expect(butter).toMatchObject({ gramsHow: 'ROUGH', amount: '1 knob', gramsBasis: 'a knob ≈ 12 g' });
 
   // The model's weight for ONE knob, as the phone sends it; the line is then LEARNED "(estimated)" — its ✨.
   const grams = await call('PUT', `/api/nutrition/ingredients/${butter.ingredientId}/grams`, {
     token, body: { unit: 'knob', grams: 10, source: 'ai' },
   });
   expect(grams).toMatchObject({ unitKey: 'knob', gramsEach: 10, source: 'ai' });
-  const weighed = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === 'butter');
+  const weighed = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === butterName);
   expect(weighed.gramsHow).toBe('LEARNED');
   expect(weighed.gramsBasis).toMatch(/\(estimated\)$/);
 
   // The model's pick from the shortlist, as the phone sends it; the line then says matchSource "ai" — its ✨.
-  const paste = [...n.contributors, ...n.notCounted].find((c: any) => c.name === 'curry paste');
+  const paste = [...n.contributors, ...n.notCounted].find((c: any) => c.name === pasteName);
   const match = await call('GET', `/api/nutrition/ingredients/${paste.ingredientId}/match`, { token });
   for (const key of ['ingredientId', 'ingredientName', 'fdcId', 'foodName', 'confidence', 'source', 'counted', 'guess', 'shortlist']) {
     expect(match).toHaveProperty(key);
@@ -176,8 +181,10 @@ test('nutrition: the answers the phone decodes, and what its Apple Intelligence 
   const chosen = await call('PUT', `/api/nutrition/ingredients/${paste.ingredientId}/match`, {
     token, body: { fdcId: match.shortlist[0].fdcId, source: 'ai' },
   });
-  expect(chosen).toMatchObject({ source: 'ai', fdcId: match.shortlist[0].fdcId, counted: true, guess: false });
-  const picked = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === 'curry paste');
+  // Counted, at the server's own confidence in that food: a guess unless it was already sure.
+  expect(chosen).toMatchObject({ source: 'ai', fdcId: match.shortlist[0].fdcId, counted: true,
+    guess: match.shortlist[0].confidence < 0.65 });
+  const picked = (await call('GET', path(), { token })).contributors.find((c: any) => c.name === pasteName);
   expect(picked.matchSource).toBe('ai');
 
   // The week card and Explore's door: the next seven days.

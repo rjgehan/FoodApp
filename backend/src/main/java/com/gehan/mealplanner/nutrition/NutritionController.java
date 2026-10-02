@@ -108,18 +108,25 @@ public class NutritionController {
     /**
      * {"fdcId": 171287, "source": "ai"} — an iPhone's model chose from the shortlist; "user" — a
      * person did. Only shortlisted foods are taken; a person may also send fdcId null for "none".
+     * A model's pick of a food too far from the line answers 422. Only someone whose households
+     * use the ingredient may change it (404 otherwise), since the change is everyone's.
      */
     @PutMapping("/ingredients/{ingredientId}/match")
     @Transactional
     public MatchResponse setMatch(@AuthenticationPrincipal UUID userId, @PathVariable UUID ingredientId,
                                   @Valid @RequestBody SetMatchRequest request) {
         IngredientFoodMatch.Source source = matchSource(request.source());
+        matches.ingredient(ingredientId);
+        matches.assertUsedBy(ingredientId, userId);
         matches.setMatch(ingredientId, request.fdcId(), source, userId);
         Ingredient ingredient = matches.ingredient(ingredientId);
         return response(ingredient, matches.matchFor(ingredient));
     }
 
-    /** {"unit": "knob", "grams": 12, "source": "ai"} — what ONE of that unit weighs. */
+    /**
+     * {"unit": "knob", "grams": 12, "source": "ai"} — what ONE of that unit weighs. A model's
+     * figure far from the server's own answers 422; the same 404 as above for an unused ingredient.
+     */
     @PutMapping("/ingredients/{ingredientId}/grams")
     public GramsResponse setGrams(@AuthenticationPrincipal UUID userId, @PathVariable UUID ingredientId,
                                   @Valid @RequestBody SetGramsRequest request) {
@@ -128,6 +135,8 @@ public class NutritionController {
             case "user" -> IngredientUnitGrams.Source.USER;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "source is \"ai\" or \"user\".");
         };
+        matches.ingredient(ingredientId);
+        matches.assertUsedBy(ingredientId, userId);
         IngredientMatches.Learned learned = matches.setGrams(ingredientId, request.unit(), request.grams(), source, userId);
         return new GramsResponse(ingredientId, Grams.unitKey(request.unit()), learned.gramsEach(),
                 learned.source().name().toLowerCase(Locale.ROOT));

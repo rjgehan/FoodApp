@@ -166,6 +166,63 @@ test('an ingredient\'s food can be chosen from its shortlist — by a model, the
   expect(again.contributors[0].matchSource).toBe('user');
 });
 
+test('a phone\'s Apple Intelligence cannot count a line that is no food, nor weigh far from the server', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const stamp = Date.now();
+  const mix = `grandma's secret mix ${stamp}`;
+  const spinach = `spinach ${stamp}`;
+  const recipe = await newRecipe(hh.id, 'Grandma\'s mystery stew', [
+    { name: mix, qty: 1 },
+    { name: spinach, qty: 2, unit: 'handfuls' },
+  ]);
+  const url = `/api/nutrition/recipes/${recipe.id}?householdId=${hh.id}`;
+  const n = await call('GET', url, { token: owner.token });
+  const line = n.notCounted.find((x: any) => x.name === mix);
+  expect(line.reason).toBe('NO_MATCH');
+
+  // Whatever the model picks from the shortlist (it chose trail mix), the server will not count it.
+  const match = await call('GET', `/api/nutrition/ingredients/${line.ingredientId}/match`, { token: owner.token });
+  for (const c of match.shortlist) {
+    expect(await statusOf('PUT', `/api/nutrition/ingredients/${line.ingredientId}/match`, {
+      token: owner.token, body: { fdcId: c.fdcId, source: 'ai' },
+    })).toBe(422);
+  }
+  const again = await call('GET', url, { token: owner.token });
+  expect(again.notCounted.map((x: any) => x.name)).toContain(mix);
+  expect(again.note).toContain('isn\'t in the food data yet');
+
+  // A handful is 30 g by the server's rule: the model's 10 g is refused, 25 g taken.
+  const leaf = again.contributors.find((c: any) => c.name === spinach);
+  const grams = `/api/nutrition/ingredients/${leaf.ingredientId}/grams`;
+  expect(await statusOf('PUT', grams, { token: owner.token, body: { unit: 'handful', grams: 10, source: 'ai' } })).toBe(422);
+  expect(await call('PUT', grams, { token: owner.token, body: { unit: 'handful', grams: 25, source: 'ai' } }))
+    .toMatchObject({ gramsEach: 25, source: 'ai' });
+});
+
+test('only someone whose household cooks with an ingredient may change its food or weight', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const name = `greek yogurt ${Date.now()}`;
+  const recipe = await newRecipe(hh.id, 'Yogurt pot', [{ name, qty: 1, unit: 'knob' }]);
+  const n = await call('GET', `/api/nutrition/recipes/${recipe.id}?householdId=${hh.id}`, { token: owner.token });
+  const id = [...n.contributors, ...n.notCounted].find((c: any) => c.name === name).ingredientId;
+  const before = await call('GET', `/api/nutrition/ingredients/${id}/match`, { token: owner.token });
+
+  const outsider = await newMember((await newHousehold()).id);
+  expect(await statusOf('PUT', `/api/nutrition/ingredients/${id}/match`, {
+    token: outsider.token, body: { fdcId: before.shortlist[1].fdcId, source: 'user' },
+  })).toBe(404);
+  expect(await statusOf('PUT', `/api/nutrition/ingredients/${id}/grams`, {
+    token: outsider.token, body: { unit: 'knob', grams: 4000, source: 'user' },
+  })).toBe(404);
+  // Someone in the household may.
+  const member = await newMember(hh.id);
+  expect(await statusOf('PUT', `/api/nutrition/ingredients/${id}/grams`, {
+    token: member.token, body: { unit: 'knob', grams: 15, source: 'user' },
+  })).toBe(200);
+});
+
 test('counted fish fillets are shop-sized, and the UK names USDA lacks are counted', async () => {
   const hh = await newHousehold();
   const owner = await admin();

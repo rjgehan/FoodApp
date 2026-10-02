@@ -226,15 +226,22 @@ public class RecipeNutrition {
             }
             double quantity = line.quantity().doubleValue();
             Food food = line.match().food();
-            Grams.Amount amount = line.learned() != null
-                    ? Grams.learned(quantity, line.unit(), line.learned().gramsEach(),
-                    line.learned().source() == IngredientUnitGrams.Source.AI ? "estimated" : "set by hand")
-                    : Grams.of(quantity, line.unit(), line.name(), food).orElse(null);
+            Grams.Amount rule = Grams.of(quantity, line.unit(), line.name(), food).orElse(null);
+            IngredientMatches.Learned learned = line.learned();
+            if (learned != null && learned.source() == IngredientUnitGrams.Source.AI
+                    && !IngredientMatches.aiGramsAccepted(learned.gramsEach(), rule == null ? null : rule.gramsEach())) {
+                // A model's figure from before they were checked, far from the server's own: not used.
+                learned = null;
+            }
+            Grams.Amount amount = learned != null
+                    ? Grams.learned(quantity, line.unit(), learned.gramsEach(),
+                    learned.source() == IngredientUnitGrams.Source.AI ? "estimated" : "set by hand")
+                    : rule;
             if (amount == null) {
                 noWeight.add(line);
                 continue;
             }
-            if (line.learned() == null && line.ingredientId() != null && matches != null) {
+            if (learned == null && line.ingredientId() != null && matches != null) {
                 matches.rememberRule(line.ingredientId(), amount, food);
             }
             Nutrients n = food.per100g().scaled(amount.grams() / 100.0);

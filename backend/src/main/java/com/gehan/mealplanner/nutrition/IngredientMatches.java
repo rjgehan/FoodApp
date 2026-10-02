@@ -24,18 +24,42 @@ import java.util.UUID;
 @Service
 public class IngredientMatches {
 
-    /** What an ingredient is matched to right now. food is null when it is not counted. */
+    /**
+     * What an ingredient is matched to right now. food is null when it is not counted. For a
+     * model's pick, confidence is the server's own confidence in that food for the line.
+     */
     public record Match(UUID ingredientId, Food food, double confidence, IngredientFoodMatch.Source source) {
 
         public boolean countable() {
-            return food != null && (source != IngredientFoodMatch.Source.AUTO || confidence >= FoodMatcher.COUNTABLE);
+            if (food == null) return false;
+            return switch (source) {
+                case USER -> true;
+                case AI -> confidence >= AI_FLOOR;
+                case AUTO -> confidence >= FoodMatcher.COUNTABLE;
+            };
         }
 
-        /** Worth a second opinion — from the iPhone's model or a person. */
+        /**
+         * Worth a second opinion, and shown as a guess: the matcher's unsure match, or a model's
+         * pick of a food the matcher itself was unsure of.
+         */
         public boolean guess() {
-            return source == IngredientFoodMatch.Source.AUTO && confidence < FoodMatcher.CONFIDENT;
+            return source != IngredientFoodMatch.Source.USER && confidence < FoodMatcher.CONFIDENT;
         }
     }
+
+    /**
+     * The least the matcher must think of a food before a model's pick of it is taken. A small
+     * on-device model offered a shortlist picks something even for a line that is no food at
+     * all ("grandma's secret mix" → trail mix, "xyzzy sauce" → barbecue sauce) — and its pick
+     * is shared by every household — so a pick must also share a real word with the line.
+     */
+    static final double AI_FLOOR = 0.4;
+
+    /** A model's grams must be within this factor of the server's own figure, either way. */
+    static final double AI_BAND = 2.0;
+    /** A model's grams for a unit the server cannot weigh at all, at most. */
+    static final double AI_MOST = 1000;
 
     public record Learned(double gramsEach, IngredientUnitGrams.Source source) {
     }
@@ -76,7 +100,14 @@ public class IngredientMatches {
             if (stale) return;
             Food food = noFood ? null : table.find(fdc).orElse(null);
             if (!noFood && food == null && source == IngredientFoodMatch.Source.AUTO) return;  // left the table
-            found.put(id, new Match(id, food, rs.getDouble(3), source));
+            double confidence = rs.getDouble(3);
+            if (source == IngredientFoodMatch.Source.AI && food != null
+                    && !FoodMatcher.sharesARealWord(byId.get(id).getName(), food)) {
+                // Saved before picks were checked: a food that is nothing like the line is not counted.
+                food = null;
+                confidence = 0;
+            }
+            found.put(id, new Match(id, food, confidence, source));
         }, (Object) byId.keySet().toArray(UUID[]::new));
 
         for (Ingredient ingredient : byId.values()) {
@@ -115,20 +146,28 @@ public class IngredientMatches {
         }
         Ingredient ingredient = ingredient(ingredientId);
         Food food = null;
+        double confidence = 1.0;
         if (fdcId == null) {
             if (source != IngredientFoodMatch.Source.USER) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose one of the foods on the shortlist.");
             }
         } else {
-            food = shortlist(ingredient).stream().map(FoodMatcher.Candidate::food)
-                    .filter(f -> f.fdcId() == fdcId).findFirst()
+            FoodMatcher.Candidate picked = shortlist(ingredient).stream()
+                    .filter(c -> c.food().fdcId() == fdcId).findFirst()
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "That food isn't on this ingredient's shortlist."));
+            food = picked.food();
+            if (source == IngredientFoodMatch.Source.AI) {
+                if (picked.confidence() < AI_FLOOR || !FoodMatcher.sharesARealWord(ingredient.getName(), food)) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "That food is too far from the ingredient to count it as one.");
+                }
+                confidence = picked.confidence();
+            }
         }
         if (source == IngredientFoodMatch.Source.AI && currentSource(ingredientId).orElse(null) == IngredientFoodMatch.Source.USER) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Someone already chose the food for this one.");
         }
-        double confidence = source == IngredientFoodMatch.Source.USER ? 1.0 : 0.8;
         jdbc.update("""
                 INSERT INTO ingredient_food_matches
                     (ingredient_id, fdc_id, confidence, source, matcher_version, data_version, updated_at, updated_by)
@@ -137,7 +176,7 @@ public class IngredientMatches {
                     source = EXCLUDED.source, matcher_version = EXCLUDED.matcher_version,
                     data_version = EXCLUDED.data_version, updated_at = EXCLUDED.updated_at,
                     updated_by = EXCLUDED.updated_by
-                """, ingredientId, fdcId, confidence, source.name(), FoodMatcher.VERSION, loader.currentVersion(),
+                """, ingredientId, fdcId, Nutrients.round(confidence, 3), source.name(), FoodMatcher.VERSION, loader.currentVersion(),
                 Timestamp.from(Instant.now()), by);
         return new Match(ingredientId, food, confidence, source);
     }
@@ -212,7 +251,16 @@ public class IngredientMatches {
         if (WEIGHTS.contains(key)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Weights don't need working out.");
         }
-        ingredient(ingredientId);
+        Ingredient ingredient = ingredient(ingredientId);
+        if (source == IngredientUnitGrams.Source.AI) {
+            Match match = matchFor(ingredient);
+            Double rule = match.food() == null ? null
+                    : Grams.of(1, unit, ingredient.getName(), match.food()).map(Grams.Amount::gramsEach).orElse(null);
+            if (!aiGramsAccepted(gramsEach, rule)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "That estimate is too far from what one usually weighs.");
+            }
+        }
         if (source == IngredientUnitGrams.Source.AI) {
             List<String> current = jdbc.queryForList(
                     "SELECT source FROM ingredient_unit_grams WHERE ingredient_id = ? AND unit_key = ?",
@@ -234,6 +282,46 @@ public class IngredientMatches {
     }
 
     private static final java.util.Set<String> WEIGHTS = java.util.Set.of("g", "kg", "mg", "oz", "lb");
+
+    /**
+     * A model's figure is a refinement of the server's, not a replacement for it: one phone's
+     * answer is used by every household, and a small model tends to give the same round number
+     * for everything (10 g for a handful of spinach, a thumb of ginger and a sachet alike). So it
+     * must be within half to twice the server's own figure, or — for a unit the server cannot
+     * weigh at all — no more than a kilo.
+     */
+    static boolean aiGramsAccepted(double gramsEach, Double rule) {
+        if (!(gramsEach > 0)) return false;
+        if (rule == null || !(rule > 0)) return gramsEach <= AI_MOST;
+        return gramsEach >= rule / AI_BAND && gramsEach <= rule * AI_BAND;
+    }
+
+    /**
+     * Matches and weights are shared by the whole server, so only someone who cooks with the
+     * ingredient may change them: it must be in a recipe one of their households can see (its
+     * own, shared with it or filed from Explore), in one published to Explore, or planned on its
+     * own in one of their households. Otherwise the ingredient is, to them, not there.
+     */
+    public void assertUsedBy(UUID ingredientId, UUID userId) {
+        Boolean used = jdbc.queryForObject("""
+                WITH mine AS (SELECT household_id FROM household_members WHERE user_id = ?)
+                SELECT EXISTS (
+                    SELECT 1 FROM recipe_ingredients ri JOIN recipes r ON r.id = ri.recipe_id
+                    WHERE ri.ingredient_id = ? AND (
+                        r.published
+                        OR r.household_id IN (SELECT household_id FROM mine)
+                        OR EXISTS (SELECT 1 FROM recipe_shares s
+                                   WHERE s.recipe_id = r.id AND s.household_id IN (SELECT household_id FROM mine))
+                        OR EXISTS (SELECT 1 FROM recipe_filings f
+                                   WHERE f.recipe_id = r.id AND f.household_id IN (SELECT household_id FROM mine))))
+                OR EXISTS (
+                    SELECT 1 FROM meal_plan_entries e
+                    WHERE e.ingredient_id = ? AND e.household_id IN (SELECT household_id FROM mine))
+                """, Boolean.class, userId, ingredientId, ingredientId);
+        if (!Boolean.TRUE.equals(used)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such ingredient.");
+        }
+    }
 
     private static String trimmed(String text) {
         return text == null || text.length() <= 200 ? text : text.substring(0, 200);

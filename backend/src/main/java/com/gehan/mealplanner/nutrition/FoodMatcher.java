@@ -94,6 +94,27 @@ public class FoodMatcher {
         return top;
     }
 
+    /**
+     * Whether a food's name has at least one of the line's own words — not just a word for its
+     * shape or state ("sauce", "mix", "fillet", "dried"), which "xyzzy sauce" shares with every
+     * sauce. Close spellings count ("parmesean").
+     */
+    public static boolean sharesARealWord(String line, Food food) {
+        Set<String> foodWords = new HashSet<>(FoodWords.words(food.name()));
+        for (String word : FoodWords.queryWords(line)) {
+            if (FoodWords.LIGHT.contains(word) || FoodWords.FILLER.contains(word) || FoodWords.PROCESSED.contains(word)
+                    || word.matches("\\d+.*")) {
+                continue;
+            }
+            if (foodWords.contains(word)) return true;
+            for (String other : foodWords) {
+                if (word.length() >= 5 && other.length() >= 5 && FoodWords.oneEditApart(word, other)) return true;
+                if (word.length() >= 4 && other.length() > word.length() && other.startsWith(word)) return true;
+            }
+        }
+        return false;
+    }
+
     /** Null when the food shares no word with the query. */
     static Candidate score(Indexed food, List<String> query) {
         double credit = 0;
