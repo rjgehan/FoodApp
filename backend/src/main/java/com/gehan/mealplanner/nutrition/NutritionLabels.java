@@ -134,14 +134,25 @@ public final class NutritionLabels {
      * usual line for "low carb"), fat under 20% — so they work for a snack and a feast alike.
      */
     public static List<String> highlights(Nutrients serving) {
+        return highlights(serving, false);
+    }
+
+    /**
+     * @param partial something that matters in the recipe wasn't counted: the split is of the part
+     *                that was, so nothing is said about it ("Low carb" for cream without its
+     *                strawberries and sugar would be the opposite of true)
+     */
+    public static List<String> highlights(Nutrients serving, boolean partial) {
         List<String> words = new ArrayList<>();
         double kcal = orZero(serving.kcal());
         if (kcal <= 0) return words;
         MacroSplit split = split(serving);
-        if (split.protein() >= 20 && orZero(serving.protein()) >= 15) words.add("High protein");
-        if (split.carbs() < 26) words.add("Low carb");
-        else if (split.carbs() >= 60) words.add("Mostly carbs");
-        if (split.fat() < 20) words.add("Low fat");
+        if (!partial && split.protein() >= 20 && orZero(serving.protein()) >= 15) words.add("High protein");
+        if (!partial) {
+            if (split.carbs() < 26) words.add("Low carb");
+            else if (split.carbs() >= 60) words.add("Mostly carbs");
+            if (split.fat() < 20) words.add("Low fat");
+        }
         if (orZero(serving.fibre()) >= 6) words.add("High fibre");
         if (serving.saltG() != null && serving.saltG() >= 2.5) words.add("Salty");
         return words;
@@ -153,8 +164,16 @@ public final class NutritionLabels {
 
     /** With a plan named, the size is said for it: "A filling meal for your Lean bulk plan." */
     public static String summary(Nutrients serving, String planName) {
+        return summary(serving, planName, false);
+    }
+
+    /** @param partial something that matters wasn't counted: says so, rather than sizing part of a dish */
+    public static String summary(Nutrients serving, String planName, boolean partial) {
         double kcal = orZero(serving.kcal());
         if (kcal <= 0) return null;
+        if (partial) {
+            return "Some ingredients couldn't be counted, so this is only part of the dish.";
+        }
         List<String> words = highlights(serving);
         StringBuilder text = new StringBuilder();
         for (int i = 0; i < Math.min(2, words.size()); i++) {

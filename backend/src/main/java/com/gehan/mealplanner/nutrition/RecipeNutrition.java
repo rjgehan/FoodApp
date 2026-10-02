@@ -56,6 +56,40 @@ public class RecipeNutrition {
 
     record Sum(Nutrients total, List<Counted> counted, List<Line> optionalLeftOut, List<Line> noAmount,
                List<Line> noMatch, List<Line> noWeight) {
+
+        /**
+         * Something that matters was left out — not a pinch of salt or a sprig of parsley, but
+         * the strawberries in a strawberry pudding. Its numbers are a part of the dish dressed up
+         * as the whole: too thin to plan a day around or to call "low carb".
+         */
+        boolean partial() {
+            return java.util.stream.Stream.of(noAmount, noMatch, noWeight).flatMap(List::stream)
+                    .anyMatch(l -> !trivial(l));
+        }
+    }
+
+    /** Seasonings and garnishes, whose energy is a rounding error either way. */
+    private static final java.util.regex.Pattern TRIVIAL_NAME = java.util.regex.Pattern.compile(
+            "^(sea |table |kosher |flaky )?salt\\b|^(ground |cracked |freshly ground )?(black |white )?pepper(corns)?$"
+                    + "|salt and pepper|salt & pepper|^(boiling |cold |warm |hot |iced )?water$|^ice( cubes?)?$"
+                    + "|\\b(parsley|coriander|cilantro|basil|mint|dill|chives|thyme|rosemary|oregano|sage|tarragon"
+                    + "|bay leaf|bay leaves|cumin|paprika|turmeric|chilli flakes|chili flakes|cayenne|nutmeg|cinnamon"
+                    + "|garam masala|curry powder|mixed herbs|mixed spice|za'atar|sumac)\\b");
+    private static final Set<String> TRIVIAL_UNITS = Set.of("pinch", "pinches", "dash", "dashes", "sprig", "sprigs",
+            "drop", "drops", "to taste", "garnish", "few leaves");
+
+    static boolean trivial(Line l) {
+        String name = l.name() == null ? "" : l.name().toLowerCase(Locale.ROOT).trim();
+        String unit = l.unit() == null ? "" : l.unit().toLowerCase(Locale.ROOT).trim();
+        return TRIVIAL_NAME.matcher(name).find() || TRIVIAL_UNITS.contains(unit);
+    }
+
+    /**
+     * One serving of a recipe for planning with.
+     *
+     * @param partial something that matters in it could not be counted (see {@link Sum#partial})
+     */
+    public record Serving(Nutrients nutrients, boolean partial) {
     }
 
     private final RecipeService recipes;
@@ -141,10 +175,11 @@ public class RecipeNutrition {
 
         int linesTotal = recipe.getIngredients().size();
         boolean complete = sum.noAmount().isEmpty() && sum.noMatch().isEmpty() && sum.noWeight().isEmpty();
+        boolean partial = sum.partial();
         return new RecipeNutritionResponse(recipe.getId(), recipe.getName(), recipeServings, servings,
                 Values.of(perServing), Values.of(shown), Values.of(sum.total()), NutritionLabels.split(perServing),
-                reference, NutritionLabels.percentOf(shown, reference), NutritionLabels.highlights(perServing),
-                NutritionLabels.summary(perServing, reference.plan()), contributors, notCounted, sum.counted().size(), linesTotal,
+                reference, NutritionLabels.percentOf(shown, reference), NutritionLabels.highlights(perServing, partial),
+                NutritionLabels.summary(perServing, reference.plan(), partial), contributors, notCounted, sum.counted().size(), linesTotal,
                 complete, note(sum), Attribution.USDA);
     }
 
@@ -154,9 +189,17 @@ public class RecipeNutrition {
      */
     @Transactional
     public Map<UUID, Nutrients> perServing(Collection<Recipe> recipeList, Map<UUID, Set<UUID>> includedOptionals) {
+        Map<UUID, Nutrients> result = new LinkedHashMap<>();
+        servings(recipeList, includedOptionals).forEach((id, s) -> result.put(id, s == null ? null : s.nutrients()));
+        return result;
+    }
+
+    /** As {@link #perServing}, with whether each recipe's numbers leave out something that matters. */
+    @Transactional
+    public Map<UUID, Serving> servings(Collection<Recipe> recipeList, Map<UUID, Set<UUID>> includedOptionals) {
         Map<UUID, List<Line>> lines = lines(recipeList, includedOptionals.values().stream()
                 .flatMap(Set::stream).collect(java.util.stream.Collectors.toSet()));
-        Map<UUID, Nutrients> result = new LinkedHashMap<>();
+        Map<UUID, Serving> result = new LinkedHashMap<>();
         for (Recipe recipe : recipeList) {
             Set<UUID> mine = includedOptionals.getOrDefault(recipe.getId(), Set.of());
             List<Line> own = lines.getOrDefault(recipe.getId(), List.of()).stream()
@@ -166,7 +209,7 @@ public class RecipeNutrition {
                     .toList();
             Sum sum = add(own);
             result.put(recipe.getId(), sum.counted().isEmpty() ? null
-                    : sum.total().scaled(1.0 / Math.max(1, recipe.getServings())));
+                    : new Serving(sum.total().scaled(1.0 / Math.max(1, recipe.getServings())), sum.partial()));
         }
         return result;
     }

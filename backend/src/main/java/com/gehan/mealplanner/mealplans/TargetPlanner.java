@@ -33,15 +33,26 @@ import java.util.UUID;
  * </pre>
  * A recipe is never repeated the same day, nor at lunch or dinner the day after (the same
  * breakfast or snack every day is ordinary, so those only pay the repeat cost); and recipes with
- * no nutrition to go on (nothing in them could be counted) are never chosen: a number the plan
- * can't show is a number it can't aim at.
+ * no nutrition to go on (nothing in them could be counted), or only part of it (the cream of a
+ * strawberry pudding but not the strawberries or sugar), are never chosen: a number the plan
+ * can't show truly is a number it can't aim at.
  */
 public final class TargetPlanner {
 
-    /** A recipe that may be chosen, with its nutrition per serving. */
+    /**
+     * A recipe that may be chosen, with its nutrition per serving.
+     *
+     * @param partial something that matters in it couldn't be counted, so its numbers are of part
+     *                of the dish; never chosen, only shown (with a word) if a saved plan has it
+     */
     public record Option(UUID id, String name, RecipeSection section, boolean yours, double kcal, double protein,
                          double carbs, double fat, Double satFat, Double sodiumMg, Integer minutes, String words,
-                         UUID coverImageId) {
+                         UUID coverImageId, boolean partial) {
+        public Option(UUID id, String name, RecipeSection section, boolean yours, double kcal, double protein,
+                      double carbs, double fat, Double satFat, Double sodiumMg, Integer minutes, String words,
+                      UUID coverImageId) {
+            this(id, name, section, yours, kcal, protein, carbs, fat, satFat, sodiumMg, minutes, words, coverImageId, false);
+        }
     }
 
     public record Slot(int day, MealType meal) {
@@ -75,7 +86,7 @@ public final class TargetPlanner {
 
     public TargetPlanner(List<Option> options, Preferences prefs, boolean useMineFirst, int kcal, int protein) {
         this.options = options.stream()
-                .filter(o -> o.kcal() >= MIN_KCAL)
+                .filter(o -> o.kcal() >= MIN_KCAL && !o.partial())
                 .filter(o -> prefs.allows(o.words(), o.minutes()))
                 .sorted(Comparator.comparing(Option::name, String.CASE_INSENSITIVE_ORDER).thenComparing(o -> o.id().toString()))
                 .toList();

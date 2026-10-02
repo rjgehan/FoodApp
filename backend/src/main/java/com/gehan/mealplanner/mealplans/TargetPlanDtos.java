@@ -68,9 +68,11 @@ public class TargetPlanDtos {
     /**
      * @param computed   what the details work out to, before anything set by hand
      * @param overridden which of kcal / protein / carbs / fat were set by hand
+     * @param notes      plain sentences to show under the numbers: the safety floor reached, or
+     *                   protein and fat set by hand that leave no room for carbs
      */
     public record TargetsResponse(int kcal, int protein, int carbs, int fat, Macro computed, List<String> overridden,
-                                  int bmr, int tdee) {
+                                  int bmr, int tdee, List<String> notes) {
     }
 
     public record Macro(int kcal, int protein, int carbs, int fat) {
@@ -149,7 +151,8 @@ public class TargetPlanDtos {
      * Puts a saved plan on the Plan from a start date: day 0 on {@code start}.
      *
      * @param days     which of the plan's days (0-based); all of them when left out
-     * @param servings how many to cook for; the household's usual when left out
+     * @param servings how many people it is cooked for, the plan's person included (the household's usual
+     *                 when left out); each meal cooks the plan's portion plus one serving per other person
      */
     public record ApplyTargetPlanRequest(@NotNull LocalDate start, @Size(max = 14) List<Integer> days,
                                          @Min(1) @Max(50) Integer servings) {
@@ -183,10 +186,13 @@ public class TargetPlanDtos {
      * @param portion  servings of the recipe for this person ("1.5")
      * @param yours    the household's own recipe (or shared with / filed by it); false is from Explore
      * @param missing  the recipe was deleted or is no longer readable; the numbers are zero
+     * @param partial  some of its ingredients couldn't be counted, so its numbers are too low (a
+     *                 plan never chooses one now; one saved before may still have it)
+     * @param kcalPerServing one serving's energy — kcal is this times the portion
      */
     public record PlanMeal(int day, MealType mealType, UUID recipeId, String name, RecipeSection section,
                            boolean yours, UUID coverImageId, double portion, int kcal, int protein, int carbs,
-                           int fat, boolean missing) {
+                           int fat, boolean missing, boolean partial, int kcalPerServing) {
     }
 
     /** A card on the Meal plans page. */

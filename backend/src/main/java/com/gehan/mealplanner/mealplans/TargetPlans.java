@@ -29,7 +29,9 @@ import com.gehan.mealplanner.mealplans.TargetPlanDtos.UpdateTargetPlanRequest;
 import com.gehan.mealplanner.mealplans.TargetPlanner.Meal;
 import com.gehan.mealplanner.mealplans.TargetPlanner.Option;
 import com.gehan.mealplanner.mealplans.TargetPlanner.Slot;
+import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.nutrition.Nutrients;
+import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.nutrition.RecipeNutrition;
 import com.gehan.mealplanner.service.HouseholdService;
 import org.springframework.http.HttpStatus;
@@ -76,10 +78,13 @@ public class TargetPlans {
     private final RecipeNutrition nutrition;
     private final CupboardPlans cupboardPlans;
     private final PlanApply planApply;
+    private final HouseholdRepository households;
     private final ObjectMapper json = JsonMapper.builder().build();
 
     public TargetPlans(HouseholdService householdService, TargetPlanRepository plans, RecipePool pool,
-                       RecipeNutrition nutrition, CupboardPlans cupboardPlans, PlanApply planApply) {
+                       RecipeNutrition nutrition, CupboardPlans cupboardPlans, PlanApply planApply,
+                       HouseholdRepository households) {
+        this.households = households;
         this.householdService = householdService;
         this.plans = plans;
         this.pool = pool;
@@ -118,7 +123,7 @@ public class TargetPlans {
     private static TargetsResponse response(Targets.Result r) {
         Targets.Macros t = r.target(), c = r.computed();
         return new TargetsResponse(t.kcal(), t.protein(), t.carbs(), t.fat(),
-                new Macro(c.kcal(), c.protein(), c.carbs(), c.fat()), r.overridden(), r.bmr(), r.tdee());
+                new Macro(c.kcal(), c.protein(), c.carbs(), c.fat()), r.overridden(), r.bmr(), r.tdee(), r.notes());
     }
 
     public static FormOptions formOptions() {
@@ -344,13 +349,27 @@ public class TargetPlans {
         TargetPlan plan = owned(householdId, requesterId, planId);
         Set<Integer> days = r.days() == null || r.days().isEmpty() ? null : new HashSet<>(r.days());
         Generated g = resolve(householdId, details(plan), storedMeals(plan));
+        int people = r.servings() != null ? r.servings()
+                : households.findById(householdId).map(Household::getDefaultServings).orElse(1);
         List<ApplyMeal> meals = new ArrayList<>();
         for (Meal m : g.meals()) {
             if (gone(m) || (days != null && !days.contains(m.slot().day()))) continue;
-            meals.add(new ApplyMeal(r.start().plusDays(m.slot().day()), m.slot().meal(), m.option().id(), r.servings()));
+            meals.add(new ApplyMeal(r.start().plusDays(m.slot().day()), m.slot().meal(), m.option().id(),
+                    servingsToCook(m.portion(), people)));
         }
         if (meals.isEmpty()) throw bad("There are no meals in those days to apply.");
         return planApply.apply(householdId, requesterId, meals, null);
+    }
+
+    /**
+     * How many servings to cook so the plan's portion is really there: the plan's numbers are for
+     * its portion (two servings of porridge, say), so the pot is that much plus one serving for
+     * each of the others it is cooked for — not the household's usual four with the plan's two
+     * quietly shared out. Half portions round up: nobody cooks half a serving.
+     */
+    static int servingsToCook(double portion, int people) {
+        int mine = (int) Math.ceil(portion - 1e-9);
+        return Math.max(1, Math.min(50, Math.max(0, people - 1) + Math.max(1, mine)));
     }
 
     /**
@@ -438,13 +457,16 @@ public class TargetPlans {
     }
 
     private List<Option> options(Collection<RecipePool.PoolRecipe> recipes) {
-        Map<UUID, Nutrients> perServing = nutrition.perServing(recipes.stream().map(RecipePool.PoolRecipe::recipe).toList(), Map.of());
+        Map<UUID, RecipeNutrition.Serving> perServing =
+                nutrition.servings(recipes.stream().map(RecipePool.PoolRecipe::recipe).toList(), Map.of());
         List<Option> options = new ArrayList<>();
         for (RecipePool.PoolRecipe r : recipes) {
-            Nutrients n = perServing.get(r.id());
+            RecipeNutrition.Serving serving = perServing.get(r.id());
+            Nutrients n = serving == null ? null : serving.nutrients();
             if (n == null || n.kcal() == null) continue;
             options.add(new Option(r.id(), r.name(), r.section(), r.yours(), n.kcalOrZero(), orZero(n.protein()),
-                    orZero(n.carbs()), orZero(n.fat()), n.satFat(), n.sodiumMg(), r.minutes(), r.words(), r.coverImageId()));
+                    orZero(n.carbs()), orZero(n.fat()), n.satFat(), n.sodiumMg(), r.minutes(), r.words(), r.coverImageId(),
+                    serving.partial()));
         }
         return options;
     }
@@ -475,7 +497,8 @@ public class TargetPlans {
                 boolean gone = o.name() == null;
                 meals.add(new PlanMeal(dd, m.slot().meal(), o.id(), gone ? "No longer available" : o.name(), o.section(),
                         o.yours(), o.coverImageId(), m.portion(), (int) Math.round(m.kcal()), (int) Math.round(m.protein()),
-                        (int) Math.round(m.carbs()), (int) Math.round(m.fat()), gone));
+                        (int) Math.round(m.carbs()), (int) Math.round(m.fat()), gone, !gone && o.partial(),
+                        (int) Math.round(o.kcal())));
                 k += m.kcal(); p += m.protein(); c += m.carbs(); f += m.fat();
                 total++;
                 if (o.yours() && !gone) yours++;

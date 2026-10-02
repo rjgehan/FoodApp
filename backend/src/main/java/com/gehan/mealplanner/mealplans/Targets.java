@@ -115,7 +115,10 @@ public final class Targets {
      * @param bmr  resting energy, kcal/day
      * @param tdee the day's total before the goal, kcal/day
      */
-    public record Result(Macros target, Macros computed, List<String> overridden, int bmr, int tdee) {
+    public record Result(Macros target, Macros computed, List<String> overridden, int bmr, int tdee, List<String> notes) {
+        public Result(Macros target, Macros computed, List<String> overridden, int bmr, int tdee) {
+            this(target, computed, overridden, bmr, tdee, List.of());
+        }
     }
 
     private Targets() {
@@ -147,7 +150,8 @@ public final class Targets {
         double kcal, protein, fat;
         switch (b.goal()) {
             case LOSE_FAT -> {
-                kcal = Math.max(tdee * 0.80, floor(b.sex()));
+                // The floor never pushes a "cut" above the day's total: at most, it holds weight.
+                kcal = Math.min(tdee, Math.max(tdee * 0.80, floor(b.sex())));
                 protein = 2.0 * b.weightKg();
                 fat = kcal * 0.25 / 9;
             }
@@ -188,6 +192,29 @@ public final class Targets {
             carbs = (int) Math.max(0, Math.round((kcal - 4.0 * protein - 9.0 * fat) / 4.0));
         }
         return new Result(new Macros(kcal, protein, carbs, fat), computed, overridden,
-                (int) Math.round(bmr(b)), (int) Math.round(tdee(b)));
+                (int) Math.round(bmr(b)), (int) Math.round(tdee(b)), notes(b, set.kcal() != null, kcal, protein, fat));
+    }
+
+    /**
+     * Plain words for when the numbers aren't what the goal suggests: the safety floor reached
+     * (and whether it is all the way up at maintenance), or protein and fat set by hand that
+     * already take more energy than the day has.
+     */
+    static List<String> notes(Body b, boolean kcalSetByHand, int kcal, int protein, int fat) {
+        List<String> notes = new ArrayList<>();
+        double tdee = tdee(b), floor = floor(b.sex());
+        if (b.goal() == Goal.LOSE_FAT && !kcalSetByHand && tdee * 0.80 < floor) {
+            String f = String.format(Locale.UK, "%,d", (int) floor);
+            notes.add(floor >= tdee
+                    ? "We won't plan below " + f + " kcal a day, and that is about maintenance for you, so this plan "
+                      + "holds your weight rather than cutting."
+                    : "We won't plan below " + f + " kcal a day, so this is a gentler cut than 20%.");
+        }
+        int fixed = 4 * protein + 9 * fat;
+        if (fixed > kcal) {
+            notes.add(String.format(Locale.UK, "Protein and fat alone come to %,d kcal, more than the %,d kcal set, "
+                    + "so there is no room for carbs.", fixed, kcal));
+        }
+        return List.copyOf(notes);
     }
 }

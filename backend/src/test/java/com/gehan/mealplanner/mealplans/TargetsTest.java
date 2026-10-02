@@ -48,9 +48,12 @@ class TargetsTest {
         // 1320.25 × 1.2 × 0.8 = 1267 → 1270; 2 g/kg protein; 25% fat.
         assertThat(Targets.worked(new Body(30, Sex.FEMALE, 165, 60, Activity.SEDENTARY, Goal.LOSE_FAT)))
                 .isEqualTo(new Macros(1270, 120, 119, 35));
-        // A small, older woman: 20% under would be 889 kcal; 1,200 is as low as it goes.
-        assertThat(Targets.worked(new Body(60, Sex.FEMALE, 150, 45, Activity.SEDENTARY, Goal.LOSE_FAT)).kcal()).isEqualTo(1200);
-        assertThat(Targets.worked(new Body(60, Sex.MALE, 150, 45, Activity.SEDENTARY, Goal.LOSE_FAT)).kcal()).isEqualTo(1500);
+        // 1189 × 1.2 = 1427 a day; 20% under would be 1,141 kcal; 1,200 is as low as it goes.
+        assertThat(Targets.worked(new Body(40, Sex.FEMALE, 160, 55, Activity.SEDENTARY, Goal.LOSE_FAT)).kcal()).isEqualTo(1200);
+        // 1517.5 × 1.2 = 1821; 20% under is 1,457; 1,500 for a man.
+        assertThat(Targets.worked(new Body(40, Sex.MALE, 170, 65, Activity.SEDENTARY, Goal.LOSE_FAT)).kcal()).isEqualTo(1500);
+        // A small, older woman whose whole day is 1,112 kcal: the floor would be a surplus, so maintenance.
+        assertThat(Targets.worked(new Body(60, Sex.FEMALE, 150, 45, Activity.SEDENTARY, Goal.LOSE_FAT)).kcal()).isEqualTo(1110);
     }
 
     @Test
@@ -100,6 +103,66 @@ class TargetsTest {
         assertThat(quick.allows("stew | beef", 120)).isFalse();
         assertThat(quick.allows("salad | lettuce", null)).isTrue();
         assertThat(quick.allows("risotto | mushrooms", 25)).isFalse();
+    }
+
+    @Test
+    void wordsThatOnlyStartLikeMeatAreNotMeat() {
+        Preferences veggie = new Preferences(List.of("vegetarian"), List.of());
+        assertThat(veggie.allows("three-bean veggie chilli | kidney beans | onion | rice", 45)).isTrue();
+        assertThat(veggie.allows("steak and kidney pie | beef | kidneys", 45)).isFalse();
+        assertThat(veggie.allows("gooseberry fool | gooseberries | cream", 20)).isTrue();
+        assertThat(veggie.allows("roast goose | goose", 120)).isFalse();
+        assertThat(veggie.allows("mince pies | mincemeat | flour | butter", 40)).isTrue();
+        assertThat(veggie.allows("cottage pie | beef mince", 60)).isFalse();
+        assertThat(veggie.allows("dumplings | vegetable suet | flour", 30)).isTrue();
+        assertThat(veggie.allows("dumplings | suet | flour", 30)).isFalse();
+        assertThat(veggie.allows("liverpool scouse | potatoes | carrots", 30)).isTrue();
+        assertThat(veggie.allows("bangers and mash | vegetarian sausages | potatoes", 30)).isTrue();
+        assertThat(veggie.allows("cauliflower steak | cauliflower", 30)).isTrue();
+        // A tuna steak is not meat, but it is fish.
+        assertThat(veggie.allows("tuna steak | tuna", 20)).isFalse();
+        assertThat(new Preferences(List.of("pescatarian"), List.of()).allows("tuna steak | tuna", 20)).isTrue();
+        assertThat(new Preferences(List.of("no-pork"), List.of()).allows("toad in the hole | veggie sausages", 40)).isTrue();
+    }
+
+    @Test
+    void theLoseFatFloorNeverGoesAboveMaintenance() {
+        // 75, a woman, 150 cm and 42 kg, mostly sitting: 986 kcal a day in all. The 1,200 floor
+        // would be a surplus, so the plan holds weight at maintenance and says why.
+        Body small = new Body(75, Sex.FEMALE, 150, 42, Activity.SEDENTARY, Goal.LOSE_FAT);
+        Targets.Result r = Targets.of(small, Targets.Overrides.NONE);
+        assertThat(r.tdee()).isEqualTo(986);
+        assertThat(r.target().kcal()).isEqualTo(990);
+        assertThat(r.notes()).hasSize(1);
+        assertThat(r.notes().get(0)).contains("1,200").contains("maintenance");
+        // Above the floor, no note.
+        assertThat(Targets.of(new Body(38, Sex.MALE, 183, 86, Activity.LIGHT, Goal.LOSE_FAT), Targets.Overrides.NONE)
+                .notes()).isEmpty();
+    }
+
+    @Test
+    void numbersSetByHandThatLeaveNoRoomForCarbsSaySo() {
+        Body b = new Body(38, Sex.MALE, 183, 86, Activity.LIGHT, Goal.LOSE_FAT);
+        Targets.Result r = Targets.of(b, new Targets.Overrides(800, 172, null, 56));
+        assertThat(r.target().carbs()).isZero();
+        assertThat(r.notes()).anyMatch(n -> n.contains("1,192 kcal") && n.contains("800 kcal"));
+    }
+
+    @Test
+    void aPlansPortionIsCookedOnTopOfEveryoneElsesServing() {
+        assertThat(TargetPlans.servingsToCook(2, 4)).isEqualTo(5);
+        assertThat(TargetPlans.servingsToCook(1, 4)).isEqualTo(4);
+        assertThat(TargetPlans.servingsToCook(1.5, 1)).isEqualTo(2);
+        assertThat(TargetPlans.servingsToCook(0.5, 1)).isEqualTo(1);
+        assertThat(TargetPlans.servingsToCook(3, 2)).isEqualTo(4);
+    }
+
+    @Test
+    void recipesCountedOnlyInPartAreNeverChosen() {
+        Option pudding = new Option(UUID.randomUUID(), "Strawberry thing", RecipeSection.DINNER, true, 966, 6, 8, 100,
+                null, null, 10, "strawberry thing", null, true);
+        assertThat(new TargetPlanner(List.of(pudding), new Preferences(List.of(), List.of()), true, 2000, 100)
+                .plan(1, List.of(MealType.DINNER))).isEmpty();
     }
 
     // Choosing meals
