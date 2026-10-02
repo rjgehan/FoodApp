@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { RecipeCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { usePushedScreen } from '../components/Layout';
+import { useTablessScreen } from '../components/Layout';
 import RecipeForm, { type RecipeDraft } from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
 import { PasteFromAi } from '../components/RecipePaste';
@@ -59,7 +59,7 @@ export default function NewRecipePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const location = useLocation();
-  usePushedScreen();
+  useTablessScreen();
   // Read once, when the page opens: it is where this recipe started, not something to follow.
   const [fromLink] = useState<FromSavedLink | null>(() => {
     const state = location.state as { fromSavedLink?: FromSavedLink } | null;
@@ -105,6 +105,12 @@ export default function NewRecipePage() {
       live = false;
     };
   }, [groupId, activeHouseholdId]);
+
+  // Each step is a page of its own: "Read into form" lands on the top of the form, with the bar
+  // and its Save in view, not wherever the paste page had been scrolled to.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [way, checking]);
 
   if (!activeHouseholdId) {
     return (

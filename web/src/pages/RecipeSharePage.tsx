@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { api, ApiError } from '../api/client';
 import type { Recipe, ShareTarget } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { usePushedScreen } from '../components/Layout';
+import { useTablessScreen } from '../components/Layout';
 import { Icon } from '../components/icons';
 import { toast } from '../components/toast';
 import { Alert, Avatar, Button, Card, cx, EmptyState, ErrorText, List, NavBar, SectionLabel, SwitchKnob, Tile, type Tone } from '../components/ui';
@@ -24,7 +24,7 @@ export default function RecipeSharePage() {
   const { recipeId } = useParams<{ recipeId: string }>();
   const navigate = useNavigate();
   const { activeHouseholdId } = useHousehold();
-  usePushedScreen();
+  useTablessScreen();
 
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [targets, setTargets] = useState<ShareTarget[]>([]);
@@ -238,7 +238,7 @@ export default function RecipeSharePage() {
               <SwitchRow
                 lead={<Tile icon="globe" tone="herb" size={36} />}
                 title="Publish to Explore"
-                subtitle="Any household on this server can find it"
+                subtitle="Anyone on this server can find it"
                 on={recipe.published}
                 disabled={busy}
                 onToggle={() => setPublished(!recipe.published)}

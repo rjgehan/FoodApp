@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { Button, Card, EmptyState, NavBar } from '../components/ui';
+import { Icon } from '../components/icons';
 import { usePushedScreen } from '../components/Layout';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
 import RecipeIndexCard from '../components/RecipeIndexCard';
@@ -182,6 +183,21 @@ export default function RecipeDetailPage() {
         value={tab}
         onChange={setTab}
         counts={{ ingredients: recipe.ingredients.length, method: steps.length, photos: pictures.length }}
+        bar={{
+          title: recipe.name,
+          onBack: goBack,
+          backLabel: 'Back',
+          actions: (
+            <button
+              type="button"
+              aria-label="Recipe options"
+              onClick={() => setOpen('options')}
+              className="press flex h-9 w-9 items-center justify-center"
+            >
+              <Icon name="more" size={20} />
+            </button>
+          ),
+        }}
       />
 
       {tab === 'ingredients' && (
@@ -189,11 +205,12 @@ export default function RecipeDetailPage() {
           {/* Somebody else's, and not in a drawer of yours yet: the way to keep it is right here,
               as well as behind •••. */}
           {recipe.shared && !recipe.section && (
-            <div className="flex items-center gap-3 rounded-[14px] bg-plum-soft py-2 pl-3.5 pr-2">
-              <p className="min-w-0 flex-1 text-[0.8125rem] leading-snug text-plum">
-                Shared by {recipe.ownerName ?? 'another household'}. Only they can change it.
+            // Stacked, so the action is never squeezed: the hero's pill already says who shared it.
+            <div className="flex flex-col gap-2.5 rounded-[14px] bg-plum-soft p-3">
+              <p className="text-[0.8125rem] leading-snug text-plum">
+                Only {recipe.ownerName ?? 'the household that shared it'} can change it.
               </p>
-              <Button size="sm" variant="secondary" icon="arrowR" onClick={() => setOpen('organise')}>
+              <Button size="sm" variant="secondary" icon="arrowR" full onClick={() => setOpen('organise')}>
                 Move into my recipes
               </Button>
             </div>

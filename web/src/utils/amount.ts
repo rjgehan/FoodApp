@@ -12,7 +12,7 @@ export interface Amount {
 }
 
 /** Spellings people type, mapped to the unit list the unit picker offers. */
-const UNIT_ALIASES: Record<string, string> = {
+export const UNIT_ALIASES: Record<string, string> = {
   cup: 'cup', cups: 'cup', c: 'cup',
   tbsp: 'tbsp', tbsps: 'tbsp', tbs: 'tbsp', tablespoon: 'tbsp', tablespoons: 'tbsp',
   tsp: 'tsp', tsps: 'tsp', teaspoon: 'tsp', teaspoons: 'tsp',

@@ -99,7 +99,7 @@ export function PasteFromAi({
           <Input
             value={dish}
             onChange={(e) => setDish(e.target.value)}
-            placeholder="What to make (optional)"
+            placeholder="Dish (optional)"
             aria-label="What do you want to make?"
             className="h-10 min-w-0 flex-1 text-[0.9375rem]"
           />

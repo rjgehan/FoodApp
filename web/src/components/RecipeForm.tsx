@@ -9,7 +9,8 @@ import CoverPicker from './recipe/CoverPicker';
 import RecipeClassifier from './RecipeClassifier';
 import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from './LinksEditor';
 import { SECTION_OPTIONS, DEFAULT_FILING, moveToDrawer, type Filing } from '../utils/recipeMeta';
-import { splitAmount } from '../utils/amount';
+import { parseQuantity, splitAmount, UNIT_ALIASES } from '../utils/amount';
+import { formatQuantity } from '../utils/recipeFormat';
 
 export interface DraftIngredient {
   ingredientName: string;
@@ -148,12 +149,31 @@ export default function RecipeForm({
    * "2 cups flour" typed into the name, with the amount boxes still empty, is split into them.
    * Typing a line the way it is written on the card is faster than hopping between three boxes.
    */
-  function splitTyped(index: number) {
+  function splitTyped(index: number, input?: HTMLInputElement) {
     const row = ingredients[index];
     if (!row || row.quantity !== null || row.unit) return;
     const amount = splitAmount(row.ingredientName);
     if (amount.quantity !== null) {
       updateIngredient(index, { quantity: amount.quantity, unit: amount.unit, ingredientName: amount.name });
+      // The box was scrolled to the end of "500 g potato gnocchi"; with the amount gone into
+      // the chips, show the name from its start.
+      if (input) requestAnimationFrame(() => (input.scrollLeft = 0));
+    }
+  }
+
+  /**
+   * As you type (the mockup's note on 3.16): once an amount and a unit are followed by a space —
+   * "2 cups " — they move into the chips and the rest of the line goes on in the name.
+   */
+  function typeName(index: number, text: string) {
+    const row = ingredients[index];
+    const typed = row && row.quantity === null && !row.unit ? text.match(/^\s*(\S+)\s+(\S+)\s$/) : null;
+    const quantity = typed ? parseQuantity(typed[1]) : null;
+    const unit = typed ? UNIT_ALIASES[typed[2].toLowerCase().replace(/\.$/, '')] : undefined;
+    if (quantity !== null && quantity > 0 && unit) {
+      updateIngredient(index, { quantity, unit, ingredientName: '' });
+    } else {
+      updateIngredient(index, { ingredientName: text });
     }
   }
 
@@ -254,24 +274,26 @@ export default function RecipeForm({
             <li
               key={i}
               className={cx(
-                'flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-line bg-surface py-1 pl-2.5 pr-1',
+                'group flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-line bg-surface py-1 pl-2.5 pr-1',
                 'focus-within:border-accent focus-within:shadow-[inset_0_0_0_0.5px_rgb(var(--accent))]',
               )}
             >
-              <NumberInput
-                placeholder="qty"
+              <AmountChip
                 value={row.quantity}
                 onChange={(v) => updateIngredient(i, { quantity: v })}
                 aria-label={`Ingredient ${i + 1} amount`}
-                style={{ width: `calc(${row.quantity == null ? 3 : String(row.quantity).length}ch + 1.1rem)` }}
-                className={cx(CHIP, '!bg-sky-soft !text-sky placeholder:!text-sky/50')}
               />
+              {/* A line with no unit ("6 eggs") shows just its amount, as in the mockup; the faint
+                  "unit" box is there on the line being typed, and on a new empty one. */}
               <UnitInput
                 value={row.unit}
                 onChange={(unit) => updateIngredient(i, { unit })}
                 aria-label={`Ingredient ${i + 1} unit`}
                 chevron={false}
-                className="shrink-0"
+                className={cx(
+                  'shrink-0',
+                  !row.unit && (row.quantity !== null || row.ingredientName) && 'hidden group-focus-within:block',
+                )}
                 style={{ width: `calc(${row.unit ? row.unit.length : 4}ch + 1.1rem)` }}
                 inputClassName={cx(CHIP, '!bg-herb-soft !text-herb placeholder:!text-herb/50')}
               />
@@ -281,13 +303,13 @@ export default function RecipeForm({
                 value={row.ingredientName}
                 autoFocus={focusRow === i}
                 enterKeyHint="next"
-                onChange={(e) => updateIngredient(i, { ingredientName: e.target.value })}
-                onBlur={() => splitTyped(i)}
+                onChange={(e) => typeName(i, e.target.value)}
+                onBlur={(e) => splitTyped(i, e.currentTarget)}
                 onKeyDown={(e) => {
                   // Enter moves on to a fresh line rather than submitting half a recipe.
                   if (e.key !== 'Enter') return;
                   e.preventDefault();
-                  splitTyped(i);
+                  splitTyped(i, e.currentTarget);
                   if (i === ingredients.length - 1 && row.ingredientName.trim()) addRow();
                 }}
                 aria-label={`Ingredient ${i + 1}`}
@@ -388,6 +410,57 @@ export default function RecipeForm({
 const CHIP =
   '!h-[26px] shrink-0 !rounded-full !border-0 !px-2 text-center !text-xs !font-semibold !shadow-none ' +
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+/**
+ * The line's amount as its small chip: "½" and "1¼" as on the recipe page, not "0.5". Typed as
+ * text ("1/2", "1.5" and "½" all read), shown as a fraction again once you leave it. Only an
+ * exact fraction becomes a glyph, so a line nobody touched saves with the amount it had.
+ */
+function AmountChip({
+  value,
+  onChange,
+  'aria-label': label,
+}: {
+  value: number | null;
+  onChange: (value: number | null) => void;
+  'aria-label': string;
+}) {
+  const shown = (v: number | null) => {
+    if (v === null) return '';
+    const glyph = formatQuantity(v);
+    return parseQuantity(glyph) !== null && Math.abs(parseQuantity(glyph)! - v) < 0.0005 ? glyph : String(v);
+  };
+  const [text, setText] = useState(() => shown(value));
+
+  useEffect(() => {
+    // Re-sync only when the outside value genuinely disagrees, so typing is never interrupted.
+    const parsed = text.trim() === '' ? null : parseQuantity(text.trim());
+    if (parsed !== value) setText(shown(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder="qty"
+      aria-label={label}
+      value={text}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = raw.trim() === '' ? null : parseQuantity(raw.trim());
+        if (raw.trim() === '' || (parsed !== null && Number.isFinite(parsed))) onChange(parsed);
+      }}
+      onBlur={() => setText(shown(value))}
+      style={{ width: `calc(${Math.max(text.length, 1) + (text ? 0 : 2)}ch + 1.1rem)` }}
+      className={cx(
+        'rounded-full bg-sky-soft text-sky outline-none placeholder:text-sky/50',
+        CHIP,
+      )}
+    />
+  );
+}
 
 /** "⏱ 10 min prep": a small number field with its icon and what the number means. */
 function FactField({

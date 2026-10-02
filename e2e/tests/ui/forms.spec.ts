@@ -17,7 +17,8 @@ test('pasting an ordinary recipe fills the form', async ({ page }) => {
   const form = page.getByRole('main');
   await expect(form.getByPlaceholder('Recipe name')).toHaveValue('Chicken Parmesan');
   const qty = form.getByPlaceholder('qty');
-  await expect(qty.nth(1)).toHaveValue('1.5');
+  // Shown as the recipe page shows it, not as "1.5".
+  await expect(qty.nth(1)).toHaveValue('1½');
   await expect(form.getByPlaceholder('ingredient').nth(1)).toHaveValue('marinara sauce');
   await expect(form.getByPlaceholder('One step per line.')).toHaveValue('Fry it.\nBake it.');
 });

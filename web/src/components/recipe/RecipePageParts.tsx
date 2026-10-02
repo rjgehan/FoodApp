@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { imageUrl } from '../../api/client';
 import type { RecipeIngredient, SourceLink } from '../../api/types';
 import { formatQuantity } from '../../utils/recipeFormat';
@@ -22,18 +22,70 @@ export function RecipeTabs({
   value,
   onChange,
   counts,
+  bar,
 }: {
   value: RecipeTab;
   onChange: (tab: RecipeTab) => void;
   counts: Record<RecipeTab, number>;
+  /**
+   * On a phone, once the tabs pin, the hero's back and ••• have scrolled away: a compact bar
+   * comes in above the tabs with them and the recipe's name, so a long method still has a way out.
+   */
+  bar?: { title: string; onBack: () => void; backLabel: string; actions?: ReactNode };
 }) {
   const tabs: { value: RecipeTab; label: string }[] = [
     { value: 'ingredients', label: 'Ingredients' },
     { value: 'method', label: 'Method' },
     { value: 'photos', label: 'Photos' },
   ];
+  const sentinel = useRef<HTMLDivElement>(null);
+  const sticky = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    // Pinned is when the tabs have left the place they sit in the page: the marker just above
+    // them carries on scrolling up while they stay put.
+    const check = () => {
+      const mark = sentinel.current?.getBoundingClientRect().top;
+      const tabsTop = sticky.current?.getBoundingClientRect().top;
+      if (mark !== undefined && tabsTop !== undefined) setPinned(mark < tabsTop - 1);
+    };
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => {
+      window.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+  }, []);
+
   return (
-    <div className="sticky top-0 z-10 -mx-5 bg-bg px-5 pt-safe md:top-16 md:mx-0 md:px-0 md:pt-0">
+    <>
+      {bar && pinned && (
+        <div className="material-bar fixed inset-x-0 top-0 z-20 pt-safe md:hidden">
+          <div className="mx-auto flex h-11 max-w-3xl items-center gap-2 px-3">
+            <button
+              type="button"
+              onClick={bar.onBack}
+              aria-label={bar.backLabel}
+              className="press flex h-9 w-9 shrink-0 items-center justify-center text-accent-ink"
+            >
+              <Icon name="chevL" size={22} strokeWidth={2.2} />
+            </button>
+            <p className="min-w-0 flex-1 truncate text-center text-[1.0625rem] font-semibold">{bar.title}</p>
+            <div className="flex shrink-0 items-center gap-1 text-ink">{bar.actions}</div>
+          </div>
+        </div>
+      )}
+      <div ref={sentinel} aria-hidden="true" />
+      <div
+        ref={sticky}
+        className={cx(
+          'sticky z-10 -mx-5 bg-bg px-5 md:top-16 md:mx-0 md:px-0',
+          // Pinned under the compact bar, which covers the status bar too.
+          bar ? 'top-[calc(2.75rem+env(safe-area-inset-top))]' : 'top-0 pt-safe md:pt-0',
+        )}
+      >
       <div role="tablist" aria-label="Recipe" className="flex border-b border-line">
         {tabs.map((t) => {
           const on = t.value === value;
@@ -57,7 +109,8 @@ export function RecipeTabs({
           );
         })}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

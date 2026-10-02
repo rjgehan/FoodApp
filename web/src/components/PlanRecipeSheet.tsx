@@ -173,8 +173,9 @@ export default function PlanRecipeSheet({
         </div>
 
         {already ? (
+          // A meal can hold a recipe only once (the server says 409), so say what to do instead.
           <NoteBox tone="mustard" icon="alert">
-            {ownName} is already on {dayName} {mealLabel.toLowerCase()}.
+            Already on {dayName} {mealLabel.toLowerCase()}. Pick another day or meal.
           </NoteBox>
         ) : others.length > 0 ? (
           <NoteBox tone="mustard" icon="alert">

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { usePushedScreen } from '../components/Layout';
+import { useTablessScreen } from '../components/Layout';
 import { Button, Card, EmptyState, NavBar } from '../components/ui';
 import RecipeForm from '../components/RecipeForm';
 import { DeleteRecipeAlert } from '../components/recipe/RecipeSheets';
@@ -16,7 +16,7 @@ export default function EditRecipePage() {
   const { recipeId } = useParams<{ recipeId: string }>();
   const { activeHouseholdId, households } = useHousehold();
   const navigate = useNavigate();
-  usePushedScreen();
+  useTablessScreen();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);

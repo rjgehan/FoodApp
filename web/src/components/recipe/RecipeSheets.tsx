@@ -35,7 +35,9 @@ export function RecipeOptionsSheet({
   onClose: () => void;
 }) {
   const moving = recipe.shared && !recipe.section;
-  const pictures = new Set([recipe.coverImageId, ...recipe.photoIds].filter(Boolean)).size;
+  // The cover is named on its own, so the count is the other photos (the mockup's "Cover photo,
+  // 4 photos"), not the cover twice.
+  const pictures = new Set(recipe.photoIds.filter((id) => id !== recipe.coverImageId)).size;
   const media = [
     recipe.coverImageId ? 'Cover photo' : null,
     pictures ? `${pictures} ${pictures === 1 ? 'photo' : 'photos'}` : null,
@@ -47,7 +49,8 @@ export function RecipeOptionsSheet({
   ].filter(Boolean);
 
   return (
-    <Sheet title={recipe.name} label="Recipe options" onClose={onClose}>
+    // No title row, as in the mockup's 3.11: the rows are the whole sheet, under its handle.
+    <Sheet title={recipe.name} label="Recipe options" head={<></>} onClose={onClose}>
       <div className="flex flex-col gap-3.5">
         <List label="Recipe" inset={0}>
           {!moving && (
@@ -341,16 +344,19 @@ export function DeleteRecipeAlert({
         </>
       }
     >
+      {/* One short paragraph, as the mockup's 3.20. The server does not say whose plans it is
+          on, or when, so it names who it is shared with and says "if". */}
       <div className="flex flex-col gap-2">
         {named.length > 0 ? (
           <p>
-            It's shared with <NameList names={named.map((h) => h.name)} />. If it's on their plan, their plan will keep the
-            name as text.
+            It's shared with <NameList names={named.map((h) => h.name)} />: if it's on their plan, it stays there as
+            text. This can't be undone.
           </p>
         ) : elsewhere ? (
-          <p>Anyone else who planned it keeps the meal on their plan, with the name as text.</p>
-        ) : null}
-        <p>It comes off your plan and any share link stops working. This can't be undone.</p>
+          <p>Anyone who planned it keeps the name on their plan as text. This can't be undone.</p>
+        ) : (
+          <p>It comes off your plan and any share link stops working. This can't be undone.</p>
+        )}
         {error && <ErrorText>{error}</ErrorText>}
       </div>
     </Alert>

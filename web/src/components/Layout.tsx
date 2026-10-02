@@ -52,6 +52,22 @@ export function usePushedScreen() {
 }
 
 /**
+ * A screen you finish or back out of — Share, New recipe and its ways in, Edit — hides the phone's
+ * tab bar too, as the mockup draws them (3.12–3.16, 3.20): only the home indicator below, and the
+ * long forms' last buttons are not under the tabs.
+ */
+const TablessScreen = createContext<(tabless: boolean) => void>(() => {});
+
+export function useTablessScreen() {
+  usePushedScreen();
+  const set = useContext(TablessScreen);
+  useEffect(() => {
+    set(true);
+    return () => set(false);
+  }, [set]);
+}
+
+/**
  * The app's frame. On a phone: the mockup's top bar (household pill on the left; ideas and your
  * initial on the right) over the page, and the tab bar pinned to the bottom. On a wide screen the
  * tabs move up into the header and the page gets more room.
@@ -70,6 +86,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [joining, setJoining] = useState(false);
   const [pushed, setPushed] = useState(false);
+  const [tabless, setTabless] = useState(false);
   const {
     households,
     activeHouseholdId,
@@ -186,6 +203,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   return (
     <PushedScreen.Provider value={setPushed}>
+      <TablessScreen.Provider value={setTabless}>
       <CompactTitleProvider value={setCompactTitle}>
         <div className="min-h-screen">
           <header
@@ -407,12 +425,23 @@ export default function Layout({ children }: { children: ReactNode }) {
           )}
 
           {/* Bottom padding clears the tab bar plus the home indicator. */}
-          <main className={cx(container, 'px-5 pb-32 pt-1 md:px-8 md:pb-12 md:pt-4')}>{children}</main>
+          <main
+            className={cx(
+              container,
+              'px-5 pt-1 md:px-8 md:pb-12 md:pt-4',
+              tabless ? 'pb-[max(env(safe-area-inset-bottom),1.5rem)]' : 'pb-32',
+            )}
+          >
+            {children}
+          </main>
 
           <Toaster />
 
           {/* The tab bar (phones): 84px with the home indicator, tomato for the tab you're on. */}
-          <nav aria-label="Tabs" className="tab-bar fixed inset-x-0 bottom-0 z-20 border-t border-line pb-safe md:hidden">
+          <nav
+            aria-label="Tabs"
+            className={cx('tab-bar fixed inset-x-0 bottom-0 z-20 border-t border-line pb-safe md:hidden', tabless && 'hidden')}
+          >
             <div className="mx-auto flex max-w-xl justify-around px-1.5 pb-2 pt-2">
               {navItems.map(({ to, label, icon }) => (
                 <NavLink
@@ -437,6 +466,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </CompactTitleProvider>
+      </TablessScreen.Provider>
     </PushedScreen.Provider>
   );
 }
