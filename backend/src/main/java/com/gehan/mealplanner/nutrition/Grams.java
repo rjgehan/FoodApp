@@ -385,7 +385,11 @@ public final class Grams {
         if (key.equals("can")) {
             // A standard 400 g tin; drained, about 240 g of it is the food — unless it is one of
             // the things sold in smaller tins.
-            boolean drained = food.name().toLowerCase(Locale.ROOT).contains("drained");
+            // Tinned beans and pulses are drained before they go in, whatever the USDA row says.
+            String foodName = food.name().toLowerCase(Locale.ROOT);
+            boolean drained = foodName.contains("drained") || (foodName.contains("canned")
+                    && food.category() != null && food.category().startsWith("Legumes")
+                    && !foodName.contains("baked") && !foodName.contains("refried"));
             double[] tin = tinSize(name, food);
             double grams = drained ? tin[1] : tin[0];
             return Optional.of(new Each(grams, How.TYPICAL, "a " + tidy(tin[0]) + " g tin"

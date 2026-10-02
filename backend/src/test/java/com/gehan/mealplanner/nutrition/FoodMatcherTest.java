@@ -105,6 +105,12 @@ class FoodMatcherTest {
     }
 
     @Test
+    void butterBeansAreLimaBeansNotGreenBeans() {
+        assertThat(best("butter beans")).isEqualTo(174254);
+        assertThat(best("tinned butter beans")).isEqualTo(174254);
+    }
+
+    @Test
     void britishNamesUSDAHasNoRowForUseTheNearestStandIn() {
         assertThat(best("crème fraîche")).isEqualTo(170858);
         assertThat(best("halloumi")).isEqualTo(2647442);

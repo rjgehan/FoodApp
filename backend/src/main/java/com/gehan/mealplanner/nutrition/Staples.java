@@ -191,6 +191,9 @@ final class Staples {
             // Beans, nuts, seeds
             Map.entry(173800, List.of("chickpeas", "chickpea", "tinned chickpeas", "canned chickpeas")),
             Map.entry(174285, List.of("kidney beans", "red kidney beans")),
+            // Butter beans are large lima beans; sold in tins in the UK, so the canned row.
+            Map.entry(174254, List.of("butter beans", "butter bean", "tinned butter beans", "canned butter beans",
+                    "lima beans", "large lima beans")),
             Map.entry(175238, List.of("black beans")),
             Map.entry(172420, List.of("lentils", "red lentils", "green lentils", "puy lentils", "brown lentils")),
             Map.entry(172475, List.of("tofu", "firm tofu", "extra firm tofu")),

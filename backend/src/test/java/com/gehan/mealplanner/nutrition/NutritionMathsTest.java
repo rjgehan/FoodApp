@@ -96,6 +96,8 @@ class NutritionMathsTest {
     void tinsAreAStandard400gAndDrainedFoodsAreWhatIsLeft() {
         assertThat(grams(1, "tin", "chopped tomatoes", 170051).grams()).isEqualTo(400);
         assertThat(grams(1, "can", "chickpeas", 173800).grams()).isEqualTo(240);
+        // Butter beans' USDA row doesn't say "drained", but tinned pulses always are.
+        assertThat(grams(1, "tin", "butter beans", 174254).grams()).isEqualTo(240);
     }
 
     @Test
