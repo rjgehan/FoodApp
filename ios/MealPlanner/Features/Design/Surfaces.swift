@@ -97,11 +97,13 @@ struct ListRow<Leading: View, Trailing: View>: View {
     var titleColor: Color?
     /// Lets the subtitle wrap rather than end in "…".
     var wrapSubtitle = false
+    /// A subtitle that is a warning ("Past its date") rather than a quiet note.
+    var subtitleColor: Color?
     var leading: Leading
     var trailing: Trailing
 
     init(_ title: String, subtitle: String? = nil, detail: String? = nil, chevron: Bool = false,
-         titleColor: Color? = nil, wrapSubtitle: Bool = false,
+         titleColor: Color? = nil, wrapSubtitle: Bool = false, subtitleColor: Color? = nil,
          @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
@@ -109,6 +111,7 @@ struct ListRow<Leading: View, Trailing: View>: View {
         self.chevron = chevron
         self.titleColor = titleColor
         self.wrapSubtitle = wrapSubtitle
+        self.subtitleColor = subtitleColor
         self.leading = leading()
         self.trailing = trailing()
     }
@@ -123,8 +126,8 @@ struct ListRow<Leading: View, Trailing: View>: View {
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.rowSubtitle)
-                        .foregroundStyle(Palette.muted)
+                        .font(subtitleColor == nil ? .rowSubtitle : .system(size: 13, weight: .semibold))
+                        .foregroundStyle(subtitleColor ?? Palette.muted)
                         .lineLimit(wrapSubtitle ? nil : 1)
                 }
             }
@@ -156,9 +159,10 @@ extension ListRow where Leading == EmptyView, Trailing == EmptyView {
 
 extension ListRow where Leading == EmptyView {
     init(_ title: String, subtitle: String? = nil, detail: String? = nil, chevron: Bool = false,
-         titleColor: Color? = nil, wrapSubtitle: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+         titleColor: Color? = nil, wrapSubtitle: Bool = false, subtitleColor: Color? = nil,
+         @ViewBuilder trailing: () -> Trailing) {
         self.init(title, subtitle: subtitle, detail: detail, chevron: chevron, titleColor: titleColor,
-                  wrapSubtitle: wrapSubtitle, leading: { EmptyView() }, trailing: trailing)
+                  wrapSubtitle: wrapSubtitle, subtitleColor: subtitleColor, leading: { EmptyView() }, trailing: trailing)
     }
 }
 

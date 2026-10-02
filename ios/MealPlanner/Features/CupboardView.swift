@@ -392,6 +392,23 @@ extension CupboardItem {
     }
 }
 
+/**
+ When to use it, at a glance: "by Thu" for a date on the packet, "soon" for the server's guess,
+ and "Past date" in the warning tone — that one is to check, not to cook first.
+ */
+struct UseSoonPill: View {
+    let item: CupboardItem
+
+    var body: some View {
+        let past = item.useSoonLabel == "past its date"
+        if let label = item.useSoonLabel, item.useSoon == true || past {
+            Pill(past ? "Past date" : label, tone: past ? .accent : .mustard,
+                 systemImage: past ? "exclamationmark.triangle" : item.useSoonGuess == true ? nil : "clock")
+                .fixedSize()
+        }
+    }
+}
+
 /// One cupboard row: the name, a quiet line under it, and on the right the one thing you check.
 struct CupboardRow: View {
     let item: CupboardItem
@@ -417,6 +434,7 @@ struct CupboardRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            UseSoonPill(item: item)
             if item.staple {
                 // "Always have" means it is never low, so there is nothing to toggle.
                 Pill("Always", tone: .herb, systemImage: "checkmark")
@@ -612,7 +630,13 @@ struct CupboardItemSheet: View {
                 // Only offered by a server that keeps the date; an older one would drop it.
                 if item.serverKnowsUseBy {
                     ListGroup {
-                        ListRow("Use by", subtitle: useBy.map(UseByDate.reminder) ?? "Optional · plans use it up in time") {
+                        let past = useBy.map { UseByDate.shown($0) == "Past its date" } ?? false
+                        let guessed = useBy == nil && item.useSoonGuess == true
+                        ListRow("Use by",
+                                subtitle: useBy.map(UseByDate.reminder)
+                                    ?? (guessed ? "No date · we guess it wants using soon" : "Optional · plans use it by then"),
+                                wrapSubtitle: true,
+                                subtitleColor: past ? Palette.danger : guessed ? Palette.mustard : nil) {
                             Toggle("Use by", isOn: Binding(
                                 get: { useBy != nil },
                                 set: { useBy = $0 ? (useBy ?? UseByDate.inDays(3)) : nil }
@@ -739,10 +763,11 @@ enum UseByDate {
     /// Under the switch, beside a date picker that already shows the date: what it means.
     static func reminder(_ date: Date) -> String {
         switch shown(date) {
-        case "Past its date": return "Past its date"
+        case "Past its date": return "Past its date: check it"
         case "Today": return "Use it today"
         case "Tomorrow": return "Use it by tomorrow"
-        default: return "Plans use it up in time"
+        // Plans now use a dated thing only on or before its date, and never after.
+        default: return "Plans use it by then"
         }
     }
 

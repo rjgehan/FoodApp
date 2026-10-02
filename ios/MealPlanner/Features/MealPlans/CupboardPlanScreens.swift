@@ -48,6 +48,14 @@ struct CupboardSetupScreen: View {
     #endif
 
     private var count: Int { dates.count * meals.count }
+    /// Only the slots with nothing on the Plan yet: the draft never goes over a planned meal.
+    private var open: Int {
+        guard let setup else { return count }
+        return dates.reduce(0) { n, date in
+            let planned = setup.days.first { $0.date == date }?.planned ?? []
+            return n + meals.filter { !planned.contains($0) }.count
+        }
+    }
     private var chosen: [UseFirstItem] { (setup?.useFirst ?? []).filter { useFirst.contains($0.ingredientId) } }
 
     var body: some View {
@@ -120,6 +128,19 @@ struct CupboardSetupScreen: View {
                      : "Nothing chosen: the plan just uses whatever is in.")
                     .font(.system(size: 13)).foregroundStyle(Palette.muted)
             }
+            if let past = setup.pastDate, !past.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Past its date: check before eating", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.danger)
+                    Text("\(past.map(\.name).joined(separator: ", ")). \(past.count == 1 ? "It isn't" : "They aren't") used in the plan.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityElement(children: .combine)
+            }
             if guessing {
                 ModelWorkingNote(text: "Apple Intelligence is checking what else wants using soon…")
             } else if setup.useFirst.contains(where: { $0.reason == "ai" }) {
@@ -169,11 +190,18 @@ struct CupboardSetupScreen: View {
         Button {
             Task { await generate() }
         } label: {
-            Label(busy ? "Building…" : count == 0 ? "Choose days and meals" : "Generate \(count) \(count == 1 ? "meal" : "meals")",
+            Label(busy ? "Building…" : count == 0 ? "Choose days and meals"
+                  : open == 0 ? "Those meals are planned already" : "Generate \(open) \(open == 1 ? "meal" : "meals")",
                   systemImage: "sparkles")
         }
         .buttonStyle(.primary)
-        .disabled(busy || count == 0)
+        .disabled(busy || open == 0)
+        if open > 0 && open < count {
+            Text("\(count - open) of the \(count) are on the Plan already and stay as they are.")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
+        }
     }
 
     private func toggle<T: Hashable>(_ set: inout Set<T>, _ value: T) {
@@ -233,7 +261,7 @@ struct CupboardSetupScreen: View {
     }
 
     private func generate() async {
-        guard let household = session.household?.id, count > 0, setup != nil else { return }
+        guard let household = session.household?.id, open > 0, setup != nil else { return }
         let request = CupboardPlanRequest(dates: dates.sorted(), meals: MealPlanText.order.filter { meals.contains($0) },
                                           useFirst: useFirst, buyLimit: buyLimit, onlyMine: onlyMine, servings: servings)
         busy = true
