@@ -1113,7 +1113,9 @@ export function Sheet({
         aria-label={label ?? (head && typeof title === 'string' ? title : undefined)}
         aria-labelledby={label || head ? undefined : titleId}
         className={cx(
-          'relative flex w-full flex-col rounded-t-sheet bg-bg pb-safe shadow-[0_-6px_30px_rgba(0,0,0,0.18)] will-change-transform',
+          // Clipped to its corners, so a footer pinned to the bottom (Stock your cupboard's) is
+          // rounded off with it rather than squaring the corners on a computer screen.
+          'relative flex w-full flex-col overflow-hidden rounded-t-sheet bg-bg pb-safe shadow-[0_-6px_30px_rgba(0,0,0,0.18)] will-change-transform',
           'sm:max-w-lg sm:rounded-sheet sm:shadow-lift',
           tall ? 'h-[calc(100%-1.5rem)] sm:h-[min(44rem,88vh)]' : 'max-h-[calc(100%-1.5rem)] sm:max-h-[88vh]',
         )}
@@ -1205,7 +1207,8 @@ export function Alert({
         )}
       >
         {icon && <Tile icon={icon} tone={tone} size={centered ? 56 : 48} />}
-        <h2 id={titleId} className="title-section !text-[1.25rem]">
+        {/* Balanced, so a long title does not leave one word ("house") on a line of its own. */}
+        <h2 id={titleId} className="title-section !text-[1.25rem] [text-wrap:balance]">
           {title}
         </h2>
         {children && <div className="text-sm leading-[1.45] text-muted">{children}</div>}
@@ -1268,7 +1271,8 @@ export function ConfirmAlert({
 export type MenuItem = {
   label: ReactNode;
   onSelect: () => void;
-  tone?: 'danger';
+  /** `plain` keeps the text colour in an action sheet, so the one danger row stands out. */
+  tone?: 'danger' | 'plain';
   disabled?: boolean;
   /** An icon on a tile, leading the row. */
   icon?: IconName;
@@ -1337,11 +1341,11 @@ export function MenuList({ items, onPicked }: { items: MenuItem[]; onPicked: (it
           lead={item.icon ? <Tile icon={item.icon} tone={item.iconTone ?? 'accent'} size={34} /> : undefined}
           title={item.label}
           subtitle={item.detail}
-          tone={item.tone}
+          tone={item.tone === 'danger' ? 'danger' : undefined}
           disabled={item.disabled}
           onClick={() => onPicked(item)}
           // Without icons it is the iOS action sheet: every choice in the accent's ink.
-          titleClassName={!item.icon && item.tone !== 'danger' ? 'text-accent-ink' : undefined}
+          titleClassName={!item.icon && !item.tone ? 'text-accent-ink' : undefined}
         />
       ))}
     </List>

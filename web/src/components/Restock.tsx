@@ -311,7 +311,7 @@ function RestockPromptSheet({
                   type="button"
                   aria-pressed={on}
                   onClick={() => toggle(item.ingredientId)}
-                  className="press flex min-h-[3.875rem] w-full items-center gap-3.5 px-4 py-3 text-left active:bg-surface2"
+                  className="press flex min-h-[3.875rem] w-full items-center gap-3.5 px-4 py-[9px] text-left active:bg-surface2"
                 >
                   <CheckBox checked={on} />
                   <span className="min-w-0 flex-1">

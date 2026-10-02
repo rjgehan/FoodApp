@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { Idea, IdeaStatus, Me } from '../api/types';
-import { usePushedScreen } from '../components/Layout';
+import { useTablessScreen } from '../components/Layout';
 import { Icon, type IconName } from '../components/icons';
 import {
   ActionMenu,
@@ -71,7 +71,8 @@ const STATUS: Record<IdeaStatus, { pill: string; tone: PillTone; icon?: IconName
  * the ideas they want — theirs included. One board for the whole app, not one per house.
  */
 export default function IdeasPage() {
-  usePushedScreen();
+  // A pushed page with no tab bar under it, as the mockup draws it (7.5).
+  useTablessScreen();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const view = viewFrom(params);
@@ -200,7 +201,8 @@ export default function IdeasPage() {
                 aria-selected={view === v.value}
                 active={view === v.value}
                 onClick={() => setParams(paramsFor(v.value), { replace: true })}
-                className="!px-[15px] !py-2 !text-[0.875rem]"
+                // The mockup's chip: 32px tall.
+                className="!h-8 !px-3.5 !py-0 !text-[0.875rem]"
               >
                 {v.label}
               </Chip>
@@ -257,7 +259,7 @@ export default function IdeasPage() {
 
       {suggesting && (
         <Sheet title="Suggest an idea" onClose={() => setSuggesting(false)}>
-          <IdeaForm submitLabel="Post idea" busyLabel="Posting…" onSubmit={suggest} onCancel={() => setSuggesting(false)} />
+          <IdeaForm submitLabel="Post idea" busyLabel="Posting…" onSubmit={suggest} />
         </Sheet>
       )}
     </div>
@@ -315,9 +317,14 @@ function IdeaCard({
   }
 
   const menu: (MenuItem | false)[] = [
-    idea.mine && { label: 'Edit', onSelect: () => setEditing(true) },
+    // In the text colour, so Delete is the one row in tomato.
+    idea.mine && { label: 'Edit', tone: 'plain' as const, onSelect: () => setEditing(true) },
     ...(admin
-      ? STATUSES.filter((s) => s !== idea.status).map((s) => ({ label: STATUS[s].action, onSelect: () => setStatus(s) }))
+      ? STATUSES.filter((s) => s !== idea.status).map((s) => ({
+          label: STATUS[s].action,
+          tone: 'plain' as const,
+          onSelect: () => setStatus(s),
+        }))
       : []),
     (idea.mine || admin) && { label: 'Delete', tone: 'danger' as const, onSelect: () => setConfirming(true) },
   ];
@@ -385,7 +392,7 @@ function IdeaCard({
 
       {editing && (
         <Sheet title="Edit idea" onClose={() => setEditing(false)}>
-          <IdeaForm initial={idea} submitLabel="Save" busyLabel="Saving…" onSubmit={save} onCancel={() => setEditing(false)} />
+          <IdeaForm initial={idea} submitLabel="Save" busyLabel="Saving…" onSubmit={save} />
         </Sheet>
       )}
     </li>
@@ -398,13 +405,11 @@ function IdeaForm({
   submitLabel,
   busyLabel,
   onSubmit,
-  onCancel,
 }: {
   initial?: Idea;
   submitLabel: string;
   busyLabel: string;
   onSubmit: (title: string, details: string) => Promise<void>;
-  onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [details, setDetails] = useState(initial?.details ?? '');
@@ -450,12 +455,9 @@ function IdeaForm({
         />
       </Field>
       {error && <ErrorText>{error}</ErrorText>}
-      <div className="flex flex-col gap-1 pt-1">
+      <div className="pt-1">
         <Button type="submit" size="lg" full disabled={busy || !title.trim()}>
           {busy ? busyLabel : submitLabel}
-        </Button>
-        <Button type="button" variant="ghost" size="lg" full className="!h-10 -mt-1" disabled={busy} onClick={onCancel}>
-          Cancel
         </Button>
       </div>
     </form>

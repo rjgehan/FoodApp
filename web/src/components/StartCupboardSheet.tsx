@@ -105,15 +105,15 @@ export default function StartCupboardSheet({
           const open = group.items.filter((i) => !i.have).map((i) => i.name);
           const allOn = open.length > 0 && open.every((name) => chosen.has(name));
           return (
-            <section key={group.name} aria-label={group.name} className={index === 0 ? undefined : 'pt-4'}>
-              <div className="flex min-h-9 items-center justify-between gap-3 pb-1.5">
+            <section key={group.name} aria-label={group.name} className={index === 0 ? undefined : 'pt-3'}>
+              <div className="flex min-h-8 items-center justify-between gap-3 pb-1">
                 <h3 className="group-label">{group.name}</h3>
                 {open.length > 0 && (
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="-mr-3"
+                    className="-my-1 -mr-3"
                     onClick={() => toggleGroup(open, !allOn)}
                     aria-label={`${allOn ? 'Clear' : 'Select all in'} ${group.name}`}
                   >
@@ -133,7 +133,8 @@ export default function StartCupboardSheet({
                         title={item.have ? 'Already in the cupboard' : undefined}
                         onClick={() => toggle(item.name)}
                         className={cx(
-                          'press inline-flex min-h-[2.375rem] items-center gap-1.5 rounded-full border px-3.5 text-[0.9375rem] font-medium',
+                          // The mockup's chip: 32px tall, 14px words.
+                          'press inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium',
                           'transition-colors duration-150',
                           item.have
                             ? 'border-herb-soft bg-herb-soft text-herb'
@@ -143,9 +144,9 @@ export default function StartCupboardSheet({
                         )}
                       >
                         {on ? (
-                          <Icon name="check" size={14} strokeWidth={3} className="pop -ml-0.5 shrink-0" />
+                          <Icon name="check" size={13} strokeWidth={3} className="pop -ml-0.5 shrink-0" />
                         ) : (
-                          <Icon name="plus" size={14} className="-ml-0.5 shrink-0" />
+                          <Icon name="plus" size={13} className="-ml-0.5 shrink-0" />
                         )}
                         {/* Named as recipes name them, lower case; shown the way the mockup writes them. */}
                         <span className="inline-block first-letter:uppercase">{item.name}</span>

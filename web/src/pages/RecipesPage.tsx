@@ -39,7 +39,11 @@ export default function RecipesPage() {
     if (!activeHouseholdId) return;
     setRecipes(null);
     setSavedLinks(null);
-    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`).then(setRecipes);
+    // Refused when you have just been taken out of this house: the switch to another of yours
+    // loads that one's, so this one is let go rather than left as an uncaught error.
+    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`)
+      .then(setRecipes)
+      .catch(() => {});
     api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`)
       .then(setCategories)
       .catch(() => setCategories([]));

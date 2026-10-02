@@ -62,12 +62,22 @@ export default function CredentialsPrompt() {
       <Sheet
         title="You're all set"
         onClose={() => setOpen(false)}
-        head={<PromptHead stacked icon="check" tone="herb" title="You're all set" />}
+        head={
+          <PromptHead
+            stacked
+            icon="check"
+            tone="herb"
+            title="You're all set"
+            // Wrapped anywhere only when it must: a short address moves whole to the next line.
+            line={
+              <>
+                Saved. Next time, sign in with <span className="break-words font-semibold text-ink">{savedEmail}</span>{' '}
+                and your new password.
+              </>
+            }
+          />
+        }
       >
-        <p className="mb-5 text-[0.9375rem] leading-[1.45] text-muted">
-          Saved. Next time, sign in with <span className="break-all font-semibold text-ink">{savedEmail}</span> and
-          your new password.
-        </p>
         <Button type="button" size="lg" full onClick={() => setOpen(false)}>
           Done
         </Button>

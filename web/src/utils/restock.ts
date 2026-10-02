@@ -1,10 +1,15 @@
 /** The choices offered first, in days. Anything else is "every N days". */
 export const RESTOCK_PRESETS = [7, 14, 21, 28];
 
-/** "every 3 weeks", "every week", "every 10 days" — lower case, to sit in a line of detail. */
+/**
+ * "every 3 weeks", "every week", "every month", "every 10 days" — lower case, to sit in a line
+ * of detail. Four weeks reads as a month, the way people say it (mockup 7.2: "Every month").
+ */
 export function everyLabel(days: number): string {
   if (days === 1) return 'every day';
   if (days === 7) return 'every week';
+  if (days === 28) return 'every month';
+  if (days % 28 === 0) return `every ${days / 28} months`;
   if (days % 7 === 0) return `every ${days / 7} weeks`;
   return `every ${days} days`;
 }
