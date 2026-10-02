@@ -235,6 +235,16 @@ class NutritionMathsTest {
     }
 
     @Test
+    void withNothingCountedTheNoteDoesNotTalkAboutFigures() {
+        RecipeNutrition maths = new RecipeNutrition(null, null, table, null, null);
+        var sum = maths.add(List.of(line("salt", null, null, 173468, false, true),
+                line("grandma's secret mix", "1", null, null, false, true)));
+        assertThat(sum.counted()).isEmpty();
+        assertThat(RecipeNutrition.note(sum)).isEqualTo("Nothing in this recipe could be counted yet. "
+                + "Salt has no amount, so isn't counted. Grandma's secret mix isn't in the food data yet.");
+    }
+
+    @Test
     void thePlanAverageIsOfTheFullerDays() {
         assertThat(PlanNutrition.note(5, 3, 8, 8)).isEqualTo("Per person, one serving of each meal. All 8 planned "
                 + "meals counted. The average is over the 3 days with two or more meals counted; days with only one "

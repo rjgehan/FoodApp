@@ -258,9 +258,14 @@ public class RecipeNutrition {
         return new Sum(total, counted, optional, noAmount, noMatch, noWeight);
     }
 
-    /** "Figures are estimates from ingredient data. Optional coriander not counted." */
+    /**
+     * "Figures are estimates from ingredient data. Optional coriander not counted." With nothing
+     * counted there are no figures to be estimates, so it says that instead.
+     */
     static String note(Sum sum) {
-        StringBuilder note = new StringBuilder("Figures are estimates from ingredient data.");
+        StringBuilder note = new StringBuilder(sum.counted().isEmpty()
+                ? "Nothing in this recipe could be counted yet."
+                : "Figures are estimates from ingredient data.");
         if (!sum.optionalLeftOut().isEmpty()) {
             note.append(sum.optionalLeftOut().size() == 1
                     ? " Optional " + lower(sum.optionalLeftOut().get(0).name()) + " not counted."
