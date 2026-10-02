@@ -165,6 +165,8 @@ export interface PlanDay {
   mealsPlanned: number;
   mealsCounted: number;
   partial: boolean;
+  /** Two or more meals counted: one of the days the average is of. */
+  fuller?: boolean;
 }
 
 export interface PlanNutrition {
@@ -178,6 +180,31 @@ export interface PlanNutrition {
   reference: Reference;
   note: string;
   attribution: Attribution;
+  /** How many days the average is of, and which: the fuller ones, partly planned ones, or none. */
+  averageDays?: number;
+  averageOver?: 'fuller' | 'partial' | 'none';
+}
+
+/**
+ * What the week's average is of, for the line under it: "Average of the 3 days with two or more
+ * meals planned", or "Average of 2 partly planned days" when no day has more than one meal yet —
+ * so a week of single dinners is not read as how much anyone eats.
+ */
+export function averageWords(week: PlanNutrition, short = false): string {
+  const n = week.averageDays ?? week.daysCounted;
+  const days = n === 1 ? 'day' : 'days';
+  // An older server says nothing of fuller days: its average is of every day with a meal.
+  if (week.averageOver == null) return short ? "Daily average of this week's plan" : '';
+  if (week.averageOver === 'partial') {
+    return short
+      ? `Average of ${n} partly planned ${days}`
+      : `No day has two meals planned yet, so the average is of ${n} partly planned ${days}.`;
+  }
+  if (short) return `Average of ${n} ${days} with 2+ meals planned`;
+  const left = week.daysCounted - n;
+  return `The average is of the ${n === 1 ? 'one day' : `${n} days`} with two or more meals planned${
+    left > 0 ? `; ${left === 1 ? 'a day' : `${left} days`} with one meal ${left === 1 ? 'is' : 'are'} left out` : ''
+  }.`;
 }
 
 export interface FoodHit {

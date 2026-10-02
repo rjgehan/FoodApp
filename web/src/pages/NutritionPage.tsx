@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import {
+  averageWords,
   BARCODE,
   foodTitle,
   gramsText,
@@ -218,8 +219,9 @@ function plainFoodName(name: string) {
 
 /**
  * This week's plan (5.4): the average day for one person, a bar a day, and the day's protein,
- * carbs and fat on average. Days with nothing counted are left out of the average, and the line
- * under it says how many meals the numbers stand on.
+ * carbs and fat on average. The average is of the days with two or more meals counted, when
+ * there are any (a day with only its dinner planned is a third of a day, and is drawn faint);
+ * the pill and the line under it say which days and how many meals the numbers stand on.
  */
 function WeekCard({ week, failed, today }: { week: PlanNutrition | null; failed: boolean; today: string }) {
   if (failed) {
@@ -230,6 +232,8 @@ function WeekCard({ week, failed, today }: { week: PlanNutrition | null; failed:
     );
   }
   const counted = week ? week.daysCounted : 0;
+  const over = week ? week.averageDays ?? counted : 0;
+  const partly = week?.averageOver === 'partial';
   return (
     <section aria-label="This week's plan" className="card flex flex-col gap-3.5 p-4 md:p-5">
       <div className="flex items-start justify-between gap-3">
@@ -240,8 +244,8 @@ function WeekCard({ week, failed, today }: { week: PlanNutrition | null; failed:
           </p>
         </div>
         {week && counted > 0 && (
-          <Pill tone="sky" icon="calendar" className="mt-0.5 !px-2.5 !py-1 !text-[0.75rem]">
-            {counted} {counted === 1 ? 'day' : 'days'}
+          <Pill tone={partly ? 'mustard' : 'sky'} icon="calendar" className="mt-0.5 shrink-0 !px-2.5 !py-1 !text-[0.75rem]">
+            {over} {partly ? 'partly planned' : over === 1 ? 'day' : 'days'}
           </Pill>
         )}
       </div>
@@ -265,7 +269,7 @@ function WeekCard({ week, failed, today }: { week: PlanNutrition | null; failed:
               week.mealsCounted === week.mealsPlanned
                 ? `All ${week.mealsPlanned} planned ${week.mealsPlanned === 1 ? 'meal' : 'meals'} counted.`
                 : `${week.mealsCounted} of ${week.mealsPlanned} planned meals counted — places, links and foods without data aren't.`
-            }`
+            }${counted > 0 && averageWords(week) ? ` ${averageWords(week)}` : ''}`
           )}
         </p>
       )}

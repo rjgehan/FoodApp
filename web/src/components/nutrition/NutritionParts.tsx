@@ -196,19 +196,32 @@ export function MacroBar({ label, value, goal, tone }: { label: string; value: n
  */
 export function WeekChart({ days, today }: { days: PlanDay[]; today: string }) {
   const top = Math.max(2600, ...days.map((d) => d.totals.kcal ?? 0));
+  // A day with one meal counted is a part of a day, drawn faint and hatched, when the week has
+  // fuller days to average (an older server says nothing of fuller days: every bar is solid).
+  const anyFuller = days.some((d) => d.fuller);
   return (
     <ol aria-label="Calories each day" className="flex h-[110px] items-end justify-between px-1 md:h-[140px]">
       {days.map((d) => {
         const kcal = d.totals.kcal ?? 0;
         const counted = d.mealsCounted > 0 && kcal > 0;
         const meals = d.mealsPlanned === 0 ? 'nothing planned' : `${d.mealsCounted} of ${d.mealsPlanned} ${d.mealsPlanned === 1 ? 'meal' : 'meals'} counted`;
-        const said = `${weekday(d.date, 'long')}: ${counted ? `${kcalText(kcal)} kcal` : 'no calories counted'}, ${meals}`;
+        const part = counted && anyFuller && d.fuller === false;
+        const said = `${weekday(d.date, 'long')}: ${counted ? `${kcalText(kcal)} kcal` : 'no calories counted'}, ${meals}${part ? ', not in the average' : ''}`;
         return (
           <li key={d.date} aria-label={said} title={said} className="flex w-8 flex-col items-center gap-1.5 md:w-12">
             <span
               aria-hidden="true"
-              className={cx('w-[22px] rounded-[7px] md:w-7', !counted ? 'bg-line' : d.date === today ? 'bg-accent' : 'bg-herb')}
-              style={{ height: counted ? Math.max(6, (kcal / top) * 88) : 4 }}
+              className={cx(
+                'w-[22px] rounded-[7px] md:w-7',
+                !counted ? 'bg-line' : d.date === today ? 'bg-accent' : 'bg-herb',
+                part && 'opacity-40',
+              )}
+              style={{
+                height: counted ? Math.max(6, (kcal / top) * 88) : 4,
+                backgroundImage: part
+                  ? 'repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0 3px, transparent 3px 7px)'
+                  : undefined,
+              }}
             />
             <span aria-hidden="true" className="text-[0.6875rem] font-semibold text-muted">
               <span className="md:hidden">{dayLetter(d.date)}</span>

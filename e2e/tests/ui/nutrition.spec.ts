@@ -72,7 +72,8 @@ test("Explore's Nutrition door shows the week's plan, and opens on the week a da
   // One serving of the one meal planned this week: 215 kcal and 26 g of protein, for the day it is on.
   await expect(door.getByText('215', { exact: true })).toBeVisible();
   await expect(door.getByText('26g', { exact: true })).toBeVisible();
-  await expect(door.getByText("Daily average of this week's plan")).toBeVisible();
+  // One dinner is part of a day, and the door says so rather than calling 215 kcal a day's eating.
+  await expect(door.getByText('Average of 1 partly planned day')).toBeVisible();
   await expect(door.getByText('Coming soon')).toHaveCount(0);
 
   await door.click();
@@ -80,7 +81,7 @@ test("Explore's Nutrition door shows the week's plan, and opens on the week a da
   await expect(page.getByRole('heading', { name: 'Nutrition facts' })).toBeVisible();
   const week = page.getByRole('region', { name: "This week's plan" });
   await expect(week.getByText('215 kcal a day on average')).toBeVisible();
-  await expect(week.getByText('1 day', { exact: true })).toBeVisible();
+  await expect(week.getByText('1 partly planned', { exact: true })).toBeVisible();
   // Seven bars, today's with its numbers, the rest with nothing planned.
   const days = week.getByRole('list', { name: 'Calories each day' }).getByRole('listitem');
   await expect(days).toHaveCount(7);

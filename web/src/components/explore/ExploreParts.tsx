@@ -10,7 +10,7 @@ import { mealIcon } from '../plan/planModel';
 import { HeroButton } from '../recipe/RecipeHero';
 import RecipeClassifier from '../RecipeClassifier';
 import { Icon, type IconName } from '../icons';
-import { gramsText, kcalText, type PlanNutrition } from '../../api/nutrition';
+import { averageWords, gramsText, kcalText, type PlanNutrition } from '../../api/nutrition';
 import { MEAL_PLANS, planIcon, planPath, type MealPlansHome } from '../../api/mealPlans';
 import { Stat } from '../nutrition/NutritionParts';
 import { toast } from '../toast';
@@ -55,8 +55,10 @@ export function GlobalRecipesDoor({ count }: { count: number | null }) {
 
 /**
  * Nutrition facts' door (5.1): its tile, name and line, then the week's plan as three numbers —
- * a day's calories, protein and fibre on average, for one person. Until something on the plan
- * can be counted it says how to get some numbers, rather than showing noughts.
+ * a day's calories, protein and fibre on average, for one person, and which days that is of
+ * (the ones with two or more meals planned, or "partly planned" ones), so a week of dinners is
+ * not read as a day's eating. Until something on the plan can be counted it says how to get
+ * some numbers, rather than showing noughts.
  */
 export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
   const avg = week != null && week.daysCounted > 0 ? week.average : null;
@@ -80,7 +82,7 @@ export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
         <Stat value={avg ? gramsText(avg.fibre) : '–'} label="Fibre" tone="mustard" />
       </span>
       <span className="text-xs text-muted">
-        {week == null ? '\u00a0' : avg ? "Daily average of this week's plan" : 'Plan some meals and see what your week adds up to'}
+        {week == null ? '\u00a0' : avg ? averageWords(week, true) : 'Plan some meals and see what your week adds up to'}
       </span>
     </Link>
   );
