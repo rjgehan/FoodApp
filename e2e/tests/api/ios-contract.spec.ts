@@ -219,3 +219,87 @@ test('the cupboard sheet: the whole edit with a use-by date, clearing it, and an
   expect((await call('PATCH', url, { token, body: { staple: false } })).useBy).toBe(isoDate(2));
   expect((await call('PATCH', url, { token, body: { useBy: '' } })).useBy).toBeNull();
 });
+
+test('meal plans: the requests the phone sends, its Apple Intelligence picks, and the fields it decodes', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const base = `/api/households/${hh.id}/meal-plans`;
+  for (const name of ['chickpeas (tin)', 'baby spinach', 'onions']) {
+    await call('POST', `/api/households/${hh.id}/cupboard`, { token, body: { name } });
+  }
+  const curry = await newRecipe(hh.id, 'Phone curry', [
+    { name: 'chickpeas', qty: 2, unit: 'tins' }, { name: 'spinach', qty: 200, unit: 'g' }, { name: 'onions', qty: 1 },
+  ]);
+  const dal = await newRecipe(hh.id, 'Phone dal', [{ name: 'red lentils', qty: 200, unit: 'g' }, { name: 'onions', qty: 1 }]);
+
+  // GET /api/meal-plans: the door opens, and "candidates" says the server takes the model's picks.
+  expect((await call('GET', '/api/meal-plans', { token })).features).toContain('candidates');
+  const home = await call('GET', base, { token });
+  for (const key of ['cupboard', 'filters', 'plans', 'form']) expect(home).toHaveProperty(key);
+  const setup = await call('GET', `${base}/cupboard`, { token });
+  for (const key of ['items', 'useSoon', 'highlights', 'useFirst', 'days', 'defaultMeals', 'defaultDays', 'defaultBuyLimit',
+    'defaultOnlyMine', 'defaultServings', 'unsure']) expect(setup).toHaveProperty(key);
+
+  // CupboardPlanRequest as the phone encodes it: buyLimit always present (null is "any"), chosen only from the model.
+  const request = { dates: [isoDate(1), isoDate(2)], meals: ['DINNER'], useFirst: [], buyLimit: null, onlyMine: true, servings: 2 };
+  const candidates = await call('POST', `${base}/cupboard/candidates`, { token, body: { setup: request, exclude: [] } });
+  expect(candidates.recipes.map((r: any) => r.recipeId).sort()).toEqual([curry.id, dal.id].sort());
+  for (const key of ['recipeId', 'name', 'section', 'yours', 'fits', 'percentFromCupboard', 'uses', 'usesSoon', 'toBuy', 'score']) {
+    expect(candidates.recipes[0]).toHaveProperty(key);
+  }
+  const chosen = await call('POST', `${base}/cupboard`, {
+    token, body: { ...request, chosen: [
+      { date: isoDate(1), mealType: 'DINNER', recipeId: dal.id },
+      { date: isoDate(2), mealType: 'DINNER', recipeId: curry.id },
+    ] },
+  });
+  expect(chosen.meals.map((m: any) => m.recipeId)).toEqual([dal.id, curry.id]);
+  // A swap: the setup without the picks, the draft's meals, the slot, what was seen, and the model's choice.
+  const meals = chosen.meals.map((m: any) => ({ date: m.date, mealType: m.mealType, recipeId: m.recipeId }));
+  const one = await call('POST', `${base}/cupboard/candidates`, {
+    token, body: { setup: request, meals, date: isoDate(1), mealType: 'DINNER', exclude: [dal.id] },
+  });
+  expect(one.recipes).toEqual([]);
+  const swapped = await call('POST', `${base}/cupboard/swap`, {
+    token, body: { setup: request, meals, date: isoDate(1), mealType: 'DINNER', exclude: [dal.id], recipeId: curry.id },
+  });
+  expect(swapped.swapped).toBe(false);
+  // Apply: servings on each meal, the things to buy by ingredient id.
+  const applied = await call('POST', `${base}/apply`, {
+    token, body: { meals: chosen.meals.map((m: any) => ({ date: m.date, mealType: m.mealType, recipeId: m.recipeId, servings: 2 })),
+      addToGroceries: chosen.toBuy.map((t: any) => t.ingredientId) },
+  });
+  for (const key of ['added', 'skipped', 'groceriesAdded', 'from', 'to']) expect(applied).toHaveProperty(key);
+  expect(applied.added).toBe(2);
+
+  // Plans for health targets: the form's tiles, the candidates, a preview with the model's picks, kept exactly.
+  const options = await call('GET', '/api/meal-plans/options', { token });
+  expect(options.goals[0]).toMatchObject({ key: 'lose-fat' });
+  const targets = await call('POST', '/api/meal-plans/targets/calculate', {
+    token, body: { age: 20, heightCm: 180.3, weightKg: 74.8, activity: 'moderate', goal: 'build-muscle', sex: 'male', overrides: { kcal: 2900 } },
+  });
+  expect(targets).toMatchObject({ kcal: 2900, overridden: ['kcal'] });
+  const details = {
+    age: 20, sex: 'male', heightCm: 180.3, weightKg: 74.8, activity: 'moderate', goal: 'build-muscle', preferences: [], avoid: [],
+    useMyRecipesFirst: true, onlyMyRecipes: true, days: 1, meals: ['DINNER'], description: 'Age 20 · 5 ft 11 · 165 lb', units: 'imperial',
+  };
+  const tc = await call('POST', `${base}/targets/candidates`, { token, body: { details } });
+  for (const key of ['targets', 'length', 'mealTypes', 'aims', 'recipes']) expect(tc).toHaveProperty(key);
+  const preview = await call('POST', `${base}/targets/preview`, {
+    token, body: { name: 'Phone plan', details, chosen: [{ day: 0, mealType: 'DINNER', recipeId: curry.id }] },
+  });
+  expect(preview.days[0].meals[0].recipeId).toBe(curry.id);
+  const keep = preview.days.flatMap((d: any) => d.meals.map((m: any) => ({ day: m.day, mealType: m.mealType, recipeId: m.recipeId, portion: m.portion })));
+  const saved = await call('POST', `${base}/targets`, { token, body: { name: 'Phone plan', details, meals: keep } });
+  for (const key of ['id', 'mine', 'targets', 'details', 'days', 'average', 'summary', 'tags', 'icon', 'hue', 'goalLabel']) {
+    expect(saved).toHaveProperty(key);
+  }
+  const swappedPlan = await call('POST', `${base}/targets/${saved.id}/swap`, {
+    token, body: { day: 0, mealType: 'DINNER', exclude: [curry.id], recipeId: dal.id },
+  });
+  expect(swappedPlan.days[0].meals[0].recipeId).toBe(dal.id);
+  const renamed = await call('PUT', `${base}/targets/${saved.id}`, { token, body: { name: 'Renamed on the phone' } });
+  expect(renamed.name).toBe('Renamed on the phone');
+  const onPlan = await call('POST', `${base}/targets/${saved.id}/apply`, { token, body: { start: isoDate(10), servings: 2 } });
+  expect(onPlan).toMatchObject({ added: 1, from: isoDate(10) });
+});

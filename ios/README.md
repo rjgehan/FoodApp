@@ -149,8 +149,12 @@ opens Settings; with any of those `-mp_debug_scroll` values it goes on into the 
 
 On the Explore tab (`-mp_debug_tab explore`), `-mp_debug_screen explore-recipes` opens Global
 recipes, `explore-recipe` its first published recipe from another household, `explore-move` that
-recipe's Move into my recipes, and `explore-meal-plans` that door's coming-soon page
-(and `explore-nutrition` Nutrition facts, below).
+recipe's Move into my recipes, and `explore-meal-plans` Meal plans (or, against a server from before
+them, the door's coming-soon page), and `explore-nutrition` Nutrition facts (below).
+`meal-plans-cupboard` opens Cook from your cupboard's setup, `meal-plans-result` generates its
+plan straight away, `meal-plans-new` the create form (`-mp_debug_fill 1` fills it in as the
+mockup has it), `meal-plans-preset -mp_debug_ref <key>` a ready-made plan (`build-muscle`,
+`heart-healthy`…) and `meal-plans-plan -mp_debug_ref <uuid>` one of yours.
 
 Nutrition facts (Explore, the mockup's 5.4–5.6): `-mp_debug_tab explore -mp_debug_screen
 explore-nutrition` opens it (`nutrition-search` with `-mp_debug_query chicken` searches,
@@ -289,6 +293,37 @@ Whatever the model chose wears a small ✨ Apple Intelligence mark. Each line is
 per phone (UserDefaults `mp_nutrition_asked`). A Simulator lends the Mac's own model when the Mac
 has Apple Intelligence on. The rules are checked without any of that by `./checks/run.sh`, which
 compiles the Foundation-only files with a scripted stand-in on this Mac.
+
+## Meal plans and Apple Intelligence
+
+Explore → Meal plans is the web's page on the same `/api/households/{id}/meal-plans` answers: cook
+from your cupboard (days, meals, what to use up first, how much to buy; then the draft with each
+meal's share in the cupboard, swaps, the things to buy and Apply to Plan), and plans for health
+targets (ready-made ones, and your own private ones: the targets worked out from who it is for,
+a day at a time, swaps, keep, rename, choose again, delete, Apply to my Plan from a chosen day).
+Applying a plan brings the Plan tab to the front. The door only opens once the server has
+answered `GET /api/meal-plans`; an older server's 404 leaves the old "coming soon" door.
+
+Every recipe is an existing one and every number is the server's. On a phone with Apple
+Intelligence the model chooses, never counts (`Features/MealPlans/MealPlanAssist.swift` has the
+rules), and only when the server lists `candidates` in its features:
+
+- **The week** — a cupboard plan, a ready-made plan as it opens, a new plan, "choose every meal
+  again": the server's candidates (`POST …/cupboard/candidates`, `POST …/targets/candidates`)
+  a day at a time, each meal a guided `.anyOf` of the recipes that fit it, told what wants using
+  up or what the day aims at and what earlier days have. Picks are checked here (offered for
+  that meal, no repeats, inside the buy limit, no lunch or dinner two days running) and sent as
+  `chosen`; the server checks them again, portions them and fills anything refused with its own.
+- **Swaps** — one meal from the server's candidates for that slot, sent as `recipeId`.
+- **Use soon** — cupboard things with no date that the server's rule has no view on (the setup's
+  `unsure`): how many days each keeps (a guided `.range`, once per name, UserDefaults
+  `mp_shelf_days`), counted from when it came in; within three days it is a "soon" chip.
+- **A few words** about a plan, from words only; an answer with a digit in it is thrown away. The
+  server's own summary is always there.
+
+Whatever the model chose wears ✨ (your own plans remember which meals on the phone,
+`mp_model_picks_<id>`). Any failure leaves the server's plan, exactly as the web and a phone
+without Apple Intelligence see it. `./checks/run.sh` checks the rules with a scripted stand-in.
 
 ## Food icons
 

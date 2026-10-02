@@ -11,8 +11,9 @@ import SwiftUI
  Global recipes is the open one, so it is first and biggest, with how many there are on it.
  Nutrition facts shows what the coming week's plan adds up to, a day on average — and is only
  there once the server has said it has Nutrition facts, so a phone ahead of its server shows no
- door that leads nowhere. Meal plans is not built yet, and its door says so rather than showing
- numbers that are not real. The same three doors as the web, in the same order and colours.
+ door that leads nowhere. Meal plans shows what the cupboard holds and a couple of plans, once
+ the server has said it has meal plans; a server from before them keeps the old "coming soon"
+ door instead. The same three doors as the web, in the same order and colours.
 */
 struct ExploreView: View {
     var session: Session
@@ -20,11 +21,15 @@ struct ExploreView: View {
     var sample: [Recipe]?
     /// The week Nutrition's door adds up, without a server (previews and the Gallery).
     var sampleWeek: PlanNutrition?
+    /// Meal plans' door without a server (previews and the Gallery).
+    var sampleMealPlans: MealPlansHome?
 
     @State private var path = NavigationPath()
     @State private var count: Int?
     @State private var week: PlanNutrition?
     @State private var nutrition = NutritionAvailability.shared
+    @State private var mealPlans = MealPlansAvailability.shared
+    @State private var plansHome: MealPlansHome?
     @State private var switchingHousehold = false
     @State private var showingAccount = false
     @State private var showingIdeas = false
@@ -49,11 +54,15 @@ struct ExploreView: View {
                             }
                             .buttonStyle(PressFade())
                         }
-                        ForEach(SoonDestination.all) { destination in
-                            NavigationLink(value: ExploreRoute.soon(destination.kind)) {
-                                SoonDoor(destination: destination)
+                        if sampleMealPlans != nil || mealPlans.available == true {
+                            MealPlansDoor(home: plansHome) { route in openMealPlans(route) }
+                        } else {
+                            ForEach(SoonDestination.all) { destination in
+                                NavigationLink(value: ExploreRoute.soon(destination.kind)) {
+                                    SoonDoor(destination: destination)
+                                }
+                                .buttonStyle(PressFade())
                             }
-                            .buttonStyle(PressFade())
                         }
                     }
                     .padding(.horizontal, 20)
@@ -67,6 +76,7 @@ struct ExploreView: View {
             .refreshable {
                 await loadCount()
                 await loadWeek()
+                await loadMealPlans()
             }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
             .navigationDestination(for: ExploreRoute.self) { route in
@@ -85,18 +95,51 @@ struct ExploreView: View {
                     }
                 }
             }
+            .navigationDestination(for: MealPlansRoute.self) { route in
+                switch route {
+                case .home: MealPlansScreen(session: session, path: $path, sample: sampleMealPlans)
+                case .cupboard: CupboardSetupScreen(session: session, path: $path)
+                case .plan(let id): TargetPlanScreen(session: session, path: $path, planId: id)
+                case .preset(let key): TargetPlanScreen(session: session, path: $path, preset: key)
+                case .newPlan: TargetPlanForm(session: session, path: $path)
+                case .editPlan(let id): TargetPlanForm(session: session, path: $path, planId: id)
+                }
+            }
         }
         .task {
             await loadCount()
             #if DEBUG
+            await mealPlans.check()
             debugOpen()
             #endif
         }
-        .task(id: session.household?.id) { await loadWeek() }
-        // Back from Nutrition facts: the week may have been planned on meanwhile.
-        .onChange(of: path.count) { _, depth in
-            if depth == 0 { Task { await loadWeek() } }
+        .task(id: session.household?.id) {
+            await loadWeek()
+            await loadMealPlans()
         }
+        // Back from Nutrition facts or Meal plans: the week or the cupboard may have changed meanwhile.
+        .onChange(of: path.count) { _, depth in
+            if depth == 0 {
+                Task {
+                    await loadWeek()
+                    await loadMealPlans()
+                }
+            }
+        }
+    }
+
+    /// The door's chips go through Meal plans, so Back from a plan lands there, as on the web.
+    private func openMealPlans(_ route: MealPlansRoute) {
+        path.append(MealPlansRoute.home)
+        if route != .home { path.append(route) }
+    }
+
+    /// The same answer the Meal plans page opens with, so the door and the page agree.
+    private func loadMealPlans() async {
+        if let sampleMealPlans { plansHome = sampleMealPlans; return }
+        await mealPlans.check()
+        guard mealPlans.available == true, let household = session.household?.id else { return }
+        if let home = try? await APIClient.shared.mealPlansHome(household: household) { plansHome = home }
     }
 
     /// The same seven days Nutrition's chart adds up, so the door and the page agree.
@@ -117,7 +160,9 @@ struct ExploreView: View {
     #if DEBUG
     /// Screenshot runs: -mp_debug_screen explore-recipes | explore-recipe | explore-move opens Global
     /// recipes (then its first published recipe from another house, then Move into my recipes on
-    /// it); explore-meal-plans opens that door's page. explore-nutrition opens Nutrition facts
+    /// it); explore-meal-plans opens Meal plans (meal-plans-cupboard its setup, meal-plans-result the
+    /// plan generated from it, meal-plans-new the create form, meal-plans-preset a ready-made plan
+    /// by -mp_debug_ref <key>, meal-plans-plan one of yours by -mp_debug_ref <uuid>). explore-nutrition opens Nutrition facts
     /// (nutrition-search and nutrition-scan with it); nutrition-food | nutrition-product |
     /// nutrition-recipe go on to an ingredient's label (-mp_debug_ref <fdcId>), a packet's
     /// (-mp_debug_ref <barcode>) or a recipe's nutrition (-mp_debug_recipe <uuid>).
@@ -139,7 +184,13 @@ struct ExploreView: View {
                 path.append(ExploreRoute.nutrition)
                 path.append(NutritionRoute.recipe(id))
             }
-        case "explore-meal-plans": path.append(ExploreRoute.soon(.mealPlans))
+        case "explore-meal-plans":
+            if mealPlans.available == true { path.append(MealPlansRoute.home) } else { path.append(ExploreRoute.soon(.mealPlans)) }
+        case "meal-plans-cupboard", "meal-plans-result": openMealPlans(.cupboard)
+        case "meal-plans-new": openMealPlans(.newPlan)
+        case "meal-plans-preset": openMealPlans(.preset(ref.isEmpty ? "build-muscle" : ref))
+        case "meal-plans-plan":
+            if let id = UUID(uuidString: ref) { openMealPlans(.plan(id)) }
         default: break
         }
     }
@@ -343,11 +394,13 @@ struct SoonScreen: View {
 }
 
 #Preview("Explore") {
-    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week)
+    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week,
+                sampleMealPlans: MealPlanSamples.home)
 }
 
 #Preview("Explore — dark") {
-    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week)
+    ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week,
+                sampleMealPlans: MealPlanSamples.home)
         .preferredColorScheme(.dark)
 }
 
