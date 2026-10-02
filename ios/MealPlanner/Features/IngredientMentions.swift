@@ -86,7 +86,10 @@ enum IngredientMentions {
     private static func phrases(from names: [String]) -> Set<String> {
         var out: Set<String> = []
         for raw in names {
-            let name = raw.lowercased().trimmingCharacters(in: .whitespaces)
+            // What comes after a comma or a bracket says how it is prepared, not what it is:
+            // "chicken thighs, skin on" must not light up the "skin" in "skin-side up".
+            let base = raw.split(whereSeparator: { $0 == "," || $0 == "(" }).first.map(String.init) ?? raw
+            let name = base.lowercased().trimmingCharacters(in: .whitespaces)
             guard name.count > 2 else { continue }
             out.insert(name)
             if name.contains(" ") {

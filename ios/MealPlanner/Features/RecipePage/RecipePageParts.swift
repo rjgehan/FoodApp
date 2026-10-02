@@ -72,18 +72,24 @@ struct RecipeHero: View {
         }
     }
 
+    /// The web's hero placeholder: the hue from the lowercase id (as the web hashes it) and the
+    /// chef's hat, so a recipe with no photo looks the same on both.
+    private var placeholder: some View {
+        RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString.lowercased()), systemImage: "asset:ChefHat", radius: 0)
+    }
+
     @ViewBuilder private var picture: some View {
         if let id = recipe.coverImageId, let url = APIClient.shared.imageURL(id) {
             Color.clear.overlay {
                 AsyncImage(url: url) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString), systemImage: "frying.pan", radius: 0)
+                    placeholder
                 }
             }
             .clipped()
         } else {
-            RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString), systemImage: "frying.pan", radius: 0)
+            placeholder
         }
     }
 

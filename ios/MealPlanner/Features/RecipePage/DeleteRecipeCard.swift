@@ -41,16 +41,16 @@ struct DeleteRecipeCard: View {
             .filter { recipe.sharedWith?.contains($0.id) == true && $0.id != session?.household?.id }
             .map(\.name)
         let elsewhere = (recipe.sharedWith?.count ?? 0) > named.count || recipe.published == true
-        let last = Text("It comes off your plan and any share link stops working. This can't be undone.")
+        // One short paragraph, as the mockup's 3.20 — the web's words.
         if !named.isEmpty {
             let list = named.count > 1 ? named.dropLast().joined(separator: ", ") + " and " + named.last! : named[0]
             return Text("It's shared with ") + Text(list).bold().foregroundColor(Palette.text)
-                + Text(". If it's on their plan, their plan will keep the name as text.\n\n") + last
+                + Text(": if it's on their plan, it stays there as text. This can't be undone.")
         }
         if elsewhere {
-            return Text("Anyone else who planned it keeps the meal on their plan, with the name as text.\n\n") + last
+            return Text("Anyone who planned it keeps the name on their plan as text. This can't be undone.")
         }
-        return last
+        return Text("It comes off your plan and any share link stops working. This can't be undone.")
     }
 
     private func delete() async {

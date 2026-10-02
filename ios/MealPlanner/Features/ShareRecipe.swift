@@ -81,7 +81,7 @@ struct RecipeShareSheet: View {
                     linkCard
                     if !targets.isEmpty { households }
                     ListGroup {
-                        switchRow("Publish to Explore", subtitle: "Any household on this server can find it",
+                        switchRow("Publish to Explore", subtitle: "Anyone on this server can find it",
                                   isOn: recipe.published ?? false) { Tile("globe", tone: .herb, size: 36) } set: { on in
                             Task { await setPublished(on) }
                         }
@@ -97,6 +97,7 @@ struct RecipeShareSheet: View {
         }
         .pageBackground()
         .centeredTitle("Share")
+        .textBackButton("Recipe")
         .toolbar(.visible, for: .navigationBar)
         .task { await load() }
         .kitchenAlert(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {

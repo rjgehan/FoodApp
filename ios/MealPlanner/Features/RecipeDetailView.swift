@@ -162,21 +162,22 @@ struct RecipeDetailView: View {
         return VStack(alignment: .leading, spacing: 14) {
             // Somebody else's, and not in a drawer of yours yet: the way to keep it is right
             // here, as well as behind •••.
+            // Stacked, so the action is never cut short; the hero's pill already says who shared it.
             if recipe.shared && recipe.section == nil {
-                HStack(spacing: 10) {
-                    Text("Shared by \(recipe.ownerName ?? "another household"). Only they can change it.")
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Only \(recipe.ownerName ?? "the household that shared it") can change it.")
                         .font(.system(size: 13)).foregroundStyle(Palette.plum)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button { sheet = .organise } label: { Label("Move into my recipes", systemImage: "arrow.right") }
-                        .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                        .buttonStyle(.kitchen(.secondary, size: .small, fill: true))
                 }
-                .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
+                .padding(12)
                 .background(Palette.plumSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if let description = recipe.description, !description.isEmpty {
                 Text(description).font(.system(size: 15)).foregroundStyle(Palette.muted)
             }
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 let links = recipe.allLinks.filter { $0.destination != nil }
                 if links.isEmpty {
                     if mine {
@@ -185,17 +186,19 @@ struct RecipeDetailView: View {
                             .padding(.leading, -12)
                     }
                 } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(links.enumerated()), id: \.offset) { _, link in
-                                Link(destination: link.destination!) {
-                                    Label(chipName(link), systemImage: link.isVideo ? "play" : "link")
-                                }
-                                .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
-                                .accessibilityLabel(link.name)
+                    // Wrapped, as on the web: a chip that does not fit goes onto the next line
+                    // rather than ending cut through its border against the stepper.
+                    ChipFlow {
+                        ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                            Link(destination: link.destination!) {
+                                Label(chipName(link), systemImage: link.isVideo ? "play" : "link")
+                                    .lineLimit(1)
                             }
+                            .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                            .accessibilityLabel(link.name)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Spacer(minLength: 0)
                 ServingsStepper(value: Binding(get: { shown }, set: { servings = $0 }))

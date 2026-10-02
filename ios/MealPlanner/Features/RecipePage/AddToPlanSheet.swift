@@ -23,6 +23,8 @@ struct AddToPlanSheet: View {
     @State private var planned: [MealPlanEntry] = []
     @State private var busy = false
     @State private var error: String?
+    /// As tall as what is in it, with the recipe's photo still showing above (the mockup's 3.10).
+    @State private var height: CGFloat = 560
 
     init(recipe: Recipe, session: Session?, onPlanned: @escaping (String) -> Void) {
         self.init(recipe: recipe, savedLink: nil, section: recipe.section, session: session, onPlanned: onPlanned)
@@ -101,7 +103,8 @@ struct AddToPlanSheet: View {
                 }
 
                 if inSlot.contains(where: isThis) {
-                    NoteBox("\(name) is already on \(dayName) \(meal.title.lowercased()).",
+                    // A meal can hold a recipe only once (the server says 409), so say what to do instead.
+                    NoteBox("Already on \(dayName) \(meal.title.lowercased()). Pick another day or meal.",
                             tone: .mustard, systemImage: "exclamationmark.circle")
                 } else if let first = inSlot.first {
                     let more = inSlot.count > 1 ? " and \(inSlot.count - 1) more" : ""
@@ -136,13 +139,15 @@ struct AddToPlanSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 16)
+            .padding(.bottom, 24)
+            // Sized to its content: a long list of extras makes it taller (up to full height,
+            // then it scrolls), so Add stays on screen.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 + 8 }
         }
         .scrollBounceBehavior(.basedOnSize)
         .pageBackground()
         .task { await loadPlan() }
-        // Full height from the start when there are extras to tick, so Add stays on screen.
-        .kitchenSheet(optional.isEmpty ? [.medium, .large] : [.large])
+        .kitchenSheet([.height(height)])
     }
 
     private func dayTile(_ date: Date, on: Bool, action: @escaping () -> Void) -> some View {
@@ -171,7 +176,7 @@ struct AddToPlanSheet: View {
     private func mealTile(_ kind: MealType, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: symbol(kind)).font(.system(size: 19))
+                mealIcon(kind).frame(width: 24, height: 24)
                 Text(kind.title).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(on ? Palette.bg : Palette.text)
@@ -187,13 +192,19 @@ struct AddToPlanSheet: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
-    private func symbol(_ kind: MealType) -> String {
+    /// The mockup's coffee, sandwich, soup and cookie: SF has the cup, the app's own food
+    /// drawings have the rest (a pot for the soup).
+    @ViewBuilder private func mealIcon(_ kind: MealType) -> some View {
         switch kind {
-        case .breakfast: "cup.and.saucer"
-        case .lunch: "takeoutbag.and.cup.and.straw"
-        case .dinner: "fork.knife"
-        case .snack: "carrot"
+        case .breakfast: Image(systemName: "cup.and.saucer").font(.system(size: 19))
+        case .lunch: foodIcon("sandwich")
+        case .dinner: foodIcon("pot")
+        case .snack: foodIcon("cookie")
         }
+    }
+
+    private func foodIcon(_ key: String) -> some View {
+        Image("FoodIcons/\(key)").renderingMode(.template).resizable().scaledToFit()
     }
 
     private func loadPlan() async {

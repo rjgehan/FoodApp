@@ -22,12 +22,16 @@ struct RecipeOptionsSheet: View {
     var onPick: (RecipeOption) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    /// As tall as its rows: one row for a recipe shared with you, five for your own (the mockup's 3.11).
+    @State private var height: CGFloat = 420
 
     private var mine: Bool { !recipe.shared }
     private var moving: Bool { recipe.shared && recipe.section == nil }
 
     private var mediaLine: String {
-        let photos = Set(([recipe.coverImageId] + (recipe.photoIds ?? []).map { Optional($0) }).compactMap { $0 }).count
+        // The cover is named on its own, so the count is the other photos (the mockup's "Cover
+        // photo, 4 photos"), not the cover twice.
+        let photos = Set(recipe.photoIds ?? []).subtracting([recipe.coverImageId].compactMap { $0 }).count
         let links = recipe.allLinks.count
         let parts = [recipe.coverImageId != nil ? "Cover photo" : nil,
                      photos > 0 ? "\(photos) \(photos == 1 ? "photo" : "photos")" : nil,
@@ -70,11 +74,13 @@ struct RecipeOptionsSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 28)
-            .padding(.bottom, 16)
+            // The sheet adds the home indicator's inset below this on its own.
+            .padding(.bottom, 8)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
         .pageBackground()
-        .kitchenSheet([.medium, .large])
+        .kitchenSheet([.height(height)])
     }
 
     private func row(_ title: String, _ subtitle: String?, _ symbol: String, _ tone: Tone, chevron: Bool,
@@ -115,6 +121,25 @@ struct FilingPicker: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// The top groups here: no parent, or a parent that lives in another drawer.
+    private var roots: [RecipeCategory] {
+        let ids = Set(here.map(\.id))
+        return here.filter { $0.parentId.map { !ids.contains($0) } ?? true }
+    }
+
+    /// A top group and everything inside it, depth first, with how deep each one sits.
+    private func family(_ root: RecipeCategory) -> [(group: RecipeCategory, depth: Int)] {
+        var out: [(group: RecipeCategory, depth: Int)] = []
+        func walk(_ group: RecipeCategory, _ depth: Int) {
+            out.append((group, depth))
+            // A loop in bad data must not hang the form.
+            guard depth < 8 else { return }
+            for child in here where child.parentId == group.id { walk(child, depth + 1) }
+        }
+        walk(root, 0)
+        return out
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ChipFlow {
@@ -123,12 +148,20 @@ struct FilingPicker: View {
                 }
             }
             .id("filing")
-            ChipFlow {
-                ForEach(here) { group in
-                    Chip(group.name, isOn: groups.contains(group.name)) {
-                        if groups.contains(group.name) { groups.remove(group.name) } else { groups.insert(group.name) }
+            // Laid out as they nest, as on the web: each top group starts its own line, with the
+            // groups inside it after it — "Main", "› Beef", "› Chicken".
+            ForEach(roots) { root in
+                ChipFlow {
+                    ForEach(family(root), id: \.group.id) { item in
+                        let group = item.group
+                        Chip(item.depth > 0 ? "\(String(repeating: "›", count: item.depth)) \(group.name)" : group.name,
+                             isOn: groups.contains(group.name)) {
+                            if groups.contains(group.name) { groups.remove(group.name) } else { groups.insert(group.name) }
+                        }
                     }
                 }
+            }
+            ChipFlow {
                 if !adding {
                     Chip("+ New group", isOn: false) {
                         adding = true

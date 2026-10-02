@@ -28,8 +28,9 @@ struct EditRecipeView: View {
     @State private var name: String
     @State private var summary: String
     @State private var servings: Int
-    @State private var prep: Int
-    @State private var cook: Int
+    /// Nil until somebody types a time, so an empty field shows its faint "–", not a made-up 0.
+    @State private var prep: Int?
+    @State private var cook: Int?
     @State private var instructions: String
     @State private var ingredients: [Draft]
     @State private var links: [LinkDraft]
@@ -92,15 +93,16 @@ struct EditRecipeView: View {
         _name = State(initialValue: recipe?.name ?? draft?.name ?? "")
         _summary = State(initialValue: recipe?.description ?? draft?.description ?? "")
         _servings = State(initialValue: recipe?.servings ?? draft.map { min(max($0.servings, 1), 40) } ?? 4)
-        _prep = State(initialValue: recipe?.prepTimeMinutes ?? draft?.prep ?? 0)
-        _cook = State(initialValue: recipe?.cookTimeMinutes ?? draft?.cook ?? 0)
+        // A draft says 0 for a time it did not find; that is no time, not a time of 0.
+        _prep = State(initialValue: recipe?.prepTimeMinutes ?? draft.flatMap { $0.prep > 0 ? $0.prep : nil })
+        _cook = State(initialValue: recipe?.cookTimeMinutes ?? draft.flatMap { $0.cook > 0 ? $0.cook : nil })
         _instructions = State(initialValue: recipe?.instructions ?? draft?.instructions ?? "")
         _coverImageId = State(initialValue: recipe?.coverImageId ?? draft?.coverImageId)
         _links = State(initialValue: (recipe?.allLinks ?? draft?.links ?? []).map { LinkDraft($0) })
         // One empty row when there are none — a new recipe, or one planned as just a name and
         // opened from "Add ingredients" — so there is somewhere to start typing. Blank rows
         // are dropped on save.
-        let written = { (q: Double?) in q.map { $0 == $0.rounded() ? String(Int($0)) : String($0) } ?? "" }
+        let written = { (q: Double?) in q.map(chipAmount) ?? "" }
         let existing = recipe.map { recipe in
             recipe.ingredients.map {
                 Draft(amount: written($0.quantity), unit: $0.unit ?? "", name: $0.ingredientName,
@@ -162,7 +164,8 @@ struct EditRecipeView: View {
                     HStack(spacing: 8) {
                         factField("clock", value: $prep, suffix: "min prep", label: "Prep, minutes", field: .prep)
                         factField("flame", value: $cook, suffix: "cook", label: "Cook, minutes", field: .cook)
-                        factField("person.2", value: $servings, suffix: nil, label: "Serves", field: .serves)
+                        factField("person.2", value: Binding(get: { servings }, set: { servings = $0 ?? servings }),
+                                  suffix: nil, label: "Serves", field: .serves)
                             .frame(width: 74)
                     }
 
@@ -274,13 +277,12 @@ struct EditRecipeView: View {
         .centeredTitle(title)
         .toolbar {
             if !embedded {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                BarTextButton("Cancel", placement: .topBarLeading) { dismiss() }
             }
             if showsSave {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { Task { await save() } }
-                        .fontWeight(.semibold)
-                        .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                BarTextButton("Save", placement: .topBarTrailing, bold: true,
+                              disabled: busy || name.trimmingCharacters(in: .whitespaces).isEmpty) {
+                    Task { await save() }
                 }
             }
         }
@@ -308,7 +310,8 @@ struct EditRecipeView: View {
                 if let coverImageId, let url = APIClient.shared.imageURL(coverImageId) {
                     AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Palette.surface2 }
                 } else {
-                    RecipePhotoPlaceholder(hue: .of(recipe?.id.uuidString ?? "tomato"), systemImage: "photo", radius: 0)
+                    RecipePhotoPlaceholder(hue: recipe.map { .of($0.id.uuidString.lowercased()) } ?? (name.isEmpty ? .tomato : .of(name)),
+                                           systemImage: "photo", radius: 0)
                 }
                 if cover.uploading { ProgressView().tint(.white) }
             }
@@ -328,7 +331,7 @@ struct EditRecipeView: View {
     }
 
     /// "⏱ 10 min prep": a small number field with its icon and what the number means.
-    private func factField(_ symbol: String, value: Binding<Int>, suffix: String?, label: String, field: Focus) -> some View {
+    private func factField(_ symbol: String, value: Binding<Int?>, suffix: String?, label: String, field: Focus) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(Palette.muted)
             TextField("–", value: value, format: .number)
@@ -360,11 +363,16 @@ struct EditRecipeView: View {
                 .modifier(IngredientChip(tone: .sky))
                 .focused($focus, equals: .amount(id))
                 .accessibilityLabel("Amount")
-            TextField("unit", text: row.unit)
-                .textInputAutocapitalization(.never)
-                .modifier(IngredientChip(tone: .herb))
-                .focused($focus, equals: .unit(id))
-                .accessibilityLabel("Unit")
+            // A line with no unit ("6 eggs") shows just its amount, as in the mockup; the faint
+            // "unit" box is there on the line being typed, and on a new empty one.
+            let blank = row.wrappedValue.amount.isEmpty && row.wrappedValue.name.isEmpty
+            if focused || blank || !row.wrappedValue.unit.isEmpty {
+                TextField("unit", text: row.unit)
+                    .textInputAutocapitalization(.never)
+                    .modifier(IngredientChip(tone: .herb))
+                    .focused($focus, equals: .unit(id))
+                    .accessibilityLabel("Unit")
+            }
             TextField("ingredient", text: row.name)
                 .font(.system(size: 15))
                 .submitLabel(.next)
@@ -419,7 +427,7 @@ struct EditRecipeView: View {
             let line = RecipeDraft.Ingredient(line: row.name)
             if line.quantity != nil {
                 let q = line.quantity!
-                ingredients[i].amount = q == q.rounded() ? String(Int(q)) : String(q)
+                ingredients[i].amount = chipAmount(q)
                 ingredients[i].unit = line.unit
                 ingredients[i].name = line.name
                 if let notes = line.notes, !notes.isEmpty { ingredients[i].notes = notes }
@@ -561,8 +569,8 @@ struct EditRecipeView: View {
         if !trimmedSummary.isEmpty { body["description"] = trimmedSummary }
         let trimmedSteps = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSteps.isEmpty { body["instructions"] = trimmedSteps }
-        if prep > 0 { body["prepTimeMinutes"] = prep }
-        if cook > 0 { body["cookTimeMinutes"] = cook }
+        if let prep, prep > 0 { body["prepTimeMinutes"] = prep }
+        if let cook, cook > 0 { body["cookTimeMinutes"] = cook }
         // Explicitly null rather than absent, so removing the photo actually removes it.
         // `nil as Any` would not do — JSONSerialization refuses it.
         body["coverImageId"] = coverImageId.map { $0.uuidString as Any } ?? NSNull()
@@ -599,6 +607,20 @@ struct EditRecipeView: View {
             self.error = error.localizedDescription
         }
     }
+}
+
+/**
+ An amount as the line's chip shows it: "½" and "1¼" as on the recipe page, not "0.5". Only an
+ exact fraction becomes a glyph, so saving a line nobody touched never rounds its amount.
+ */
+func chipAmount(_ value: Double) -> String {
+    if value == value.rounded() { return String(Int(value)) }
+    let whole = Int(value.rounded(.down))
+    let rest = value - Double(whole)
+    let marks: [(Double, String)] = [(0.125, "⅛"), (0.25, "¼"), (1.0 / 3, "⅓"), (0.375, "⅜"), (0.5, "½"),
+                                     (0.625, "⅝"), (2.0 / 3, "⅔"), (0.75, "¾"), (0.875, "⅞")]
+    guard let mark = marks.first(where: { abs(rest - $0.0) < 0.0005 }) else { return String(value) }
+    return whole > 0 ? "\(whole)\(mark.1)" : mark.1
 }
 
 /// The ingredient line's amount and unit, drawn as the mockup's small chips.

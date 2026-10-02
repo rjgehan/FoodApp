@@ -138,18 +138,10 @@ struct NewRecipeView: View {
             .pageBackground()
             .centeredTitle(mode?.title ?? "New recipe")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if mode == nil {
-                        Button("Cancel") { dismiss() }
-                    } else {
-                        Button { mode = nil } label: {
-                            HStack(spacing: 2) {
-                                Image(systemName: "chevron.left").fontWeight(.semibold)
-                                Text("New")
-                            }
-                        }
-                        .disabled(reading)
-                    }
+                if mode == nil {
+                    BarTextButton("Cancel", placement: .topBarLeading) { dismiss() }
+                } else {
+                    BarTextButton("New", placement: .topBarLeading, back: true, disabled: reading) { mode = nil }
                 }
             }
             .navigationDestination(item: $draft) { draft in
@@ -161,6 +153,10 @@ struct NewRecipeView: View {
                     initialSection: initialSection,
                     initialGroups: initialGroups
                 ) { saved in finish(saved) }
+                // "Cancel" as in the mockup's 3.16 and on the web: back to the link or the paste
+                // it was read from, to try again. Swiping back still works.
+                .navigationBarBackButtonHidden(true)
+                .toolbar { BarTextButton("Cancel", placement: .topBarLeading) { self.draft = nil } }
             }
         }
     }
@@ -621,7 +617,7 @@ struct PastePage: View {
             VStack(alignment: .leading, spacing: 16) {
                 step(1, "Copy this question") {
                     HStack(spacing: 8) {
-                        TextField("", text: $dish, prompt: Text("What to make (optional)").foregroundStyle(Palette.faint))
+                        TextField("", text: $dish, prompt: Text("Dish (optional)").foregroundStyle(Palette.faint))
                             .font(.system(size: 15))
                             .padding(.horizontal, 12)
                             .frame(height: 40)

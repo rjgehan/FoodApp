@@ -267,6 +267,50 @@ extension View {
     .preferredColorScheme(.dark)
 }
 
+/**
+ A bar's text action as the mockup's `nav` draws one — "Cancel" on the left, "Save" on the right —
+ plain text in the accent's ink (bold for the one that finishes the screen), with no glass
+ capsule round it. `back` puts the chevron in front, for a way back inside a sheet ("‹ New").
+ */
+struct BarTextButton: ToolbarContent {
+    var placement: ToolbarItemPlacement
+    let title: String
+    var bold = false
+    var back = false
+    var disabled = false
+    let action: () -> Void
+
+    init(_ title: String, placement: ToolbarItemPlacement, bold: Bool = false, back: Bool = false,
+         disabled: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.placement = placement
+        self.bold = bold
+        self.back = back
+        self.disabled = disabled
+        self.action = action
+    }
+
+    var body: some ToolbarContent {
+        BareToolbarItem(placement: placement) {
+            Button(action: action) {
+                HStack(spacing: 3) {
+                    if back { Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)) }
+                    Text(title).font(.system(size: 17, weight: bold ? .semibold : .regular)).lineLimit(1)
+                }
+                .foregroundStyle(Palette.accentInk)
+                .opacity(disabled ? 0.4 : 1)
+                .padding(.vertical, 6)
+                // Its own width: the bar would otherwise squeeze "Cancel" down to "Can…".
+                .fixedSize()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .disabled(disabled)
+            .accessibilityLabel(back ? "Back to \(title)" : title)
+        }
+    }
+}
+
 private struct TextBackButton: ViewModifier {
     let label: String
     @Environment(\.dismiss) private var dismiss
