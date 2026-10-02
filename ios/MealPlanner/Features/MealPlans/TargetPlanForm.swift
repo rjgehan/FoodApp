@@ -27,7 +27,9 @@ struct TargetPlanForm: View {
     @State private var failed = false
     @State private var metric = false
     @State private var age = ""
-    @State private var sex = "male"
+    // Neutral, as on the web: a preselected "Male" gave a woman who skipped the field the male
+    // equation (about 166 kcal more at rest) and the higher 1,500 kcal floor.
+    @State private var sex = ""
     @State private var ft = ""
     @State private var inches = ""
     @State private var cm = ""
@@ -108,11 +110,11 @@ struct TargetPlanForm: View {
                     Picker("Sex", selection: $sex) {
                         Text("Male").tag("male")
                         Text("Female").tag("female")
-                        Text("Rather not say").tag("")
+                        Text("Not saying").tag("")
                     }
                 } label: {
                     HStack {
-                        Text(sex == "male" ? "Male" : sex == "female" ? "Female" : "Rather not say")
+                        Text(sex == "male" ? "Male" : sex == "female" ? "Female" : "Not saying")
                             .font(.system(size: 16)).foregroundStyle(Palette.text).lineLimit(1)
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
@@ -174,6 +176,13 @@ struct TargetPlanForm: View {
             Text(missing ?? "Worked out from the details above. Tap a number to set your own.")
                 .font(.system(size: 12)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
+            if missing == nil {
+                ForEach(targets?.notes ?? [], id: \.self) { note in
+                    Label(note, systemImage: "info.circle")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.mustard)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

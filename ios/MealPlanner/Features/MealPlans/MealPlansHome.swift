@@ -70,7 +70,8 @@ struct MealPlansScreen: View {
                 .accessibilityLabel("New meal plan")
             }
         }
-        .toolbar(.hidden, for: .tabBar)
+        // No tab-bar modifier: it stays, as on the mockup's 5.7 and the web, and the screens past
+        // this one hide it for their own bottom actions (a .visible here would win over theirs).
         .task { await load() }
         .refreshable { await load() }
         // Back from a plan or the cupboard: a plan may have been kept, renamed or deleted.

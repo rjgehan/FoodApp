@@ -56,6 +56,10 @@ struct ExploreView: View {
                         }
                         if sampleMealPlans != nil || mealPlans.available == true {
                             MealPlansDoor(home: plansHome) { route in openMealPlans(route) }
+                        } else if mealPlans.available == nil {
+                            // Not heard from the server yet (or it didn't answer): neither open nor
+                            // "coming soon", which would be wrong the moment it does answer.
+                            ForEach(SoonDestination.all) { destination in SoonDoor(destination: destination, checking: true) }
                         } else {
                             ForEach(SoonDestination.all) { destination in
                                 NavigationLink(value: ExploreRoute.soon(destination.kind)) {
@@ -117,6 +121,14 @@ struct ExploreView: View {
             await loadWeek()
             await loadMealPlans()
         }
+        // A first launch can ask before the network is up; coming back to the tab asks again
+        // (the checks remember an answer, so this costs nothing once they have one).
+        .onAppear {
+            Task {
+                await loadWeek()
+                await loadMealPlans()
+            }
+        }
         // Back from Nutrition facts or Meal plans: the week or the cupboard may have changed meanwhile.
         .onChange(of: path.count) { _, depth in
             if depth == 0 {
@@ -138,6 +150,13 @@ struct ExploreView: View {
     private func loadMealPlans() async {
         if let sampleMealPlans { plansHome = sampleMealPlans; return }
         await mealPlans.check()
+        // No answer (a first launch can ask before the network is up): ask again a few times
+        // rather than leave the door saying "Checking…".
+        for attempt in 1...3 where mealPlans.available == nil {
+            try? await Task.sleep(for: .seconds(Double(attempt) * 1.5))
+            if Task.isCancelled { return }
+            await mealPlans.check()
+        }
         guard mealPlans.available == true, let household = session.household?.id else { return }
         if let home = try? await APIClient.shared.mealPlansHome(household: household) { plansHome = home }
     }
@@ -320,9 +339,11 @@ struct NutritionDoor: View {
     }
 }
 
-/// A door that is not open yet: its tile, name and line, and a plain note that it is coming.
+/// A door that is not open yet: its tile, name and line, and a plain note that it is coming —
+/// or, while the server hasn't said yet, a quiet "Checking…" instead.
 struct SoonDoor: View {
     let destination: SoonDestination
+    var checking = false
 
     var body: some View {
         Card(padding: 16, spacing: 12) {
@@ -337,8 +358,13 @@ struct SoonDoor: View {
                 Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.faint)
             }
             HStack(spacing: 10) {
-                Pill("Coming soon", tone: destination.tone, systemImage: "clock")
-                Text(destination.teaser).font(.system(size: 13)).foregroundStyle(Palette.muted)
+                if checking {
+                    ProgressView().controlSize(.small)
+                    Text("Checking…").font(.system(size: 13)).foregroundStyle(Palette.muted)
+                } else {
+                    Pill("Coming soon", tone: destination.tone, systemImage: "clock")
+                }
+                Text(checking ? "" : destination.teaser).font(.system(size: 13)).foregroundStyle(Palette.muted)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

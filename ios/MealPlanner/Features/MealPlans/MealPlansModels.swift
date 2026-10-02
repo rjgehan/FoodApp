@@ -25,7 +25,7 @@ struct UseFirstItem: Codable, Hashable, Identifiable {
     let itemId: UUID
     let ingredientId: UUID
     let name: String
-    /// "date", "guess", "low", "plenty" — and "ai" for one this phone's model guessed.
+    /// "date", "guess", "low", "plenty", "past" (only in `pastDate`) — and "ai" for one this phone's model guessed.
     let reason: String
     let label: String
     let useBy: String?
@@ -62,6 +62,8 @@ struct CupboardSetup: Codable, Hashable {
     let defaultServings: Int
     /// Absent from a server older than the phone's guesses.
     var unsure: [UnsureItem]? = nil
+    /// Past the date on the packet: a warning to check, never something to use first. Absent from older servers.
+    var pastDate: [UseFirstItem]? = nil
 }
 
 /// A meal of a draft as the phone holds it, or one its model wants in a slot.
@@ -286,6 +288,8 @@ struct Targets: Codable, Hashable {
     let overridden: [String]
     let bmr: Int
     let tdee: Int
+    /// Plain sentences for under the numbers: the lose-fat floor reached, or no room left for carbs.
+    var notes: [String]? = nil
 }
 
 struct PlanMeal: Codable, Hashable {
@@ -303,6 +307,10 @@ struct PlanMeal: Codable, Hashable {
     let fat: Int
     /// Deleted, or no longer readable: its numbers are nought.
     let missing: Bool
+    /// Some ingredients couldn't be counted, so its numbers are too low. Absent from older servers.
+    var partial: Bool? = nil
+    /// One serving's kcal: `kcal` is this times `portion`.
+    var kcalPerServing: Int? = nil
 
     var slot: String { "\(day)|\(mealType.rawValue)" }
 }
@@ -515,7 +523,7 @@ enum MealPlanText {
         return Calendar(identifier: .gregorian).dateComponents([.day], from: a, to: b).day
     }
 
-    /// "1½ servings", for a portion that is not one.
+    /// "1½ servings", "1 serving": how much of the recipe a plan's numbers are for.
     static func portion(_ portion: Double) -> String {
         let whole = Int(portion.rounded(.down))
         let rest = portion - Double(whole)

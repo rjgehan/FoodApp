@@ -26,6 +26,7 @@ struct TargetPlanScreen: View {
 
     @State private var plan: TargetPlan?
     @State private var failed: String?
+    @State private var notFound = false
     @State private var day = 0
     @State private var swapping = false
     @State private var seen: [String: [UUID]] = [:]
@@ -53,7 +54,9 @@ struct TargetPlanScreen: View {
                     VStack(spacing: 0) {
                         HStack { heroButton("chevron.left", "Back") { dismiss() }; Spacer() }
                             .padding(.horizontal, 16).padding(.top, 4)
-                        if let failed {
+                        if notFound {
+                            PlanNotFound { dismiss() }.padding(20)
+                        } else if let failed {
                             MealPlansLoadFailed(message: failed) { Task { await load() } }.padding(20)
                         } else {
                             MealPlansLoading(text: "Choosing meals from your recipes…")
@@ -166,7 +169,10 @@ struct TargetPlanScreen: View {
     private func hero(_ plan: TargetPlan, top: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             RecipePhotoPlaceholder(hue: MealPlanLook.hue(plan.hue), systemImage: MealPlanLook.symbol(plan.icon), radius: 0)
-            LinearGradient(colors: [.clear, .clear, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom)
+            // White on the pale mustard needs more shade behind it than on tomato or herb.
+            LinearGradient(colors: plan.hue == "mustard" ? [.clear, .black.opacity(0.18), .black.opacity(0.5)]
+                                                         : [.clear, .clear, .black.opacity(0.3)],
+                           startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
             VStack(alignment: .leading, spacing: 4) {
                 Pill("\(plan.goalLabel) · \(plan.length) \(plan.length == 1 ? "day" : "days")",
@@ -243,9 +249,11 @@ struct TargetPlanScreen: View {
     }
 
     private func mealRow(_ m: PlanMeal) -> some View {
+        // The numbers are for this much of the recipe: say so, or 738 kcal reads as one bowl.
         let subtitle = m.missing ? "\(m.mealType.title) · swap it for another"
-            : "\(m.mealType.title) · \(NutritionText.kcal(Double(m.kcal))) kcal · \(m.protein)g P"
-        return MealRowView(title: m.name, subtitle: subtitle, muted: m.missing,
+            : ([m.mealType.title, MealPlanText.portion(m.portion), "\(NutritionText.kcal(Double(m.kcal))) kcal", "\(m.protein)g P"]
+                + (m.partial == true ? ["not all counted"] : [])).joined(separator: " · ")
+        return MealRowView(title: m.name, subtitle: subtitle, muted: m.missing, subtitleLines: 2,
                            picture: PlanMealPicture(recipeId: m.recipeId, name: m.name, section: m.section,
                                                 coverImageId: m.coverImageId, meal: m.mealType)) {
             if marked.contains(m.slot) && !swapping { ModelChoseMark() }
@@ -286,7 +294,7 @@ struct TargetPlanScreen: View {
                 await describe(loaded)
             }
         } catch let error as APIError where error.status == 404 {
-            failed = "There is no such plan."
+            notFound = true
         } catch is CancellationError {
         } catch {
             failed = "Could not load this plan."
@@ -509,8 +517,10 @@ enum ModelPicks {
 // MARK: - Sheets
 
 /**
- Apply to my Plan: which day the plan starts on, and how many each meal is cooked for. Only the
- meals go on the shared Plan — never over a meal that is there already.
+ Apply to my Plan: which day the plan starts on, and how many people each meal is cooked for.
+ Only the meals go on the shared Plan — never over a meal that is there already. Each meal cooks
+ the plan's portion plus a serving for everyone else (the server does the same for a saved plan),
+ so what is on your plate is what the plan's numbers say.
  */
 private struct ApplyPlanSheet: View {
     var session: Session
@@ -524,6 +534,13 @@ private struct ApplyPlanSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private var meals: [PlanMeal] { plan.days.flatMap(\.meals).filter { !$0.missing } }
+    /// A portion other than one, to give as the example — the largest says it most plainly.
+    private var example: Double? { meals.map(\.portion).filter { $0 != 1 }.max() }
+
+    /// The plan's portion for you, plus one serving for each other person; nobody cooks half a serving.
+    static func servingsToCook(_ portion: Double, people: Int) -> Int {
+        max(1, min(50, max(0, people - 1) + max(1, Int((portion - 1e-9).rounded(.up)))))
+    }
 
     var body: some View {
         let dates = meals.map { MealPlanText.addDays(start, $0.day) }
@@ -540,10 +557,17 @@ private struct ApplyPlanSheet: View {
                     }
                 }
             }
-            HStack {
-                Text("Servings for each meal").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
-                Spacer()
-                ServingsStepper(value: $servings)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("People eating, you included").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
+                    Spacer()
+                    ServingsStepper(value: $servings)
+                }
+                if let example {
+                    Text("The plan's numbers are for the servings it shows, like \(MealPlanText.portion(example)) at a meal. Each meal is cooked with your servings plus one for everyone else.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let error { NoteBox(error, tone: .accent, systemImage: "exclamationmark.circle") }
             Button { Task { await apply() } } label: {
@@ -571,7 +595,8 @@ private struct ApplyPlanSheet: View {
             } else {
                 result = try await APIClient.shared.applyMeals(
                     household: household,
-                    meals: meals.map { (MealPlanText.addDays(start, $0.day), $0.mealType, $0.recipeId, servings) })
+                    meals: meals.map { (MealPlanText.addDays(start, $0.day), $0.mealType, $0.recipeId,
+                                        Self.servingsToCook($0.portion, people: servings)) })
             }
             done(result)
         } catch {

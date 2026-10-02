@@ -213,13 +213,17 @@ struct MealRowView<Trailing: View>: View {
     let title: String
     let subtitle: String
     var muted = false
+    /// Two for a target plan's meals: the portion and its numbers all need to be read.
+    var subtitleLines = 1
     let picture: AnyView
     @ViewBuilder var trailing: Trailing
 
-    init(title: String, subtitle: String, muted: Bool = false, picture: some View, @ViewBuilder trailing: () -> Trailing) {
+    init(title: String, subtitle: String, muted: Bool = false, subtitleLines: Int = 1, picture: some View,
+         @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
         self.muted = muted
+        self.subtitleLines = subtitleLines
         self.picture = AnyView(picture)
         self.trailing = trailing()
     }
@@ -230,7 +234,8 @@ struct MealRowView<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(muted ? Palette.muted : Palette.text).lineLimit(1)
-                Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
+                Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(subtitleLines)
+                    .fixedSize(horizontal: false, vertical: subtitleLines > 1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             trailing
@@ -296,6 +301,28 @@ struct ChoiceTiles<Value: Hashable>: View {
 }
 
 /// The quiet note when a page could not load, with a way to try again.
+/**
+ A plan that isn't there for you — deleted, or somebody else's private one. Not a network
+ problem, so there's no "Try again": it would never work.
+ */
+struct PlanNotFound: View {
+    let back: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Tile("magnifyingglass", tone: .sky, size: 48)
+            Text("This plan isn't available").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
+            Text("It may have been deleted, or it's someone else's own plan.")
+                .font(.system(size: 13)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+            Button("Back to Meal plans", action: back).buttonStyle(.kitchen(.secondary, size: .small))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 32)
+        .cardSurface()
+    }
+}
+
 struct MealPlansLoadFailed: View {
     let message: String
     let retry: () -> Void
