@@ -62,11 +62,17 @@ export default function NutritionPage() {
     };
   }, [activeHouseholdId]);
 
+  // Only recipes this household can open: one looked up in another house stays there.
   useEffect(() => {
-    api<RecentLookup[]>('GET', '/api/nutrition/recent')
-      .then(setRecent)
-      .catch(() => setRecent([]));
-  }, []);
+    if (!activeHouseholdId) return;
+    let live = true;
+    api<RecentLookup[]>('GET', `/api/nutrition/recent?householdId=${activeHouseholdId}`)
+      .then((r) => live && setRecent(r))
+      .catch(() => live && setRecent([]));
+    return () => {
+      live = false;
+    };
+  }, [activeHouseholdId]);
 
   // Ingredients and recipes as you type.
   useEffect(() => {
