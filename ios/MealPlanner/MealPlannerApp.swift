@@ -406,7 +406,7 @@ struct RootView: View {
             NavigationStack { HouseholdScreen(session: session) }
         }
         // The ideas board, from the server — the lightbulb is a tap a screenshot run cannot make.
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { debugSheet == "ideas" },
             set: { if !$0 { debugSheet = nil } }
         )) {

@@ -109,8 +109,9 @@ struct ChipFace: View {
         .font(.system(size: 15, weight: isOn ? .semibold : .medium))
         .lineLimit(1)
         .foregroundStyle(isOn ? Palette.bg : Palette.text)
-        .padding(.horizontal, 14)
-        .frame(minHeight: 38)
+        // The mockup's chip is 32pt tall: three of them fit on one row of a phone.
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
         .background(isOn ? Palette.text : Palette.surface, in: Capsule())
         .overlay(Capsule().strokeBorder(isOn ? Palette.text : Palette.border, lineWidth: 1))
         .fixedSize()

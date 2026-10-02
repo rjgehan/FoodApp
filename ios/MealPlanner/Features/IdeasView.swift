@@ -96,22 +96,18 @@ struct IdeasView: View {
             }
             .pageBackground()
             .centeredTitle("Ideas")
+            // The mockup's nav: a bare "‹ Back" and a bare tomato +, with no glass round them.
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                            Text("Back")
-                        }
-                        .foregroundStyle(Palette.accentInk)
-                    }
-                }
+                BarTextButton("Back", placement: .topBarLeading, back: true) { dismiss() }
                 if !closed {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    BareToolbarItem(placement: .topBarTrailing) {
                         Button { suggesting = true } label: {
-                            Image(systemName: "plus").font(.system(size: 20, weight: .regular))
+                            Image(systemName: "plus").font(.system(size: 22, weight: .regular))
                                 .foregroundStyle(Palette.accentInk)
+                                .frame(width: 34, height: 34)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(PressFade())
                         .accessibilityLabel("Suggest an idea")
                     }
                 }
@@ -239,6 +235,20 @@ private func votes(_ count: Int) -> String {
     "\(count) \(count == 1 ? "vote" : "votes")"
 }
 
+/// How long an idea has been up, at a glance and as the web says it: "just now", "6m ago",
+/// "3h ago", "2d ago", then the date.
+private func shortAgo(_ date: Date, now: Date = .now) -> String {
+    let seconds = max(0, now.timeIntervalSince(date))
+    if seconds < 60 { return "just now" }
+    let minutes = Int(seconds / 60)
+    if minutes < 60 { return "\(minutes)m ago" }
+    let hours = minutes / 60
+    if hours < 24 { return "\(hours)h ago" }
+    let days = hours / 24
+    if days < 7 { return "\(days)d ago" }
+    return date.formatted(.dateTime.month(.abbreviated).day())
+}
+
 /**
  One idea (7.5): the vote column on the left where a thumb finds it — tomato once it is yours —
  then what it is, where it is up to and who suggested it. The ••• is there only when there is
@@ -294,7 +304,7 @@ private struct IdeaCard: View {
                         Text(idea.mine ? "You" : idea.authorName)
                         if let created = idea.created {
                             Text(" · ").accessibilityHidden(true)
-                            Text(created, format: .relative(presentation: .named))
+                            Text(shortAgo(created))
                         }
                     }
                     .font(.system(size: 12))
@@ -430,12 +440,9 @@ struct IdeaEditor: View {
             .navigationTitle(idea == nil ? "Suggest an idea" : "Edit idea")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(idea == nil ? "Post" : "Save") { Task { await submit() } }
-                        .fontWeight(.semibold)
-                        .disabled(busy || trimmed.isEmpty)
-                }
+                BarTextButton("Cancel", placement: .topBarLeading) { dismiss() }
+                BarTextButton(idea == nil ? "Post" : "Save", placement: .topBarTrailing, bold: true,
+                              disabled: busy || trimmed.isEmpty) { Task { await submit() } }
             }
             .onAppear { focused = true }
         }

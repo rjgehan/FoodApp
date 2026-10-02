@@ -122,29 +122,27 @@ struct CredentialsPrompt: View {
     // The mockup's 7.1: the envelope on a sky tile, the question and why it is asked, two fields
     // with icons, Save — and "Not now" under it, since that is what closing it means.
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let savedEmail {
-                    PromptHeader(systemImage: "checkmark", tone: .herb, title: "You're all set",
-                                 line: "Saved. Next time, sign in with \(savedEmail) and your new password.",
-                                 stacked: true)
-                    Button("Done") { dismiss() }.buttonStyle(.primary)
-                } else {
-                    PromptHeader(systemImage: "envelope", tone: .sky, title: "Add an email and password",
-                                 line: "PIN sign-in is being retired. Add these once and you'll use them from now on.",
-                                 stacked: true)
-                    PromptCredentialsFields(me: me) { saved in savedEmail = saved.email ?? "" } notNow: {
-                        session.credentialsPromptDismissed = true
-                        dismiss()
-                    }
+        VStack(alignment: .leading, spacing: 18) {
+            if let savedEmail {
+                PromptHeader(systemImage: "checkmark", tone: .herb, title: "You're all set",
+                             line: "Saved. Next time, sign in with \(savedEmail) and your new password.",
+                             stacked: true)
+                Button("Done") { dismiss() }.buttonStyle(.primary)
+            } else {
+                PromptHeader(systemImage: "envelope", tone: .sky, title: "Add an email and password",
+                             line: "PIN sign-in is being retired. Add these once and you'll use them from now on.",
+                             stacked: true)
+                PromptCredentialsFields(me: me) { saved in savedEmail = saved.email ?? "" } notNow: {
+                    session.credentialsPromptDismissed = true
+                    dismiss()
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 28)
-            .padding(.bottom, 20)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .kitchenSheet([.fraction(0.68), .large])
+    }
+        .padding(.horizontal, 20)
+        .padding(.top, 28)
+        // The sheet adds the home indicator's inset below this on its own.
+        .padding(.bottom, 4)
+        .fittedSheet()
     }
 }
 

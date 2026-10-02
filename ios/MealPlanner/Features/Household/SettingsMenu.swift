@@ -127,7 +127,7 @@ struct SettingsView: View {
         }
         .task { me = try? await APIClient.shared.me() }
         .sheet(isPresented: $switching) { HouseholdPicker(session: session) }
-        .sheet(isPresented: $ideas) { IdeasView(session: session) }
+        .fullScreenCover(isPresented: $ideas) { IdeasView(session: session) }
         // On the stack rather than on the scroll view: two .alert modifiers on one view fight over
         // which gets shown, and the one that loses simply never appears.
         .alert("That is not an address", isPresented: Binding(

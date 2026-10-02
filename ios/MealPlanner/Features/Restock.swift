@@ -140,47 +140,45 @@ struct RestockPrompt: View {
     // things as a ticked list on a card, then "Add 3 to groceries" and the way to put it all off.
     // An unticked row says what will happen to it, so leaving one out is not a guess.
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                PromptHeader(systemImage: "bell", tone: .mustard, title: "Time to restock?",
-                             line: items.count == 1 ? "1 reminder is due" : "\(items.count) reminders are due")
-                ListGroup {
-                    ForEach(items) { item in
-                        let on = selected.contains(item.ingredientId)
-                        Button {
-                            if on { selected.remove(item.ingredientId) } else { selected.insert(item.ingredientId) }
-                        } label: {
-                            ListRow(capitalised(item.name),
-                                    subtitle: on ? "\(Restock.everyTitle(item.everyDays)) · \(item.lastBought)"
-                                        : "Skip · ask again in 3 days",
-                                    titleColor: on ? Palette.text : Palette.muted,
-                                    leading: { CheckBox(isOn: on) }, trailing: { EmptyView() })
-                        }
-                        .buttonStyle(PressFade())
-                        .accessibilityAddTraits(on ? [.isSelected] : [])
-                    }
-                }
-                if let error {
-                    Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
-                }
-                VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 16) {
+            PromptHeader(systemImage: "bell", tone: .mustard, title: "Time to restock?",
+                         line: items.count == 1 ? "1 reminder is due" : "\(items.count) reminders are due")
+            ListGroup {
+                ForEach(items) { item in
+                    let on = selected.contains(item.ingredientId)
                     Button {
-                        Task { await add() }
+                        if on { selected.remove(item.ingredientId) } else { selected.insert(item.ingredientId) }
                     } label: {
-                        Label(addTitle, systemImage: "cart")
+                        ListRow(capitalised(item.name),
+                                subtitle: on ? "\(Restock.everyTitle(item.everyDays)) · \(item.lastBought)"
+                                    : "Skip · ask again in 3 days",
+                                titleColor: on ? Palette.text : Palette.muted,
+                                leading: { CheckBox(isOn: on) }, trailing: { EmptyView() })
                     }
-                    .buttonStyle(.primary)
-                    .disabled(busy || selected.isEmpty)
-                    PromptWayOut("Skip all for 3 days") { notNow() }
-                        .disabled(busy)
+                    .buttonStyle(PressFade())
+                    .accessibilityAddTraits(on ? [.isSelected] : [])
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 20)
+            if let error {
+                Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
+            }
+            VStack(spacing: 0) {
+                Button {
+                    Task { await add() }
+                } label: {
+                    Label(addTitle, systemImage: "cart")
+                }
+                .buttonStyle(.primary)
+                .disabled(busy || selected.isEmpty)
+                PromptWayOut("Skip all for 3 days") { notNow() }
+                    .disabled(busy)
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .kitchenSheet([.fraction(0.72), .large])
+        .padding(.horizontal, 20)
+        .padding(.top, 26)
+        // The sheet adds the home indicator's inset below this on its own.
+        .padding(.bottom, 4)
+        .fittedSheet()
         // Swiped away without an answer is "Skip all" too.
         .onDisappear { snoozeIfUnanswered() }
     }

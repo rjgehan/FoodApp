@@ -318,20 +318,18 @@ struct SharedRecipeView: View {
         .scrollDismissesKeyboard(.interactively)
         .pageBackground()
         .navigationBarTitleDisplayMode(.inline)
+        // The mockup's bar (7.6): plain "Cancel", the app's tile and name, bold "Save" — bare text in
+        // the accent's ink, with no glass capsules round them.
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if !finished { Button("Cancel") { dismiss() }.foregroundStyle(Palette.accentInk) }
+            if !finished {
+                BarTextButton("Cancel", placement: .topBarLeading) { dismiss() }
             }
             ToolbarItem(placement: .principal) { ShareSheetTitle() }
-            ToolbarItem(placement: .topBarTrailing) {
-                if finished {
-                    Button("Done") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.accentInk)
-                } else {
-                    Button(savingRecipe || keeping ? "Saving…" : "Save") { Task { await saveTapped() } }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(canSave ? Palette.accentInk : Palette.faint)
-                        .disabled(!canSave)
-                }
+            if finished {
+                BarTextButton("Done", placement: .topBarTrailing, bold: true) { dismiss() }
+            } else {
+                BarTextButton(savingRecipe || keeping ? "Saving…" : "Save", placement: .topBarTrailing, bold: true,
+                              disabled: !canSave) { Task { await saveTapped() } }
             }
         }
         .confirmationDialog(

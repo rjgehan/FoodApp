@@ -27,7 +27,7 @@ struct StartCupboardSheet: View {
     // close button.
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
                 if first {
                     PromptHeader(title: "Stock your cupboard", line: intro)
                 } else {
@@ -86,9 +86,11 @@ struct StartCupboardSheet: View {
     private func section(_ group: StarterGroup) -> some View {
         let open = group.items.filter { !$0.have }.map(\.name)
         let allOn = !open.isEmpty && open.allSatisfy(chosen.contains)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
+                // On the chips' leading edge rather than the label's usual 4pt in.
                 SectionLabel(group.name)
+                    .padding(.horizontal, -4)
                 Spacer()
                 if !open.isEmpty {
                     Button(allOn ? "Clear" : "Select all") {
@@ -113,14 +115,15 @@ struct StartCupboardSheet: View {
             if chosen.contains(item.name) { chosen.remove(item.name) } else { chosen.insert(item.name) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: on ? "checkmark" : "plus").font(.system(size: 12, weight: on ? .heavy : .semibold))
+                Image(systemName: on ? "checkmark" : "plus").font(.system(size: 11, weight: on ? .heavy : .semibold))
                 // Named the way recipes name them, lower case; shown the way the mockup writes them.
                 Text(item.name.prefix(1).uppercased() + item.name.dropFirst())
             }
-            .font(.system(size: 15, weight: .medium))
+            // The mockup's chip: 32pt tall, 14pt words.
+            .font(.system(size: 14, weight: .medium))
             .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 38)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
             .foregroundStyle(item.have ? Palette.herb : on ? Color.white : Palette.text)
             .background(item.have ? Palette.herbSoft : on ? Palette.herb : Palette.surface, in: Capsule())
             .overlay(Capsule().strokeBorder(on ? Color.clear : Palette.border, lineWidth: 1))

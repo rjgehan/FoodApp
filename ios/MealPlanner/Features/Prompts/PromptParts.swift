@@ -43,7 +43,9 @@ struct PromptHeader: View {
                 .accessibilityAddTraits(.isHeader)
             if let line {
                 Text(line)
-                    .font(.system(size: stacked || systemImage == nil ? 15 : 14))
+                    // 15pt under the stacked heading (7.1); 14pt otherwise, as the mockup's
+                    // sheet heading has it (7.3), so "anytime." is not left on a line of its own.
+                    .font(.system(size: stacked ? 15 : 14))
                     .foregroundStyle(Palette.muted)
                     .lineSpacing(stacked ? 3 : 1)
                     .fixedSize(horizontal: false, vertical: true)

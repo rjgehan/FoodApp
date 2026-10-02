@@ -81,7 +81,8 @@ extension View {
                          ideas: Binding<Bool>) -> some View {
         sheet(isPresented: switching) { HouseholdPicker(session: session) }
             .sheet(isPresented: account) { SettingsView(session: session) }
-            .sheet(isPresented: ideas) { IdeasView(session: session) }
+            // A pushed page in the mockup (7.5), filling the screen with Back, not a card over the tab.
+            .fullScreenCover(isPresented: ideas) { IdeasView(session: session) }
     }
 }
 

@@ -244,6 +244,37 @@ extension View {
             .presentationCornerRadius(28)
             .presentationBackground(Palette.bg)
     }
+
+    /**
+     A sheet as tall as what is in it, ending just under its way out — the prompts (7.1, 7.2) —
+     rather than at a fixed share of the screen with an empty panel under "Not now". Put it on
+     the content itself: it brings its own ScrollView, and can still be pulled up to full height
+     when the type is large or the keyboard needs the room.
+     */
+    func fittedSheet() -> some View {
+        modifier(FittedSheet())
+    }
+}
+
+private struct FittedSheet: ViewModifier {
+    @State private var height: CGFloat = 480
+    @State private var detent: PresentationDetent = .height(480)
+
+    func body(content: Content) -> some View {
+        ScrollView {
+            content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in
+                height = measured
+                // Follows the content as it grows or shrinks (a confirm field, "You're all
+                // set"), unless it has been pulled up.
+                if detent != .large { detent = .height(measured) }
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .presentationDetents([.height(height), .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(28)
+        .presentationBackground(Palette.bg)
+    }
 }
 
 #Preview("Top bar") {

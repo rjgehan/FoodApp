@@ -677,9 +677,12 @@ enum Restock {
     /// Offered first, in days. Anything else is "every N days".
     static let presets = [7, 14, 21, 28]
 
+    /// Four weeks reads as a month, the way people say it (mockup 7.2: "Every month"); the web says the same.
     static func every(_ days: Int) -> String {
         if days == 1 { return "every day" }
         if days == 7 { return "every week" }
+        if days == 28 { return "every month" }
+        if days % 28 == 0 { return "every \(days / 28) months" }
         if days % 7 == 0 { return "every \(days / 7) weeks" }
         return "every \(days) days"
     }
