@@ -98,4 +98,33 @@ class UseSoonTest {
         assertThat(UseSoon.judges("Kohlrabi", null)).isFalse();
         assertThat(UseSoon.judges("Za'atar", StoreSection.SPICES)).isTrue();
     }
+
+    @Test
+    void aTypedDateLongGoneIsLeftAloneToo() {
+        // Like a guess: a fortnight past its date it has been eaten or binned, not forgotten in the fridge.
+        UseSoon.Verdict old = UseSoon.of("Salmon fillets", StoreSection.MEAT, TODAY.minusDays(30), TODAY, false, TODAY);
+        assertThat(old.soon()).isFalse();
+        assertThat(old.label()).isEqualTo("past its date");
+        assertThat(old.past(TODAY)).isTrue();
+        UseSoon.Verdict yesterday = UseSoon.of("Salmon fillets", StoreSection.MEAT, TODAY.minusDays(1), TODAY, false, TODAY);
+        assertThat(yesterday.soon()).isTrue();
+        assertThat(yesterday.past(TODAY)).isTrue();
+        assertThat(UseSoon.of("Milk", StoreSection.DAIRY, TODAY, TODAY, false, TODAY).past(TODAY)).isFalse();
+        // A guess is never "past": it is a guess.
+        assertThat(UseSoon.of("Spinach", StoreSection.PRODUCE, null, TODAY.minusDays(5), false, TODAY).past(TODAY)).isFalse();
+    }
+
+    @Test
+    void wordsMatchWholeWordsNotTheStartOfLongerOnes() {
+        assertThat(UseSoon.shelfDays("Pearl barley", null)).isEmpty();
+        assertThat(UseSoon.shelfDays("Pears", StoreSection.PRODUCE)).contains(5);
+        assertThat(UseSoon.shelfDays("Breadcrumbs", null)).isEmpty();
+        assertThat(UseSoon.shelfDays("Sourdough bread", null)).contains(4);
+        assertThat(UseSoon.shelfDays("Grapefruit", null)).contains(14);
+        assertThat(UseSoon.shelfDays("Red grapes", null)).contains(5);
+        assertThat(UseSoon.shelfDays("Buttermilk", null)).contains(7);
+        assertThat(UseSoon.shelfDays("Butter", null)).contains(30);
+        assertThat(UseSoon.shelfDays("Mincemeat", null)).isEmpty();
+        assertThat(UseSoon.shelfDays("Beef mince", null)).contains(2);
+    }
 }

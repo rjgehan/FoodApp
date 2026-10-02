@@ -26,11 +26,13 @@ public class CupboardPlanDtos {
      * @param highlights a few names for chips — the use-soon ones first
      * @param useFirst   suggestions for "use these up first", pre-selected when soon
      * @param days       the next week, with what is already planned on each
+     * @param pastDate   things whose typed use-by date has gone by (reason "past"): shown as a
+     *                   warning to check them, never suggested or pre-ticked to be eaten
      */
     public record CupboardSetupResponse(
             int items, int useSoon, List<String> highlights, List<UseFirstItem> useFirst, List<SetupDay> days,
             List<MealType> defaultMeals, int defaultDays, Integer defaultBuyLimit, boolean defaultOnlyMine,
-            int defaultServings, List<UnsureItem> unsure) {
+            int defaultServings, List<UnsureItem> unsure, List<UseFirstItem> pastDate) {
     }
 
     /**
@@ -44,7 +46,8 @@ public class CupboardPlanDtos {
     }
 
     /**
-     * @param reason "date" (typed use-by), "guess" (the server's), "low" (running low), "plenty" (lots counted)
+     * @param reason "date" (typed use-by), "guess" (the server's), "low" (running low), "plenty" (lots
+     *               counted), "past" (its typed date has gone by: only ever in pastDate)
      * @param label  "by Thu", "soon", "low", "3 tins"
      */
     public record UseFirstItem(UUID itemId, UUID ingredientId, String name, String reason, String label,

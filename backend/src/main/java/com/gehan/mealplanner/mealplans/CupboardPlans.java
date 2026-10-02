@@ -106,7 +106,9 @@ public class CupboardPlans {
         LocalDate today = LocalDate.now(clock);
         List<Item> items = items(householdId, today);
 
-        List<Item> soon = items.stream().filter(i -> i.soon().soon())
+        // Past the date on the packet: not "use first" but "check it" — never pushed to be eaten.
+        List<Item> past = items.stream().filter(i -> i.soon().soon() && i.soon().past(today)).toList();
+        List<Item> soon = items.stream().filter(i -> i.soon().soon() && !i.soon().past(today))
                 .sorted(Comparator.comparing((Item i) -> i.soon().reason() == UseSoon.Reason.DATE ? 0 : 1)
                         .thenComparing(i -> i.soon().by(), Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Item::name, String.CASE_INSENSITIVE_ORDER))
@@ -124,7 +126,7 @@ public class CupboardPlans {
         // Then the open packet running low of something that goes off, and big counts to get through.
         for (Item i : items) {
             if (useFirst.size() >= SUGGESTIONS) break;
-            if (suggested.contains(i.item().getId()) || i.item().isStaple()) continue;
+            if (suggested.contains(i.item().getId()) || i.item().isStaple() || i.soon().past(today)) continue;
             CupboardItem c = i.item();
             if (c.isRunningLow() && UseSoon.shelfDays(i.name(), sectionOf(c, householdId)).isPresent()) {
                 suggested.add(c.getId());
@@ -135,7 +137,7 @@ public class CupboardPlans {
         for (Item i : items) {
             if (useFirst.size() >= SUGGESTIONS) break;
             CupboardItem c = i.item();
-            if (suggested.contains(c.getId()) || c.isStaple() || c.getQuantity() == null
+            if (suggested.contains(c.getId()) || c.isStaple() || i.soon().past(today) || c.getQuantity() == null
                     || c.getQuantity().compareTo(BigDecimal.valueOf(3)) < 0) continue;
             suggested.add(c.getId());
             useFirst.add(new UseFirstItem(c.getId(), c.getIngredient().getId(), display(i.name()), "plenty",
@@ -145,7 +147,7 @@ public class CupboardPlans {
         // Use-soon first, then whatever came in most recently — fresh shopping is what people cook.
         List<String> highlights = new ArrayList<>();
         soon.forEach(i -> highlights.add(display(i.name())));
-        items.stream().filter(i -> !i.soon().soon() && !i.item().isStaple())
+        items.stream().filter(i -> !i.soon().soon() && !i.item().isStaple() && !i.soon().past(today))
                 .sorted(Comparator.comparing((Item i) -> i.item().arrivedAt(), Comparator.nullsLast(Comparator.reverseOrder())))
                 .forEach(i -> highlights.add(display(i.name())));
 
@@ -165,8 +167,12 @@ public class CupboardPlans {
             unsure.add(new UnsureItem(c.getId(), c.getIngredient().getId(), display(i.name()),
                     LocalDate.ofInstant(c.arrivedAt(), clock.getZone())));
         }
+        List<UseFirstItem> check = past.stream()
+                .map(i -> new UseFirstItem(i.item().getId(), i.item().getIngredient().getId(), display(i.name()), "past",
+                        i.soon().label(), i.item().getUseBy(), false))
+                .toList();
         return new CupboardSetupResponse(items.size(), soon.size(), highlights.stream().limit(6).toList(), useFirst,
-                days, DEFAULT_MEALS, DEFAULT_DAYS, DEFAULT_BUY_LIMIT, true, household.getDefaultServings(), unsure);
+                days, DEFAULT_MEALS, DEFAULT_DAYS, DEFAULT_BUY_LIMIT, true, household.getDefaultServings(), unsure, check);
     }
 
     /**
@@ -206,7 +212,8 @@ public class CupboardPlans {
         List<CandidateRecipe> recipes = found.stream().map(c -> new CandidateRecipe(
                 c.dish().id(), c.dish().name(), c.dish().section(), c.dish().yours(), c.fits(), c.pick().percent(),
                 c.pick().uses().size(),
-                c.pick().uses().stream().filter(st -> st.useSoon() || st.priority()).map(st -> display(st.name())).toList(),
+                c.pick().uses().stream().filter(st -> (st.useSoon() || st.priority()) && st.goodOn(c.pick().slot().date()))
+                        .map(st -> display(st.name())).toList(),
                 c.pick().missing().stream().map(n -> display(n.name())).toList(),
                 Math.round(c.score() * 100) / 100.0)).toList();
         List<SlotRef> slots = target != null ? List.of(new SlotRef(target.date(), target.meal()))
@@ -275,16 +282,24 @@ public class CupboardPlans {
         Set<UUID> useFirst = new HashSet<>(request.useFirst() == null ? List.of() : request.useFirst());
 
         List<Item> items = items(householdId, today);
+        // Something past its date is never "use soon" or "use first", whatever an older app sends.
         List<Stocked> stock = items.stream()
                 .filter(i -> !i.item().isUsedUp())
-                .map(i -> new Stocked(i.item().getIngredient().getId(), i.name(), IngredientKeys.key(i.name()),
-                        i.soon().soon(), useFirst.contains(i.item().getIngredient().getId())))
+                .map(i -> {
+                    boolean past = i.soon().past(today);
+                    return new Stocked(i.item().getIngredient().getId(), i.name(), IngredientKeys.key(i.name()),
+                            i.soon().soon() && !past, !past && useFirst.contains(i.item().getIngredient().getId()),
+                            i.soon().by(), i.soon().reason() == UseSoon.Reason.DATE);
+                })
                 .toList();
         List<RecipePool.PoolRecipe> recipes = pool.forHousehold(householdId, !onlyMine);
         Map<UUID, RecipePool.PoolRecipe> byId = new HashMap<>();
         recipes.forEach(r -> byId.put(r.id(), r));
 
         List<LocalDate> dates = request.dates().stream().distinct().sorted().toList();
+        if (dates.get(0).isBefore(today)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Plan from today on: those days have been.");
+        }
         List<MealType> meals = request.meals().stream().distinct().sorted().toList();
         Map<LocalDate, Set<MealType>> planned = planned(householdId, dates.get(0), dates.get(dates.size() - 1));
         Set<UUID> alreadyPlanned = plannedRecipes(householdId, dates.get(0), dates.get(dates.size() - 1));
@@ -327,7 +342,8 @@ public class CupboardPlans {
             mealsOut.add(new DraftMeal(p.slot().date(), p.slot().meal(), r.id(), r.name(), r.section(), r.yours(),
                     r.coverImageId(), p.percent(),
                     p.uses().stream().map(s -> display(s.name())).toList(),
-                    p.uses().stream().filter(s -> s.useSoon() || s.priority()).map(s -> display(s.name())).toList(),
+                    p.uses().stream().filter(s -> (s.useSoon() || s.priority()) && s.goodOn(p.slot().date()))
+                            .map(s -> display(s.name())).toList(),
                     p.missing().stream().map(n -> display(n.name())).toList(), servings));
         }
 
@@ -336,11 +352,13 @@ public class CupboardPlans {
         List<ToBuy> toBuy = draft.toBuy().stream()
                 .map(n -> new ToBuy(n.ingredientId(), display(n.name()), neededBy.getOrDefault(n.key(), 1))).toList();
 
-        Set<String> usedKeys = draft.used().stream().map(Stocked::key).collect(Collectors.toSet());
+        // Only what a meal uses on or before its day counts as used in time; a meal the day after
+        // the spinach's date does not save the spinach.
+        Set<String> inTime = draft.usedInTime();
         List<String> soonUsed = new ArrayList<>(), soonLeft = new ArrayList<>();
         for (Stocked s : stock) {
             if (!s.useSoon() && !s.priority()) continue;
-            (usedKeys.contains(s.key()) ? soonUsed : soonLeft).add(display(s.name()));
+            (inTime.contains(s.key()) ? soonUsed : soonLeft).add(display(s.name()));
         }
 
         return new CupboardPlanResponse(ctx.dates(), ctx.meals(), ctx.buyLimit(), ctx.onlyMine(), servings, draft.percent(),

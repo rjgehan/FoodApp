@@ -24,20 +24,30 @@ import java.util.UUID;
  * on Thursday into Monday's dinner rather than Friday's. Each candidate scores:
  * <ul>
  *   <li>10 × the share of its ingredients already in the cupboard (the point of the exercise)</li>
- *   <li>+4 for each "use these up first" item it uses that no earlier meal has used yet</li>
- *   <li>+2.5 for each other use-soon item it uses that no earlier meal has used yet</li>
+ *   <li>+4 for each "use these up first" item it uses that no earlier meal has used yet, if this
+ *       meal is on or before the item's use-by day</li>
+ *   <li>+2.5 for each other use-soon item it uses that no earlier meal has used yet, likewise</li>
  *   <li>+0.3 for each cupboard item it uses, up to 8 (a fuller dish over a bare one)</li>
  *   <li>+3 × how well it fits the meal (a dinner recipe at dinner; see {@link #fit})</li>
  *   <li>−1 for each thing it adds to the shopping list that is not on it already</li>
  *   <li>+0.75 when it is one of the household's own</li>
  * </ul>
  * A recipe is never used twice in the window, never where it does not fit at all (a drink for
- * dinner), and never when its shopping would take the list past the buy limit.
+ * dinner, a snack for lunch), never when its shopping would take the list past the buy limit,
+ * and never when less than a fifth of it is in the cupboard: this is cooking from the cupboard,
+ * not a shopping list with a recipe attached.
+ *
+ * A typed use-by date is a fact: after it, the thing is not in the cupboard as far as that meal is
+ * concerned (it goes on the shopping list like anything else missing). A guessed date only
+ * decides the bonus — the guess may be wrong, and the person can see the label says "soon".
  */
 public final class CupboardPlanner {
 
     /** No limit on extra things to buy. */
     public static final int ANY = -1;
+
+    /** Below this share in the cupboard a recipe is not "from the cupboard" at all. */
+    static final double MIN_COVERAGE = 0.2;
 
     public record Need(UUID ingredientId, String name, String key) {
     }
@@ -45,8 +55,27 @@ public final class CupboardPlanner {
     public record Dish(UUID id, String name, RecipeSection section, boolean yours, List<Need> needs) {
     }
 
-    /** Something in the cupboard. {@code priority}: ticked under "use these up first". */
-    public record Stocked(UUID ingredientId, String name, String key, boolean useSoon, boolean priority) {
+    /**
+     * Something in the cupboard. {@code priority}: ticked under "use these up first".
+     *
+     * @param by    the day to use it by, typed in or guessed; null when it keeps
+     * @param dated {@code by} is the date on the packet, not a guess
+     */
+    public record Stocked(UUID ingredientId, String name, String key, boolean useSoon, boolean priority,
+                          LocalDate by, boolean dated) {
+        public Stocked(UUID ingredientId, String name, String key, boolean useSoon, boolean priority) {
+            this(ingredientId, name, key, useSoon, priority, null, false);
+        }
+
+        /** Still good on that day: no date, or the day is on or before it. */
+        public boolean goodOn(LocalDate day) {
+            return by == null || day == null || !day.isAfter(by);
+        }
+
+        /** Usable at all on that day: a guess never rules it out, a typed date gone by does. */
+        boolean usableOn(LocalDate day) {
+            return !dated || goodOn(day);
+        }
     }
 
     public record Slot(LocalDate date, MealType meal) {
@@ -74,6 +103,20 @@ public final class CupboardPlanner {
                 all += p.uses().size() + p.missing().size();
             }
             return all == 0 ? 0 : (int) Math.round(100.0 * have / all);
+        }
+
+        /**
+         * The use-soon and use-first things that a meal uses on or before the day they are good
+         * to — what "gets used before it goes off" may honestly say.
+         */
+        public Set<String> usedInTime() {
+            Set<String> keys = new HashSet<>();
+            for (Pick p : picks) {
+                for (Stocked s : p.uses()) {
+                    if ((s.useSoon() || s.priority()) && s.goodOn(p.slot().date())) keys.add(s.key());
+                }
+            }
+            return keys;
         }
 
         /** Different cupboard things the meals use. */
@@ -111,11 +154,12 @@ public final class CupboardPlanner {
                 case SNACKS -> 0.2;
                 default -> 0;
             };
+            // A snack is not a lunch: a bowl of yogurt for four, or a cream pudding, is no meal.
             case LUNCH -> switch (s) {
                 case LUNCH -> 1;
                 case DINNER -> 0.7;
                 case OTHER -> 0.4;
-                case BREAKFAST, SNACKS -> 0.2;
+                case BREAKFAST -> 0.2;
                 default -> 0;
             };
             case DINNER -> switch (s) {
@@ -266,18 +310,19 @@ public final class CupboardPlanner {
         if (fit == 0) return null;
         Pick pick = pick(slot, dish, false);
         int all = pick.uses().size() + pick.missing().size();
-        if (all == 0) return null;
+        if (all == 0 || pick.uses().isEmpty()) return null;
+        double coverage = (double) pick.uses().size() / all;
+        if (coverage < MIN_COVERAGE) return null;
         Set<String> newBuys = new HashSet<>();
         for (Need n : pick.missing()) if (!state.shopping.contains(n.key())) newBuys.add(n.key());
         if (buyLimit != ANY && state.shopping.size() + newBuys.size() > buyLimit) return null;
 
         int priority = 0, soon = 0;
         for (Stocked s : pick.uses()) {
-            if (state.usedStock.contains(s.key())) continue;
+            if (state.usedStock.contains(s.key()) || !s.goodOn(slot.date())) continue;
             if (s.priority()) priority++;
             else if (s.useSoon()) soon++;
         }
-        double coverage = (double) pick.uses().size() / all;
         return 10 * coverage + 4 * priority + 2.5 * soon + 0.3 * Math.min(8, pick.uses().size())
                 + 3 * fit - newBuys.size() + (dish.yours() ? 0.75 : 0);
     }
@@ -291,6 +336,8 @@ public final class CupboardPlanner {
             if (!seen.add(need.key())) continue;
             Stocked have = need.ingredientId() != null ? byId.get(need.ingredientId()) : null;
             if (have == null) have = byKey.get(need.key());
+            // Past the date on its packet by this meal: as good as not there.
+            if (have != null && !have.usableOn(slot.date())) have = null;
             if (have != null) uses.add(have);
             else missing.add(need);
         }

@@ -30,8 +30,9 @@ public final class UseSoon {
     public static final int SOON_DAYS = 3;
 
     /**
-     * A guess that ran out this long ago is probably about something already eaten, thrown
-     * away or frozen — the cupboard just never heard. Nagging about it forever helps nobody.
+     * A date (typed or guessed) that ran out this long ago is probably about something already
+     * eaten, thrown away or frozen — the cupboard just never heard. Nagging about it forever
+     * helps nobody.
      */
     static final int STALE_AFTER_DAYS = 14;
 
@@ -43,6 +44,14 @@ public final class UseSoon {
      */
     public record Verdict(boolean soon, Reason reason, LocalDate by, String label) {
         static final Verdict NOT_SOON = new Verdict(false, null, null, null);
+
+        /**
+         * The date on the packet has gone by. Not something to cook first: something to look at
+         * before anyone eats it — raw fish a week past its use-by is not a bargain.
+         */
+        public boolean past(LocalDate today) {
+            return reason == Reason.DATE && by != null && by.isBefore(today);
+        }
     }
 
     private UseSoon() {
@@ -59,7 +68,9 @@ public final class UseSoon {
                              boolean staple, LocalDate today) {
         if (useBy != null) {
             long days = ChronoUnit.DAYS.between(today, useBy);
-            return new Verdict(days <= SOON_DAYS, Reason.DATE, useBy, dateLabel(useBy, today));
+            // A date a fortnight gone is about something already eaten or thrown out, as with a guess.
+            boolean soon = days <= SOON_DAYS && days >= -STALE_AFTER_DAYS;
+            return new Verdict(soon, Reason.DATE, useBy, dateLabel(useBy, today));
         }
         if (staple || arrivedOn == null) {
             return Verdict.NOT_SOON;
@@ -89,7 +100,7 @@ public final class UseSoon {
             "\\b(tin|tins|tinned|canned|can|cans|jar|jarred|dried|dry|frozen|powder|powdered|uht|long[- ]life"
                     + "|stock|stock cubes?|cubes|flakes|paste|purée|puree|passata|concentrate|sauce|ketchup|pickled|smoked salmon"
                     + "|pasta|noodles?|rice|flour|oats|honey|jam|vinegar|oil|sugar|peanut butter|nut butter"
-                    + "|coconut milk|ice cream)\\b");
+                    + "|coconut milk|ice cream|mincemeat|pearl barley|breadcrumbs?|panko)\\b");
 
     /** Sections that are larder or freezer through and through. */
     private static final List<StoreSection> KEEPING_SECTIONS = List.of(
@@ -110,19 +121,19 @@ public final class UseSoon {
             Rule.of(3, "spinach|salad|lettuce|rocket|arugula|watercress|kale|chard|pak choi|bok choy|bean ?sprout"
                     + "|coriander|cilantro|basil|parsley|mint|dill|chives|tarragon"
                     + "|strawberr|raspberr|blueberr|blackberr|mushroom|asparagus"),
-            Rule.of(4, "avocado|bread|loaf|baguette|bagel|roll|bun|croissant|pastr"),
+            Rule.of(4, "avocado|bread\\b(?!crumb)|loaf|baguette|bagel|rolls?\\b|buns?\\b|croissant|pastr"),
             Rule.of(5, "cream|crème fraîche|creme fraiche|soured cream|mozzarella|ricotta|burrata|hummus|houmous"
                     + "|tofu|tomato|courgette|zucchini|aubergine|eggplant|broccoli|cauliflower|green bean|pea pod"
-                    + "|sugar snap|mangetout|cucumber|spring onion|scallion|leek|banana|grape|peach|nectarine|plum"
-                    + "|pear|mango|ham|cooked|gnocchi"),
-            Rule.of(7, "milk|bacon|pancetta|pepper|chilli|chili|celery|fennel|feta|halloumi|cottage cheese|cream cheese"
+                    + "|sugar snap|mangetout|cucumber|spring onion|scallion|leek|banana|grapes?\\b(?!fruit)|peach|nectarine|plum"
+                    + "|pears?\\b|mango|ham\\b|cooked|gnocchi"),
+            Rule.of(7, "buttermilk|milk|bacon|pancetta|pepper|chilli|chili|celery|fennel|feta|halloumi|cottage cheese|cream cheese"
                     + "|tortilla|wrap|pitta|pita|naan"),
             Rule.of(10, "yogurt|yoghurt|kefir"),
             Rule.of(14, "carrot|cabbage|beetroot|beet|radish|apple|orange|lemon|lime|grapefruit|clementine|satsuma"
                     + "|parsnip|swede|turnip|sweetcorn|corn on the cob"),
             Rule.of(21, "egg|onion|shallot|garlic|ginger|potato|squash|pumpkin|butternut"),
             Rule.of(28, "cheddar|parmesan|parmigiano|pecorino|gruyère|gruyere|manchego|cheese"),
-            Rule.of(30, "butter"));
+            Rule.of(30, "butter\\b"));
 
     /** What a section keeps for when nothing in the name says. */
     private static Optional<Integer> sectionDays(StoreSection section) {

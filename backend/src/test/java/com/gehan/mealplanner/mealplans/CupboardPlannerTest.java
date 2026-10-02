@@ -91,7 +91,7 @@ class CupboardPlannerTest {
     @Test
     void theBuyLimitIsNeverPassed() {
         Dish cheap = dish("Beans on toast", RecipeSection.DINNER, "baked beans", "bread");
-        Dish dear = dish("Paella", RecipeSection.DINNER, "rice", "prawns", "chorizo", "saffron", "peas");
+        Dish dear = dish("Paella", RecipeSection.DINNER, "rice", "prawns", "chorizo", "saffron");
         CupboardPlanner none = new CupboardPlanner(List.of(have("Baked beans"), have("Bread"), have("Rice")),
                 List.of(cheap, dear), 0);
         CupboardPlanner.Draft draft = none.plan(dinners(2), Map.of(), Map.of(), Set.of());
@@ -100,10 +100,10 @@ class CupboardPlannerTest {
         assertThat(draft.toBuy()).isEmpty();
 
         CupboardPlanner four = new CupboardPlanner(List.of(have("Baked beans"), have("Bread"), have("Rice")),
-                List.of(cheap, dear), 4);
-        assertThat(four.plan(dinners(2), Map.of(), Map.of(), Set.of()).toBuy()).hasSize(4);
-        CupboardPlanner three = new CupboardPlanner(List.of(have("Baked beans"), have("Bread"), have("Rice")),
                 List.of(cheap, dear), 3);
+        assertThat(four.plan(dinners(2), Map.of(), Map.of(), Set.of()).toBuy()).hasSize(3);
+        CupboardPlanner three = new CupboardPlanner(List.of(have("Baked beans"), have("Bread"), have("Rice")),
+                List.of(cheap, dear), 2);
         assertThat(three.plan(dinners(2), Map.of(), Map.of(), Set.of()).picks()).hasSize(1);
     }
 
@@ -147,7 +147,7 @@ class CupboardPlannerTest {
     void aSwapKeepsTheRestAndMovesOnToTheNextBest() {
         Dish a = dish("A curry", RecipeSection.DINNER, "chickpeas", "spinach");
         Dish b = dish("B stew", RecipeSection.DINNER, "chickpeas", "carrots");
-        Dish c = dish("C soup", RecipeSection.DINNER, "lentils", "stock");
+        Dish c = dish("C soup", RecipeSection.DINNER, "lentils", "stock", "carrots");
         CupboardPlanner planner = new CupboardPlanner(List.of(have("Chickpeas"), have("Spinach"), have("Carrots")),
                 List.of(a, b, c), CupboardPlanner.ANY);
         Slot mon = new Slot(MON, MealType.DINNER), tue = new Slot(MON.plusDays(1), MealType.DINNER);
@@ -228,5 +228,59 @@ class CupboardPlannerTest {
         assertThat(IngredientKeys.isFree("Salt")).isTrue();
         assertThat(IngredientKeys.isFree("water")).isTrue();
         assertThat(IngredientKeys.isFree("pepper")).isFalse();
+    }
+
+    static Stocked dated(String name, LocalDate by, boolean priority) {
+        return new Stocked(null, name, IngredientKeys.key(name), true, priority, by, true);
+    }
+
+    @Test
+    void aTypedUseByDateIsNotStretchedPastItsDay() {
+        // Salmon is good until Monday. Tuesday's salmon would be past its date: it is not in the
+        // cupboard as far as Tuesday is concerned, and earns no "use soon" bonus there.
+        Dish salmon = dish("Salmon and potatoes", RecipeSection.DINNER, "salmon fillets", "potatoes");
+        Dish omelette = dish("Omelette", RecipeSection.DINNER, "eggs", "potatoes");
+        CupboardPlanner planner = new CupboardPlanner(
+                List.of(dated("Salmon fillets", MON, true), have("Potatoes"), have("Eggs")),
+                List.of(salmon, omelette), CupboardPlanner.ANY);
+        CupboardPlanner.Draft monday = planner.plan(dinners(2), Map.of(), Map.of(), Set.of());
+        assertThat(names(monday)).containsExactly("Salmon and potatoes", "Omelette");
+        assertThat(monday.usedInTime()).contains(IngredientKeys.key("Salmon fillets"));
+
+        List<Slot> tuesday = List.of(new Slot(MON.plusDays(1), MealType.DINNER));
+        CupboardPlanner.Draft late = planner.plan(tuesday, Map.of(), Map.of(), Set.of());
+        assertThat(names(late)).containsExactly("Omelette");
+        CupboardPlanner.Pick pick = planner.pick(tuesday.get(0), salmon, false);
+        assertThat(pick.missing()).extracting(Need::name).containsExactly("salmon fillets");
+    }
+
+    @Test
+    void aGuessedDateOnlyDecidesTheBonus() {
+        Dish salad = dish("Spinach salad", RecipeSection.DINNER, "spinach", "feta");
+        Stocked spinach = new Stocked(null, "Spinach", IngredientKeys.key("Spinach"), true, false, MON, false);
+        CupboardPlanner planner = new CupboardPlanner(List.of(spinach, have("Feta")), List.of(salad), CupboardPlanner.ANY);
+        CupboardPlanner.Draft draft = planner.plan(List.of(new Slot(MON.plusDays(2), MealType.DINNER)), Map.of(), Map.of(),
+                Set.of());
+        // Still used (the guess may be wrong), but not claimed as saved in time.
+        assertThat(names(draft)).containsExactly("Spinach salad");
+        assertThat(draft.usedInTime()).isEmpty();
+    }
+
+    @Test
+    void aRecipeWithLittleOrNothingInTheCupboardIsNotCookingFromIt() {
+        Dish ramen = dish("Ramen", RecipeSection.DINNER, "ramen noodles");
+        Dish stew = dish("Stew", RecipeSection.DINNER, "beef", "carrots", "onion", "stock", "potatoes", "red wine");
+        CupboardPlanner planner = new CupboardPlanner(List.of(have("Onion")), List.of(ramen, stew), CupboardPlanner.ANY);
+        CupboardPlanner.Draft draft = planner.plan(dinners(1), Map.of(), Map.of(), Set.of());
+        // Ramen has nothing in the cupboard; the stew only a sixth.
+        assertThat(draft.picks()).isEmpty();
+        assertThat(draft.unfilled()).hasSize(1);
+    }
+
+    @Test
+    void aSnackIsNeverLunchOrDinner() {
+        assertThat(CupboardPlanner.fit(RecipeSection.SNACKS, MealType.LUNCH)).isZero();
+        assertThat(CupboardPlanner.fit(RecipeSection.SNACKS, MealType.DINNER)).isZero();
+        assertThat(CupboardPlanner.fit(RecipeSection.SNACKS, MealType.SNACK)).isEqualTo(1);
     }
 }
