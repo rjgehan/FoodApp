@@ -108,14 +108,26 @@ public final class Grams {
             Map.entry("handfuls", "handful"), Map.entry("knobs", "knob"), Map.entry("pinches", "pinch"),
             Map.entry("dashes", "dash"), Map.entry("splashes", "splash"), Map.entry("glugs", "glug"),
             Map.entry("shots", "shot"), Map.entry("dollops", "dollop"), Map.entry("squeezes", "squeeze"),
-            Map.entry("thumbs", "thumb"), Map.entry("leaves", "leaf"));
+            Map.entry("thumbs", "thumb"), Map.entry("leaves", "leaf"), Map.entry("sachets", "sachet"),
+            Map.entry("heads", "head"));
 
     /** Named things you count — "2 cloves", "3 slices" — looked for among the food's measures. */
     private static final Set<String> COUNTED = Set.of(
             "clove", "slice", "stick", "head", "bunch", "wedge", "sprig", "leaf", "stalk", "fillet", "breast",
             "thigh", "link", "sheet", "ball", "bulb", "ear", "cube", "pod", "piece", "jar", "bottle", "block",
             "carton", "tub", "pot", "punnet", "loaf", "bar", "square", "can", "package", "sausage", "steak",
-            "chop", "drumstick", "fruit", "segment", "floret", "spear", "strip", "rasher", "tortilla", "roll");
+            "chop", "drumstick", "fruit", "segment", "floret", "spear", "strip", "rasher", "tortilla", "roll", "sachet");
+
+    /**
+     * Cuts a recipe counts the way a shop sells them, and the most one of them weighs. USDA
+     * sometimes measures one as the whole side it was cut from — salmon's "0.5 fillet" is 198 g,
+     * so "1 fillet" would be a 396 g side and four of them a kilo and a half; Atlantic cod's
+     * "1 fillet" is 231 g where a shop's is 120–150 g. A measure heavier than this is not used to
+     * count, and a shop-sized one from the tables below is used instead (and called an estimate).
+     */
+    private static final Map<String, Double> CUTS = Map.of(
+            "fillet", 180.0, "breast", 250.0, "thigh", 200.0, "steak", 350.0, "chop", 300.0, "loin", 350.0,
+            "cutlet", 200.0);
 
     /** When the food has no measure of that name, what one usually weighs. */
     private static final Map<String, Double> TYPICAL_UNIT = Map.ofEntries(
@@ -147,11 +159,21 @@ public final class Grams {
             Map.entry("apple", 180.0), Map.entry("banana", 118.0), Map.entry("orange", 140.0),
             // A whole head, which is what a recipe means by "1 broccoli".
             Map.entry("broccoli", 300.0), Map.entry("cauliflower", 600.0), Map.entry("cabbage", 900.0),
-            Map.entry("lettuce", 300.0),
+            Map.entry("lettuce", 300.0), Map.entry("butternut", 900.0),
             // A slice of cured ham; a sprig of a herb.
             Map.entry("ham", 15.0), Map.entry("prosciutto", 15.0), Map.entry("rosemary", 1.0),
             Map.entry("thyme", 1.0), Map.entry("parsley", 1.0), Map.entry("basil", 1.0), Map.entry("mint", 1.0),
             Map.entry("dill", 1.0), Map.entry("coriander", 1.0), Map.entry("sage", 1.0));
+
+    /**
+     * Tins that are not the usual 400 g, by a word in the food's or the line's name: {the tin,
+     * what is left drained}. A UK tin of tuna is 145 g and about 110 g drained, not a 400 g tin of
+     * tomatoes; sweetcorn is a 198 g tin, 165 g drained. Sizes as sold in UK supermarkets.
+     */
+    private static final List<Map.Entry<String, double[]>> TINS = List.of(
+            Map.entry("tuna", new double[]{145, 110}), Map.entry("sardine", new double[]{120, 90}),
+            Map.entry("mackerel", new double[]{125, 90}), Map.entry("anchovy", new double[]{50, 30}),
+            Map.entry("salmon", new double[]{213, 170}), Map.entry("corn", new double[]{198, 165}));
 
     private static final Set<String> SIZES = Set.of("small", "medium", "large", "extra large", "jumbo");
 
@@ -295,6 +317,8 @@ public final class Grams {
     /** A plain count, maybe with a size: "2 onions", "1 large egg". */
     private static Optional<Each> count(String key, String name, Food food) {
         List<String> nameWords = FoodWords.words(name);
+        // "1 tin tuna" is a tin, written without its unit.
+        if (key.isEmpty() && nameWords.contains("can")) return named("can", name, food);
         String size = SIZES.contains(key) ? key
                 : nameWords.contains("large") ? "large" : nameWords.contains("small") ? "small"
                 : nameWords.contains("medium") ? "medium" : nameWords.contains("jumbo") ? "jumbo" : null;
@@ -313,7 +337,7 @@ public final class Grams {
         int namedRank = Integer.MAX_VALUE;
         for (Food.Portion p : portions) {
             String first = FoodWords.singular(firstWord(p.label()));
-            if (!own.contains(first) || volumeUnit(p.label()) != null) continue;
+            if (!own.contains(first) || volumeUnit(p.label()) != null || tooBigACut(p)) continue;
             int rank = sizeRank(p.label());
             if (rank < namedRank) {
                 namedRank = rank;
@@ -321,6 +345,8 @@ public final class Grams {
             }
         }
         if (named != null) return portion(named);
+        Optional<Each> cut = shopCut(nameWords, name, food);
+        if (cut.isPresent()) return cut;
         // Recipes mean a large egg; USDA's large is 50 g, close to a British medium.
         List<String> order = food.name().startsWith("Egg") ? List.of("large", "medium", "extra large", "small")
                 : List.of("medium", "large", "small");
@@ -348,7 +374,7 @@ public final class Grams {
             String first = FoodWords.singular(firstWord(p.label()));
             boolean match = first.equals(key) || (key.equals("stick") && first.equals("stalk"))
                     || (key.equals("stalk") && first.equals("stick")) || (key.equals("slice") && first.equals("rasher"));
-            if (!match || key.equals("can") || key.equals("package")) continue;
+            if (!match || key.equals("can") || key.equals("package") || tooBigACut(p)) continue;
             int rank = sizeRank(p.label());
             if (rank < sameRank) {
                 sameRank = rank;
@@ -357,10 +383,29 @@ public final class Grams {
         }
         if (same != null) return portion(same);
         if (key.equals("can")) {
-            // A standard 400 g tin; drained, about 240 g of it is the food.
+            // A standard 400 g tin; drained, about 240 g of it is the food — unless it is one of
+            // the things sold in smaller tins.
             boolean drained = food.name().toLowerCase(Locale.ROOT).contains("drained");
-            double grams = drained ? 240 : 400;
-            return Optional.of(new Each(grams, How.TYPICAL, "a 400 g tin" + (drained ? ", drained ≈ 240 g" : "")));
+            double[] tin = tinSize(name, food);
+            double grams = drained ? tin[1] : tin[0];
+            return Optional.of(new Each(grams, How.TYPICAL, "a " + tidy(tin[0]) + " g tin"
+                    + (drained ? ", drained ≈ " + tidy(tin[1]) + " g" : "")));
+        }
+        if (key.equals("sachet")) {
+            // A sachet of yeast is 7 g; a sachet of anything else could be a gram or a stock pot.
+            if (!food.name().toLowerCase(Locale.ROOT).contains("yeast")) return Optional.empty();
+            return Optional.of(new Each(7, How.TYPICAL, "a sachet ≈ 7 g"));
+        }
+        if (key.equals("head")) {
+            // A head of garlic is ten-odd cloves; a head of broccoli is what "1 broccoli" means.
+            if (FoodWords.words(food.name()).contains("garlic")) {
+                return Optional.of(new Each(50, How.TYPICAL, "a head ≈ 50 g"));
+            }
+            return typicalOne(name, food);
+        }
+        if (CUTS.containsKey(key)) {
+            Optional<Each> cut = shopCut(List.of(key), name, food);
+            if (cut.isPresent()) return cut;
         }
         if (key.equals("package")) {
             for (Food.Portion p : food.portions()) {
@@ -386,6 +431,35 @@ public final class Grams {
             return Optional.of(new Each(typical, How.TYPICAL, "a " + key + " ≈ " + tidy(typical) + " g"));
         }
         return Optional.empty();
+    }
+
+    /** A USDA measure of a cut that is the whole side, not one a shop would sell. */
+    private static boolean tooBigACut(Food.Portion p) {
+        Double most = CUTS.get(FoodWords.singular(firstWord(p.label())));
+        return most != null && p.gramsEach() > most;
+    }
+
+    /**
+     * One shop-sized cut — "4 salmon fillets", "2 cod fillets", "1 sirloin steak" — from the
+     * usual sizes by name, when the line counts cuts and the food has no sensible measure for one.
+     */
+    private static Optional<Each> shopCut(List<String> unitOrNameWords, String name, Food food) {
+        String cut = unitOrNameWords.stream().map(FoodWords::singular).filter(CUTS::containsKey).findFirst().orElse(null);
+        if (cut == null) return Optional.empty();
+        Optional<Each> typical = typicalOne(name, food);
+        Double each = typical.map(Each::grams).orElse(TYPICAL_UNIT.get(cut));
+        if (each == null) return Optional.empty();
+        return Optional.of(new Each(each, How.TYPICAL, "a " + cut + " ≈ " + tidy(each) + " g"));
+    }
+
+    private static double[] tinSize(String name, Food food) {
+        List<String> words = new java.util.ArrayList<>(FoodWords.words(name));
+        words.addAll(FoodWords.words(food.name().split(",").length > 1
+                ? food.name().split(",")[0] + " " + food.name().split(",")[1] : food.name()));
+        for (Map.Entry<String, double[]> tin : TINS) {
+            if (words.contains(tin.getKey())) return tin.getValue();
+        }
+        return new double[]{400, 240};
     }
 
     private static Optional<Each> typicalOne(String name, Food food) {

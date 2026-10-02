@@ -99,6 +99,39 @@ class NutritionMathsTest {
     }
 
     @Test
+    void tunaComesInASmallerTin() {
+        // A UK tin of tuna is 145 g, about 110 g drained — not a 400 g tin of tomatoes.
+        assertThat(grams(1, "tin", "tuna", 173709).grams()).isEqualTo(110);
+        assertThat(grams(1, null, "tin tuna", 173709).grams()).isEqualTo(110);
+        assertThat(grams(2, "tins", "tuna", 173709).basis()).isEqualTo("a 145 g tin, drained ≈ 110 g");
+    }
+
+    @Test
+    void countedFishFilletsAreShopSizedNotAWholeSide() {
+        // USDA's salmon measure is "0.5 fillet = 198 g": a whole side. Four shop fillets are ~520 g.
+        Grams.Amount salmon = grams(4, null, "salmon fillets", 175167);
+        assertThat(salmon.grams()).isEqualTo(520);
+        assertThat(salmon.how()).isEqualTo(Grams.How.TYPICAL);
+        assertThat(salmon.estimated()).isTrue();
+        assertThat(salmon.basis()).isEqualTo("a fillet ≈ 130 g");
+        assertThat(grams(4, "fillets", "salmon", 175167).grams()).isEqualTo(520);
+        // Atlantic cod's "1 fillet" is 231 g; a shop's is about 140 g.
+        assertThat(grams(4, null, "cod fillets", 171955).grams()).isEqualTo(560);
+        assertThat(grams(4, "fillet", "cod", 171955).grams()).isEqualTo(560);
+        // A sensible measure of the food's own is still used: Pacific cod's fillet is 116 g.
+        Grams.Amount pacific = grams(1, "fillet", "cod", 174191);
+        assertThat(pacific.how()).isEqualTo(Grams.How.PORTION);
+    }
+
+    @Test
+    void aHeadIsAWholeOneAndASachetOfYeastIsSevenGrams() {
+        assertThat(grams(1, "head", "broccoli", 170379).grams()).isEqualTo(300);
+        assertThat(grams(1, "head", "garlic", 169230).grams()).isEqualTo(50);
+        assertThat(grams(1, null, "butternut squash", 169295).grams()).isEqualTo(900);
+        assertThat(grams(1, "sachet", "yeast", 175043).grams()).isEqualTo(7);
+    }
+
+    @Test
     void vagueAmountsAreRoughButNotNothing() {
         Grams.Amount knob = grams(1, "knob", "butter", 173410);
         assertThat(knob.grams()).isEqualTo(12);
