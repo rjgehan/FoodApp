@@ -199,3 +199,23 @@ test('nutrition: the answers the phone decodes, and what its Apple Intelligence 
   expect(found.recipes.map((r: any) => r.name)).toContain('Curry for the phone');
   expect(found.productsStatus).not.toBe('ok');
 });
+
+test('the cupboard sheet: the whole edit with a use-by date, clearing it, and an older build that sends none', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const item = await call('POST', `/api/households/${hh.id}/cupboard`, { token, body: { name: 'baby spinach' } });
+  // The phone offers the date only when the item says whether it wants using soon.
+  expect(typeof item.useSoon).toBe('boolean');
+  const url = `/api/households/${hh.id}/cupboard/${item.id}`;
+
+  // CupboardItemSheet's Save, as editCupboard writes it: only what changed, useBy as yyyy-MM-dd.
+  const saved = await call('PATCH', url, {
+    token, body: { trackQuantity: true, quantity: 2, unit: 'bags', useBy: isoDate(2) },
+  });
+  expect(saved).toMatchObject({ quantity: 2, unit: 'bags', useBy: isoDate(2), useSoon: true, useSoonGuess: false });
+  for (const key of ['useSoonLabel', 'ingredientId', 'categoryId', 'onList']) expect(saved).toHaveProperty(key);
+
+  // An older build never sends useBy: the date stays. The switch turned off sends "".
+  expect((await call('PATCH', url, { token, body: { staple: false } })).useBy).toBe(isoDate(2));
+  expect((await call('PATCH', url, { token, body: { useBy: '' } })).useBy).toBeNull();
+});

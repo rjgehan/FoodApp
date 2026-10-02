@@ -650,7 +650,8 @@ actor APIClient {
         staple: Bool? = nil,
         trackQuantity: Bool? = nil,
         quantity: Double? = nil,
-        unit: String? = nil
+        unit: String? = nil,
+        useBy: String? = nil
     ) async throws -> CupboardItem {
         var body: [String: Any] = [:]
         if let name { body["name"] = name }
@@ -658,6 +659,8 @@ actor APIClient {
         if let trackQuantity { body["trackQuantity"] = trackQuantity }
         if let quantity { body["quantity"] = quantity }
         if let unit { body["unit"] = unit }
+        // "2026-10-08" sets the date on the packet and "" clears it; left out, it is left alone.
+        if let useBy { body["useBy"] = useBy }
         return try await send("PATCH", "/api/households/\(household.uuidString)/cupboard/\(item.uuidString)", body: body)
     }
 

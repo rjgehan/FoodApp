@@ -465,6 +465,8 @@ struct CupboardItemSheet: View {
     @State private var unit: String
     @State private var staple: Bool
     @State private var everyDays: Int?
+    /// Nil means no date on the packet.
+    @State private var useBy: Date?
     @State private var busy = false
     @State private var error: String?
 
@@ -485,6 +487,7 @@ struct CupboardItemSheet: View {
         _unit = State(initialValue: item.unit ?? "")
         _staple = State(initialValue: item.staple)
         _everyDays = State(initialValue: reminder?.everyDays)
+        _useBy = State(initialValue: item.useBy.flatMap(UseByDate.date))
     }
 
     /// Blank means "leave it alone", not "call it nothing".
@@ -606,6 +609,32 @@ struct CupboardItemSheet: View {
                 }
                 .tint(Palette.herb)
 
+                // Only offered by a server that keeps the date; an older one would drop it.
+                if item.serverKnowsUseBy {
+                    ListGroup {
+                        ListRow("Use by", subtitle: useBy.map(UseByDate.reminder) ?? "Optional · plans use it up in time") {
+                            Toggle("Use by", isOn: Binding(
+                                get: { useBy != nil },
+                                set: { useBy = $0 ? (useBy ?? UseByDate.inDays(3)) : nil }
+                            ))
+                            .labelsHidden()
+                        }
+                        if let date = useBy {
+                            HStack {
+                                Text("Date").font(.system(size: 15)).foregroundStyle(Palette.muted)
+                                Spacer()
+                                DatePicker("Date", selection: Binding(get: { date }, set: { useBy = $0 }),
+                                           displayedComponents: .date)
+                                    .labelsHidden()
+                                    .tint(Palette.accent)
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 46)
+                        }
+                    }
+                    .tint(Palette.herb)
+                }
+
                 if mergesWith != nil {
                     NoteBox("Renaming this to “\(named)” would merge it with the item you already have.",
                             tone: .sky, systemImage: "info.circle")
@@ -620,6 +649,13 @@ struct CupboardItemSheet: View {
             .padding(.bottom, 20)
         }
         .kitchenSheet([.large])
+    }
+
+    /// What to send for the date: nil when it hasn't changed, "" to clear it.
+    private var useByChange: String? {
+        guard item.serverKnowsUseBy else { return nil }
+        let now = useBy.map(UseByDate.string) ?? ""
+        return now == (item.useBy ?? "") ? nil : now
     }
 
     private func save() async {
@@ -641,7 +677,8 @@ struct CupboardItemSheet: View {
                 staple: staple == item.staple ? nil : staple,
                 trackQuantity: modeChanged ? exact : nil,
                 quantity: exact ? quantity : nil,
-                unit: exact ? unit.trimmingCharacters(in: .whitespaces) : nil
+                unit: exact ? unit.trimmingCharacters(in: .whitespaces) : nil,
+                useBy: useByChange
             )
             if !exact, (amount == .low) != saved.runningLow {
                 saved = try await APIClient.shared.updateCupboard(household: household, item: saved.id, runningLow: amount == .low)
@@ -678,5 +715,45 @@ struct CupboardItemSheet: View {
     Color.clear.sheet(isPresented: .constant(true)) {
         CupboardItemSheet(item: SampleData.cupboardMockup[0], others: SampleData.cupboardMockup,
                           categories: SampleData.aisles, reminder: nil, session: .preview, sample: true) {}
+    }
+}
+
+/// The date on a packet, as the server keeps it ("2026-10-08") and as the sheet says it.
+enum UseByDate {
+    private static let wire: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    static func date(_ string: String) -> Date? { wire.date(from: string) }
+    static func string(_ date: Date) -> String { wire.string(from: date) }
+
+    static func inDays(_ days: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: days, to: Calendar.current.startOfDay(for: .now)) ?? .now
+    }
+
+    /// Under the switch, beside a date picker that already shows the date: what it means.
+    static func reminder(_ date: Date) -> String {
+        switch shown(date) {
+        case "Past its date": return "Past its date"
+        case "Today": return "Use it today"
+        case "Tomorrow": return "Use it by tomorrow"
+        default: return "Plans use it up in time"
+        }
+    }
+
+    /// "Sun, 4 Oct", or "Today" / "Tomorrow" / "Past its date".
+    static func shown(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: .now),
+                                           to: calendar.startOfDay(for: date)).day ?? 0
+        if days < 0 { return "Past its date" }
+        if days == 0 { return "Today" }
+        if days == 1 { return "Tomorrow" }
+        return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
     }
 }

@@ -482,8 +482,20 @@ struct CupboardItem: Codable, Identifiable, Hashable {
     /// The shared ingredient behind it — what a restock reminder hangs on. Optional and last,
     /// so sample data built by hand can leave it out.
     var ingredientId: UUID? = nil
+    /// The date on the packet ("2026-10-08"), if somebody entered one.
+    var useBy: String? = nil
+    /// Wants using within a few days, by its date or the server's guess. Nil from a server that
+    /// has never heard of use-by dates — which is how the sheet knows not to offer one.
+    var useSoon: Bool? = nil
+    /// The soon is the server's guess from what it is and when it was bought, not a date.
+    var useSoonGuess: Bool? = nil
+    /// "by Thu", "today", "past its date", "soon".
+    var useSoonLabel: String? = nil
 
     var tracksQuantity: Bool { quantity != nil }
+
+    /// A server new enough to keep use-by dates always says whether an item wants using soon.
+    var serverKnowsUseBy: Bool { useSoon != nil }
 
     /// "Always have · On the list", the same line the web shows under the name.
     var detail: String? {
