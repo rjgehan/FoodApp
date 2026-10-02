@@ -137,6 +137,20 @@ public final class UseSoon {
     }
 
     /**
+     * Whether the rule has a view on this thing at all: it keeps (a tin, the spice aisle), its
+     * name is one the rules know, or its aisle says roughly how long. "Kohlrabi" in an aisle of
+     * its own has none — that is the kind of thing a phone's Apple Intelligence is asked about.
+     */
+    public static boolean judges(String name, StoreSection section) {
+        if (section != null && KEEPING_SECTIONS.contains(section)) return true;
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (KEEPS.matcher(n).find() || n.matches(".*\\b(black pepper|peppercorns?|white pepper|cayenne|chilli flakes)\\b.*")) {
+            return true;
+        }
+        return shelfDays(name, section).isPresent();
+    }
+
+    /**
      * Roughly how many days something keeps from when it was bought, or empty for larder and
      * freezer things that keep for weeks or more (tins, rice, spices, frozen peas). "Pepper" in
      * the spice aisle is the spice; in produce it is the vegetable — the section decides first.

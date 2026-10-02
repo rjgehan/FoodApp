@@ -25,7 +25,7 @@ test('the server says it has meal plans', async () => {
   const owner = await admin();
   const status = await call('GET', '/api/meal-plans', { token: owner.token });
   expect(status.ready).toBe(true);
-  expect(status.features).toEqual(expect.arrayContaining(['cupboard', 'use-by', 'targets']));
+  expect(status.features).toEqual(expect.arrayContaining(['cupboard', 'use-by', 'targets', 'candidates']));
 });
 
 test('a cupboard item takes a use-by date, and says when it wants using soon', async () => {
@@ -188,6 +188,93 @@ test('applying a draft plans its meals and puts the missing things on the grocer
   expect(twice.added).toBe(0);
   expect(twice.skipped.map((s: any) => s.reason)).toEqual(['PLANNED', 'PLANNED']);
   expect(await groceries(hh.id)).toHaveLength(1);
+});
+
+// ---- What a phone's Apple Intelligence chooses from, and how its choices are checked
+
+test('candidates for a phone to choose a cupboard plan from, best first, only what the rules allow', async () => {
+  const { hh, curry, traybake, stew, porridge } = await stockedKitchen();
+  const owner = await admin();
+  const setup = { dates: [isoDate(1), isoDate(2)], meals: ['DINNER'], buyLimit: 5, onlyMine: true };
+  const base = `/api/households/${hh.id}/meal-plans/cupboard`;
+  const all = await call('POST', `${base}/candidates`, { token: owner.token, body: { setup } });
+  expect(all.slots).toEqual([{ date: isoDate(1), mealType: 'DINNER' }, { date: isoDate(2), mealType: 'DINNER' }]);
+  // No porridge for dinner; the all-cupboard curry with the spinach in it first.
+  expect(all.recipes.map((r: any) => r.recipeId)).toEqual([curry.id, traybake.id, stew.id]);
+  expect(all.recipes[0]).toMatchObject({ fits: ['DINNER'], percentFromCupboard: 100, yours: true, toBuy: [], usesSoon: ['Baby spinach'] });
+  expect(all.recipes[1].toBuy).toEqual(['Lemon']);
+  expect(all.recipes.map((r: any) => r.recipeId)).not.toContain(porridge.id);
+
+  // One slot: with Tuesday's traybake kept and Monday's curry being swapped, only the stew is left.
+  const meals = [
+    { date: isoDate(1), mealType: 'DINNER', recipeId: curry.id },
+    { date: isoDate(2), mealType: 'DINNER', recipeId: traybake.id },
+  ];
+  const one = await call('POST', `${base}/candidates`, {
+    token: owner.token, body: { setup, meals, date: isoDate(1), mealType: 'DINNER' },
+  });
+  expect(one.slots).toEqual([{ date: isoDate(1), mealType: 'DINNER' }]);
+  expect(one.recipes.map((r: any) => r.recipeId)).toEqual([stew.id]);
+  expect(await statusOf('POST', `${base}/candidates`, { token: owner.token, body: { setup, date: isoDate(1) } })).toBe(400);
+  const outsider = await newMember((await newHousehold()).id);
+  expect(await statusOf('POST', `${base}/candidates`, { token: outsider.token, body: { setup } })).toBe(403);
+});
+
+test('a plan a phone chose goes through the same rules: allowed picks are kept, the rest get the server\'s best', async () => {
+  const { hh, curry, traybake, stew, porridge } = await stockedKitchen();
+  const owner = await admin();
+  const setup = { dates: [isoDate(1), isoDate(2)], meals: ['DINNER'], buyLimit: 5, onlyMine: true };
+  const base = `/api/households/${hh.id}/meal-plans/cupboard`;
+  const chosen = await call('POST', base, {
+    token: owner.token,
+    body: { ...setup, chosen: [
+      { date: isoDate(1), mealType: 'DINNER', recipeId: traybake.id },
+      { date: isoDate(2), mealType: 'DINNER', recipeId: curry.id },
+    ] },
+  });
+  expect(chosen.meals.map((m: any) => m.recipeId)).toEqual([traybake.id, curry.id]);
+  expect(chosen.percentFromCupboard).toBe(83);
+
+  // Porridge for dinner and a recipe from another household: refused, and filled by the server.
+  const secret = await newRecipe((await newHousehold()).id, unique('Secret'), [{ name: 'beef', qty: 1, unit: 'kg' }]);
+  const refused = await call('POST', base, {
+    token: owner.token,
+    body: { ...setup, chosen: [
+      { date: isoDate(1), mealType: 'DINNER', recipeId: porridge.id },
+      { date: isoDate(2), mealType: 'DINNER', recipeId: secret.id },
+    ] },
+  });
+  expect(refused.meals.map((m: any) => m.recipeId)).toEqual([curry.id, traybake.id]);
+
+  // A swap may name the one it wants; it is used when the rules allow it there.
+  const meals = chosen.meals.map((m: any) => ({ date: m.date, mealType: m.mealType, recipeId: m.recipeId }));
+  const swapped = await call('POST', `${base}/swap`, {
+    token: owner.token, body: { setup, meals, date: isoDate(2), mealType: 'DINNER', exclude: [], recipeId: stew.id },
+  });
+  expect(swapped.swapped).toBe(true);
+  expect(swapped.meals.map((m: any) => m.recipeId)).toEqual([traybake.id, stew.id]);
+  // The traybake is on Monday already, so naming it for Tuesday falls back to the server's next best.
+  const notTwice = await call('POST', `${base}/swap`, {
+    token: owner.token, body: { setup, meals, date: isoDate(2), mealType: 'DINNER', exclude: [], recipeId: traybake.id },
+  });
+  expect(notTwice.meals.map((m: any) => m.recipeId)).toEqual([traybake.id, stew.id]);
+});
+
+test('the cupboard setup offers a phone the things the use-soon rule cannot judge', async () => {
+  const hh = await newHousehold();
+  const odd = unique('zorbleberry');
+  await cupboardAdd(hh.id, odd);
+  await cupboardAdd(hh.id, 'salmon fillets');
+  await cupboardAdd(hh.id, 'chickpeas (tin)');
+  const dated = await cupboardAdd(hh.id, unique('quibblefruit'));
+  await cupboardPatch(hh.id, dated.id, { useBy: isoDate(10) });
+  const owner = await admin();
+  const setup = await call('GET', `/api/households/${hh.id}/meal-plans/cupboard`, { token: owner.token });
+  // Salmon is judged (soon), the tin keeps, the dated one has its date: only the odd one is asked about.
+  expect(setup.unsure).toHaveLength(1);
+  expect(setup.unsure[0]).toMatchObject({ arrivedOn: isoDate(0) });
+  expect(setup.unsure[0].name.toLowerCase()).toBe(odd.toLowerCase());
+  expect(setup.unsure[0].ingredientId).toBeTruthy();
 });
 
 test('only members can plan from a cupboard, and only with recipes the household can read', async () => {
@@ -503,4 +590,74 @@ test('changing a plan\'s details chooses again; renaming keeps the meals; deleti
   expect(await statusOf('PUT', base, { token: owner.token, body: { details: { ...mine, age: 10 } } })).toBe(400);
   expect(await statusOf('DELETE', base, { token: owner.token })).toBe(200);
   expect(await statusOf('GET', base, { token: owner.token })).toBe(404);
+});
+
+test('a phone chooses a target plan from candidates; the server portions it and checks every pick', async () => {
+  const { hh, recipes } = await kitchenWithNutrition();
+  const owner = await admin();
+  const details = { ...mine, days: 2 };
+  const base = `/api/households/${hh.id}/meal-plans/targets`;
+  const c = await call('POST', `${base}/candidates`, { token: owner.token, body: { details } });
+  expect(c).toMatchObject({ length: 2, mealTypes: ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] });
+  expect(c.targets).toMatchObject({ kcal: 3170, protein: 135 });
+  // The day shared 25/30/35/10.
+  expect(c.aims.map((a: any) => a.kcal)).toEqual([793, 951, 1110, 317]);
+  const ids = c.recipes.map((r: any) => r.recipeId);
+  expect(ids).not.toContain(recipes.pork.id);
+  expect(ids).toEqual(expect.arrayContaining([recipes.oats.id, recipes.chilli.id, recipes.yogurt.id]));
+  const chilli = c.recipes.find((r: any) => r.recipeId === recipes.chilli.id);
+  expect(chilli).toMatchObject({ yours: true, fits: ['LUNCH', 'DINNER'] });
+  expect(chilli.kcal).toBeGreaterThan(100);
+
+  const preview = await call('POST', `${base}/preview`, {
+    token: owner.token,
+    body: { details, chosen: [
+      { day: 0, mealType: 'DINNER', recipeId: recipes.chilli.id },
+      { day: 0, mealType: 'LUNCH', recipeId: recipes.soup.id },
+      { day: 1, mealType: 'DINNER', recipeId: recipes.pork.id },
+      { day: 1, mealType: 'BREAKFAST', recipeId: recipes.chilli.id },
+    ] },
+  });
+  const at = (day: number, meal: string) => preview.days[day].meals.find((m: any) => m.mealType === meal);
+  expect(at(0, 'DINNER').recipeId).toBe(recipes.chilli.id);
+  expect(at(0, 'LUNCH').recipeId).toBe(recipes.soup.id);
+  expect([0.5, 1, 1.5, 2, 2.5, 3]).toContain(at(0, 'DINNER').portion);
+  // No pork, and no chilli for breakfast: the server's own choices go there instead.
+  expect(at(1, 'DINNER').recipeId).not.toBe(recipes.pork.id);
+  expect(at(1, 'BREAKFAST').recipeId).not.toBe(recipes.chilli.id);
+  expect(preview.days.flatMap((d: any) => d.meals)).toHaveLength(8);
+
+  // Kept as the phone chose it: created, then "choose again" sends the next choice back exactly.
+  const asSent = (p: any) => p.days.flatMap((d: any) => d.meals.map((m: any) => ({ day: m.day, mealType: m.mealType, recipeId: m.recipeId, portion: m.portion })));
+  const saved = await call('POST', base, { token: owner.token, body: { name: 'Phone plan', details, meals: asSent(preview) } });
+  expect(saved.days).toEqual(preview.days);
+  const regenerated = await call('POST', `${base}/preview`, {
+    token: owner.token, body: { details, chosen: [{ day: 0, mealType: 'DINNER', recipeId: recipes.salmon.id }] },
+  });
+  const updated = await call('PUT', `${base}/${saved.id}`, { token: owner.token, body: { meals: asSent(regenerated) } });
+  expect(updated.days).toEqual(regenerated.days);
+  expect(updated.name).toBe('Phone plan');
+  expect((await call('GET', `${base}/${saved.id}`, { token: owner.token })).days).toEqual(regenerated.days);
+
+  // A swap may name the one it wants, in a saved plan and in a preview.
+  const dinnerOnly = { ...mine, days: 1, meals: ['DINNER'] };
+  const one = await call('POST', base, { token: owner.token, body: { name: 'One dinner', details: dinnerOnly } });
+  const current = one.days[0].meals[0].recipeId;
+  const wanted = c.recipes.find((r: any) => r.fits.includes('DINNER') && r.recipeId !== current).recipeId;
+  const swapped = await call('POST', `${base}/${one.id}/swap`, {
+    token: owner.token, body: { day: 0, mealType: 'DINNER', recipeId: wanted },
+  });
+  expect(swapped.days[0].meals[0].recipeId).toBe(wanted);
+  const previewSwap = await call('POST', `${base}/preview/swap`, {
+    token: owner.token, body: { details: dinnerOnly, meals: asSent(swapped), day: 0, mealType: 'DINNER', recipeId: current },
+  });
+  expect(previewSwap.days[0].meals[0].recipeId).toBe(current);
+  // Pork is never allowed, named or not.
+  const noPork = await call('POST', `${base}/preview/swap`, {
+    token: owner.token, body: { details: dinnerOnly, meals: asSent(swapped), day: 0, mealType: 'DINNER', recipeId: recipes.pork.id },
+  });
+  expect(noPork.days[0].meals[0].recipeId).not.toBe(recipes.pork.id);
+
+  const outsider = await newMember((await newHousehold()).id);
+  expect(await statusOf('POST', `${base}/candidates`, { token: outsider.token, body: { details } })).toBe(403);
 });

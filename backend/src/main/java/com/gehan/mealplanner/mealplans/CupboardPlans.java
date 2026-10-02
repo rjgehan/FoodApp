@@ -5,6 +5,9 @@ import com.gehan.mealplanner.domain.GroceryCategory;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.MealPlanEntry;
 import com.gehan.mealplanner.domain.MealType;
+import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CandidateRecipe;
+import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CupboardCandidatesRequest;
+import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CupboardCandidatesResponse;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CupboardPlanRequest;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CupboardPlanResponse;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.CupboardSetupResponse;
@@ -13,7 +16,9 @@ import com.gehan.mealplanner.mealplans.CupboardPlanDtos.DraftMeal;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.MealChoice;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.OpenSlot;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.SetupDay;
+import com.gehan.mealplanner.mealplans.CupboardPlanDtos.SlotRef;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.ToBuy;
+import com.gehan.mealplanner.mealplans.CupboardPlanDtos.UnsureItem;
 import com.gehan.mealplanner.mealplans.CupboardPlanDtos.UseFirstItem;
 import com.gehan.mealplanner.mealplans.CupboardPlanner.Slot;
 import com.gehan.mealplanner.mealplans.CupboardPlanner.Stocked;
@@ -59,6 +64,11 @@ public class CupboardPlans {
     static final List<MealType> DEFAULT_MEALS = List.of(MealType.LUNCH, MealType.DINNER);
     /** How many "use these up first" suggestions to make. */
     static final int SUGGESTIONS = 8;
+    /** At most this many things the rule cannot judge are offered to a phone to guess about. */
+    static final int UNSURE = 20;
+    /** Recipes offered to a phone's model for a whole plan, and for one slot. */
+    static final int CANDIDATES = 30;
+    static final int SWAP_CANDIDATES = 12;
 
     private final HouseholdService householdService;
     private final HouseholdRepository households;
@@ -145,14 +155,72 @@ public class CupboardPlans {
             LocalDate date = today.plusDays(d);
             days.add(new SetupDay(date, List.copyOf(new TreeSet<>(planned.getOrDefault(date, Set.of())))));
         }
+        // What the rule cannot judge, for a phone's Apple Intelligence to have a go at.
+        List<UnsureItem> unsure = new ArrayList<>();
+        for (Item i : items) {
+            if (unsure.size() >= UNSURE) break;
+            CupboardItem c = i.item();
+            if (c.isStaple() || c.getUseBy() != null || c.arrivedAt() == null || i.soon().soon()) continue;
+            if (UseSoon.judges(i.name(), sectionOf(c, householdId))) continue;
+            unsure.add(new UnsureItem(c.getId(), c.getIngredient().getId(), display(i.name()),
+                    LocalDate.ofInstant(c.arrivedAt(), clock.getZone())));
+        }
         return new CupboardSetupResponse(items.size(), soon.size(), highlights.stream().limit(6).toList(), useFirst,
-                days, DEFAULT_MEALS, DEFAULT_DAYS, DEFAULT_BUY_LIMIT, true, household.getDefaultServings());
+                days, DEFAULT_MEALS, DEFAULT_DAYS, DEFAULT_BUY_LIMIT, true, household.getDefaultServings(), unsure);
     }
 
+    /**
+     * A draft. A phone's Apple Intelligence may say which recipe it wants in each slot
+     * ({@code chosen}); each is taken where the rules allow it, and any that is not (or any slot
+     * it left out) gets the server's own best, so the answer is always a whole, valid plan.
+     */
     @Transactional(readOnly = true)
     public CupboardPlanResponse generate(UUID householdId, UUID requesterId, CupboardPlanRequest request) {
         household(householdId, requesterId);
-        return draft(householdId, request, Map.of(), Map.of(), null, null);
+        Map<Slot, UUID> wanted = new HashMap<>();
+        if (request.chosen() != null) {
+            for (MealChoice m : request.chosen()) wanted.putIfAbsent(new Slot(m.date(), m.mealType()), m.recipeId());
+        }
+        return draft(householdId, request, Map.of(), Map.of(), null, null, wanted);
+    }
+
+    /** The recipes a phone's model may choose from, for a whole plan or for one slot (see the request). */
+    @Transactional(readOnly = true)
+    public CupboardCandidatesResponse candidates(UUID householdId, UUID requesterId, CupboardCandidatesRequest request) {
+        household(householdId, requesterId);
+        if ((request.date() == null) != (request.mealType() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Send both date and mealType for one slot, or neither.");
+        }
+        Slot target = request.date() == null ? null : new Slot(request.date(), request.mealType());
+        CupboardPlanRequest setup = request.setup();
+        if (target != null) setup = widened(setup, target);
+        Context ctx = context(householdId, setup, null);
+        Map<Slot, UUID> fixed = new HashMap<>();
+        if (request.meals() != null) {
+            for (MealChoice m : request.meals()) fixed.put(new Slot(m.date(), m.mealType()), m.recipeId());
+        }
+        Set<UUID> exclude = new HashSet<>(request.exclude() == null ? List.of() : request.exclude());
+        if (target != null && fixed.containsKey(target)) exclude.add(fixed.get(target));
+        List<CupboardPlanner.Candidate> found = ctx.planner().candidates(ctx.slots(), fixed, ctx.alreadyPlanned(), target,
+                exclude, target == null ? CANDIDATES : SWAP_CANDIDATES);
+        List<CandidateRecipe> recipes = found.stream().map(c -> new CandidateRecipe(
+                c.dish().id(), c.dish().name(), c.dish().section(), c.dish().yours(), c.fits(), c.pick().percent(),
+                c.pick().uses().size(),
+                c.pick().uses().stream().filter(st -> st.useSoon() || st.priority()).map(st -> display(st.name())).toList(),
+                c.pick().missing().stream().map(n -> display(n.name())).toList(),
+                Math.round(c.score() * 100) / 100.0)).toList();
+        List<SlotRef> slots = target != null ? List.of(new SlotRef(target.date(), target.meal()))
+                : ctx.slots().stream().map(sl -> new SlotRef(sl.date(), sl.meal())).toList();
+        return new CupboardCandidatesResponse(slots, recipes, ctx.recipes().size());
+    }
+
+    /** The setup with the slot being swapped in it, even if its days or meals were edited since. */
+    private static CupboardPlanRequest widened(CupboardPlanRequest setup, Slot target) {
+        List<LocalDate> dates = new ArrayList<>(setup.dates());
+        if (!dates.contains(target.date())) dates.add(target.date());
+        List<MealType> meals = new ArrayList<>(setup.meals());
+        if (!meals.contains(target.meal())) meals.add(target.meal());
+        return new CupboardPlanRequest(dates, meals, setup.useFirst(), setup.buyLimit(), setup.onlyMine(), setup.servings());
     }
 
     /**
@@ -173,18 +241,14 @@ public class CupboardPlans {
         }
         Set<UUID> exclude = new HashSet<>(request.exclude() == null ? List.of() : request.exclude());
         if (current != null) exclude.add(current);
-        CupboardPlanRequest setup = request.setup();
         // The slot being swapped is part of the plan even if the setup's days were edited since.
-        List<LocalDate> dates = new ArrayList<>(setup.dates());
-        if (!dates.contains(target.date())) dates.add(target.date());
-        List<MealType> meals = new ArrayList<>(setup.meals());
-        if (!meals.contains(target.meal())) meals.add(target.meal());
-        CupboardPlanRequest widened = new CupboardPlanRequest(dates, meals, setup.useFirst(), setup.buyLimit(),
-                setup.onlyMine(), setup.servings());
+        CupboardPlanRequest widened = widened(request.setup(), target);
         // Slots the client has no meal for stay empty: a swap changes one meal, not the rest.
         Set<Slot> onlyThese = new HashSet<>(fixed.keySet());
         onlyThese.add(target);
-        CupboardPlanResponse swapped = draft(householdId, widened, fixed, Map.of(target, exclude), onlyThese, true);
+        // A phone's model may name the one it wants; it is taken only if the rules allow it there.
+        Map<Slot, UUID> wanted = request.recipeId() == null ? Map.of() : Map.of(target, request.recipeId());
+        CupboardPlanResponse swapped = draft(householdId, widened, fixed, Map.of(target, exclude), onlyThese, true, wanted);
         boolean filled = swapped.meals().stream().anyMatch(m -> m.date().equals(target.date()) && m.mealType() == target.meal());
         if (filled || current == null) {
             return swapped;
@@ -192,11 +256,17 @@ public class CupboardPlans {
         // Nothing else is allowed there: the meal that was there stays.
         Map<Slot, UUID> keep = new HashMap<>(fixed);
         keep.put(target, current);
-        return draft(householdId, widened, keep, Map.of(), onlyThese, false);
+        return draft(householdId, widened, keep, Map.of(), onlyThese, false, Map.of());
     }
 
-    private CupboardPlanResponse draft(UUID householdId, CupboardPlanRequest request, Map<Slot, UUID> fixed,
-                                       Map<Slot, Set<UUID>> excluded, Set<Slot> onlyThese, Boolean swapped) {
+    /** Everything a draft or a candidate list is worked out from. */
+    private record Context(List<Item> items, List<Stocked> stock, List<RecipePool.PoolRecipe> recipes,
+                           Map<UUID, RecipePool.PoolRecipe> byId, List<LocalDate> dates, List<MealType> meals,
+                           Set<UUID> alreadyPlanned, List<Slot> slots, List<OpenSlot> open, CupboardPlanner planner,
+                           boolean onlyMine, int servings, Integer buyLimit) {
+    }
+
+    private Context context(UUID householdId, CupboardPlanRequest request, Set<Slot> onlyThese) {
         Household household = households.findById(householdId).orElseThrow();
         LocalDate today = LocalDate.now(clock);
         boolean onlyMine = request.onlyMine() == null || request.onlyMine();
@@ -232,11 +302,22 @@ public class CupboardPlans {
                 slots.add(slot);
             }
         }
-
         CupboardPlanner planner = new CupboardPlanner(stock,
                 recipes.stream().map(RecipePool.PoolRecipe::dish).toList(),
                 buyLimit == null ? CupboardPlanner.ANY : buyLimit);
-        CupboardPlanner.Draft draft = planner.plan(slots, fixed, excluded, alreadyPlanned);
+        return new Context(items, stock, recipes, byId, dates, meals, alreadyPlanned, slots, open, planner, onlyMine,
+                servings, buyLimit);
+    }
+
+    private CupboardPlanResponse draft(UUID householdId, CupboardPlanRequest request, Map<Slot, UUID> fixed,
+                                       Map<Slot, Set<UUID>> excluded, Set<Slot> onlyThese, Boolean swapped,
+                                       Map<Slot, UUID> wanted) {
+        Context ctx = context(householdId, request, onlyThese);
+        List<Stocked> stock = ctx.stock();
+        Map<UUID, RecipePool.PoolRecipe> byId = ctx.byId();
+        List<OpenSlot> open = new ArrayList<>(ctx.open());
+        int servings = ctx.servings();
+        CupboardPlanner.Draft draft = ctx.planner().plan(ctx.slots(), fixed, excluded, ctx.alreadyPlanned(), wanted);
         draft.unfilled().forEach(s -> open.add(new OpenSlot(s.date(), s.meal(), "NOTHING_FITS")));
         open.sort(Comparator.comparing(OpenSlot::date).thenComparing(OpenSlot::mealType));
 
@@ -262,9 +343,9 @@ public class CupboardPlans {
             (usedKeys.contains(s.key()) ? soonUsed : soonLeft).add(display(s.name()));
         }
 
-        return new CupboardPlanResponse(dates, meals, buyLimit, onlyMine, servings, draft.percent(),
+        return new CupboardPlanResponse(ctx.dates(), ctx.meals(), ctx.buyLimit(), ctx.onlyMine(), servings, draft.percent(),
                 draft.used().size(), summary(draft, soonUsed), mealsOut, open, toBuy, soonUsed, soonLeft,
-                recipes.size(), swapped);
+                ctx.recipes().size(), swapped);
     }
 
     /** "Uses 31 items, 5 to buy. Spinach and chicken thighs get used before they go off." */

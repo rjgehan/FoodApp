@@ -87,25 +87,62 @@ public class TargetPlanDtos {
             @Size(max = 56) List<@Valid PlanMealChoice> meals) {
     }
 
-    public record UpdateTargetPlanRequest(@Size(max = 80) String name, @Valid TargetDetails details) {
+    /**
+     * New details choose the meals again; {@code meals} (a preview's, chosen by a phone's Apple
+     * Intelligence) are kept exactly instead, as on create. A new name alone keeps them.
+     */
+    public record UpdateTargetPlanRequest(@Size(max = 80) String name, @Valid TargetDetails details,
+                                          @Size(max = 56) List<@Valid PlanMealChoice> meals) {
     }
 
     public record PlanMealChoice(@Min(0) @Max(13) int day, @NotNull MealType mealType, @NotNull UUID recipeId,
                                  @DecimalMin("0.25") @DecimalMax("4") double portion) {
     }
 
-    /** Preview from details (nothing saved). */
-    public record PreviewRequest(@Size(max = 80) String name, @NotNull @Valid TargetDetails details) {
+    /**
+     * Preview from details (nothing saved). {@code chosen}: the recipe a phone's Apple
+     * Intelligence wants in each slot, taken where the rules allow, in the planner's own portions.
+     */
+    public record PreviewRequest(@Size(max = 80) String name, @NotNull @Valid TargetDetails details,
+                                 @Size(max = 56) List<@Valid SlotChoice> chosen) {
     }
 
-    /** Swap one meal of a preview: everything else is kept as the client has it. */
+    /** A recipe for a slot, without a portion: the server works that out. */
+    public record SlotChoice(@Min(0) @Max(13) int day, @NotNull MealType mealType, @NotNull UUID recipeId) {
+    }
+
+    /**
+     * Swap one meal of a preview: everything else is kept as the client has it. {@code recipeId}:
+     * the one a phone's model wants there, used if the rules allow it.
+     */
     public record PreviewSwapRequest(@Size(max = 80) String name, @NotNull @Valid TargetDetails details,
                                      @NotNull @Size(max = 56) List<@Valid PlanMealChoice> meals,
                                      @Min(0) @Max(13) int day, @NotNull MealType mealType,
-                                     @Size(max = 200) List<UUID> exclude) {
+                                     @Size(max = 200) List<UUID> exclude, UUID recipeId) {
     }
 
-    public record SwapRequest(@Min(0) @Max(13) int day, @NotNull MealType mealType, @Size(max = 200) List<UUID> exclude) {
+    public record SwapRequest(@Min(0) @Max(13) int day, @NotNull MealType mealType, @Size(max = 200) List<UUID> exclude,
+                              UUID recipeId) {
+    }
+
+    /** What a phone's Apple Intelligence chooses a plan from: the details, as for a preview. */
+    public record CandidatesRequest(@NotNull @Valid TargetDetails details) {
+    }
+
+    /**
+     * @param aims    roughly what each meal is aiming at: the day's targets shared out
+     * @param recipes the ones the preferences allow, best leaning first, with their nutrition per serving
+     */
+    public record TargetCandidatesResponse(TargetsResponse targets, int length, List<MealType> mealTypes,
+                                           List<MealAim> aims, List<TargetCandidate> recipes) {
+    }
+
+    public record MealAim(MealType mealType, int kcal, int protein) {
+    }
+
+    /** @param fits the plan's meals it may go in */
+    public record TargetCandidate(UUID recipeId, String name, RecipeSection section, boolean yours, List<MealType> fits,
+                                  int kcal, int protein, int carbs, int fat, Integer minutes) {
     }
 
     /**

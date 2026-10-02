@@ -30,7 +30,17 @@ public class CupboardPlanDtos {
     public record CupboardSetupResponse(
             int items, int useSoon, List<String> highlights, List<UseFirstItem> useFirst, List<SetupDay> days,
             List<MealType> defaultMeals, int defaultDays, Integer defaultBuyLimit, boolean defaultOnlyMine,
-            int defaultServings) {
+            int defaultServings, List<UnsureItem> unsure) {
+    }
+
+    /**
+     * Something in the cupboard the server's use-soon rule knows nothing about ("halloumi" is
+     * known; "kohlrabi" is not), with no date on it: a phone with Apple Intelligence may guess
+     * how long it keeps. The web and other phones simply leave it out of "use soon".
+     *
+     * @param arrivedOn the day it came into the house, which a guess counts from
+     */
+    public record UnsureItem(UUID itemId, UUID ingredientId, String name, LocalDate arrivedOn) {
     }
 
     /**
@@ -55,7 +65,14 @@ public class CupboardPlanDtos {
             @Size(max = 200) List<UUID> useFirst,
             @Min(0) @Max(100) Integer buyLimit,
             Boolean onlyMine,
-            @Min(1) @Max(50) Integer servings) {
+            @Min(1) @Max(50) Integer servings,
+            @Size(max = 60) List<@Valid MealChoice> chosen) {
+
+        /** Everything from before a phone could choose the meals, which is what the web sends. */
+        public CupboardPlanRequest(List<LocalDate> dates, List<MealType> meals, List<UUID> useFirst, Integer buyLimit,
+                                   Boolean onlyMine, Integer servings) {
+            this(dates, meals, useFirst, buyLimit, onlyMine, servings, null);
+        }
     }
 
     /** One meal of a draft, as the client holds it. */
@@ -71,7 +88,49 @@ public class CupboardPlanDtos {
             @NotNull @Size(max = 60) List<@Valid MealChoice> meals,
             @NotNull LocalDate date,
             @NotNull MealType mealType,
+            @Size(max = 200) List<UUID> exclude,
+            UUID recipeId) {
+
+        public CupboardSwapRequest(CupboardPlanRequest setup, List<MealChoice> meals, LocalDate date,
+                                   MealType mealType, List<UUID> exclude) {
+            this(setup, meals, date, mealType, exclude, null);
+        }
+    }
+
+    /**
+     * What a phone's Apple Intelligence may choose from. With {@code date} and {@code mealType},
+     * the recipes allowed in that one slot with {@code meals} (the draft as the phone has it)
+     * kept — a swap; without, the recipes allowed anywhere in the setup's slots — a whole plan.
+     */
+    public record CupboardCandidatesRequest(
+            @NotNull @Valid CupboardPlanRequest setup,
+            @Size(max = 60) List<@Valid MealChoice> meals,
+            LocalDate date,
+            MealType mealType,
             @Size(max = 200) List<UUID> exclude) {
+    }
+
+    /**
+     * @param slots   the slots to fill: the setup's days and meals, less any already planned
+     * @param recipes best first, by the server's own score
+     */
+    public record CupboardCandidatesResponse(List<SlotRef> slots, List<CandidateRecipe> recipes, int recipesConsidered) {
+    }
+
+    public record SlotRef(LocalDate date, MealType mealType) {
+    }
+
+    /**
+     * One recipe the model may choose, described in what it is choosing on.
+     *
+     * @param fits    the meals it may go in (a dinner recipe is never breakfast)
+     * @param uses    how many cupboard things it uses
+     * @param usesSoon of those, the ones that want using soon or were ticked to use first
+     * @param toBuy   what it needs that the cupboard doesn't have
+     */
+    public record CandidateRecipe(UUID recipeId, String name, RecipeSection section, boolean yours,
+                                  List<MealType> fits, int percentFromCupboard, int uses, List<String> usesSoon,
+                                  List<String> toBuy, double score) {
     }
 
     /**

@@ -159,6 +159,64 @@ class CupboardPlannerTest {
     }
 
     @Test
+    void aRecipeAPhoneChoseIsTakenWhereTheRulesAllowIt() {
+        Dish a = dish("A curry", RecipeSection.DINNER, "chickpeas", "spinach");
+        Dish b = dish("B stew", RecipeSection.DINNER, "chickpeas", "carrots");
+        Dish porridge = dish("Porridge", RecipeSection.BREAKFAST, "oats");
+        CupboardPlanner planner = new CupboardPlanner(List.of(have("Chickpeas"), have("Spinach"), have("Carrots"), have("Oats")),
+                List.of(a, b, porridge), CupboardPlanner.ANY);
+        Slot mon = new Slot(MON, MealType.DINNER), tue = new Slot(MON.plusDays(1), MealType.DINNER);
+        // The model wants the stew first: taken, and the curry fills Tuesday.
+        CupboardPlanner.Draft draft = planner.plan(List.of(mon, tue), Map.of(), Map.of(), Set.of(), Map.of(mon, b.id()));
+        assertThat(names(draft)).containsExactly("B stew", "A curry");
+        // Porridge for dinner, or the same stew twice, is not allowed: those slots get the server's own best.
+        CupboardPlanner.Draft refused = planner.plan(List.of(mon, tue), Map.of(), Map.of(), Set.of(),
+                Map.of(mon, porridge.id(), tue, a.id()));
+        // Monday's porridge is refused, so Monday gets the curry, and Tuesday's curry is then a repeat.
+        assertThat(names(refused)).containsExactly("A curry", "B stew");
+        CupboardPlanner.Draft twice = planner.plan(List.of(mon, tue), Map.of(), Map.of(), Set.of(),
+                Map.of(mon, a.id(), tue, a.id()));
+        assertThat(names(twice)).containsExactly("A curry", "B stew");
+        // An id it was never offered is simply passed over.
+        assertThat(names(planner.plan(List.of(mon), Map.of(), Map.of(), Set.of(), Map.of(mon, UUID.randomUUID()))))
+                .containsExactly("A curry");
+    }
+
+    @Test
+    void aChosenRecipeNeverTakesTheShoppingPastTheBuyLimit() {
+        Dish cheap = dish("Beans on toast", RecipeSection.DINNER, "baked beans", "bread");
+        Dish dear = dish("Paella", RecipeSection.DINNER, "rice", "prawns", "chorizo");
+        CupboardPlanner planner = new CupboardPlanner(List.of(have("Baked beans"), have("Bread"), have("Rice")),
+                List.of(cheap, dear), 1);
+        Slot mon = new Slot(MON, MealType.DINNER);
+        assertThat(names(planner.plan(List.of(mon), Map.of(), Map.of(), Set.of(), Map.of(mon, dear.id()))))
+                .containsExactly("Beans on toast");
+    }
+
+    @Test
+    void candidatesAreWhatTheRulesAllowBestFirst() {
+        Dish a = dish("A curry", RecipeSection.DINNER, "chickpeas", "spinach");
+        Dish b = dish("B stew", RecipeSection.DINNER, "chickpeas", "carrots", "beef");
+        Dish porridge = dish("Porridge", RecipeSection.BREAKFAST, "oats");
+        Dish smoothie = dish("Smoothie", RecipeSection.DRINKS, "banana");
+        CupboardPlanner planner = new CupboardPlanner(
+                List.of(have("Chickpeas"), soon("Spinach"), have("Carrots"), have("Oats"), have("Banana")),
+                List.of(a, b, porridge, smoothie), CupboardPlanner.ANY);
+        Slot mon = new Slot(MON, MealType.DINNER), tue = new Slot(MON.plusDays(1), MealType.DINNER);
+        // A whole plan of dinners: no porridge, no drink, the use-soon curry first.
+        List<CupboardPlanner.Candidate> all = planner.candidates(List.of(mon, tue), Map.of(), Set.of(), null, Set.of(), 10);
+        assertThat(all).extracting(c -> c.dish().name()).containsExactly("A curry", "B stew");
+        assertThat(all.get(0).fits()).containsExactly(MealType.DINNER);
+        assertThat(all.get(0).pick().percent()).isEqualTo(100);
+        assertThat(all.get(1).pick().missing()).extracting(Need::name).containsExactly("beef");
+        // One slot, the other meal kept: the kept stew is not offered again.
+        List<CupboardPlanner.Candidate> swap = planner.candidates(List.of(mon, tue), Map.of(mon, a.id(), tue, b.id()),
+                Set.of(), mon, Set.of(a.id()), 10);
+        assertThat(swap).isEmpty();
+        assertThat(planner.candidates(List.of(mon), Map.of(), Set.of(), null, Set.of(), 1)).hasSize(1);
+    }
+
+    @Test
     void keysCatchTheSameThingSpelledDifferently() {
         assertThat(IngredientKeys.key("Chickpeas (tin)")).isEqualTo(IngredientKeys.key("chickpeas"));
         assertThat(IngredientKeys.key("baby spinach")).isEqualTo("spinach");

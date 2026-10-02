@@ -189,6 +189,36 @@ class TargetsTest {
     }
 
     @Test
+    void aRecipeAPhoneChoseIsTakenInTheRightPortionIfTheRulesAllow() {
+        Option a = option("A dinner", RecipeSection.DINNER, true, 700, 40);
+        Option b = option("B dinner", RecipeSection.DINNER, true, 350, 20);
+        Option bf = option("Breakfast", RecipeSection.BREAKFAST, true, 500, 25);
+        TargetPlanner planner = new TargetPlanner(List.of(a, b, bf), new Preferences(List.of(), List.of()), true, 2000, 100);
+        TargetPlanner.Slot mon = new TargetPlanner.Slot(0, MealType.DINNER), tue = new TargetPlanner.Slot(1, MealType.DINNER);
+        List<Meal> plan = planner.plan(2, List.of(MealType.DINNER), Map.of(), Map.of(), Map.of(mon, b.id()));
+        assertThat(plan).extracting(m -> m.option().name()).containsExactly("B dinner", "A dinner");
+        // A whole day on one dinner: the small one is given the portion that reaches the day.
+        assertThat(plan.get(0).portion()).isEqualTo(3.0);
+        // Breakfast for dinner, or Monday's dinner again on Tuesday, is refused: the server's own best goes there.
+        List<Meal> refused = planner.plan(2, List.of(MealType.DINNER), Map.of(), Map.of(),
+                Map.of(mon, bf.id(), tue, a.id()));
+        assertThat(refused).extracting(m -> m.option().name()).containsExactly("A dinner", "B dinner");
+    }
+
+    @Test
+    void candidatesAreTheAllowedRecipesThatSuitAMeal() {
+        Option mine = option("My curry", RecipeSection.DINNER, true, 600, 30);
+        Option theirs = option("Their curry", RecipeSection.DINNER, false, 600, 30);
+        Option drink = option("Smoothie", RecipeSection.DRINKS, true, 300, 10);
+        Option pork = option("Pork chops", RecipeSection.DINNER, true, 600, 40);
+        TargetPlanner planner = new TargetPlanner(List.of(theirs, mine, drink, pork),
+                new Preferences(List.of("no-pork"), List.of()), true, 2000, 100);
+        assertThat(planner.candidates(List.of(MealType.DINNER), 10)).extracting(Option::name)
+                .containsExactly("My curry", "Their curry");
+        assertThat(planner.candidates(List.of(MealType.DINNER), 1)).hasSize(1);
+    }
+
+    @Test
     void recipesWithoutNumbersAreNeverChosen() {
         Option empty = option("Mystery", RecipeSection.DINNER, true, 0, 0);
         assertThat(new TargetPlanner(List.of(empty), new Preferences(List.of(), List.of()), true, 2000, 100).plan(1, List.of(MealType.DINNER)))

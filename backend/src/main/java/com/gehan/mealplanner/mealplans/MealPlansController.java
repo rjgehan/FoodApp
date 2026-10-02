@@ -70,6 +70,14 @@ public class MealPlansController {
         return cupboardPlans.generate(householdId, userId, request);
     }
 
+    /** What a phone's Apple Intelligence may choose a draft (or one swap) from. Nothing is saved. */
+    @PostMapping("/cupboard/candidates")
+    public CupboardPlanDtos.CupboardCandidatesResponse cupboardCandidates(
+            @AuthenticationPrincipal UUID userId, @PathVariable UUID householdId,
+            @Valid @RequestBody CupboardPlanDtos.CupboardCandidatesRequest request) {
+        return cupboardPlans.candidates(householdId, userId, request);
+    }
+
     @PostMapping("/cupboard/swap")
     public CupboardPlanResponse cupboardSwap(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId,
                                              @Valid @RequestBody CupboardSwapRequest request) {
@@ -95,6 +103,14 @@ public class MealPlansController {
     public TargetPlanResponse preview(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId,
                                       @Valid @RequestBody PreviewRequest request) {
         return targetPlans.preview(householdId, userId, request);
+    }
+
+    /** What a phone's Apple Intelligence may choose a plan for these details from. Nothing is saved. */
+    @PostMapping("/targets/candidates")
+    public TargetPlanDtos.TargetCandidatesResponse targetCandidates(
+            @AuthenticationPrincipal UUID userId, @PathVariable UUID householdId,
+            @Valid @RequestBody TargetPlanDtos.CandidatesRequest request) {
+        return targetPlans.candidates(householdId, userId, request.details());
     }
 
     @PostMapping("/targets/preview/swap")

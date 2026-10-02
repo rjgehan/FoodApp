@@ -139,27 +139,29 @@ public final class CupboardPlanner {
      * @param alreadyPlanned recipes on the household's plan in the window, which count as repeats
      */
     public Draft plan(List<Slot> slots, Map<Slot, UUID> fixed, Map<Slot, Set<UUID>> excluded, Set<UUID> alreadyPlanned) {
+        return plan(slots, fixed, excluded, alreadyPlanned, Map.of());
+    }
+
+    /**
+     * @param wanted a recipe somebody else chose for a slot — a phone's Apple Intelligence —
+     *               taken in that slot's turn if the rules allow it there (it fits the meal, is
+     *               not a repeat or excluded, and its shopping stays inside the buy limit), and
+     *               otherwise passed over for the slot's own best, exactly as if never asked
+     */
+    public Draft plan(List<Slot> slots, Map<Slot, UUID> fixed, Map<Slot, Set<UUID>> excluded, Set<UUID> alreadyPlanned,
+                      Map<Slot, UUID> wanted) {
         List<Slot> ordered = slots.stream().distinct()
                 .sorted(Comparator.comparing(Slot::date).thenComparing(Slot::meal)).toList();
-        State state = new State();
-        state.usedRecipes.addAll(alreadyPlanned);
-        Map<Slot, Pick> chosen = new HashMap<>();
         Map<UUID, Dish> dishById = new HashMap<>();
         dishes.forEach(d -> dishById.put(d.id(), d));
-
-        // What is kept counts first — its shopping and its use-soon things are spoken for.
-        for (Slot slot : ordered) {
-            UUID keep = fixed.get(slot);
-            Dish dish = keep == null ? null : dishById.get(keep);
-            if (dish == null) continue;
-            Pick pick = pick(slot, dish, true);
-            state.take(pick);
-            chosen.put(slot, pick);
-        }
+        Map<Slot, Pick> chosen = new HashMap<>();
+        State state = kept(ordered, fixed, alreadyPlanned, dishById, chosen);
         List<Slot> unfilled = new ArrayList<>();
         for (Slot slot : ordered) {
             if (chosen.containsKey(slot)) continue;
-            Pick best = best(slot, state, excluded.getOrDefault(slot, Set.of()));
+            Set<UUID> notHere = excluded.getOrDefault(slot, Set.of());
+            Pick best = allowed(slot, dishById.get(wanted.get(slot)), state, notHere);
+            if (best == null) best = best(slot, state, notHere);
             if (best == null) {
                 unfilled.add(slot);
                 continue;
@@ -172,6 +174,74 @@ public final class CupboardPlanner {
         Map<String, Need> toBuy = new LinkedHashMap<>();
         for (Pick p : picks) for (Need n : p.missing()) toBuy.putIfAbsent(n.key(), n);
         return new Draft(picks, unfilled, List.copyOf(toBuy.values()));
+    }
+
+    /** What is kept counts first — its shopping and its use-soon things are spoken for. */
+    private State kept(List<Slot> ordered, Map<Slot, UUID> fixed, Set<UUID> alreadyPlanned, Map<UUID, Dish> dishById,
+                       Map<Slot, Pick> chosen) {
+        State state = new State();
+        state.usedRecipes.addAll(alreadyPlanned);
+        for (Slot slot : ordered) {
+            UUID keep = fixed.get(slot);
+            Dish dish = keep == null ? null : dishById.get(keep);
+            if (dish == null) continue;
+            Pick pick = pick(slot, dish, true);
+            state.take(pick);
+            chosen.put(slot, pick);
+        }
+        return state;
+    }
+
+    /** This dish in this slot if the rules allow it there, else null. */
+    Pick allowed(Slot slot, Dish dish, State state, Set<UUID> excluded) {
+        if (dish == null || excluded.contains(dish.id()) || state.usedRecipes.contains(dish.id())) return null;
+        return score(slot, dish, state) == null ? null : pick(slot, dish, false);
+    }
+
+    /**
+     * A recipe a phone's model may choose, with what the server knows about it: the meals it may
+     * go in, how much of it is in the cupboard, and its score (the same one the greedy plan uses).
+     */
+    public record Candidate(Dish dish, Pick pick, double score, List<MealType> fits) {
+    }
+
+    /**
+     * What a phone's Apple Intelligence chooses from, best first: for one slot (a swap), every
+     * recipe the rules allow there with the other meals as they are; for a whole plan, every
+     * recipe allowed in at least one of the slots' meals on its own, scored at the meal it suits
+     * best. The model only ever picks from this list, and the plan it sends back is checked by
+     * the same rules again.
+     *
+     * @param target the slot being swapped, or null for a whole plan
+     */
+    public List<Candidate> candidates(List<Slot> slots, Map<Slot, UUID> fixed, Set<UUID> alreadyPlanned, Slot target,
+                                      Set<UUID> excluded, int limit) {
+        List<Slot> ordered = slots.stream().distinct()
+                .sorted(Comparator.comparing(Slot::date).thenComparing(Slot::meal)).toList();
+        Map<UUID, Dish> dishById = new HashMap<>();
+        dishes.forEach(d -> dishById.put(d.id(), d));
+        Map<Slot, UUID> others = new HashMap<>(fixed);
+        if (target != null) others.remove(target);
+        State state = kept(ordered, others, alreadyPlanned, dishById, new HashMap<>());
+        List<MealType> meals = target != null ? List.of(target.meal())
+                : ordered.stream().map(Slot::meal).distinct().sorted().toList();
+        LocalDate day = target != null ? target.date() : ordered.isEmpty() ? null : ordered.get(0).date();
+        List<Candidate> out = new ArrayList<>();
+        for (Dish dish : dishes) {
+            if (excluded.contains(dish.id()) || state.usedRecipes.contains(dish.id())) continue;
+            List<MealType> fits = new ArrayList<>();
+            double top = Double.NEGATIVE_INFINITY;
+            for (MealType meal : meals) {
+                Double score = score(new Slot(day, meal), dish, state);
+                if (score == null) continue;
+                fits.add(meal);
+                top = Math.max(top, score);
+            }
+            if (fits.isEmpty()) continue;
+            out.add(new Candidate(dish, pick(new Slot(day, fits.get(0)), dish, false), top, List.copyOf(fits)));
+        }
+        out.sort(Comparator.comparingDouble(Candidate::score).reversed());
+        return out.size() > limit ? List.copyOf(out.subList(0, limit)) : out;
     }
 
     /** The best candidate for one slot, or null when nothing is allowed there. */

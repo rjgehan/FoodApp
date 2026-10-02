@@ -169,15 +169,50 @@ public class TargetPlans {
         householdService.assertMember(householdId, requesterId);
         Presets.Preset p = Presets.find(key)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such ready-made plan."));
-        Generated g = generate(householdId, p.details(), Map.of(), Map.of());
+        Generated g = generate(householdId, p.details(), Map.of(), Map.of(), Map.of());
         return response(null, p.key(), false, p.name(), p.details(), g, p.tags(), p.icon(), p.hue(), null);
     }
 
     @Transactional
     public TargetPlanResponse preview(UUID householdId, UUID requesterId, PreviewRequest r) {
         householdService.assertMember(householdId, requesterId);
-        Generated g = generate(householdId, r.details(), Map.of(), Map.of());
+        Map<Slot, UUID> wanted = new HashMap<>();
+        if (r.chosen() != null) {
+            for (TargetPlanDtos.SlotChoice c : r.chosen()) wanted.putIfAbsent(new Slot(c.day(), c.mealType()), c.recipeId());
+        }
+        Generated g = generate(householdId, r.details(), Map.of(), Map.of(), wanted);
         return response(null, null, false, nameOr(r.name(), r.details()), r.details(), g, null, null, null, null);
+    }
+
+    /** Recipes offered to a phone's model for a whole plan; it may choose only from these. */
+    static final int CANDIDATES = 40;
+
+    /**
+     * What a phone's Apple Intelligence chooses a plan from: the targets, each meal's share of
+     * them, and the recipes the details allow with their nutrition per serving. The model picks;
+     * a preview with its picks puts them through the same rules and works out the portions.
+     */
+    // Not read-only: working out a recipe's nutrition may learn a weight on the way, as previews do.
+    @Transactional
+    public TargetPlanDtos.TargetCandidatesResponse candidates(UUID householdId, UUID requesterId, TargetDetails d) {
+        householdService.assertMember(householdId, requesterId);
+        TargetsResponse t = targets(d);
+        boolean onlyMine = Boolean.TRUE.equals(d.onlyMyRecipes());
+        List<RecipePool.PoolRecipe> recipes = pool.forHousehold(householdId, !onlyMine);
+        TargetPlanner planner = new TargetPlanner(options(recipes), new Preferences(d.preferences(), d.avoid()),
+                d.useMyRecipesFirst() == null || d.useMyRecipesFirst(), t.kcal(), t.protein());
+        List<MealType> meals = mealTypes(d);
+        Map<MealType, Double> shares = TargetPlanner.shares(meals);
+        List<TargetPlanDtos.MealAim> aims = meals.stream()
+                .map(m -> new TargetPlanDtos.MealAim(m, (int) Math.round(t.kcal() * shares.get(m)),
+                        (int) Math.round(t.protein() * shares.get(m)))).toList();
+        List<TargetPlanDtos.TargetCandidate> out = planner.candidates(meals, CANDIDATES).stream()
+                .map(o -> new TargetPlanDtos.TargetCandidate(o.id(), o.name(), o.section(), o.yours(),
+                        meals.stream().filter(m -> CupboardPlanner.fit(o.section(), m) > 0).toList(),
+                        (int) Math.round(o.kcal()), (int) Math.round(o.protein()), (int) Math.round(o.carbs()),
+                        (int) Math.round(o.fat()), o.minutes()))
+                .toList();
+        return new TargetPlanDtos.TargetCandidatesResponse(t, length(d), meals, aims, out);
     }
 
     /** Swap a meal in a preview or a ready-made plan; the client sends the meals it has. */
@@ -185,7 +220,7 @@ public class TargetPlans {
     public TargetPlanResponse previewSwap(UUID householdId, UUID requesterId, PreviewSwapRequest r) {
         householdService.assertMember(householdId, requesterId);
         List<StoredMeal> meals = r.meals().stream().map(m -> new StoredMeal(m.day(), m.mealType(), m.recipeId(), m.portion())).toList();
-        Generated g = swapped(householdId, r.details(), meals, new Slot(r.day(), r.mealType()), r.exclude());
+        Generated g = swapped(householdId, r.details(), meals, new Slot(r.day(), r.mealType()), r.exclude(), r.recipeId());
         return response(null, null, false, nameOr(r.name(), r.details()), r.details(), g, null, null, null, null);
     }
 
@@ -198,15 +233,9 @@ public class TargetPlans {
         targets(details);  // turns away an unknown goal or activity before anything is saved
         Generated g;
         if (r.meals() != null && !r.meals().isEmpty()) {
-            // Keeping a preview exactly as it was shown: every recipe must still be usable.
-            List<StoredMeal> meals = r.meals().stream()
-                    .map(m -> new StoredMeal(m.day(), m.mealType(), m.recipeId(), m.portion())).toList();
-            g = resolve(householdId, details, meals);
-            if (g.meals().stream().anyMatch(TargetPlans::gone)) {
-                throw bad("One of those recipes isn't one this household can use.");
-            }
+            g = kept(householdId, details, r.meals());
         } else {
-            g = generate(householdId, details, Map.of(), Map.of());
+            g = generate(householdId, details, Map.of(), Map.of(), Map.of());
         }
         TargetPlan plan = new TargetPlan();
         plan.setOwnerId(requesterId);
@@ -224,16 +253,35 @@ public class TargetPlans {
         return response(plan, resolve(householdId, details(plan), storedMeals(plan)));
     }
 
-    /** New details work the meals out again; a new name alone keeps them. */
+    /**
+     * Keeping a preview exactly as it was shown (portions and all): every recipe must still be
+     * one the household can use.
+     */
+    private Generated kept(UUID householdId, TargetDetails details, List<PlanMealChoice> choices) {
+        List<StoredMeal> meals = choices.stream()
+                .map(m -> new StoredMeal(m.day(), m.mealType(), m.recipeId(), m.portion())).toList();
+        Generated g = resolve(householdId, details, meals);
+        if (g.meals().stream().anyMatch(TargetPlans::gone)) {
+            throw bad("One of those recipes isn't one this household can use.");
+        }
+        return g;
+    }
+
+    /**
+     * New details work the meals out again; meals sent with them (a preview a phone's Apple
+     * Intelligence chose) are kept exactly instead. A new name alone keeps the meals there are.
+     */
     @Transactional
     public TargetPlanResponse update(UUID householdId, UUID requesterId, UUID planId, UpdateTargetPlanRequest r) {
         TargetPlan plan = owned(householdId, requesterId, planId);
         if (r.name() != null && !r.name().isBlank()) plan.setName(r.name().trim());
         Generated g;
-        if (r.details() != null) {
-            targets(r.details());
-            g = generate(householdId, r.details(), Map.of(), Map.of());
-            plan.setDetails(write(r.details()));
+        boolean keepMeals = r.meals() != null && !r.meals().isEmpty();
+        if (r.details() != null || keepMeals) {
+            TargetDetails details = r.details() != null ? r.details() : details(plan);
+            targets(details);
+            g = keepMeals ? kept(householdId, details, r.meals()) : generate(householdId, details, Map.of(), Map.of(), Map.of());
+            plan.setDetails(write(details));
             plan.setMeals(write(stored(g)));
         } else {
             g = resolve(householdId, details(plan), storedMeals(plan));
@@ -246,7 +294,7 @@ public class TargetPlans {
     @Transactional
     public TargetPlanResponse regenerate(UUID householdId, UUID requesterId, UUID planId) {
         TargetPlan plan = owned(householdId, requesterId, planId);
-        Generated g = generate(householdId, details(plan), Map.of(), Map.of());
+        Generated g = generate(householdId, details(plan), Map.of(), Map.of(), Map.of());
         plan.setMeals(write(stored(g)));
         plan.setUpdatedAt(Instant.now());
         plans.save(plan);
@@ -263,7 +311,8 @@ public class TargetPlans {
         TargetPlan plan = owned(householdId, requesterId, planId);
         TargetDetails details = details(plan);
         if (r.day() >= length(details)) throw bad("That day isn't in the plan.");
-        Generated g = swapped(householdId, details, storedMeals(plan), new Slot(r.day(), r.mealType()), r.exclude());
+        Generated g = swapped(householdId, details, storedMeals(plan), new Slot(r.day(), r.mealType()), r.exclude(),
+                r.recipeId());
         plan.setMeals(write(stored(g)));
         plan.setUpdatedAt(Instant.now());
         plans.save(plan);
@@ -306,17 +355,19 @@ public class TargetPlans {
     record Generated(List<Meal> meals, int allowed, int kcal, int protein) {
     }
 
-    private Generated generate(UUID householdId, TargetDetails d, Map<Slot, Meal> fixed, Map<Slot, Set<UUID>> excluded) {
+    private Generated generate(UUID householdId, TargetDetails d, Map<Slot, Meal> fixed, Map<Slot, Set<UUID>> excluded,
+                               Map<Slot, UUID> wanted) {
         TargetsResponse t = targets(d);
         boolean onlyMine = Boolean.TRUE.equals(d.onlyMyRecipes());
         List<RecipePool.PoolRecipe> recipes = pool.forHousehold(householdId, !onlyMine);
         TargetPlanner planner = new TargetPlanner(options(recipes), new Preferences(d.preferences(), d.avoid()),
                 d.useMyRecipesFirst() == null || d.useMyRecipesFirst(), t.kcal(), t.protein());
-        List<Meal> meals = planner.plan(length(d), mealTypes(d), fixed, excluded);
+        List<Meal> meals = planner.plan(length(d), mealTypes(d), fixed, excluded, wanted);
         return new Generated(meals, planner.allowed(), t.kcal(), t.protein());
     }
 
-    private Generated swapped(UUID householdId, TargetDetails d, List<StoredMeal> meals, Slot slot, List<UUID> exclude) {
+    private Generated swapped(UUID householdId, TargetDetails d, List<StoredMeal> meals, Slot slot, List<UUID> exclude,
+                              UUID recipeId) {
         Generated current = resolve(householdId, d, meals);
         Map<Slot, Meal> fixed = new HashMap<>();
         Set<UUID> excluded = new HashSet<>(exclude == null ? List.of() : exclude);
@@ -325,13 +376,15 @@ public class TargetPlans {
             if (m.slot().equals(slot)) excluded.add(m.option().id());
             else fixed.put(m.slot(), m);
         }
-        Generated next = generate(householdId, d, fixed, Map.of(slot, excluded));
+        // A phone's model may name the one it wants; it is taken only if the rules allow it there.
+        Map<Slot, UUID> wanted = recipeId == null ? Map.of() : Map.of(slot, recipeId);
+        Generated next = generate(householdId, d, fixed, Map.of(slot, excluded), wanted);
         boolean filled = next.meals().stream().anyMatch(m -> m.slot().equals(slot));
         if (filled) return next;
         // Nothing else is allowed there: the meal that was there stays.
         current.meals().stream().filter(m -> m.slot().equals(slot) && !gone(m)).findFirst()
                 .ifPresent(m -> fixed.put(slot, m));
-        return generate(householdId, d, fixed, Map.of(slot, excluded));
+        return generate(householdId, d, fixed, Map.of(slot, excluded), Map.of());
     }
 
     /** Stored meals with today's recipes and nutrition; a recipe gone or out of reach is marked missing. */

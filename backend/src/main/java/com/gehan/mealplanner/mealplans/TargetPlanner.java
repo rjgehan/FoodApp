@@ -90,6 +90,20 @@ public final class TargetPlanner {
         return options.size();
     }
 
+    /**
+     * The recipes a phone's Apple Intelligence may choose from: every one the preferences allow
+     * that suits at least one of the meals, best leaning first — your own first when "use my
+     * recipes first" is on, then the preferences' leaning (budget, heart healthy, high protein).
+     */
+    public List<Option> candidates(List<MealType> meals, int limit) {
+        return options.stream()
+                .filter(o -> meals.stream().anyMatch(m -> CupboardPlanner.fit(o.section(), m) > 0))
+                .sorted(Comparator.comparingDouble((Option o) -> -((useMineFirst && o.yours() ? 1.2 : 0)
+                        + prefs.lean(o.words(), o.minutes(), o.kcal(), o.protein(), o.satFat(), o.sodiumMg()))))
+                .limit(limit)
+                .toList();
+    }
+
     /** The meals' shares of the day, rescaled so the chosen ones add up to 1. */
     static Map<MealType, Double> shares(List<MealType> meals) {
         double total = meals.stream().mapToDouble(SHARE::get).sum();
@@ -108,6 +122,16 @@ public final class TargetPlanner {
      * @param excluded recipes not to put in a slot
      */
     public List<Meal> plan(int days, List<MealType> meals, Map<Slot, Meal> fixed, Map<Slot, Set<UUID>> excluded) {
+        return plan(days, meals, fixed, excluded, Map.of());
+    }
+
+    /**
+     * @param wanted a recipe somebody else chose for a slot — a phone's Apple Intelligence —
+     *               taken in that slot's turn, in the portion this planner would give it, if the
+     *               rules allow it there; otherwise the slot gets its own best, as if never asked
+     */
+    public List<Meal> plan(int days, List<MealType> meals, Map<Slot, Meal> fixed, Map<Slot, Set<UUID>> excluded,
+                           Map<Slot, UUID> wanted) {
         Map<MealType, Double> shares = shares(meals);
         List<MealType> order = FILL_ORDER.stream().filter(meals::contains).toList();
         List<Meal> plan = new ArrayList<>(fixed.values());
@@ -115,7 +139,10 @@ public final class TargetPlanner {
             for (MealType meal : order) {
                 Slot slot = new Slot(day, meal);
                 if (fixed.containsKey(slot)) continue;
-                Meal best = best(slot, shares, order, plan, excluded.getOrDefault(slot, Set.of()));
+                Set<UUID> notHere = excluded.getOrDefault(slot, Set.of());
+                UUID want = wanted.get(slot);
+                Meal best = want == null ? null : best(slot, shares, order, plan, notHere, want);
+                if (best == null) best = best(slot, shares, order, plan, notHere, null);
                 if (best != null) plan.add(best);
             }
         }
@@ -142,6 +169,12 @@ public final class TargetPlanner {
     }
 
     Meal best(Slot slot, Map<MealType, Double> shares, List<MealType> order, List<Meal> plan, Set<UUID> excluded) {
+        return best(slot, shares, order, plan, excluded, null);
+    }
+
+    /** @param only just this recipe, if it is allowed here; null for any */
+    Meal best(Slot slot, Map<MealType, Double> shares, List<MealType> order, List<Meal> plan, Set<UUID> excluded,
+              UUID only) {
         double[] aim = aim(slot, shares, order, plan);
         Map<UUID, Integer> uses = new HashMap<>();
         Map<UUID, List<Integer>> daysUsed = new HashMap<>();
@@ -152,6 +185,7 @@ public final class TargetPlanner {
         Meal best = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         for (Option o : options) {
+            if (only != null && !only.equals(o.id())) continue;
             if (excluded.contains(o.id())) continue;
             double fit = CupboardPlanner.fit(o.section(), slot.meal());
             if (fit == 0) continue;

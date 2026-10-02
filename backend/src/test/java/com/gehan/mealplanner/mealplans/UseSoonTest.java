@@ -88,4 +88,14 @@ class UseSoonTest {
         // Spinach "bought" two months ago is long gone, or in the freezer; nagging helps nobody.
         assertThat(UseSoon.of("Spinach", StoreSection.PRODUCE, null, TODAY.minusDays(60), false, TODAY).soon()).isFalse();
     }
+
+    @Test
+    void theRuleSaysWhatItCannotJudge() {
+        assertThat(UseSoon.judges("Spinach", null)).isTrue();
+        assertThat(UseSoon.judges("Chickpeas (tin)", null)).isTrue();
+        assertThat(UseSoon.judges("Black pepper", null)).isTrue();
+        assertThat(UseSoon.judges("Kohlrabi", StoreSection.PRODUCE)).isTrue();
+        assertThat(UseSoon.judges("Kohlrabi", null)).isFalse();
+        assertThat(UseSoon.judges("Za'atar", StoreSection.SPICES)).isTrue();
+    }
 }
