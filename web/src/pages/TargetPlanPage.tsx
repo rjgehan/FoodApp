@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import {
   addDaysIso,
   dateRange,
+  portionText,
   MEAL_PLANS,
   planHue,
   planIcon,
@@ -21,7 +22,16 @@ import { HeroButton } from '../components/recipe/RecipeHero';
 import { ServingsStepper } from '../components/plan/PlanBits';
 import { NutritionBottomBar, Stat } from '../components/nutrition/NutritionParts';
 import { Button, ConfirmAlert, cx, ErrorText, Input, MenuList, NavBar, Photo, Pill, Sheet } from '../components/ui';
-import { DayTile, LoadFailed, MEAL_LABEL, MEAL_ORDER, MealPicture, MealRow, SwapButton } from '../components/mealplans/MealPlanParts';
+import {
+  DayTile,
+  LoadFailed,
+  MEAL_LABEL,
+  MEAL_ORDER,
+  MealPicture,
+  MealRow,
+  PlanNotFound,
+  SwapButton,
+} from '../components/mealplans/MealPlanParts';
 
 /**
  * A plan for a health target (the mockup's 5.10): its picture and goal on top, the day's targets
@@ -40,6 +50,7 @@ export default function TargetPlanPage() {
   const { activeHouseholdId } = useHousehold();
   const [plan, setPlan] = useState<TargetPlan | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [day, setDay] = useState(0);
   const [swapping, setSwapping] = useState(false);
   const [seen, setSeen] = useState<Record<string, string[]>>({});
@@ -55,11 +66,13 @@ export default function TargetPlanPage() {
     if (!base) return () => {};
     let live = true;
     setFailed(null);
+    setNotFound(false);
     api<TargetPlan>('GET', path)
       .then((p) => live && setPlan(p))
       .catch((err) => {
         if (!live) return;
-        setFailed(err instanceof ApiError && err.status === 404 ? 'There is no such plan.' : 'Could not load this plan.');
+        if (err instanceof ApiError && err.status === 404) setNotFound(true);
+        else setFailed('Could not load this plan.');
       });
     return () => {
       live = false;
@@ -84,7 +97,9 @@ export default function TargetPlanPage() {
     return (
       <div className="flex flex-col gap-4">
         <NavBar back={back} backLabel="Plans" />
-        {failed ? (
+        {notFound ? (
+          <PlanNotFound onBack={() => navigate(MEAL_PLANS, { replace: true })} />
+        ) : failed ? (
           <LoadFailed message={failed} onRetry={load} />
         ) : (
           <p className="py-16 text-center text-sm text-muted">Choosing meals from your recipes…</p>
@@ -186,7 +201,10 @@ export default function TargetPlanPage() {
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
-          style={{ background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,.3))' }}
+          // White on the pale mustard needs more shade behind it than on tomato or herb.
+          style={{
+            background: `linear-gradient(180deg, transparent ${plan.hue === 'mustard' ? '25%' : '40%'}, rgba(0,0,0,${plan.hue === 'mustard' ? '.5' : '.3'}))`,
+          }}
         />
         <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-4">
           <HeroButton icon="chevL" label="Back" onClick={back} />
@@ -249,6 +267,7 @@ export default function TargetPlanPage() {
               {meals.map((m) => (
                 <MealRow
                   key={m.mealType}
+                  wrap
                   aria-label={`${MEAL_LABEL[m.mealType]}: ${m.name}`}
                   to={m.missing ? undefined : m.yours ? `/recipes/${m.recipeId}` : `/explore/recipes/${m.recipeId}`}
                   muted={m.missing}
@@ -257,7 +276,16 @@ export default function TargetPlanPage() {
                   subtitle={
                     m.missing
                       ? `${MEAL_LABEL[m.mealType]} · swap it for another`
-                      : [MEAL_LABEL[m.mealType], `${kcalText(m.kcal)} kcal`, `${m.protein}g P`].filter(Boolean).join(' · ')
+                      : [
+                          MEAL_LABEL[m.mealType],
+                          // The numbers are for this much of the recipe: say so, or 738 kcal reads as one bowl.
+                          portionText(m.portion),
+                          `${kcalText(m.kcal)} kcal`,
+                          `${m.protein}g P`,
+                          m.partial ? 'not all counted' : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
                   }
                   end={
                     <>
@@ -346,8 +374,10 @@ export default function TargetPlanPage() {
 }
 
 /**
- * Apply to my Plan: which day the plan starts on, and how many each meal is cooked for. Only the
- * meals go on the shared Plan — never over a meal that is there already.
+ * Apply to my Plan: which day the plan starts on, and how many people each meal is cooked for.
+ * Only the meals go on the shared Plan — never over a meal that is there already. Each meal cooks
+ * the plan's portion plus a serving for everyone else (as the server does for a saved plan), so
+ * what is on your plate is what the plan's numbers say.
  */
 function ApplySheet({ plan, base, onClose }: { plan: TargetPlan; base: string; onClose: () => void }) {
   const navigate = useNavigate();
@@ -359,6 +389,8 @@ function ApplySheet({ plan, base, onClose }: { plan: TargetPlan; base: string; o
   const starts = Array.from({ length: 7 }, (_, i) => isoDay(i));
   const meals = plan.days.flatMap((d) => d.meals.filter((m) => !m.missing));
   const dates = [...new Set(meals.map((m) => addDaysIso(start, m.day)))];
+  // A portion other than one, to give as the example (the largest says it most plainly).
+  const portions = meals.reduce<number | null>((most, m) => (m.portion !== 1 && m.portion > (most ?? 0) ? m.portion : most), null);
 
   async function apply() {
     setBusy(true);
@@ -367,7 +399,12 @@ function ApplySheet({ plan, base, onClose }: { plan: TargetPlan; base: string; o
       const result = plan.id
         ? await api<ApplyResult>('POST', `${base}/targets/${plan.id}/apply`, { start, servings })
         : await api<ApplyResult>('POST', `${base}/apply`, {
-            meals: meals.map((m) => ({ date: addDaysIso(start, m.day), mealType: m.mealType, recipeId: m.recipeId, servings })),
+            meals: meals.map((m) => ({
+              date: addDaysIso(start, m.day),
+              mealType: m.mealType,
+              recipeId: m.recipeId,
+              servings: servingsToCook(m.portion, servings),
+            })),
           });
       const skipped = result.skipped.length > 0 ? ` (${result.skipped.length} already planned)` : '';
       toast(
@@ -401,9 +438,17 @@ function ApplySheet({ plan, base, onClose }: { plan: TargetPlan; base: string; o
             ))}
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[0.9375rem] font-semibold">Servings for each meal</span>
-          <ServingsStepper value={servings} onChange={setServings} />
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[0.9375rem] font-semibold">People eating, you included</span>
+            <ServingsStepper value={servings} onChange={setServings} />
+          </div>
+          {portions && (
+            <p className="text-[0.8125rem] leading-[1.45] text-muted">
+              The plan's numbers are for the servings it shows, like {portionText(portions)} at a meal. Each meal is
+              cooked with your servings plus one for everyone else.
+            </p>
+          )}
         </div>
         {error && <ErrorText>{error}</ErrorText>}
         <Button size="lg" full icon="calendar" disabled={busy || meals.length === 0} onClick={apply}>
@@ -412,6 +457,11 @@ function ApplySheet({ plan, base, onClose }: { plan: TargetPlan; base: string; o
       </div>
     </Sheet>
   );
+}
+
+/** The plan's portion for you, plus one serving for each other person — nobody cooks half a serving. */
+function servingsToCook(portion: number, people: number): number {
+  return Math.max(1, Math.min(50, Math.max(0, people - 1) + Math.max(1, Math.ceil(portion - 1e-9))));
 }
 
 function RenameSheet({

@@ -197,6 +197,7 @@ export function MealRow({
   end,
   to,
   muted,
+  wrap,
   ...aria
 }: {
   picture: ReactNode;
@@ -205,6 +206,8 @@ export function MealRow({
   end?: ReactNode;
   to?: string;
   muted?: boolean;
+  /** Let the line under the name wrap: a target plan's portion and numbers are all needed. */
+  wrap?: boolean;
   'aria-label'?: string;
 }) {
   const body = (
@@ -212,7 +215,7 @@ export function MealRow({
       {picture}
       <span className="min-w-0 flex-1">
         <span className={cx('block truncate text-[0.9375rem] font-semibold', muted && 'text-muted')}>{title}</span>
-        <span className="mt-0.5 block truncate text-xs text-muted">{subtitle}</span>
+        <span className={cx('mt-0.5 block text-xs text-muted', wrap ? 'leading-[1.4]' : 'truncate')}>{subtitle}</span>
       </span>
     </>
   );
@@ -358,6 +361,23 @@ export function FilterChips({
 }
 
 /** The quiet note when a page could not load, with a way to try again. */
+/**
+ * A plan that isn't there for you — deleted, or somebody else's private one. Not a network
+ * problem, so no "Try again": it would never work.
+ */
+export function PlanNotFound({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="card flex flex-col items-center gap-3 px-5 py-8 text-center">
+      <Tile icon="search" tone="sky" size={48} />
+      <p className="text-[0.9375rem] font-semibold">This plan isn't available</p>
+      <p className="text-[0.8125rem] text-muted">It may have been deleted, or it's someone else's own plan.</p>
+      <Button variant="secondary" size="sm" onClick={onBack}>
+        Back to Meal plans
+      </Button>
+    </div>
+  );
+}
+
 export function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="card flex flex-col items-center gap-3 px-5 py-8 text-center">

@@ -310,7 +310,7 @@ export default function TargetPlanFormPage() {
                 >
                   <option value="male">Male</option>
                   <option value="female">Female</option>
-                  <option value="">Rather not say</option>
+                  <option value="">Not saying</option>
                 </select>
                 <Icon name="chevD" size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
               </span>
@@ -318,7 +318,8 @@ export default function TargetPlanFormPage() {
                 <UnitField label="Height">
                   <BareNumber label="Feet" value={draft.ft} onChange={(ft) => set({ ft })} className="w-[2ch] text-right" />
                   <span className="text-muted">ft</span>
-                  <BareNumber label="Inches" value={draft.inches} onChange={(inches) => set({ inches })} />
+                  <BareNumber label="Inches" value={draft.inches} onChange={(inches) => set({ inches })} className="w-[2ch] text-right" />
+                  <span className="text-muted">in</span>
                 </UnitField>
               ) : (
                 <UnitField suffix="cm" label="Height">
@@ -380,6 +381,13 @@ export default function TargetPlanFormPage() {
               <TargetTile macro="fat" label="Fat" tone="text-mustard" {...tile('fat')} onClick={() => targets && setSetting('fat')} />
             </div>
             <p className="text-xs text-muted">{why ?? 'Worked out from the details above. Tap a number to set your own.'}</p>
+            {!why &&
+              targets?.notes?.map((note) => (
+                <p key={note} role="note" className="flex gap-1.5 text-xs font-medium leading-[1.45] text-mustard">
+                  <Icon name="info" size={14} className="mt-px shrink-0" />
+                  {note}
+                </p>
+              ))}
           </section>
         </div>
 
