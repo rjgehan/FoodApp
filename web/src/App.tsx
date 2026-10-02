@@ -16,6 +16,9 @@ import ExplorePage from './pages/ExplorePage';
 import ExploreRecipesPage from './pages/ExploreRecipesPage';
 import ExploreRecipePage from './pages/ExploreRecipePage';
 import ExploreSoonPage from './pages/ExploreSoonPage';
+import NutritionPage from './pages/NutritionPage';
+import { NutritionFoodPage, NutritionProductPage } from './pages/NutritionLabelPage';
+import RecipeNutritionPage from './pages/RecipeNutritionPage';
 import NewRecipePage from './pages/NewRecipePage';
 import EditRecipePage from './pages/EditRecipePage';
 import RecipeSharePage from './pages/RecipeSharePage';
@@ -118,6 +121,7 @@ export default function App() {
           <Route path="/recipes/:recipeId" element={<RecipeDetailPage />} />
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/recipes/:recipeId/share" element={<RecipeSharePage />} />
+          <Route path="/recipes/:recipeId/nutrition" element={<RecipeNutritionPage />} />
           <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
           <Route path="/cupboard" element={<CupboardPage />} />
@@ -125,9 +129,12 @@ export default function App() {
           <Route path="/explore/recipes" element={<ExploreRecipesPage />} />
           {/* A published recipe, read-only until it is moved into your recipes. */}
           <Route path="/explore/recipes/:recipeId" element={<ExploreRecipePage />} />
+          {/* Nutrition facts: the front page, a packet's label and an ingredient's. */}
+          <Route path="/explore/nutrition" element={<NutritionPage />} />
+          <Route path="/explore/nutrition/products/:barcode" element={<NutritionProductPage />} />
+          <Route path="/explore/nutrition/foods/:fdcId" element={<NutritionFoodPage />} />
           {/* Named rather than wildcarded, so a typo lands on the catch-all instead of a
               page explaining a feature that does not exist. */}
-          <Route path="/explore/nutrition" element={<ExploreSoonPage />} />
           <Route path="/explore/meal-plans" element={<ExploreSoonPage />} />
           {/* Explore used to be a room inside Recipes. Links and bookmarks still work. */}
           <Route path="/recipes/explore" element={<Navigate to="/explore/recipes" replace />} />

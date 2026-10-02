@@ -825,6 +825,7 @@ export function Row({
   end,
   chevron,
   to,
+  state,
   onClick,
   tone,
   disabled,
@@ -840,6 +841,8 @@ export function Row({
   end?: ReactNode;
   chevron?: boolean;
   to?: string;
+  /** With `to`: the router state the link carries (where it was opened from, say). */
+  state?: unknown;
   onClick?: () => void;
   /** `danger` sets the title in the destructive ink (Delete, Sign out). */
   tone?: 'danger';
@@ -874,7 +877,7 @@ export function Row({
   return (
     <li>
       {to ? (
-        <Link to={to} onClick={onClick} className={cls} {...aria}>
+        <Link to={to} state={state} onClick={onClick} className={cls} {...aria}>
           {body}
         </Link>
       ) : onClick ? (
