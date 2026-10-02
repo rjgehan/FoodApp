@@ -50,7 +50,7 @@ export const SOON: SoonDestination[] = [
     blurb: 'Ingredients, scanned products and your recipes',
     icon: 'leaf',
     tone: 'herb',
-    teaser: "What this week's plan adds up to, day by day.",
+    teaser: 'What your week adds up to',
     plan: 'Look up what is in the food you cook and keep, and see how the week you have planned adds up.',
     will: [
       { icon: 'search', title: 'Any ingredient or product', detail: 'Search for it, or scan the barcode on the packet.' },
@@ -64,7 +64,7 @@ export const SOON: SoonDestination[] = [
     blurb: 'From your cupboard, or built for a goal',
     icon: 'target',
     tone: 'plum',
-    teaser: 'A week cooked from your cupboard, or built around a goal.',
+    teaser: 'A week made for you',
     plan: 'A week of meals made for you, from your own recipes first, ready to put on the Plan in one go.',
     will: [
       { icon: 'cupboard', title: 'Cook from cupboard', detail: 'Meals that use what you already have, and the few things to buy for them.' },
@@ -245,7 +245,15 @@ export function ExploreHero({ recipe, onBack }: { recipe: Recipe; onBack: () => 
           />
         </>
       ) : (
-        <Photo seed={recipe.id} icon={exploreIcon(recipe)} large className="absolute inset-0 h-full w-full" />
+        <>
+          <Photo seed={recipe.id} icon={exploreIcon(recipe)} large className="absolute inset-0 h-full w-full" />
+          {/* Cream and bread are pale enough to lose the white name: darken the foot, where it sits. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{ background: 'linear-gradient(180deg, transparent 35%, rgba(0,0,0,.45))' }}
+          />
+        </>
       )}
       <div className="absolute inset-x-0 top-0 flex items-center px-4 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-4">
         <HeroButton icon="chevL" label="Back" onClick={onBack} />
@@ -288,6 +296,7 @@ export function ExploreFacts({ recipe }: { recipe: Recipe }) {
 
 /** Each household's colour, in the same order as the header's pill and switcher. */
 const HOUSE_TONES: Tone[] = ['herb', 'sky', 'plum', 'mustard', 'accent'];
+const houseTone = (index: number) => HOUSE_TONES[Math.max(index, 0) % HOUSE_TONES.length];
 
 /**
  * "Move into my recipes" for a published recipe: which of your households (only asked when you
@@ -306,18 +315,26 @@ export function MoveIntoMineSheet({
   onClose: () => void;
 }) {
   const { households, activeHouseholdId } = useHousehold();
-  const ordered = [...households].sort((a, b) => Number(b.id === activeHouseholdId) - Number(a.id === activeHouseholdId));
-  const [householdId, setHouseholdId] = useState<string | null>(activeHouseholdId ?? ordered[0]?.id ?? null);
+  // Not the household that published it: it is already there, and filing it "into" its own home
+  // would quietly move it to another drawer there. The one on screen comes first.
+  const choices = households
+    .filter((h) => h.id !== recipe.householdId)
+    .sort((a, b) => Number(b.id === activeHouseholdId) - Number(a.id === activeHouseholdId));
+  // What you ticked, else the one on screen: worked out each time, since the list of households
+  // can still be arriving when the sheet opens.
+  const [picked, setPicked] = useState<string | null>(null);
+  const householdId =
+    choices.find((h) => h.id === picked)?.id ?? choices.find((h) => h.id === activeHouseholdId)?.id ?? choices[0]?.id ?? null;
   // Dinner is the least surprising drawer to start in, as it is for a recipe shared with you.
   const [draft, setDraft] = useState<Filing>({ section: 'DINNER', categories: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const chosen = households.find((h) => h.id === householdId) ?? null;
-  const several = households.length > 1;
+  const chosen = choices.find((h) => h.id === householdId) ?? null;
+  const several = choices.length > 1;
 
   function pickHousehold(id: string) {
     if (id === householdId) return;
-    setHouseholdId(id);
+    setPicked(id);
     // Groups belong to a household: the ones ticked for the last one mean nothing in this one.
     setDraft((d) => ({ ...d, categories: [] }));
   }
@@ -346,14 +363,14 @@ export function MoveIntoMineSheet({
           <div>
             <SectionLabel>Which household</SectionLabel>
             <List label="Your households">
-              {households.map((h, i) => (
+              {choices.map((h) => (
                 <Row
                   key={h.id}
                   role="radio"
                   aria-checked={h.id === householdId}
                   aria-label={h.name}
                   onClick={() => pickHousehold(h.id)}
-                  lead={<Avatar name={h.name} tone={HOUSE_TONES[i % HOUSE_TONES.length]} size={40} />}
+                  lead={<Avatar name={h.name} tone={houseTone(households.indexOf(h))} size={40} />}
                   title={h.name}
                   subtitle={`${h.memberCount} ${h.memberCount === 1 ? 'person' : 'people'}${h.id === activeHouseholdId ? ' · open now' : ''}`}
                   end={<CheckCircle checked={h.id === householdId} />}
@@ -362,7 +379,7 @@ export function MoveIntoMineSheet({
             </List>
           </div>
         )}
-        {householdId && <RecipeClassifier key={householdId} householdId={householdId} value={draft} onChange={setDraft} />}
+        {householdId && <RecipeClassifier key={householdId} householdId={householdId} value={draft} onChange={setDraft} sectionLabels />}
         {error && <ErrorText>{error}</ErrorText>}
         <Button size="lg" full icon="arrowR" disabled={busy || !householdId} onClick={move}>
           {busy ? 'Moving…' : several && chosen ? `Move into ${chosen.name}` : 'Move into my recipes'}

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../api/client';
 import type { RecipeCategory, RecipeSection } from '../api/types';
-import { Button, Chip, Field, Input } from './ui';
+import { Button, Chip, Field, Input, SectionLabel } from './ui';
 import { PlusIcon } from './icons';
 import { SECTION_OPTIONS, moveToDrawer, type Filing } from '../utils/recipeMeta';
 import { buildTree } from '../utils/categoryTree';
@@ -18,6 +18,7 @@ export default function RecipeClassifier({
   onChange,
   sectionsHidden = false,
   groups,
+  sectionLabels = false,
 }: {
   householdId: string;
   value: Filing;
@@ -26,6 +27,11 @@ export default function RecipeClassifier({
   sectionsHidden?: boolean;
   /** The household's groups, when the caller already has them; otherwise they are fetched here. */
   groups?: RecipeCategory[];
+  /**
+   * Head the two parts "Drawer" and "Groups" in the sheet's own section labels, for a sheet whose
+   * other parts are headed that way ("Which household" in Move into my recipes).
+   */
+  sectionLabels?: boolean;
 }) {
   const [fetched, setFetched] = useState<RecipeCategory[]>([]);
   const known = groups ?? fetched;
@@ -93,7 +99,7 @@ export default function RecipeClassifier({
   return (
     <div className="space-y-4">
       {!sectionsHidden && (
-      <Field label="Filed under">
+      <Part label={sectionLabels ? 'Drawer' : 'Filed under'} asSection={sectionLabels}>
         <div className="flex flex-wrap gap-2">
           {SECTION_OPTIONS.map((s) => (
             <Chip
@@ -105,10 +111,10 @@ export default function RecipeClassifier({
             </Chip>
           ))}
         </div>
-      </Field>
+      </Part>
       )}
 
-      <Field label="Groups" hint="Pick the most specific one — Chicken rather than Main dish.">
+      <Part label="Groups" asSection={sectionLabels} hint="Pick the most specific one — Chicken rather than Main dish.">
         {(inSection.length > 0 || unknownPicked.length > 0) && (
           <div className="mb-2 space-y-2">
             {tree.children(null).map((root) => (
@@ -146,7 +152,19 @@ export default function RecipeClassifier({
             Add
           </Button>
         </div>
-      </Field>
+      </Part>
+    </div>
+  );
+}
+
+/** One part of the classifier, headed as a form field or as a sheet section. */
+function Part({ label, hint, asSection, children }: { label: string; hint?: string; asSection: boolean; children: ReactNode }) {
+  if (!asSection) return <Field label={label} hint={hint}>{children}</Field>;
+  return (
+    <div>
+      <SectionLabel>{label}</SectionLabel>
+      {children}
+      {hint && <p className="mt-1.5 text-xs text-muted">{hint}</p>}
     </div>
   );
 }

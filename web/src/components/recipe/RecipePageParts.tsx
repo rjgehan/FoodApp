@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { imageUrl } from '../../api/client';
 import type { RecipeIngredient, SourceLink } from '../../api/types';
 import { formatQuantity } from '../../utils/recipeFormat';
+import { unitFor } from '../groceries/groceryParts';
 import { isSafeLink, isVideoLink, linkName, videoHostLabel } from '../../utils/videoLink';
 import { Icon } from '../icons';
 import { cx, EmptyState, Pill, StepNumber } from '../ui';
@@ -164,7 +165,9 @@ export function IngredientList({ ingredients, scale }: { ingredients: RecipeIngr
   return (
     <ul aria-label="Ingredients">
       {ingredients.map((i) => {
-        const amount = [formatQuantity(i.quantity == null ? null : i.quantity * scale), i.unit].filter(Boolean).join(' ');
+        const quantity = i.quantity == null ? null : i.quantity * scale;
+        // "2 packs", as the grocery list says it.
+        const amount = [formatQuantity(quantity), unitFor(quantity, i.unit)].filter(Boolean).join(' ');
         return (
           <li key={i.id} className="flex items-baseline gap-3 border-b border-line py-[9px] text-[0.9375rem]">
             {amount && <span className="w-[4.625rem] shrink-0 font-semibold tabular-nums">{amount}</span>}
@@ -234,7 +237,8 @@ export function RecipeBottomBar({ children }: { children: ReactNode }) {
       {/* Keeps the end of the page clear of the bar. */}
       <div aria-hidden="true" className="h-24 md:h-20" />
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-2.5 px-5">{children}</div>
+        {/* The page's column plus this box's own gutters, so the button lines up with the content above it. */}
+        <div className="mx-auto flex w-full max-w-[calc(48rem+2.5rem)] items-center gap-2.5 px-5">{children}</div>
       </div>
     </>
   );

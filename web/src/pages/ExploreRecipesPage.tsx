@@ -7,7 +7,7 @@ import { Chip, EmptyState, NavBar, SearchField } from '../components/ui';
 import { usePushedScreen } from '../components/Layout';
 import { GlobalRecipeCard, isKept, useMoveIntoMine } from '../components/explore/ExploreParts';
 
-type Filter = 'newest' | 'not-kept' | 'yours';
+type Filter = 'all' | 'not-kept' | 'yours';
 
 /**
  * Global recipes (the mockup's 5.2): everything every household here has published — the one
@@ -15,15 +15,15 @@ type Filter = 'newest' | 'not-kept' | 'yours';
  * move it straight into your own recipes with its +.
  *
  * Recipes is what this house cooks; this is what every other house on the server has decided to
- * share. The chips narrow it to what is newest (all of it, as the server sends it), what you have
- * not kept yet, and what this house published itself.
+ * share, newest published first. The chips narrow it to what you have not kept yet, or what this
+ * house published itself; All is the lot.
  */
 export default function ExploreRecipesPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
   usePushedScreen();
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('newest');
+  const [filter, setFilter] = useState<Filter>('all');
 
   const load = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -63,7 +63,7 @@ export default function ExploreRecipesPage() {
   const count = recipes?.length ?? 0;
   const anyYours = (recipes ?? []).some((r) => !r.shared);
   const chips: { value: Filter; label: string }[] = [
-    { value: 'newest', label: 'Newest' },
+    { value: 'all', label: 'All' },
     { value: 'not-kept', label: 'Not kept yet' },
     ...(anyYours ? [{ value: 'yours' as const, label: 'Published by you' }] : []),
   ];

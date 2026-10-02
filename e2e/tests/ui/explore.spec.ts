@@ -10,7 +10,7 @@ import { sheet, signIn } from '../../lib/ui';
 
 async function published(householdId: string, name: string) {
   const r = await newRecipe(householdId, name, [
-    { name: 'ramen noodles', qty: 2, unit: 'packs' },
+    { name: 'ramen noodles', qty: 2, unit: 'pack' },
     { name: 'spring onions', qty: 2, optional: true },
   ], { prepTimeMinutes: 10, cookTimeMinutes: 15, servings: 2 });
   await call('PUT', `/api/recipes/${r.id}/published`, { token: (await admin()).token, body: { published: true } });
@@ -102,6 +102,8 @@ test('in two households, moving a published recipe in asks which, and files it t
   await expect(page.getByText(`From ${owners.name}`)).toBeVisible();
   await expect(page.getByText('Serves 2')).toBeVisible();
   await expect(page.getByText('Optional')).toBeVisible();
+  // Written as "2 pack", read as the grocery list says it.
+  await expect(page.getByRole('list', { name: 'Ingredients' }).getByText('2 packs')).toBeVisible();
 
   await page.getByRole('button', { name: 'Move into my recipes' }).click();
   const move = sheet(page);
@@ -116,4 +118,33 @@ test('in two households, moving a published recipe in asks which, and files it t
   expect(await keeps(a.id, cook.token, r.id)).toBe(false);
   // Still not kept in the household on screen, so the page still offers to move it.
   await expect(page.getByRole('button', { name: 'Move into my recipes' })).toBeVisible();
+});
+
+test('a member of the household that published it is not offered that household to move it into', async ({ page }) => {
+  const owners = await newHousehold();
+  const other = await newHousehold();
+  const cook = await newMember(other.id);
+  await call('POST', `/api/invites/${await inviteToken(owners.id)}/accept`, { token: cook.token });
+  const name = unique('Home Ramen');
+  const r = await published(owners.id, name);
+  const sectionAtHome = async () =>
+    (await call('GET', `/api/households/${owners.id}/recipes`, { token: cook.token })).find((x: any) => x.id === r.id)?.section;
+  const before = await sectionAtHome();
+
+  await signIn(page, cook, other.id);
+  await page.goto(`/explore/recipes/${r.id}`);
+  await page.getByRole('button', { name: 'Move into my recipes' }).click();
+  const move = sheet(page);
+  // Its home already has it, which leaves one household: nothing to ask.
+  await expect(move.getByRole('radio')).toHaveCount(0);
+  await expect(move.getByText(owners.name, { exact: true })).toHaveCount(0);
+  // Another drawer than its home's, so a move that re-filed it at home would show.
+  await move.getByRole('button', { name: 'Lunch', exact: true }).click();
+  await move.getByRole('button', { name: 'Move into my recipes' }).click();
+  await expect(page.getByText('Moved into your recipes')).toBeVisible();
+
+  await expect.poll(() => keeps(other.id, cook.token, r.id)).toBe(true);
+  // Filed where its publisher keeps it, untouched.
+  expect(before).toBe('DINNER');
+  expect(await sectionAtHome()).toBe('DINNER');
 });
