@@ -11,12 +11,16 @@ import Foundation
 
  - Which food. Where the server's matcher only guessed ("guess", or not counted at all), the
    model is shown the line ("2 chicken thighs, skin on") and the server's own shortlist, and may
-   only answer with one of them (a guided `.anyOf`) or "none of these". The pick is sent back as
-   source "ai"; the server again takes only a shortlisted food, and never lets a model overrule
-   a person.
+   only answer with one of them (a guided `.anyOf`) or "none of these". A small model picks
+   something even for a line that is no food at all ("grandma's secret mix" → trail mix), so a
+   pick the server itself thought little of (under `pickFloor`) is not sent. The pick is sent
+   back as source "ai"; the server again takes only a shortlisted food it thinks close enough,
+   counts it as a guess, and never lets a model overrule a person.
  - What one weighs. For the amounts the server can only estimate (a knob, a handful, two chicken
    breasts) or cannot weigh at all, the model gives grams for ONE of the unit inside a sane
-   range for that unit (a guided `.range`), checked again here, and sent back as source "ai".
+   range (a guided `.range`): half to twice the server's own figure where it has one — the
+   server refuses anything else, since a small model tends to say "10 g" for everything — or
+   the unit's own range where it has none. Checked again here, and sent back as source "ai".
  - A few friendly words about a serving, from words only. It is never given a number and an
    answer with a digit in it is thrown away, so it cannot put a figure on the screen.
 
@@ -68,6 +72,9 @@ enum NutritionAssist {
     static let perVisit = 6
     /// The last choice offered with every shortlist.
     static let noneOfThese = "None of these"
+    /// The least the server's own confidence in a food may be for the model's pick of it to be
+    /// sent (IngredientMatches.AI_FLOOR on the server, which refuses lower ones too).
+    static let pickFloor = 0.4
 
     // MARK: What to ask
 
@@ -86,6 +93,8 @@ enum NutritionAssist {
         /// The food data entry it is counted as, so a tin of chickpeas is weighed drained when the
         /// entry is the drained solids.
         var food: String?
+        /// Half to twice the server's own figure for one, inside the unit's sane range; the
+        /// unit's range alone when the server could not weigh it.
         let range: ClosedRange<Int>
         var memoryKey: String { "grams:\(ingredientId.uuidString):\(unitKey(unit))" }
     }
@@ -124,10 +133,12 @@ enum NutritionAssist {
         }
 
         var seenUnits = Set<String>()
+        let scale = n.recipeServings > 0 ? n.servings / Double(n.recipeServings) : 0
         for c in n.contributors where budget > 0 {
             guard let id = c.ingredientId, c.gramsHow == "ROUGH" || c.gramsHow == "TYPICAL" else { continue }
             let unit = unitText(fromAmount: c.amount)
-            guard let range = gramsRange(for: unit) else { continue }
+            guard let sane = gramsRange(for: unit),
+                  let range = band(around: serverEach(c, scale: scale), within: sane) else { continue }
             let job = GramsJob(ingredientId: id, ingredient: c.name, unit: unit, food: c.foodName, range: range)
             guard !memory.asked(job.memoryKey), seenUnits.insert(job.memoryKey).inserted else { continue }
             work.grams.append(job)
@@ -169,9 +180,34 @@ enum NutritionAssist {
         return options.first { $0.label == said }?.fdcId
     }
 
-    /// Grams for one of a unit only when they are inside the unit's sane range.
+    /// Grams for one of a unit only when they are inside the job's range.
     static func acceptedGrams(_ grams: Int, for job: GramsJob) -> Double? {
         job.range.contains(grams) ? Double(grams) : nil
+    }
+
+    /// What the server weighed ONE of the line's unit as: its grams are for the servings shown.
+    static func serverEach(_ c: NutritionContributor, scale: Double) -> Double? {
+        guard scale > 0, let amount = c.amount?.trimmingCharacters(in: .whitespaces),
+              let quantity = Double(amount.split(separator: " ").first ?? ""), quantity > 0 else { return nil }
+        return c.grams / scale / quantity
+    }
+
+    /**
+     Half to twice `each` (a hair inside, so rounding never puts an answer outside the server's own
+     band), kept inside the unit's `sane` range; `sane` alone with no figure to go by. Nil when the
+     two do not overlap — nothing worth asking.
+     */
+    static func band(around each: Double?, within sane: ClosedRange<Int>) -> ClosedRange<Int>? {
+        guard let each, each > 0 else { return sane }
+        let low = max(sane.lowerBound, Int((each / 2 * 1.02).rounded(.up)))
+        let high = min(sane.upperBound, Int((each * 2 * 0.98).rounded(.down)))
+        return low <= high ? low...high : nil
+    }
+
+    /// A pick is only worth sending when the server itself thought the food might be it.
+    static func pickWorthSending(_ fdcId: Int, from shortlist: [MatchCandidate]) -> Bool {
+        guard let candidate = shortlist.first(where: { $0.fdcId == fdcId }) else { return false }
+        return candidate.confidence >= pickFloor
     }
 
     /**
@@ -276,12 +312,14 @@ enum NutritionAssist {
                 continue
             }
             memory.remember(job.memoryKey)
-            guard let fdcId = pickedFood(answer, from: options) else { continue }
+            // "None of these", something made up, or a food the server thought nothing like the line.
+            guard let fdcId = pickedFood(answer, from: options), pickWorthSending(fdcId, from: match.shortlist) else { continue }
             do {
                 try await server.chooseFood(job.ingredientId, fdcId: fdcId)
                 outcome.matched.append(match.ingredientName)
             } catch {
-                // 409: a person chose already. 400: off the shortlist after all. Either way, theirs stands.
+                // 409: a person chose already. 400: off the shortlist after all. 422: too far from the
+                // line, or too far from the server's own weight. Either way, the server's stands.
             }
         }
         for job in work.grams {

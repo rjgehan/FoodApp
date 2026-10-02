@@ -90,10 +90,11 @@ final class FakeServer: NutritionAssistServer, @unchecked Sendable {
 
 let thighs = UUID(), oil = UUID(), butter = UUID(), spinach = UUID(), sumac = UUID(), salt = UUID(), breast = UUID()
 
+/// grams: for the one serving shown of four, as the server sends them.
 func contributor(_ id: UUID, _ name: String, amount: String, how: String, source: String = "auto",
-                 guess: Bool = false, basis: String? = nil) -> NutritionContributor {
+                 guess: Bool = false, basis: String? = nil, grams: Double = 100) -> NutritionContributor {
     NutritionContributor(recipeIngredientId: UUID(), ingredientId: id, name: name, fdcId: 1, foodName: name,
-                         amount: amount, grams: 100, gramsHow: how, gramsBasis: basis, estimated: how != "WEIGHT",
+                         amount: amount, grams: grams, gramsHow: how, gramsBasis: basis, estimated: how != "WEIGHT",
                          kcal: 100, protein: 5, carbs: 5, fat: 5, share: 0.2, confidence: guess ? 0.5 : 0.9,
                          matchSource: source, guess: guess)
 }
@@ -111,10 +112,11 @@ let recipe = RecipeNutrition(
     contributors: [
         contributor(thighs, "chicken thighs, skin on", amount: "800 g", how: "WEIGHT", guess: true),
         contributor(oil, "olive oil", amount: "2 tbsp", how: "VOLUME"),
-        contributor(butter, "butter", amount: "1 knob", how: "ROUGH"),
-        contributor(spinach, "spinach", amount: "2 handfuls", how: "ROUGH", source: "ai"),
-        contributor(salt, "salt", amount: "1 pinch", how: "ROUGH"),
-        contributor(breast, "chicken breasts", amount: "2", how: "TYPICAL"),
+        // The server's own figures: a knob 12 g, a handful 30 g, a pinch 0.4 g, a breast 175 g — a quarter shown.
+        contributor(butter, "butter", amount: "1 knob", how: "ROUGH", grams: 3),
+        contributor(spinach, "spinach", amount: "2 handfuls", how: "ROUGH", source: "ai", grams: 15),
+        contributor(salt, "salt", amount: "1 pinch", how: "ROUGH", grams: 0.1),
+        contributor(breast, "chicken breasts", amount: "2", how: "TYPICAL", grams: 87.5),
     ],
     notCounted: [
         NutritionNotCounted(recipeIngredientId: UUID(), ingredientId: sumac, name: "sumac", reason: "NO_MATCH",
@@ -144,7 +146,9 @@ do {
     check(work.matches.first?.line == "800 g chicken thighs, skin on", "the line is the recipe's own words")
     check(work.matches.last?.line == "1 tsp sumac", "an unmatched line keeps its amount")
     check(Set(work.grams.map(\.ingredientId)) == [butter, spinach, breast], "asks the weight of a knob, a handful and a count, not a pinch")
-    check(work.grams.first { $0.ingredientId == butter }?.range == 3...40, "a knob is between 3 and 40 g")
+    check(work.grams.first { $0.ingredientId == butter }?.range == 7...23, "a knob is half to twice the server's own 12 g")
+    check(work.grams.first { $0.ingredientId == spinach }?.range == 16...58, "a handful of spinach is half to twice its 30 g")
+    check(work.grams.first { $0.ingredientId == breast }?.range == 90...343, "a chicken breast is half to twice its 175 g")
     check(work.grams.first { $0.ingredientId == breast }?.unit == "", "a count is one of the thing itself")
     check(!work.grams.contains { $0.ingredientId == oil }, "spoons are the server's own arithmetic")
 
@@ -222,6 +226,50 @@ run {
                                                thinker: ScriptedThinker(), server: FakeServer(), memory: MemoryOnly())
     check(!silent.changed, "a model that refuses changes nothing")
 }
+
+run {
+    // What a small model really did on a Simulator: picked a food for a line that is no food, and
+    // said 10 g for a handful of spinach (the server's own figure is 30 g).
+    let mix = UUID(), xyzzy = UUID()
+    let nonsense = RecipeNutrition(
+        recipeId: recipe.recipeId, name: "Grandma's mystery stew", recipeServings: 4, servings: 1,
+        perServing: values, forServings: values, perRecipe: values, split: recipe.split, reference: reference,
+        percentOfReference: recipe.percentOfReference, highlights: [], summary: nil,
+        contributors: [contributor(spinach, "spinach", amount: "2 handfuls", how: "ROUGH", grams: 15)],
+        notCounted: [
+            NutritionNotCounted(recipeIngredientId: UUID(), ingredientId: mix, name: "grandma's secret mix",
+                                reason: "NO_MATCH", quantity: 1, unit: nil, optional: false, fdcId: nil, foodName: nil),
+            NutritionNotCounted(recipeIngredientId: UUID(), ingredientId: xyzzy, name: "xyzzy sauce",
+                                reason: "NO_MATCH", quantity: 1, unit: "tbsp", optional: false, fdcId: nil, foodName: nil),
+        ],
+        linesCounted: 1, linesTotal: 3, complete: false, note: "", attribution: nil)
+    let thinker = ScriptedThinker()
+    let server = FakeServer()
+    server.matches[mix] = match(mix, "grandma's secret mix", counted: false, shortlist: [
+        candidate(31, "Shortening cake mix, soybean (hydrogenated) and cottonseed (hydrogenated)", 0.35),
+        candidate(32, "Snacks, trail mix, regular", 0.36),
+    ])
+    server.matches[xyzzy] = match(xyzzy, "xyzzy sauce", counted: false, shortlist: [candidate(41, "Sauce, barbecue", 0.23)])
+    thinker.picks["1 grandma's secret mix"] = "Snacks, trail mix, regular"
+    thinker.picks["1 tbsp xyzzy sauce"] = "Sauce, barbecue"
+    thinker.grams["handfuls|spinach"] = 10
+    let memory = MemoryOnly()
+    let outcome = await NutritionAssist.improve(NutritionAssist.work(for: nonsense, memory: memory), thinker: thinker,
+                                                server: server, memory: memory)
+    check(thinker.askedLines.count == 2, "both unmatched lines are asked about")
+    check(server.chosen.isEmpty, "a nonsense line answered with a real food is not sent")
+    check(thinker.askedRanges.first == 16...58, "the model is only offered half to twice the server's handful")
+    check(server.weighed.isEmpty, "10 g for a handful of spinach (the server says 30) is not sent")
+    check(!outcome.changed, "nothing changed")
+    check(memory.asked("match:\(mix.uuidString)"), "and it is not asked again")
+}
+
+check(NutritionAssist.band(around: 30, within: 5...60) == 16...58, "a band is half to twice, a hair inside")
+check(NutritionAssist.band(around: nil, within: 5...60) == 5...60, "with nothing to go by, the unit's own range")
+check(NutritionAssist.band(around: 1000, within: 3...40) == nil, "no overlap, nothing to ask")
+check(NutritionAssist.pickWorthSending(32, from: [candidate(32, "Snacks, trail mix, regular", 0.36)]) == false,
+      "a pick the server thought little of is not worth sending")
+check(NutritionAssist.pickWorthSending(11, from: [candidate(11, "Chicken thigh, raw", 0.6)]), "a pick the server half-believed is")
 
 // MARK: - The shortlist as offered
 
