@@ -91,6 +91,7 @@ export default function PlanCalendar({
           const past = day < today;
           const inWindow = day >= today && day <= horizonEnd;
           const inMonth = day.getMonth() === monthCursor.getMonth();
+          const ring = isToday ? 'ring-accent' : inWindow ? 'ring-herb-soft' : 'ring-surface';
           return (
             <button
               key={key}
@@ -110,9 +111,11 @@ export default function PlanCalendar({
             >
               <span className="leading-none">{day.getDate()}</span>
               {pictures && planned.length > 0 ? (
-                // Three fit; a fourth meal turns the third into a count, so a busy day still
-                // says it is busier than it looks.
-                <span className="flex items-center justify-center gap-0.5">
+                // Three fit, overlapping like a stack of avatars so they stay inside the square
+                // (side by side, three spilled past its rounded edges); each is ringed in the
+                // square's own colour to keep them apart. A fourth meal turns the third into a
+                // count, so a busy day still says it is busier than it looks.
+                <span className="flex items-center justify-center -space-x-2">
                   {planned.slice(0, planned.length > 3 ? 2 : 3).map((e) => (
                     <MealPicture
                       key={e.id}
@@ -120,11 +123,17 @@ export default function PlanCalendar({
                       recipe={e.recipeId ? recipes.get(e.recipeId) : undefined}
                       pictures={pictures}
                       size={24}
-                      radius={6}
+                      radius={7}
+                      className={cx('ring-2', ring)}
                     />
                   ))}
                   {planned.length > 3 && (
-                    <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-surface2 text-[0.6875rem] font-semibold text-muted">
+                    <span
+                      className={cx(
+                        'flex h-6 w-6 items-center justify-center rounded-[7px] bg-surface2 text-[0.6875rem] font-semibold text-muted ring-2',
+                        ring,
+                      )}
+                    >
                       +{planned.length - 2}
                     </span>
                   )}

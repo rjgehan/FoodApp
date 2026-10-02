@@ -20,8 +20,13 @@ interface DayLine {
  * list already has is shown, unticked, so you can see why it is not counted.
  *
  * Counted by ingredient, as the list is: garlic for Tuesday and garlic for Thursday is one row.
- * What adds nothing is said underneath — eating out, a recipe that is only a name, a saved link,
- * a single food — so nobody wonders where Wednesday went.
+ * What adds nothing is said underneath, in one note — eating out, a recipe that is only a name, a
+ * saved link, a single food — so nobody wonders where Wednesday went.
+ *
+ * A day whose meals are all in the cupboard starts unticked too. The list does take things the
+ * cupboard has when you ask (having some oats is not having enough), so its number is what
+ * ticking it would really add — but the sheet does not add them unless you tick it, which is
+ * what "all in cupboard" promises.
  */
 export default function AddToGroceriesSheet({
   entries,
@@ -55,17 +60,30 @@ export default function AddToGroceriesSheet({
     });
   }, [entries, shopping]);
 
-  // A day that would add nothing starts unticked: the list already has it.
+  // A day that would add nothing starts unticked (the list already has it), and so does one the
+  // cupboard already covers.
   const [ticked, setTicked] = useState<Set<string>>(
-    () => new Set(lines.filter((l) => !shopping || l.ingredients.size > 0).map((l) => l.date)),
+    () => new Set(lines.filter((l) => !shopping || (l.ingredients.size > 0 && !l.allInCupboard)).map((l) => l.date)),
   );
   const count = new Set(lines.filter((l) => ticked.has(l.date)).flatMap((l) => [...l.ingredients])).size;
   const days = ticked.size;
 
+  /*
+   * Everything that adds nothing, in one sentence rather than a stack of boxes pushing the
+   * button down: "Nothing to buy for Fri 2 dinner (eat out), Green salad (single food) and
+   * Honey garlic chicken (saved link)."
+   */
   const eatingOut = entries.filter((e) => e.placeId).map((e) => `${shortDay(fromIso(e.date))} ${e.mealType.toLowerCase()}`);
   const nameOnly = [...new Set(entries.filter((e) => e.needsIngredients && e.recipeName).map((e) => e.recipeName!))];
-  const singles = entries.filter((e) => e.itemName).map((e) => e.itemName!);
-  const links = entries.filter((e) => e.savedLinkId && !e.recipeDeleted).length;
+  const singles = [...new Set(entries.filter((e) => e.itemName).map((e) => e.itemName!))];
+  const links = [...new Set(entries.filter((e) => e.savedLinkId && !e.recipeDeleted).map((e) => entryLabel(e) ?? 'A saved link'))];
+  const nothingFor = [
+    ...tagged(eatingOut, 'eat out'),
+    ...tagged(nameOnly, 'no ingredients yet'),
+    ...tagged(singles, singles.length === 1 ? 'single food' : 'single foods'),
+    ...tagged(links, links.length === 1 ? 'saved link' : 'saved links'),
+  ];
+  const onlyEatingOut = eatingOut.length > 0 && nothingFor.length === 1;
 
   return (
     <Sheet
@@ -89,7 +107,7 @@ export default function AddToGroceriesSheet({
                   lead={<CheckBox checked={on} />}
                   title={`${shortDay(fromIso(line.date))} · ${line.slots}`}
                   titleClassName={nothing && !on ? 'text-muted' : undefined}
-                  subtitle={nothing ? 'Already on the list' : line.allInCupboard ? `${line.dishes} · all in cupboard` : line.dishes}
+                  subtitle={line.allInCupboard ? `${line.dishes} · all in cupboard` : nothing ? 'Already on the list' : line.dishes}
                   detail={shopping && !nothing ? line.ingredients.size : undefined}
                   onClick={() =>
                     setTicked((all) => {
@@ -105,26 +123,17 @@ export default function AddToGroceriesSheet({
           </List>
         )}
 
-        {eatingOut.length > 0 && (
+        {onlyEatingOut ? (
           <NoteBox tone="plum" icon="utensils">
             {listOf(eatingOut)} {eatingOut.length === 1 ? 'is' : 'are'} eat out, so nothing to buy.
           </NoteBox>
-        )}
-        {nameOnly.length > 0 && (
-          <NoteBox tone="mustard" icon="pen">
-            {listOf(nameOnly)} {nameOnly.length === 1 ? 'has' : 'have'} no ingredients yet, so{' '}
-            {nameOnly.length === 1 ? 'it adds' : 'they add'} nothing.
-          </NoteBox>
-        )}
-        {singles.length > 0 && (
-          <NoteBox tone="sky" icon="cupboard">
-            Single foods like {singles[0]} aren't included. Add one from its meal's options.
-          </NoteBox>
-        )}
-        {links > 0 && (
-          <NoteBox tone="sky" icon="link">
-            Saved links have no ingredients, so they add nothing. Make one a recipe to shop for it.
-          </NoteBox>
+        ) : (
+          nothingFor.length > 0 && (
+            <NoteBox tone="sky" icon="info">
+              Nothing to buy for {listOf(nothingFor, false)}.
+              {singles.length > 0 && ' A single food has its own button in its meal’s options.'}
+            </NoteBox>
+          )
         )}
 
         <Button size="lg" full disabled={busy || days === 0} onClick={() => onConfirm([...ticked].sort())}>
@@ -141,9 +150,15 @@ export default function AddToGroceriesSheet({
   );
 }
 
+/** "Fri 2 dinner and Sun 4 dinner (eat out)": a kind of thing, said once after the last of them. */
+function tagged(things: string[], what: string): string[] {
+  if (things.length === 0) return [];
+  return [...things.slice(0, -1), `${things[things.length - 1]} (${what})`];
+}
+
 /** "Wed 30 dinner, Fri 2 lunch and Sat 3 dinner" */
-function listOf(things: string[]): string {
-  const first = things[0].charAt(0).toUpperCase() + things[0].slice(1);
+function listOf(things: string[], capitalise = true): string {
+  const first = capitalise ? things[0].charAt(0).toUpperCase() + things[0].slice(1) : things[0];
   const all = [first, ...things.slice(1)];
   return all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all[all.length - 1]}`;
 }

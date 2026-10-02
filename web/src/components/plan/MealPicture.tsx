@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { imageUrl } from '../../api/client';
 import type { MealPlanEntry, Recipe } from '../../api/types';
 import { cx, Photo, Tile } from '../ui';
-import { mealIcon } from './planModel';
+import { dishIcon } from './planModel';
 
 /**
- * A planned dish's picture. The recipe's cover or the restaurant's photo where there is room for
- * real pictures (`pictures`, wide screens only — a phone keeps to the drawn plates and downloads
- * none); otherwise the mockup's food-coloured plate with an icon for the kind of meal. Eating out
- * is a plum shop front, as everywhere.
+ * A planned dish's picture. The recipe's cover or the restaurant's photo when it has one;
+ * otherwise the mockup's food-coloured plate with an icon for the kind of dish. Eating out is a
+ * plum shop front, as everywhere, and a single food ("eggs", "Green salad") a herb leaf — the sky
+ * cupboard tile is for cupboard rows.
  *
  * A cover that was deleted, or a server briefly away, falls back to the plate rather than the
  * browser's broken-image box — remembered by id, so a new cover gets its own try.
@@ -51,11 +51,11 @@ export default function MealPicture({
     );
   }
   if (entry.placeId) return <Tile icon="store" tone="plum" size={size} radius={radius} className={className} />;
-  if (entry.itemName) return <Tile icon="cupboard" tone="sky" size={size} radius={radius} className={className} />;
+  if (entry.itemName) return <Photo hue="green" icon="leaf" className={className} style={style} />;
   return (
     <Photo
       seed={key || entry.id}
-      icon={entry.savedLinkId ? (entry.savedLinkSource === 'WEB' ? 'globe' : 'play') : mealIcon(recipe?.section, entry.mealType)}
+      icon={entry.savedLinkId ? (entry.savedLinkSource === 'WEB' ? 'globe' : 'play') : dishIcon(recipe ?? { name: entry.recipeName }, entry.mealType)}
       className={className}
       style={style}
     />

@@ -42,8 +42,10 @@ export function PageTitle({
     };
   }, [title, setCompact]);
 
+  // On a phone the overline sits 8px under the top bar's household pill, as the mockup's does:
+  // the bar is 56px tall with 12px under its pill, so the title pulls up into that a little.
   return (
-    <div className="pb-3 pt-1">
+    <div className="pb-3 pt-1 max-md:-mt-2 max-md:pt-0">
       <div className="flex items-end justify-between gap-2.5">
         <div className="min-w-0">
           {over && <p className="mb-0.5 text-[0.8125rem] font-medium text-muted">{over}</p>}

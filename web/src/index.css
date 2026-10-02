@@ -164,6 +164,15 @@
   .mb-safe {
     margin-bottom: env(safe-area-inset-bottom);
   }
+  /* A gap of its own that grows to clear the home indicator, rather than pb-5 and pb-safe
+     stacked — the later one wins outright, and where the inset is 0 (Safari with its toolbar,
+     Android, a computer) that left a button sitting on the bottom edge of the screen. */
+  .pb-safe-5 {
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  }
+  .pb-safe-8 {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
 }
 
 @layer components {

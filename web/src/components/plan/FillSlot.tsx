@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { imageUrl } from '../../api/client';
-import type { CupboardItem, Place, Recipe, SavedLink } from '../../api/types';
+import { api, imageUrl } from '../../api/client';
+import type { CupboardItem, Place, Recipe, RecipeCategory, SavedLink } from '../../api/types';
+import { useHousehold } from '../../household/HouseholdContext';
+import { buildTree } from '../../utils/categoryTree';
 import { sourceLabel } from '../../utils/savedLinks';
 import { Icon } from '../icons';
 import {
@@ -22,7 +24,7 @@ import {
   Toggle,
   type Tone,
 } from '../ui';
-import { filingLine, mealIcon } from './planModel';
+import { dishIcon, filingLine, slotTime } from './planModel';
 
 const PLACE_TONES: Tone[] = ['plum', 'accent', 'mustard', 'herb', 'sky'];
 
@@ -180,7 +182,23 @@ function EatIn({
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
+  const { activeHouseholdId, groceryCategories } = useHousehold();
   const typed = query.trim();
+
+  // The household's groups, to write each recipe's filing as the path it is nested in. Until
+  // they arrive (or if they cannot), the groups are listed as they are.
+  const [tree, setTree] = useState<ReturnType<typeof buildTree> | null>(null);
+  useEffect(() => {
+    if (!activeHouseholdId) return;
+    let live = true;
+    api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`)
+      .then((groups) => live && setTree(buildTree(groups)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [activeHouseholdId]);
+  const aisles = useMemo(() => new Map(groceryCategories.map((c) => [c.id, c.name])), [groceryCategories]);
   const q = typed.toLowerCase();
 
   const groups = useMemo(() => {
@@ -188,8 +206,18 @@ function EatIn({
     for (const r of recipes) for (const c of r.categories) names.add(c);
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [recipes]);
-  const hasMains = groups.some((g) => MAIN.test(g));
-  const hasSides = groups.some((g) => SIDE.test(g));
+  // A recipe in Chicken, inside Main, is a main: its groups and every group they sit in.
+  const filedUnder = (r: Recipe): string[] =>
+    tree
+      ? r.categories.flatMap((c) => {
+          const g = tree.byName.get(c.toLowerCase());
+          return g ? tree.path(g.id).map((p) => p.name) : [c];
+        })
+      : r.categories;
+  const isMain = (r: Recipe) => filedUnder(r).some((c) => MAIN.test(c));
+  const isSide = (r: Recipe) => filedUnder(r).some((c) => SIDE.test(c));
+  const hasMains = recipes.some(isMain);
+  const hasSides = recipes.some(isSide);
   const otherGroups = groups.filter((g) => !MAIN.test(g) && !SIDE.test(g));
 
   const matches = (name: string) => !q || name.toLowerCase().includes(q);
@@ -201,9 +229,9 @@ function EatIn({
           .filter((r) => matches(r.name))
           .filter((r) =>
             k === 'mains'
-              ? r.categories.some((c) => MAIN.test(c))
+              ? isMain(r)
               : k === 'sides'
-                ? r.categories.some((c) => SIDE.test(c))
+                ? isSide(r)
                 : k === 'group'
                   ? r.categories.includes(filter.name)
                   : true,
@@ -260,7 +288,7 @@ function EatIn({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8 pb-safe">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-safe-8">
         <div className="flex flex-col gap-3.5 pb-6">
           {shownRecipes.length > 0 && (
             <Group label="Recipes">
@@ -273,12 +301,12 @@ function EatIn({
                     r.coverImageId ? (
                       <Cover imageId={r.coverImageId} />
                     ) : (
-                      <Photo seed={r.id} icon={mealIcon(r.section)} className="h-10 w-10 rounded-[10px]" />
+                      <Photo seed={r.id} icon={dishIcon(r)} className="h-10 w-10 rounded-[10px]" />
                     )
                   }
                   title={<Highlight text={r.name} query={q} />}
                   titleClassName="font-medium"
-                  subtitle={filingLine(r) || `Serves ${r.servings}`}
+                  subtitle={filingLine(r, tree) || `Serves ${r.servings}`}
                   end={
                     r.id === current ? (
                       <CheckCircle checked />
@@ -324,7 +352,7 @@ function EatIn({
                   onClick={() => onChoose({ kind: 'item', name: c.name })}
                   lead={<Tile icon="cupboard" tone="sky" size={40} />}
                   title={<Highlight text={c.name} query={q} />}
-                  subtitle={cupboardLine(c)}
+                  subtitle={cupboardLine(c, c.categoryId ? aisles.get(c.categoryId) : undefined)}
                 />
               ))}
             </Group>
@@ -392,8 +420,24 @@ function EatOut({
   const shown = places.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()));
   // Only offered when nothing already has that exact name.
   const canCreate = q.length > 0 && !places.some((p) => p.name.toLowerCase() === q.toLowerCase());
+  /*
+   * What the button would plan is always a row you can see ticked. A place the search has hidden
+   * is not chosen while it is hidden (clearing the search brings it back, still ticked) — the
+   * button said "Plan Sakura Sushi" under a list showing only "Add “Noodle Bar”". And a name
+   * nobody has saved, with nothing else matching, is that new place: typing it is the choice.
+   */
+  const effective =
+    picked === NEW
+      ? canCreate
+        ? NEW
+        : null
+      : picked && shown.some((p) => p.id === picked)
+        ? picked
+        : shown.length === 0 && canCreate
+          ? NEW
+          : null;
   const chosen: Place | { name: string } | null =
-    picked === NEW && canCreate ? { name: q } : places.find((p) => p.id === picked) ?? null;
+    effective === NEW ? { name: q } : places.find((p) => p.id === effective) ?? null;
 
   return (
     <>
@@ -416,7 +460,7 @@ function EatOut({
                 <Row
                   key={place.id}
                   role="radio"
-                  aria-checked={picked === place.id}
+                  aria-checked={effective === place.id}
                   onClick={() => setPicked(place.id)}
                   lead={
                     place.imageId ? (
@@ -427,18 +471,18 @@ function EatOut({
                   }
                   title={place.name}
                   subtitle={place.notes}
-                  end={<CheckCircle checked={picked === place.id} />}
+                  end={<CheckCircle checked={effective === place.id} />}
                 />
               ))}
               {canCreate && (
                 <Row
                   role="radio"
-                  aria-checked={picked === NEW}
+                  aria-checked={effective === NEW}
                   onClick={() => setPicked(NEW)}
                   lead={<Tile icon="plus" tone="accent" size={40} />}
                   title={`Add “${q}”`}
                   subtitle="A new place, saved for next time"
-                  end={<CheckCircle checked={picked === NEW} />}
+                  end={<CheckCircle checked={effective === NEW} />}
                 />
               )}
             </Group>
@@ -461,14 +505,28 @@ function EatOut({
               <Toggle on={timed} />
             </button>
             {timed && (
-              <label className="flex items-center justify-between gap-3 rounded-xl bg-surface2 px-3 py-2.5">
+              // The time reads "7:30 pm", as everywhere on the plan; the browser's own time
+              // input ("07:30 PM" and a clock glyph) lies invisibly over the whole row, so a tap
+              // anywhere on it still opens the phone's time wheel.
+              <label className="relative flex items-center justify-between gap-3 rounded-xl bg-surface2 px-3 py-2.5 focus-within:ring-2 focus-within:ring-accent">
                 <span className="text-[0.9375rem]">{dayName}</span>
+                <span aria-hidden="true" className="text-[1.0625rem] font-semibold tabular-nums text-ink">
+                  {slotTime(time) ?? 'Pick a time'}
+                </span>
                 <input
                   type="time"
                   aria-label="Time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  className="bg-transparent text-right text-[1.0625rem] font-semibold text-ink outline-none"
+                  onClick={(e) => {
+                    // A computer's browser only opens its picker from the clock glyph.
+                    try {
+                      e.currentTarget.showPicker?.();
+                    } catch {
+                      // Not allowed here (an iframe): the typed fields still work.
+                    }
+                  }}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 />
               </label>
             )}
@@ -476,7 +534,7 @@ function EatOut({
           </div>
         </div>
       </div>
-      <div className="shrink-0 px-5 pb-5 pt-2 pb-safe">
+      <div className="shrink-0 px-5 pt-2 pb-safe-5">
         <Button
           size="lg"
           full
@@ -522,9 +580,16 @@ function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-function cupboardLine(c: CupboardItem): string {
-  if (c.staple) return 'Always have';
-  if (c.runningLow) return 'Running low';
-  if (c.quantity != null) return `Have ${c.quantity}${c.unit ? ` ${c.unit}` : ''}`;
-  return 'In the cupboard';
+/** "Have 3 · Tins & jars": how much there is, and which aisle it lives in. */
+function cupboardLine(c: CupboardItem, aisle: string | undefined): string {
+  const stock = c.staple
+    ? 'Always have'
+    : c.runningLow
+      ? 'Running low'
+      : c.quantity != null
+        ? `Have ${c.quantity}${c.unit ? ` ${c.unit}` : ''}`
+        : aisle
+          ? 'Have it'
+          : 'In the cupboard';
+  return aisle ? `${stock} · ${aisle}` : stock;
 }

@@ -40,6 +40,9 @@ export function DayBlock({
 }) {
   const slots = slotsOf(entries);
   const isToday = isoDate(day) === isoDate(today);
+  // A day gone by is history: what it meant for the shopping no longer matters, and "Not on
+  // list" with a "+ Add" beside last week's dinner would only invite buying it again.
+  const past = isoDate(day) < isoDate(today);
   return (
     <section
       className="flex items-start gap-2"
@@ -61,7 +64,7 @@ export function DayBlock({
               recipes={recipes}
               places={places}
               pictures={pictures}
-              shopping={shopping}
+              shopping={past ? null : shopping}
               onOpen={() => onOpen(slot)}
               onOptions={() => onOptions(slot)}
               onAdd={() => onAdd(slot)}

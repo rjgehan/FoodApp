@@ -104,6 +104,75 @@ test('eat out: type a new place and it is saved for next time', async ({ page })
   await expect(sheet(page).getByText(/^Lunch · 12:30/i)).toBeVisible();
 });
 
+test('eat out: a place the search hides is not what the button plans', async ({ page }) => {
+  const hh = await newHousehold();
+  const owner = hh.owner;
+  await call('POST', `/api/households/${hh.id}/places`, { token: owner.token, body: { name: 'Sakura Sushi' } });
+  await call('POST', `/api/households/${hh.id}/places`, { token: owner.token, body: { name: 'Luigis Pizza' } });
+  await signIn(page, owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByText(String(new Date().getDate()), { exact: true }).first().click();
+  const slot = await fillSlot(page, 'Dinner');
+  await slot.getByRole('radio', { name: 'Eat out' }).click();
+  await slot.getByRole('radio', { name: /Sakura Sushi/ }).click();
+  await expect(slot.getByRole('button', { name: 'Plan Sakura Sushi' })).toBeVisible();
+
+  // A name nobody has saved: the new place is ticked, and it is what the button plans.
+  await slot.getByLabel('Search or add a place').fill('Noodle Bar');
+  await expect(slot.getByRole('radio', { name: /Add “Noodle Bar”/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(slot.getByRole('button', { name: 'Plan Noodle Bar' })).toBeVisible();
+  await expect(slot.getByRole('button', { name: 'Plan Sakura Sushi' })).toHaveCount(0);
+
+  // Searching for another saved place hides Sakura: nothing is ticked, so nothing to plan yet.
+  await slot.getByLabel('Search or add a place').fill('Luigi');
+  await expect(slot.getByRole('button', { name: 'Pick a place' })).toBeDisabled();
+  // Clearing the search brings Sakura back, still ticked.
+  await slot.getByLabel('Search or add a place').fill('');
+  await expect(slot.getByRole('radio', { name: /Sakura Sushi/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(slot.getByRole('button', { name: 'Plan Sakura Sushi' })).toBeVisible();
+});
+
+test('adding the planning window leaves a day the cupboard covers unticked, and counts it honestly', async ({ page }) => {
+  const hh = await newHousehold();
+  const owner = hh.owner;
+  const oats = await newRecipe(hh.id, 'Overnight oats', [{ name: unique('oats'), qty: 1, unit: 'cup' }]);
+  const stew = await newRecipe(hh.id, 'Stew', [{ name: unique('carrot'), qty: 2 }]);
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: owner.token, body: { name: oats.ingredients[0].ingredientName } });
+  await plan(hh.id, isoDate(1), 'BREAKFAST', { recipeId: oats.id });
+  await plan(hh.id, isoDate(2), 'DINNER', { recipeId: stew.id });
+  await signIn(page, owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByRole('button', { name: /^Add the next .* to groceries$/ }).click();
+
+  const confirm = sheet(page);
+  const covered = confirm.getByRole('checkbox', { name: /Overnight oats · all in cupboard/ });
+  await expect(covered).toHaveAttribute('aria-checked', 'false');
+  await expect(confirm.getByRole('heading', { name: 'Add 1 day to groceries?' })).toBeVisible();
+  await expect(confirm.getByRole('button', { name: 'Add 1 item' })).toBeVisible();
+  // Ticked, it really would add the oats — and the total says so.
+  await covered.click();
+  await expect(confirm.getByRole('button', { name: 'Add 2 items' })).toBeVisible();
+  await covered.click();
+  await confirm.getByRole('button', { name: 'Add 1 item' }).click();
+  await expect.poll(async () => (await groceries(hh.id)).length).toBe(1);
+});
+
+test('a past month shows what was eaten without shopping warnings', async ({ page }) => {
+  const hh = await newHousehold();
+  const r = await newRecipe(hh.id, 'Lemon chicken', [{ name: unique('lemon'), qty: 2 }]);
+  const now = new Date();
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 10);
+  const daysBack = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - lastMonth.getTime()) / 86_400_000);
+  await plan(hh.id, isoDate(-daysBack), 'DINNER', { recipeId: r.id });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/meal-plan');
+  await page.getByRole('button', { name: 'Previous month' }).click();
+  const day = page.getByRole('region', { name: /^Plan for / }).first();
+  await expect(day).toContainText('Lemon chicken');
+  await expect(day.getByText('Not on list')).toHaveCount(0);
+  await expect(day.getByRole('button', { name: /to groceries$/ })).toHaveCount(0);
+});
+
 test('a meal gets a time, and its options open with a long press', async ({ page }) => {
   const hh = await newHousehold();
   const r = await newRecipe(hh.id, 'Lasagne', [{ name: 'pasta sheets', qty: 1, unit: 'box' }]);

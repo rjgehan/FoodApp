@@ -4,8 +4,9 @@ import { admin, call, isoDate, newHousehold, newRecipe, plan, uploadImage } from
 import { sheet, signIn } from '../../lib/ui';
 
 /*
- * On a computer the plan shows each meal's photo; on a phone it stays text, and the photos are
- * not even downloaded — including a phone turned sideways, which is wider than a small tablet.
+ * Each planned meal shows its photo, on a computer and on a phone. Only a computer's month
+ * squares have room for them; a phone's keep their dots — including a phone turned sideways,
+ * which is wider than a small tablet.
  */
 
 const COVER_JPEG = readFileSync(new URL('../fixtures/cover-8px.jpg', import.meta.url));
@@ -96,34 +97,38 @@ test.describe('on a computer', () => {
   });
 });
 
-async function expectNoPhotos(page: Page) {
-  const { hh } = await planWithPhotos();
-  const photoRequests: string[] = [];
-  page.on('request', (req) => {
-    if (req.url().includes('/api/images/')) photoRequests.push(req.url());
-  });
+async function expectPhonePhotos(page: Page) {
+  const { hh, cover, shopFront } = await planWithPhotos();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/meal-plan');
 
+  // The same pictures as a computer beside each meal, so a recipe looks the same on the plan as
+  // it does in Fill a slot — lazy, so only the rows on screen fetch theirs.
   const card = dayCards(page).first();
   await expect(card).toContainText('Shepherds pie');
-  await expect(dayCards(page).nth(1)).toContainText('Tonys Pizzeria');
-  await expect(page.locator('main img')).toHaveCount(0);
+  const photo = card.locator(`img[src$="/api/images/${cover}"]`);
+  await expect(photo).toBeVisible();
+  await expect(photo).toHaveAttribute('loading', 'lazy');
+  // The soup has no photo: a drawn plate, not a broken image.
+  await expect(card.locator('img')).toHaveCount(1);
+  await expect(dayCards(page).nth(1).locator(`img[src$="/api/images/${shopFront}"]`)).toBeVisible();
+
+  // A phone's month squares are too small for pictures: they keep their dots.
+  await expect(page.getByRole('button', { name: /, 2 planned$/ }).locator('img')).toHaveCount(0);
+
   await card.getByRole('button', { name: /^Dinner: Shepherds pie/ }).click();
-  await expect(sheet(page).getByText('Shepherds pie')).toBeVisible();
-  await expect(sheet(page).locator('img')).toBeHidden();
-  expect(photoRequests).toEqual([]);
+  await expect(sheet(page).locator(`img[src$="/api/images/${cover}"]`)).toBeVisible();
 }
 
-test('on a phone the plan stays text and downloads no photos', async ({ page }) => {
-  await expectNoPhotos(page);
+test('on a phone the plan shows each meal\'s photo too, and the month keeps its dots', async ({ page }) => {
+  await expectPhonePhotos(page);
 });
 
 test.describe('on a phone turned sideways', () => {
-  // An iPhone Pro Max on its side: wider than md:, still a phone.
+  // An iPhone Pro Max on its side: wider than md:, still a phone's month.
   test.use({ viewport: { width: 932, height: 430 } });
 
-  test('the plan still stays text and downloads no photos', async ({ page }) => {
-    await expectNoPhotos(page);
+  test('the photos show and the month still keeps its dots', async ({ page }) => {
+    await expectPhonePhotos(page);
   });
 });

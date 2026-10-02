@@ -6,7 +6,7 @@ import { iconByKey } from '../FoodIcons';
 import { Icon, type IconName } from '../icons';
 import { usePushedScreen } from '../Layout';
 import { cx, Photo, TONE_SOFT, type Tone } from '../ui';
-import { mealIcon } from '../plan/planModel';
+import { dishIcon } from '../plan/planModel';
 import { formatMinutes, totalMinutes } from '../../utils/recipeFormat';
 import { sectionLabel } from '../../utils/recipeMeta';
 import type { CategoryTree } from '../../utils/categoryTree';
@@ -159,7 +159,7 @@ export function RecipePicture({ recipe, className, style }: { recipe: Recipe; cl
       </span>
     );
   }
-  return <Photo seed={recipe.id} icon={mealIcon(recipe.section)} className={className} style={style} />;
+  return <Photo seed={recipe.id} icon={dishIcon(recipe)} className={className} style={style} />;
 }
 
 /**

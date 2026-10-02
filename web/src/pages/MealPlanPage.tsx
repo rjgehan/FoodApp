@@ -128,11 +128,11 @@ export default function MealPlanPage() {
   });
 
   /*
-   * Tailwind's lg: — a computer, or a tablet on its side. Not md:, because most phones turned
-   * sideways are wider than 768px, and a phone keeps to the drawn plates (and downloads no
-   * photos) however it is held.
+   * Tailwind's lg: — a computer, or a tablet on its side, where each month square has room for
+   * what is planned on it rather than only a dot. Not md:, because most phones turned sideways
+   * are wider than 768px and their squares are still a phone's.
    */
-  const photos = useMediaQuery('(min-width: 1024px)');
+  const wide = useMediaQuery('(min-width: 1024px)');
 
   const byDate = useMemo(() => {
     const map = new Map<string, MealPlanEntry[]>();
@@ -145,16 +145,17 @@ export default function MealPlanPage() {
   /*
    * A plan entry names its recipe or restaurant but not its picture. The recipe and place lists
    * this page already loads have the covers; a planned saved link brings its own. Keyed by
-   * either id (all UUIDs, so they cannot collide). Wide screens only.
+   * either id (all UUIDs, so they cannot collide). A phone shows them too: the same recipe
+   * wearing its photo in Fill a slot and a drawn plate on the plan read as two different dinners.
+   * They are lazy, so only the rows on screen fetch theirs.
    */
   const pictures = useMemo(() => {
-    if (!photos) return null;
     const map = new Map<string, string>();
     for (const r of recipes) if (r.coverImageId) map.set(r.id, r.coverImageId);
     for (const p of places) if (p.imageId) map.set(p.id, p.imageId);
     for (const e of entries) if (e.savedLinkId && e.savedLinkImageId) map.set(e.savedLinkId, e.savedLinkImageId);
     return map;
-  }, [photos, recipes, places, entries]);
+  }, [recipes, places, entries]);
 
   if (!activeHouseholdId) {
     return (
@@ -225,20 +226,24 @@ export default function MealPlanPage() {
 
   return (
     <div className="flex flex-col gap-3.5">
-      <PageTitle
-        title="Plan"
-        over={today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-      />
-      <Segmented
-        label="Plan view"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: 'calendar', label: 'Calendar' },
-          { value: 'upcoming', label: 'Upcoming' },
-        ]}
-        className="lg:max-w-sm"
-      />
+      {/* The views' switch sits right under the title (its 12px and 2px more), not a full gap
+          further down, so more of the month and Coming up fits on a phone. */}
+      <div>
+        <PageTitle
+          title="Plan"
+          over={today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+        />
+        <Segmented
+          label="Plan view"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'calendar', label: 'Calendar' },
+            { value: 'upcoming', label: 'Upcoming' },
+          ]}
+          className="mt-0.5 lg:max-w-sm"
+        />
+      </div>
 
       {view === 'calendar' ? (
         <div className="flex flex-col gap-3.5 lg:grid lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
@@ -248,7 +253,7 @@ export default function MealPlanPage() {
             today={today}
             horizonDays={horizonDays}
             recipes={recipeById}
-            pictures={pictures}
+            pictures={wide ? pictures : null}
             onMonth={(delta) => setMonthCursor((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1))}
             onToday={() => setMonthCursor(startOfMonth(new Date()))}
             onPick={(key) => setOpen({ date: key })}

@@ -5,6 +5,7 @@ import { entryLabel, formatTime, isPlanned } from '../../utils/planEntry';
 import { sectionLabel } from '../../utils/recipeMeta';
 import { formatMinutes, totalMinutes } from '../../utils/recipeFormat';
 import { sourceLabel } from '../../utils/savedLinks';
+import type { CategoryTree } from '../../utils/categoryTree';
 
 /*
  The Plan's shared vocabulary: dates as the server writes them, a day's meals grouped into
@@ -158,6 +159,30 @@ export function mealIcon(section: RecipeSection | null | undefined, meal?: MealT
   }
 }
 
+const GREENS = /\b(salads?|slaw|greens|veg|veggies?|vegetables?)\b/i;
+const SPOON = /\b(soups?|curry|curries|stews?|chil[il]i|ramen|pho|broth|dh?al|laksa|chowder|gumbo|risotto|porridge|oats)\b/i;
+
+/**
+ * The icon on a recipe's drawn plate: what kind of dish it is, so a dinner of chicken, potatoes
+ * and a salad is three different plates rather than three soup bowls. Its name first (a curry
+ * is eaten from a bowl whatever drawer it is in), then its groups (a Side is a fork and knife),
+ * then its drawer — a dinner's main gets the chef's hat, as the mockup draws one.
+ */
+export function dishIcon(
+  dish: { name?: string | null; section?: RecipeSection | null; categories?: string[] } | undefined,
+  meal?: MealType,
+): IconName {
+  const name = dish?.name ?? '';
+  const groups = (dish?.categories ?? []).join(' ');
+  if (GREENS.test(name)) return 'leaf';
+  if (SPOON.test(name)) return 'soup';
+  if (/\begg/i.test(name)) return 'egg';
+  if (/\bside/i.test(groups)) return 'utensils';
+  if (GREENS.test(groups)) return 'leaf';
+  const section = dish?.section ?? (meal ? SECTION_FOR_MEAL[meal] : null);
+  return section === 'DINNER' ? 'chef' : mealIcon(section);
+}
+
 /** The line under a dish in the day sheet: what kind of thing it is, and what it means. */
 export function dishDetail(entry: MealPlanEntry, recipe: Recipe | undefined): string {
   if (entry.recipeDeleted) return entry.savedLinkDeleted ? 'Saved link was deleted' : 'Recipe was deleted';
@@ -169,11 +194,28 @@ export function dishDetail(entry: MealPlanEntry, recipe: Recipe | undefined): st
   return minutes ? `Recipe · ${formatMinutes(minutes)}` : 'Recipe';
 }
 
-/** "Dinner › Main dish · Chicken": where a recipe is filed. */
-export function filingLine(recipe: Recipe): string {
+/**
+ * "Dinner › Main dish › Chicken": where a recipe is filed, as the path you would tap down in
+ * Recipes. A recipe carries its groups by name and in no order, so the household's tree (when it
+ * has loaded) puts them in their nesting: the deepest group's path, and any group not on that
+ * path beside it ("… › Chicken · Quick").
+ */
+export function filingLine(recipe: Recipe, tree?: CategoryTree | null): string {
   const drawer = recipe.section ? sectionLabel(recipe.section) : null;
-  const groups = recipe.categories.join(' · ');
-  return [drawer, groups].filter(Boolean).join(' › ');
+  if (!tree || recipe.categories.length === 0) {
+    return [drawer, recipe.categories.join(' · ')].filter(Boolean).join(' › ');
+  }
+  const paths = recipe.categories
+    .map((name) => {
+      const group = tree.byName.get(name.toLowerCase());
+      return group ? tree.path(group.id).map((g) => g.name) : [name];
+    })
+    .sort((a, b) => b.length - a.length);
+  const [deepest, ...others] = paths;
+  const onPath = new Set(deepest.map((n) => n.toLowerCase()));
+  const beside = others.map((p) => p[p.length - 1]).filter((n) => !onPath.has(n.toLowerCase()));
+  const groups = [...deepest.slice(0, -1), [deepest[deepest.length - 1], ...beside].join(' · ')];
+  return [drawer, ...groups].filter(Boolean).join(' › ');
 }
 
 /** The sides, as the line under a slot's main: "+ Roasted potatoes, Green salad". */
