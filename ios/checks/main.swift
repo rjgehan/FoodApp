@@ -1,7 +1,8 @@
 import Foundation
 
 /*
- Checks for what Apple Intelligence may do in Nutrition facts (NutritionAssist.swift), run on a
+ Checks for what Apple Intelligence may do in Nutrition facts (NutritionAssist.swift) and Meal
+ plans (MealPlanAssist.swift, in MealPlanChecks.swift), run on a
  Mac with no app, no simulator and no model: ./checks/run.sh from ios/.
 
  A Simulator only has the on-device model when its Mac does, so the paths a real iPhone takes are tested here
@@ -292,6 +293,10 @@ check(NutritionText.kcal(2140) == "2,140" && NutritionText.kcal(nil) == "–", "
 check(NutritionText.grams(0.7) == "0.7g" && NutritionText.grams(6.0) == "6g" && NutritionText.grams(17.4) == "17g", "grams as the label prints them")
 check(NutritionText.foodTitle("Chickpeas (garbanzo beans, bengal gram), mature seeds, canned").title == "Chickpeas", "USDA names made readable")
 check(NutritionText.isBarcode("5000112637922") && !NutritionText.isBarcode("egg"), "barcodes are 8 to 14 digits")
+
+// MARK: - Meal plans (MealPlanChecks.swift)
+
+run { await mealPlanChecks() }
 
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)
