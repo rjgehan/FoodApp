@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Button, Card, EmptyState, NavBar } from '../components/ui';
+import { Button, Card, EmptyState, List, NavBar, Row, Tile } from '../components/ui';
+import { kcalText, type RecipeNutrition } from '../api/nutrition';
 import { Icon } from '../components/icons';
 import { usePushedScreen } from '../components/Layout';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
@@ -53,6 +54,8 @@ export default function RecipeDetailPage() {
   const [servings, setServings] = useState<number | null>(null);
   const [open, setOpen] = useState<RecipeOption | 'options' | 'plan' | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
+  /** A serving's calories and its few words, for the way into the recipe's nutrition (5.6). */
+  const [nutrition, setNutrition] = useState<Pick<RecipeNutrition, 'perServing' | 'highlights'> | null>(null);
 
   useEffect(() => {
     if (!recipeId) return;
@@ -75,6 +78,21 @@ export default function RecipeDetailPage() {
       live = false;
     };
   }, [recipeId, activeHouseholdId]);
+
+  // Asked once the recipe is here, and again only when its ingredients change.
+  const ingredientsKey = recipe ? recipe.ingredients.map((i) => `${i.id}:${i.quantity}:${i.unit}`).join('|') : '';
+  useEffect(() => {
+    setNutrition(null);
+    if (!recipeId || !ingredientsKey) return;
+    let live = true;
+    const scope = activeHouseholdId ? `?householdId=${activeHouseholdId}` : '';
+    api<RecipeNutrition>('GET', `/api/nutrition/recipes/${recipeId}${scope}`)
+      .then((n) => live && setNutrition(n))
+      .catch(() => live && setNutrition(null));
+    return () => {
+      live = false;
+    };
+  }, [recipeId, activeHouseholdId, ingredientsKey]);
 
   // The catalog order, so the arrows flip through the book rather than jumping around.
   useEffect(() => {
@@ -230,6 +248,24 @@ export default function RecipeDetailPage() {
             <TabEmpty>No ingredients yet — until they're in, planning this adds nothing to Groceries.</TabEmpty>
           ) : (
             <IngredientList ingredients={recipe.ingredients} scale={scale} />
+          )}
+          {recipe.ingredients.length > 0 && (
+            // The way into its nutrition (5.6), worked out from the ingredients above.
+            <List label="Nutrition" className="mt-1">
+              <Row
+                to={`/recipes/${recipe.id}/nutrition`}
+                lead={<Tile icon="leaf" tone="herb" size={36} />}
+                title="Nutrition facts"
+                subtitle={
+                  nutrition?.perServing.kcal
+                    ? [`${kcalText(nutrition.perServing.kcal)} kcal a serving`, nutrition.highlights.slice(0, 2).join(', ').toLowerCase()]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : 'Per serving, from the ingredients'
+                }
+                chevron
+              />
+            </List>
           )}
         </TabPanel>
       )}
