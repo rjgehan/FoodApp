@@ -105,6 +105,13 @@ struct PlanView: View {
                     await store.loadPickings()
                 }
             }
+            // A meal plan applied from Explore put meals (and maybe groceries) on the Plan.
+            .onReceive(NotificationCenter.default.publisher(for: .planChanged)) { _ in
+                Task {
+                    await store.reload()
+                    await store.loadPickings()
+                }
+            }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
         }
         .task(id: monthCursor) {
@@ -384,7 +391,7 @@ struct PlannedRecipeEditor: View {
     }
 }
 
-private struct PlannedRecipeLoading: View {
+struct PlannedRecipeLoading: View {
     let error: String?
 
     var body: some View {

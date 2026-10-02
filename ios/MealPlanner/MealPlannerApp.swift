@@ -312,6 +312,10 @@ struct RootView: View {
         }
         // A household that turns us away is one we were taken out of: fetch the list again,
         // which moves on to another house — or, with none left, back to the sign-in screen.
+        // A meal plan applied from Explore: the Plan, where its meals now are.
+        .onReceive(NotificationCenter.default.publisher(for: .showTab)) { note in
+            if let wanted = note.object as? String { tab = wanted }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
             .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: false)) { _ in
             Task { await session.loadHouseholds() }
