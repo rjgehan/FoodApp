@@ -360,6 +360,19 @@ do {
     let mince = contributor(UUID(), "beef mince", amount: "500 g", how: "WEIGHT", grams: 125)
     check(NutritionText.eachText(mince, scale: 0.25) == "500 g", "a weight is just its amount")
 }
+
+// The week's average says what it is of.
+do {
+    func week(_ over: String?, days: Int, counted: Int) -> PlanNutrition {
+        PlanNutrition(start: "2026-10-02", end: "2026-10-08", days: [], average: values, daysCounted: counted,
+                      mealsPlanned: 9, mealsCounted: 9, reference: nil, note: nil, averageDays: days, averageOver: over)
+    }
+    check(week("fuller", days: 3, counted: 7).averageWords(short: true) == "Average of 3 days with 2+ meals planned", "the door's line")
+    check(week("fuller", days: 3, counted: 7).averageWords()
+          == "The average is of the 3 days with two or more meals planned; 4 days with one meal are left out.", "the week card's line")
+    check(week("partial", days: 2, counted: 2).averageWords(short: true) == "Average of 2 partly planned days", "partly planned days say so")
+    check(week(nil, days: 0, counted: 2).averageWords(short: true) == "Daily average of this week's plan", "an older server's average as before")
+}
 check(NutritionText.isBarcode("5000112637922") && !NutritionText.isBarcode("egg"), "barcodes are 8 to 14 digits")
 
 // MARK: - Meal plans (MealPlanChecks.swift)

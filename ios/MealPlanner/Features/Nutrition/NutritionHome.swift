@@ -346,8 +346,9 @@ struct NutritionScreen: View {
 
 /**
  This week's plan (5.4): the average day for one person, a bar a day, and the day's protein,
- carbs and fat on average. Days with nothing counted are left out of the average, and the line
- under it says how many meals the numbers stand on.
+ carbs and fat on average. The average is of the days with two or more meals counted, when there
+ are any (a day with only its dinner planned is a third of a day, and is drawn faint); the pill
+ and the line under it say which days and how many meals the numbers stand on.
  */
 struct WeekCard: View {
     let week: PlanNutrition?
@@ -356,6 +357,8 @@ struct WeekCard: View {
 
     var body: some View {
         let counted = week?.daysCounted ?? 0
+        let over = week?.averageDays ?? counted
+        let partly = week?.averageOver == "partial"
         VStack(alignment: .leading, spacing: 14) {
             if failed {
                 Text("Could not add up this week's plan.").font(.system(size: 14)).foregroundStyle(Palette.muted)
@@ -370,7 +373,8 @@ struct WeekCard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if counted > 0 {
-                        Pill("\(counted) \(counted == 1 ? "day" : "days")", tone: .sky, systemImage: "calendar")
+                        Pill(partly ? "\(over) partly planned" : "\(over) \(over == 1 ? "day" : "days")",
+                             tone: partly ? .mustard : .sky, systemImage: "calendar")
                             .padding(.top, 2)
                     }
                 }
@@ -402,9 +406,11 @@ struct WeekCard: View {
     private func footnote(_ week: PlanNutrition) -> String {
         if week.mealsPlanned == 0 { return "Nothing planned for the next seven days. Plan some meals and see what they add up to." }
         let all = week.mealsCounted == week.mealsPlanned
+        let average = week.daysCounted > 0 ? week.averageWords() : ""
         return "One person's share: a serving of each meal. " + (all
             ? "All \(week.mealsPlanned) planned \(week.mealsPlanned == 1 ? "meal" : "meals") counted."
             : "\(week.mealsCounted) of \(week.mealsPlanned) planned meals counted — places, links and foods without data aren't.")
+            + (average.isEmpty ? "" : " " + average)
     }
 }
 

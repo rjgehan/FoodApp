@@ -271,6 +271,8 @@ struct PlanNutritionDay: Codable, Hashable, Identifiable {
     let mealsPlanned: Int
     let mealsCounted: Int
     let partial: Bool
+    /// Two or more meals counted: one of the days the average is of. Nil from an older server.
+    var fuller: Bool? = nil
 
     var id: String { date }
     var counted: Bool { mealsCounted > 0 && (totals.kcal ?? 0) > 0 }
@@ -287,6 +289,28 @@ struct PlanNutrition: Codable, Hashable {
     let mealsCounted: Int
     let reference: NutritionReference?
     let note: String?
+    /// How many days the average is of, and which: "fuller" (two or more meals counted),
+    /// "partial" (no such day yet) or "none". Nil from an older server.
+    var averageDays: Int? = nil
+    var averageOver: String? = nil
+
+    /**
+     What the average is of, for the line under it, so a week of single dinners is not read as how
+     much anyone eats. Short for Explore's door: "Average of 3 days with 2+ meals planned".
+     */
+    func averageWords(short: Bool = false) -> String {
+        let n = averageDays ?? daysCounted
+        let days = n == 1 ? "day" : "days"
+        guard let over = averageOver else { return short ? "Daily average of this week's plan" : "" }
+        if over == "partial" {
+            return short ? "Average of \(n) partly planned \(days)"
+                : "No day has two meals planned yet, so the average is of \(n) partly planned \(days)."
+        }
+        if short { return "Average of \(n) \(days) with 2+ meals planned" }
+        let left = daysCounted - n
+        let leftOut = left > 0 ? "; \(left == 1 ? "a day" : "\(left) days") with one meal \(left == 1 ? "is" : "are") left out" : ""
+        return "The average is of the \(n == 1 ? "one day" : "\(n) days") with two or more meals planned\(leftOut)."
+    }
 }
 
 struct FoodHit: Codable, Hashable, Identifiable {

@@ -284,8 +284,10 @@ struct GlobalRecipesDoor: View {
 
 /**
  Nutrition facts' door (5.1): its tile, name and line, then the week's plan as three numbers — a
- day's calories, protein and fibre on average, for one person. Until something on the plan can be
- counted it says how to get some numbers, rather than showing noughts.
+ day's calories, protein and fibre on average, for one person, and which days that is of (the ones
+ with two or more meals planned, or "partly planned" ones), so a week of dinners is not read as a
+ day's eating. Until something on the plan can be counted it says how to get some numbers, rather
+ than showing noughts.
  */
 struct NutritionDoor: View {
     let week: PlanNutrition?
@@ -308,7 +310,7 @@ struct NutritionDoor: View {
                 NutritionStat(value: average.map { NutritionText.grams($0.protein) } ?? "–", label: "Protein", tone: .herb)
                 NutritionStat(value: average.map { NutritionText.grams($0.fibre) } ?? "–", label: "Fibre", tone: .mustard)
             }
-            Text(week == nil ? " " : average != nil ? "Daily average of this week's plan"
+            Text(week == nil ? " " : average != nil ? (week?.averageWords(short: true) ?? "")
                  : "Plan some meals and see what your week adds up to")
                 .font(.system(size: 12)).foregroundStyle(Palette.muted)
         }

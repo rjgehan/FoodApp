@@ -194,12 +194,20 @@ struct WeekChart: View {
 
     var body: some View {
         let top = max(2600, days.map { $0.totals.kcal ?? 0 }.max() ?? 0)
+        // A day with one meal counted is a part of a day, drawn faint and hatched, when the week has
+        // fuller days to average (an older server says nothing of fuller days: every bar is solid).
+        let anyFuller = days.contains { $0.fuller == true }
         HStack(alignment: .bottom, spacing: 0) {
             ForEach(days) { day in
                 let kcal = day.totals.kcal ?? 0
+                let part = day.counted && anyFuller && day.fuller == false
                 VStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(!day.counted ? Palette.border : day.date == today ? Palette.accent : Palette.herb)
+                        .overlay {
+                            if part { Hatching().clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous)) }
+                        }
+                        .opacity(part ? 0.45 : 1)
                         .frame(width: 22, height: day.counted ? max(6, kcal / top * 88) : 4)
                     Text(String(NutritionText.weekday(day.date).prefix(1)))
                         .font(.system(size: 11, weight: .semibold))
@@ -218,7 +226,26 @@ struct WeekChart: View {
         let name = NutritionText.weekday(day.date, short: false)
         let meals = day.mealsPlanned == 0 ? "nothing planned"
             : "\(day.mealsCounted) of \(day.mealsPlanned) \(day.mealsPlanned == 1 ? "meal" : "meals") counted"
+        let part = day.counted && days.contains { $0.fuller == true } && day.fuller == false
         return "\(name): \(day.counted ? "\(NutritionText.kcal(day.totals.kcal)) kcal" : "no calories counted"), \(meals)"
+            + (part ? ", not in the average" : "")
+    }
+}
+
+/// Thin diagonal stripes, for a bar that is only part of a day.
+private struct Hatching: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            var x = -size.height
+            while x < size.width {
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += 7
+            }
+            context.stroke(path, with: .color(.white.opacity(0.55)), lineWidth: 3)
+        }
+        .allowsHitTesting(false)
     }
 }
 
