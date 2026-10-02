@@ -214,7 +214,9 @@ struct RecipeDetailView: View {
     }
 
     private func ingredientRow(_ item: RecipeIngredient, scale: Double) -> some View {
-        let amount = [item.quantity.map { fraction($0 * scale) }, item.unit].compactMap { $0 }.filter { !$0.isEmpty }
+        // "2 packs", as the grocery list says it.
+        let amount = [item.quantity.map { fraction($0 * scale) }, CountUnits.unit(item.unit, for: item.quantity.map { $0 * scale })]
+            .compactMap { $0 }.filter { !$0.isEmpty }
             .joined(separator: " ")
         var name = Text(item.ingredientName)
         if let notes = item.notes, !notes.isEmpty { name = name + Text(", \(notes)").foregroundColor(Palette.muted) }

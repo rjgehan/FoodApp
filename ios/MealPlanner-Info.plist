@@ -44,6 +44,15 @@
 	  theme's title font except Blueberry's (Nunito) and Nordic's (Inter); UI text stays SF Pro.
 	  All three are variable fonts: Typography.swift sets their axes.
 	-->
+	<!--
+	  The launch screen in Tomato's page colour (#FBF6EE, dark #17120F) rather than plain white or
+	  black, so the hand-off to the first screen does not flash.
+	-->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Fraunces.ttf</string>

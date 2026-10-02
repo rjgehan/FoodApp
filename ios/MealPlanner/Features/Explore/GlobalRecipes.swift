@@ -10,10 +10,15 @@ extension Recipe {
     /// Kept already: another household's recipe that is in one of this household's drawers.
     var isKept: Bool { shared && section != nil }
 
-    /// The faint mark on a published recipe's picture. Which drawer its publisher keeps it in is
-    /// theirs to know, so until you file it yourself it gets the pan the recipe page uses.
+    /// The faint mark on a published recipe's picture, the web's marks: a cookie for a snack, and
+    /// the chef's hat the recipe page's hero uses until you file it yourself — which drawer its
+    /// publisher keeps it in is theirs to know.
     var exploreSymbol: String {
-        section.map { PlanText.icon(section: $0, meal: .dinner) } ?? "frying.pan"
+        switch section {
+        case nil: return "asset:ChefHat"
+        case .snacks: return "asset:FoodIcons/cookie"
+        case let drawer?: return PlanText.icon(section: drawer, meal: .dinner)
+        }
     }
 }
 
@@ -21,18 +26,18 @@ extension Recipe {
 
 /**
  Global recipes (5.2): search what any household has published, open one, or move it straight
- into your own recipes with its +. The chips narrow it to what is newest (all of it, as the
- server sends it), what you have not kept yet, and what this house published itself.
+ into your own recipes with its +. It comes newest published first; the chips narrow it to what
+ you have not kept yet, or what this house published itself, and All is the lot.
  */
 struct GlobalRecipesScreen: View {
     var session: Session
     var sample: [Recipe]?
 
-    enum Filter: Hashable { case newest, notKept, yours }
+    enum Filter: Hashable { case all, notKept, yours }
 
     @State private var recipes: [Recipe]?
     @State private var query = ""
-    @State private var filter: Filter = .newest
+    @State private var filter: Filter = .all
     @State private var moving: Recipe?
     @State private var toast: String?
     #if DEBUG
@@ -61,7 +66,7 @@ struct GlobalRecipesScreen: View {
                           : "Search \(count) \(count == 1 ? "recipe" : "recipes")")
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        Chip("Newest", isOn: filter == .newest) { filter = .newest }
+                        Chip("All", isOn: filter == .all) { filter = .all }
                         Chip("Not kept yet", isOn: filter == .notKept) { filter = .notKept }
                         if (recipes ?? []).contains(where: { !$0.shared }) {
                             Chip("Published by you", isOn: filter == .yours) { filter = .yours }
@@ -101,6 +106,7 @@ struct GlobalRecipesScreen: View {
         .scrollDismissesKeyboard(.immediately)
         .pageBackground()
         .centeredTitle("Global recipes")
+        .textBackButton("Explore")
         .navigationDestination(for: Recipe.self) { recipe in
             if recipe.shared {
                 GlobalRecipeScreen(recipe: recipe, session: session) { saved in replace(saved) }
@@ -295,17 +301,27 @@ struct GlobalRecipeScreen: View {
     var body: some View {
         GeometryReader { outer in
             let top = outer.safeAreaInsets.top
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ExploreHero(recipe: recipe, topInset: top) { dismiss() }
-                        .padding(.top, -top)
-                        .background {
-                            GeometryReader { geo in
-                                Color.clear.preference(key: ExploreHeroBottom.self, value: geo.frame(in: .global).maxY)
+            ScrollViewReader { reader in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ExploreHero(recipe: recipe, topInset: top) { dismiss() }
+                            .padding(.top, -top)
+                            .background {
+                                GeometryReader { geo in
+                                    Color.clear.preference(key: ExploreHeroBottom.self, value: geo.frame(in: .global).maxY)
+                                }
                             }
-                        }
-                    content.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 24)
+                        content.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 24)
+                    }
                 }
+                #if DEBUG
+                // -mp_debug_scroll photos (with -mp_debug_screen explore-recipe): down to its Photos.
+                .task {
+                    guard UserDefaults.standard.string(forKey: "mp_debug_scroll") == "photos" else { return }
+                    try? await Task.sleep(for: .milliseconds(600))
+                    reader.scrollTo("photos", anchor: .bottom)
+                }
+                #endif
             }
             .onPreferenceChange(ExploreHeroBottom.self) { bottom in heroGone = bottom < top + 20 }
             .overlay(alignment: .top) {
@@ -359,6 +375,20 @@ struct GlobalRecipeScreen: View {
             if let description = recipe.description, !description.isEmpty {
                 Text(description).font(.system(size: 15)).foregroundStyle(Palette.muted)
             }
+            let links = recipe.allLinks.filter { $0.destination != nil }
+            if !links.isEmpty {
+                // Where it came from and its videos, as the recipe page's chips: one tap opens it.
+                ChipFlow {
+                    ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                        Link(destination: link.destination!) {
+                            Label(chipName(link), systemImage: link.isVideo ? "play" : "link").lineLimit(1)
+                        }
+                        .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                        .accessibilityLabel(link.name)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Text("Ingredients").titleFont(20).foregroundStyle(Palette.text).accessibilityAddTraits(.isHeader)
             if recipe.ingredients.isEmpty {
                 Text("No ingredients written down.").font(.system(size: 15)).foregroundStyle(Palette.muted)
@@ -381,12 +411,43 @@ struct GlobalRecipeScreen: View {
                     }
                 }
             }
+            if !photos.isEmpty {
+                Text("Photos").titleFont(20).foregroundStyle(Palette.text).accessibilityAddTraits(.isHeader)
+                    .padding(.top, 10)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    ForEach(photos, id: \.self) { id in
+                        Color.clear.aspectRatio(1, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: APIClient.shared.imageURL(id)) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: { Palette.surface2 }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .accessibilityLabel("Photo of \(recipe.name)")
+                    }
+                }
+                .id("photos")
+            }
         }
+    }
+
+    /// Its other photos, each once, as the web's Photos grid shows them.
+    private var photos: [UUID] {
+        var seen = Set<UUID>()
+        return (recipe.photoIds ?? []).filter { seen.insert($0).inserted }
+    }
+
+    /// "YouTube" with a play mark, a site's name for a page: short, as on the recipe page.
+    private func chipName(_ link: SourceLink) -> String {
+        if let label = link.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty { return label }
+        return link.site ?? link.url
     }
 
     /// The mockup's ingredient line: the amount in bold in its own column, the name, "Optional".
     private func ingredientRow(_ item: RecipeIngredient) -> some View {
-        let amount = [item.quantity.map { fraction($0) }, item.unit].compactMap { $0 }.filter { !$0.isEmpty }
+        // "2 packs", as the grocery list says it.
+        let amount = [item.quantity.map { fraction($0) }, CountUnits.unit(item.unit, for: item.quantity)]
+            .compactMap { $0 }.filter { !$0.isEmpty }
             .joined(separator: " ")
         var name = Text(item.ingredientName)
         if let notes = item.notes, !notes.isEmpty { name = name + Text(", \(notes)").foregroundColor(Palette.muted) }
@@ -495,6 +556,12 @@ struct ExploreHero: View {
                 }
         } else {
             placeholder
+                .overlay {
+                    // Cream and bread are pale enough to lose the white name: darken the foot, where it sits.
+                    LinearGradient(stops: [.init(color: .clear, location: 0.35), .init(color: .black.opacity(0.45), location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .allowsHitTesting(false)
+                }
         }
     }
 }
@@ -521,14 +588,23 @@ struct MoveIntoMineSheet: View {
     @State private var allGroups: [RecipeCategory] = []
     @State private var busy = false
     @State private var error: String?
+    /// The content's own height: the sheet hugs its button, with no empty panel under it, and a
+    /// long list of groups grows it to full height, where it scrolls.
+    @State private var height: CGFloat = 520
 
     private static let tones: [Tone] = [.herb, .sky, .plum, .mustard, .accent]
 
-    /// The household on screen first.
+    /// Every household of yours, as the header's switcher orders them (for their colours).
+    private var all: [HouseholdSummary] {
+        session.households.isEmpty ? [session.household].compactMap { $0 } : session.households
+    }
+
+    /// Where it can go, the household on screen first. Not the one that published it: it is already
+    /// there, and filing it "into" its own home would quietly move it to another drawer there.
     private var households: [HouseholdSummary] {
-        let all = session.households.isEmpty ? [session.household].compactMap { $0 } : session.households
         let current = session.household?.id
-        return all.sorted { ($0.id == current ? 0 : 1) < ($1.id == current ? 0 : 1) }
+        return all.filter { $0.id != recipe.householdId }
+            .sorted { ($0.id == current ? 0 : 1) < ($1.id == current ? 0 : 1) }
     }
 
     private var chosen: HouseholdSummary? {
@@ -546,7 +622,8 @@ struct MoveIntoMineSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         SectionLabel("Which household")
                         ListGroup {
-                            ForEach(Array(households.enumerated()), id: \.element.id) { index, house in
+                            ForEach(households) { house in
+                                let index = all.firstIndex { $0.id == house.id } ?? 0
                                 Button {
                                     pick(house)
                                 } label: {
@@ -563,10 +640,7 @@ struct MoveIntoMineSheet: View {
                         }
                     }
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionLabel("Filing")
-                    FilingPicker(section: $section, groups: $groups, allGroups: allGroups) { name in await addGroup(name) }
-                }
+                FilingPicker(section: $section, groups: $groups, allGroups: allGroups, labelled: true) { name in await addGroup(name) }
                 if let error {
                     Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
@@ -585,10 +659,13 @@ struct MoveIntoMineSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 16)
+            // The sheet adds the home indicator's inset below this on its own.
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .pageBackground()
-        .kitchenSheet(several ? [.large] : [.medium, .large])
+        .kitchenSheet([.height(height)])
         .task(id: chosen?.id) { await loadGroups() }
         .onChange(of: section) { _, next in moveGroups(&groups, parked: &parked, to: next, all: allGroups) }
     }

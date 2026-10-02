@@ -405,6 +405,8 @@ struct Recipe: Codable, Identifiable, Hashable {
     var ownerSection: RecipeSection? = nil
     /// Shared with you: when it was sent here (an ISO instant), if the server knows.
     var sharedAt: String? = nil
+    /// The household that owns it. Nil only when built on the phone (previews, a stub).
+    var householdId: UUID? = nil
 
     /// The links to show and to edit, from the list when the server sends one.
     var allLinks: [SourceLink] {

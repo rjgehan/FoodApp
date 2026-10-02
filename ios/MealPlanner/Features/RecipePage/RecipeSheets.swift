@@ -108,6 +108,9 @@ struct FilingPicker: View {
     @Binding var section: RecipeSection
     @Binding var groups: Set<String>
     var allGroups: [RecipeCategory]
+    /// Heads the drawers "Drawer" and the groups "Groups" in section labels, for a sheet whose other
+    /// parts are headed that way (Move into my recipes' "Which household"); otherwise they run on.
+    var labelled = false
     var onAddGroup: (String) async -> Void
 
     @State private var adding = false
@@ -141,52 +144,62 @@ struct FilingPicker: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ChipFlow {
-                ForEach(RecipeSection.allCases, id: \.self) { drawer in
-                    Chip(drawer.title, isOn: drawer == section) { section = drawer }
+        VStack(alignment: .leading, spacing: labelled ? 16 : 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                if labelled { SectionLabel("Drawer") }
+                ChipFlow {
+                    ForEach(RecipeSection.allCases, id: \.self) { drawer in
+                        Chip(drawer.title, isOn: drawer == section) { section = drawer }
+                    }
                 }
             }
             .id("filing")
-            // Laid out as they nest, as on the web: each top group starts its own line, with the
-            // groups inside it after it — "Main", "› Beef", "› Chicken".
-            ForEach(roots) { root in
-                ChipFlow {
-                    ForEach(family(root), id: \.group.id) { item in
-                        let group = item.group
-                        Chip(item.depth > 0 ? "\(String(repeating: "›", count: item.depth)) \(group.name)" : group.name,
-                             isOn: groups.contains(group.name)) {
-                            if groups.contains(group.name) { groups.remove(group.name) } else { groups.insert(group.name) }
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 10) {
+                if labelled { SectionLabel("Groups").padding(.bottom, -2) }
+                groupChips
             }
+        }
+    }
+
+    @ViewBuilder private var groupChips: some View {
+        // Laid out as they nest, as on the web: each top group starts its own line, with the
+        // groups inside it after it — "Main", "› Beef", "› Chicken".
+        ForEach(roots) { root in
             ChipFlow {
-                if !adding {
-                    Chip("+ New group", isOn: false) {
-                        adding = true
-                        typing = true
+                ForEach(family(root), id: \.group.id) { item in
+                    let group = item.group
+                    Chip(item.depth > 0 ? "\(String(repeating: "›", count: item.depth)) \(group.name)" : group.name,
+                         isOn: groups.contains(group.name)) {
+                        if groups.contains(group.name) { groups.remove(group.name) } else { groups.insert(group.name) }
                     }
                 }
             }
-            if adding {
-                HStack(spacing: 8) {
-                    TextField("A new group in \(section.title)", text: $newGroup)
-                        .focused($typing)
-                        .submitLabel(.done)
-                        .onSubmit { Task { await add() } }
-                        .padding(.horizontal, 14)
-                        .frame(height: 44)
-                        .fieldSurface(focused: typing)
-                    Button("Add") { Task { await add() } }
-                        .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
-                        .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        ChipFlow {
+            if !adding {
+                Chip("+ New group", isOn: false) {
+                    adding = true
+                    typing = true
                 }
             }
-            if here.isEmpty && !adding {
-                Text("Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in \(section.title) yet.")
-                    .font(.system(size: 13)).foregroundStyle(Palette.muted)
+        }
+        if adding {
+            HStack(spacing: 8) {
+                TextField("A new group in \(section.title)", text: $newGroup)
+                    .focused($typing)
+                    .submitLabel(.done)
+                    .onSubmit { Task { await add() } }
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
+                    .fieldSurface(focused: typing)
+                Button("Add") { Task { await add() } }
+                    .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                    .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+        }
+        if here.isEmpty && !adding {
+            Text("Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in \(section.title) yet.")
+                .font(.system(size: 13)).foregroundStyle(Palette.muted)
         }
     }
 

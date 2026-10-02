@@ -139,7 +139,7 @@ struct SoonDestination: Identifiable, Hashable {
             blurb: "Ingredients, scanned products and your recipes",
             symbol: "leaf",
             tone: .herb,
-            teaser: "What this week's plan adds up to, day by day.",
+            teaser: "What your week adds up to",
             plan: "Look up what is in the food you cook and keep, and see how the week you have planned adds up.",
             will: [
                 Promise(symbol: "magnifyingglass", title: "Any ingredient or product",
@@ -156,7 +156,7 @@ struct SoonDestination: Identifiable, Hashable {
             blurb: "From your cupboard, or built for a goal",
             symbol: "target",
             tone: .plum,
-            teaser: "A week cooked from your cupboard, or built around a goal.",
+            teaser: "A week made for you",
             plan: "A week of meals made for you, from your own recipes first, ready to put on the Plan in one go.",
             will: [
                 Promise(symbol: "cabinet", title: "Cook from cupboard",
@@ -269,6 +269,7 @@ struct SoonScreen: View {
         }
         .pageBackground()
         .centeredTitle(destination.title)
+        .textBackButton("Explore")
     }
 }
 
