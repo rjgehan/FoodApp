@@ -141,6 +141,32 @@ test('a cupboard item: Have, Low or an exact count, and a rename that would merg
   await expect(sheet(page).getByRole('button', { name: 'Merge' })).toBeVisible();
 });
 
+test('a cupboard item takes an optional use-by date, and can lose it again', async ({ page }) => {
+  const hh = await newHousehold();
+  const T = hh.owner.token;
+  await call('POST', `/api/households/${hh.id}/cupboard`, { token: T, body: { name: 'spinach' } });
+  await signIn(page, hh.owner, hh.id);
+  await page.goto('/cupboard');
+
+  await page.getByRole('button', { name: 'Edit spinach' }).click();
+  const edit = sheet(page);
+  await expect(edit.getByText('Optional · plans use it up in time')).toBeVisible();
+  await edit.getByLabel('Use by', { exact: true }).fill(isoDate(2));
+  await expect(edit.getByText('Optional · plans use it up in time')).toHaveCount(0);
+  await edit.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect
+    .poll(async () => find(await cupboard(hh.id, T), 'spinach'))
+    .toMatchObject({ useBy: isoDate(2), useSoon: true, useSoonGuess: false });
+
+  // Opened again it shows the date, and the × takes it off.
+  await page.getByRole('button', { name: 'Edit spinach' }).click();
+  await expect(sheet(page).getByLabel('Use by', { exact: true })).toHaveValue(isoDate(2));
+  await sheet(page).getByRole('button', { name: 'Clear the use-by date' }).click();
+  await sheet(page).getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => find(await cupboard(hh.id, T), 'spinach')).toMatchObject({ useBy: null });
+});
+
 test('a grocery item’s Cupboard row opens the cupboard on it', async ({ page }) => {
   const hh = await newHousehold();
   await call('POST', `/api/households/${hh.id}/grocery-list/items`, { token: hh.owner.token, body: { ingredientName: 'rice' } });

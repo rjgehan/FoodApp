@@ -160,6 +160,14 @@ export interface CupboardItem {
   /** Null means this item uses the simple Have/Low toggle instead. */
   quantity: number | null;
   unit: string | null;
+  /** The date on the packet ("2026-10-08"), if somebody entered one. Absent on an older server. */
+  useBy?: string | null;
+  /** Wants using within a few days — by its date, or by the server's guess. */
+  useSoon?: boolean;
+  /** The soon is a guess from what it is and when it was bought, not a date. */
+  useSoonGuess?: boolean;
+  /** "by Thu", "today", "past its date", "soon". */
+  useSoonLabel?: string | null;
 }
 
 /** One group of the common things a kitchen starts with. The list itself lives on the server. */

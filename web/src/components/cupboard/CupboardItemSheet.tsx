@@ -7,6 +7,7 @@ import { RestockField, saveRestock } from '../Restock';
 import { everyLabel } from '../../utils/restock';
 import { CountStepper, countOf } from './CupboardParts';
 import { titleCase } from '../groceries/groceryParts';
+import { Icon } from '../icons';
 
 type Amount = 'have' | 'low' | 'exact';
 
@@ -48,6 +49,9 @@ export default function CupboardItemSheet({
   const [quantity, setQuantity] = useState(item.quantity ?? 1);
   const [unit, setUnit] = useState(item.unit ?? '');
   const [everyDays, setEveryDays] = useState<number | null>(reminder?.everyDays ?? null);
+  // Only offered when the server knows about use-by dates (an older one never sends the field).
+  const hasUseBy = item.useBy !== undefined;
+  const [useBy, setUseBy] = useState(item.useBy ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,9 +64,10 @@ export default function CupboardItemSheet({
   const quantityValueChanged = exact && (quantity !== (item.quantity ?? quantity) || unit !== (item.unit ?? ''));
   const lowChanged = !exact && (amount === 'low') !== item.runningLow;
   const reminderChanged = everyDays !== (reminder?.everyDays ?? null);
+  const useByChanged = hasUseBy && useBy !== (item.useBy ?? '');
   const changed =
     renamed || categoryId !== (item.categoryId ?? '') || staple !== item.staple || quantityModeChanged ||
-    quantityValueChanged || lowChanged || reminderChanged;
+    quantityValueChanged || lowChanged || reminderChanged || useByChanged;
 
   async function save(e?: FormEvent) {
     e?.preventDefault();
@@ -76,7 +81,7 @@ export default function CupboardItemSheet({
     setError(null);
     try {
       let updated = item;
-      if (renamed || staple !== item.staple || quantityModeChanged || quantityValueChanged || lowChanged) {
+      if (renamed || staple !== item.staple || quantityModeChanged || quantityValueChanged || lowChanged || useByChanged) {
         updated = await api<CupboardItem>('PATCH', `/api/households/${householdId}/cupboard/${item.id}`, {
           name: renamed ? trimmed : null,
           staple: staple !== item.staple ? staple : null,
@@ -84,6 +89,8 @@ export default function CupboardItemSheet({
           quantity: exact && (quantityModeChanged || quantityValueChanged) ? quantity : null,
           unit: exact ? unit.trim() || null : null,
           runningLow: lowChanged ? amount === 'low' : null,
+          // "" clears it; left out, the server leaves it alone.
+          ...(useByChanged ? { useBy } : {}),
         });
       }
       // The aisle belongs to the ingredient — the new one, after a rename — so it goes last.
@@ -197,6 +204,33 @@ export default function CupboardItemSheet({
               <RestockField value={everyDays} onChange={setEveryDays} withOff={false} label="How often" />
             </li>
           )}
+          {hasUseBy && (
+            <Row
+              title="Use by"
+              subtitle={useBy ? useByText(useBy) : 'Optional · plans use it up in time'}
+              end={
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <Input
+                    type="date"
+                    value={useBy}
+                    onChange={(e) => setUseBy(e.target.value)}
+                    aria-label="Use by"
+                    className="h-10 w-[9.75rem] !rounded-[12px] !px-2.5 !text-[0.9375rem]"
+                  />
+                  {useBy && (
+                    <button
+                      type="button"
+                      onClick={() => setUseBy('')}
+                      aria-label="Clear the use-by date"
+                      className="press grid h-8 w-8 place-items-center rounded-full text-muted"
+                    >
+                      <Icon name="x" size={14} />
+                    </button>
+                  )}
+                </span>
+              }
+            />
+          )}
         </List>
 
         {mergesWith && (
@@ -218,4 +252,18 @@ export default function CupboardItemSheet({
       </form>
     </Sheet>
   );
+}
+
+/** "Thu 8 Oct", or "Today" / "Tomorrow" / "Past its date" — the date read the way the cupboard says it. */
+function useByText(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const date = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return 'Past its date';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
