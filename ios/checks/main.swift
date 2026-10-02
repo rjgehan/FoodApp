@@ -359,6 +359,8 @@ do {
     check(NutritionText.eachText(salmon, scale: 0.25) == "4 fillets · ≈130g each", "a counted fillet shows its grams each")
     let mince = contributor(UUID(), "beef mince", amount: "500 g", how: "WEIGHT", grams: 125)
     check(NutritionText.eachText(mince, scale: 0.25) == "500 g", "a weight is just its amount")
+    let coconut = contributor(UUID(), "coconut milk", amount: "400 ml", how: "VOLUME", grams: 98)
+    check(NutritionText.eachText(coconut, scale: 0.25) == "400 ml · ≈392g", "millilitres show the grams in all")
 }
 
 // The week's average says what it is of.

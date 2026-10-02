@@ -488,7 +488,13 @@ enum NutritionText {
         let amount = (c.amount ?? "").trimmingCharacters(in: .whitespaces)
         guard !amount.isEmpty, c.gramsHow != "WEIGHT", scale > 0,
               let quantity = Double(amount.split(separator: " ").first ?? ""), quantity > 0 else { return amount }
-        let grams = (c.estimated ? "≈" : "") + NutritionText.grams(c.grams / scale / quantity)
+        let mark = c.estimated ? "≈" : ""
+        // "400 ml" of coconut milk is "≈392g" in all; one millilitre each says nothing.
+        let unit = amount.split(separator: " ").dropFirst().joined(separator: " ")
+        if unit.range(of: #"^(ml|millilit|cl|dl|l$|litre|liter)"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            return "\(amount) · \(mark)\(NutritionText.grams(c.grams / scale))"
+        }
+        let grams = mark + NutritionText.grams(c.grams / scale / quantity)
         return "\(amount) · \(quantity == 1 ? grams : "\(grams) each")"
     }
 
