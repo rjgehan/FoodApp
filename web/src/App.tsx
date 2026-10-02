@@ -15,7 +15,10 @@ import SavedLinksPage from './pages/SavedLinksPage';
 import ExplorePage from './pages/ExplorePage';
 import ExploreRecipesPage from './pages/ExploreRecipesPage';
 import ExploreRecipePage from './pages/ExploreRecipePage';
-import ExploreSoonPage from './pages/ExploreSoonPage';
+import MealPlansPage from './pages/MealPlansPage';
+import { CupboardResultPage, CupboardSetupPage } from './pages/CupboardPlanPage';
+import TargetPlanPage from './pages/TargetPlanPage';
+import TargetPlanFormPage from './pages/TargetPlanFormPage';
 import NutritionPage from './pages/NutritionPage';
 import { NutritionFoodPage, NutritionProductPage } from './pages/NutritionLabelPage';
 import RecipeNutritionPage from './pages/RecipeNutritionPage';
@@ -133,9 +136,15 @@ export default function App() {
           <Route path="/explore/nutrition" element={<NutritionPage />} />
           <Route path="/explore/nutrition/products/:barcode" element={<NutritionProductPage />} />
           <Route path="/explore/nutrition/foods/:fdcId" element={<NutritionFoodPage />} />
-          {/* Named rather than wildcarded, so a typo lands on the catch-all instead of a
-              page explaining a feature that does not exist. */}
-          <Route path="/explore/meal-plans" element={<ExploreSoonPage />} />
+          {/* Meal plans: the front page, cooking from the cupboard (setup, then its draft), a
+              ready-made plan, and your own private ones with the form that makes and changes them. */}
+          <Route path="/explore/meal-plans" element={<MealPlansPage />} />
+          <Route path="/explore/meal-plans/cupboard" element={<CupboardSetupPage />} />
+          <Route path="/explore/meal-plans/cupboard/plan" element={<CupboardResultPage />} />
+          <Route path="/explore/meal-plans/ready-made/:preset" element={<TargetPlanPage />} />
+          <Route path="/explore/meal-plans/new" element={<TargetPlanFormPage />} />
+          <Route path="/explore/meal-plans/plans/:planId" element={<TargetPlanPage />} />
+          <Route path="/explore/meal-plans/plans/:planId/edit" element={<TargetPlanFormPage />} />
           {/* Explore used to be a room inside Recipes. Links and bookmarks still work. */}
           <Route path="/recipes/explore" element={<Navigate to="/explore/recipes" replace />} />
           {/* The server owner's read-only view of everything. Not a tab: reached from Settings,
