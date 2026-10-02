@@ -243,6 +243,17 @@ class NutritionMathsTest {
     }
 
     @Test
+    void ownTargetsAreWhatTheServingIsComparedWith() {
+        var target = NutritionLabels.target("Lean bulk", 3170, 148, 400, 90);
+        assertThat(target.label()).isEqualTo("a 3,170 kcal day");
+        assertThat(target.source()).isEqualTo("target");
+        var meal = new Nutrients(512.0, 41.0, 9.0, 34.0, 1.0, null, null, null, null, null, null, null);
+        assertThat(NutritionLabels.percentOf(meal, target).protein()).isEqualTo(28);
+        assertThat(NutritionLabels.summary(meal, "Lean bulk")).isEqualTo("High protein, low carb. A filling meal for your Lean bulk plan.");
+        assertThat(NutritionLabels.summary(meal, "My cut plan")).endsWith("for your My cut plan.");
+    }
+
+    @Test
     void anOptionalLineIsCountedWhenThisOccasionIncludesIt() {
         RecipeNutrition maths = new RecipeNutrition(null, null, table, null, null);
         var sum = maths.add(List.of(line("coriander", "1", "bunch", 169997, true, true)));

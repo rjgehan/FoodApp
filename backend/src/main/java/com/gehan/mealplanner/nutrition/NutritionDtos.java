@@ -56,9 +56,12 @@ public final class NutritionDtos {
     public record Detail(String key, String label, Double amount, String unit, Integer percentDaily) {
     }
 
-    /** What the percentages are of. source "reference" is the EU/UK reference intake. */
+    /**
+     * What the percentages are of. source "reference" is the EU/UK reference intake; "target" is
+     * the viewer's own plan for a health target, named in plan — only ever shown to its owner.
+     */
     public record Reference(double kcal, double protein, double carbs, double fat, double sugars, double satFat,
-                            double saltG, double fibre, String label, String source) {
+                            double saltG, double fibre, String label, String source, String plan) {
     }
 
     public record Percentages(Integer kcal, Integer protein, Integer carbs, Integer fat, Integer sugars,

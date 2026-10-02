@@ -80,8 +80,15 @@ public class RecipeNutrition {
     @Transactional
     public RecipeNutritionResponse forRecipe(UUID recipeId, UUID householdId, UUID requesterId, Double servings,
                                              Set<UUID> includedOptionals) {
+        return forRecipe(recipeId, householdId, requesterId, servings, includedOptionals, NutritionLabels.REFERENCE_DAY);
+    }
+
+    /** @param reference what the percentages and bars are of: the reference day, or the viewer's own targets */
+    @Transactional
+    public RecipeNutritionResponse forRecipe(UUID recipeId, UUID householdId, UUID requesterId, Double servings,
+                                             Set<UUID> includedOptionals, Reference reference) {
         Recipe recipe = recipes.readable(recipeId, householdId, requesterId);
-        return describe(recipe, servings == null ? 1 : servings, includedOptionals, NutritionLabels.REFERENCE_DAY);
+        return describe(recipe, servings == null ? 1 : servings, includedOptionals, reference);
     }
 
     /**
@@ -137,7 +144,7 @@ public class RecipeNutrition {
         return new RecipeNutritionResponse(recipe.getId(), recipe.getName(), recipeServings, servings,
                 Values.of(perServing), Values.of(shown), Values.of(sum.total()), NutritionLabels.split(perServing),
                 reference, NutritionLabels.percentOf(shown, reference), NutritionLabels.highlights(perServing),
-                NutritionLabels.summary(perServing), contributors, notCounted, sum.counted().size(), linesTotal,
+                NutritionLabels.summary(perServing, reference.plan()), contributors, notCounted, sum.counted().size(), linesTotal,
                 complete, note(sum), Attribution.USDA);
     }
 

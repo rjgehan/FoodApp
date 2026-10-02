@@ -281,6 +281,30 @@ test('counted fish fillets are shop-sized, and the UK names USDA lacks are count
   expect(m.notCounted).toEqual([]);
 });
 
+test('a recipe is measured against your own plan for a health target, and only yours', async () => {
+  const hh = await newHousehold();
+  const owner = await admin();
+  const member = await newMember(hh.id);
+  const recipe = await chickenAndEggs(hh.id);
+  const url = `/api/nutrition/recipes/${recipe.id}?householdId=${hh.id}`;
+  expect((await call('GET', url, { token: member.token })).reference.source).toBe('reference');
+
+  await call('POST', `/api/households/${hh.id}/meal-plans/targets`, {
+    token: member.token,
+    body: { name: 'Lean bulk', details: { age: 20, sex: 'male', heightCm: 180.3, weightKg: 74.8, activity: 'moderate',
+      goal: 'build-muscle', preferences: [], avoid: [], days: 3 } },
+  });
+  const mine = await call('GET', url, { token: member.token });
+  expect(mine.reference).toMatchObject({ source: 'target', plan: 'Lean bulk' });
+  expect(mine.reference.label).toMatch(/^a \d,\d{3} kcal day$/);
+  expect(mine.reference.kcal).toBeGreaterThan(2500);
+  expect(mine.reference.protein).toBe(135);
+  expect(mine.summary).toMatch(/for your Lean bulk plan\.$/);
+  // Private: the owner of the household, looking at the same recipe, still sees the reference day.
+  const theirs = await call('GET', url, { token: owner.token });
+  expect(theirs.reference).toMatchObject({ source: 'reference', label: 'a 2,000 kcal day', plan: null });
+});
+
 test('what a vague amount weighs can be learned, within sense', async () => {
   const hh = await newHousehold();
   const owner = await admin();

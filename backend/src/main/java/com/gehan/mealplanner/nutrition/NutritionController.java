@@ -14,6 +14,8 @@ import com.gehan.mealplanner.nutrition.NutritionDtos.SetGramsRequest;
 import com.gehan.mealplanner.nutrition.NutritionDtos.SetMatchRequest;
 import com.gehan.mealplanner.nutrition.NutritionDtos.StatusResponse;
 import com.gehan.mealplanner.domain.Ingredient;
+import com.gehan.mealplanner.mealplans.TargetPlans;
+import com.gehan.mealplanner.nutrition.NutritionDtos.Reference;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -59,10 +61,11 @@ public class NutritionController {
     private final PlanNutrition plans;
     private final OffProducts products;
     private final NutritionLookups lookups;
+    private final TargetPlans targetPlans;
 
     public NutritionController(FoodTable table, UsdaTableLoader loader, IngredientMatches matches,
                                RecipeNutrition recipes, PlanNutrition plans, OffProducts products,
-                               NutritionLookups lookups) {
+                               NutritionLookups lookups, TargetPlans targetPlans) {
         this.table = table;
         this.loader = loader;
         this.matches = matches;
@@ -70,6 +73,7 @@ public class NutritionController {
         this.plans = plans;
         this.products = products;
         this.lookups = lookups;
+        this.targetPlans = targetPlans;
     }
 
     @GetMapping
@@ -144,7 +148,9 @@ public class NutritionController {
 
     /**
      * servings: how many to show the numbers for (default 1). include: optional lines to count.
-     * entryId: a planned meal of this recipe, whose own optional choices are used.
+     * entryId: a planned meal of this recipe, whose own optional choices are used. The
+     * percentages are of the caller's own targets when they have a plan for a health target,
+     * and of the reference day otherwise.
      */
     @GetMapping("/recipes/{recipeId}")
     public RecipeNutritionResponse recipe(@AuthenticationPrincipal UUID userId, @PathVariable UUID recipeId,
@@ -154,7 +160,8 @@ public class NutritionController {
                                           @RequestParam(required = false) UUID entryId) {
         Set<UUID> included = new HashSet<>(include == null ? List.of() : include);
         if (entryId != null) included.addAll(recipes.includedOn(entryId, recipeId, userId));
-        return recipes.forRecipe(recipeId, householdId, userId, servings, included);
+        Reference reference = targetPlans.ownReference(userId, householdId).orElse(NutritionLabels.REFERENCE_DAY);
+        return recipes.forRecipe(recipeId, householdId, userId, servings, included, reference);
     }
 
     /** One person's share of the plan, per day and on average. Defaults to the planning window from today. */

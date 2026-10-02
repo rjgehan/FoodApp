@@ -27,7 +27,17 @@ public final class NutritionLabels {
      * they have set some, replace this.
      */
     public static final Reference REFERENCE_DAY = new Reference(2000, 50, 260, 70, 90, 20, 6, 30,
-            "a 2,000 kcal day", "reference");
+            "a 2,000 kcal day", "reference", null);
+
+    /**
+     * Somebody's own daily targets as the thing to compare with, the rest (sugars, saturates,
+     * salt, fibre) staying the reference intakes. For their eyes only: it is made from their body.
+     */
+    public static Reference target(String planName, int kcal, int protein, int carbs, int fat) {
+        return new Reference(kcal, protein, carbs, fat, REFERENCE_DAY.sugars(), REFERENCE_DAY.satFat(),
+                REFERENCE_DAY.saltG(), REFERENCE_DAY.fibre(),
+                "a " + String.format(java.util.Locale.UK, "%,d", kcal) + " kcal day", "target", planName);
+    }
 
     /**
      * Nutrient reference values for vitamins and minerals, for "% of daily": Regulation (EU)
@@ -138,6 +148,11 @@ public final class NutritionLabels {
     }
 
     public static String summary(Nutrients serving) {
+        return summary(serving, null);
+    }
+
+    /** With a plan named, the size is said for it: "A filling meal for your Lean bulk plan." */
+    public static String summary(Nutrients serving, String planName) {
         double kcal = orZero(serving.kcal());
         if (kcal <= 0) return null;
         List<String> words = highlights(serving);
@@ -146,9 +161,14 @@ public final class NutritionLabels {
             text.append(i == 0 ? words.get(i) : ", " + words.get(i).toLowerCase());
         }
         if (!text.isEmpty()) text.append(". ");
-        text.append(kcal < 250 ? "A light bite." : kcal < 500 ? "A light meal." : kcal < 850 ? "A filling meal."
-                : "A big meal.");
-        return text.toString();
+        text.append(kcal < 250 ? "A light bite" : kcal < 500 ? "A light meal" : kcal < 850 ? "A filling meal"
+                : "A big meal");
+        if (planName != null && !planName.isBlank()) {
+            String name = planName.trim();
+            text.append(" for your ").append(name)
+                    .append(name.toLowerCase(java.util.Locale.ROOT).endsWith("plan") ? "" : " plan");
+        }
+        return text.append('.').toString();
     }
 
     private static void grams(List<Detail> details, String key, String label, Double value) {

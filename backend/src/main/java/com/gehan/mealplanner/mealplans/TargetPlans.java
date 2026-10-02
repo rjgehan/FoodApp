@@ -129,6 +129,22 @@ public class TargetPlans {
                 Preferences.OPTIONS, List.of(3, 5, 7, 14), DEFAULT_MEALS);
     }
 
+    /**
+     * The targets of the plan this person changed last in this household, as the thing their
+     * recipe nutrition is compared with — "24% of a 3,170 kcal day". Their own: nobody else's plan
+     * is ever used, and the answer goes only to them. No household, no plan: the reference day.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<com.gehan.mealplanner.nutrition.NutritionDtos.Reference> ownReference(UUID ownerId,
+                                                                                                    UUID householdId) {
+        if (householdId == null) return java.util.Optional.empty();
+        return plans.findByOwnerIdAndHouseholdIdOrderByUpdatedAtDesc(ownerId, householdId).stream().findFirst().map(p -> {
+            TargetsResponse t = targets(details(p));
+            return com.gehan.mealplanner.nutrition.NutritionLabels.target(p.getName(), t.kcal(), t.protein(), t.carbs(),
+                    t.fat());
+        });
+    }
+
     // ---- The Meal plans page
 
     @Transactional(readOnly = true)
