@@ -3,7 +3,7 @@ import { api, imageUrl } from '../../api/client';
 import type { CupboardItem, Place, Recipe, RecipeCategory, SavedLink } from '../../api/types';
 import { useHousehold } from '../../household/HouseholdContext';
 import { buildTree } from '../../utils/categoryTree';
-import { sourceLabel } from '../../utils/savedLinks';
+import { isVideo, sourceLabel } from '../../utils/savedLinks';
 import { Icon } from '../icons';
 import {
   Button,
@@ -330,7 +330,7 @@ function EatIn({
                     link.coverImageId ? (
                       <Cover imageId={link.coverImageId} />
                     ) : (
-                      <Photo seed={link.id} icon={link.source === 'WEB' ? 'globe' : 'play'} className="h-10 w-10 rounded-[10px]" />
+                      <Photo seed={link.id} icon={isVideo(link) ? 'play' : 'globe'} className="h-10 w-10 rounded-[10px]" />
                     )
                   }
                   title={<Highlight text={link.name} query={q} />}

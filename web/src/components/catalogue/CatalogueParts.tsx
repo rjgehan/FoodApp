@@ -159,7 +159,15 @@ export function RecipePicture({ recipe, className, style }: { recipe: Recipe; cl
       </span>
     );
   }
-  return <Photo seed={recipe.id} icon={dishIcon(recipe)} className={className} style={style} />;
+  // A shared recipe has no drawer here yet; the one it is in at home picks its picture.
+  return (
+    <Photo
+      seed={recipe.id}
+      icon={dishIcon({ ...recipe, section: recipe.section ?? recipe.ownerSection ?? null })}
+      className={className}
+      style={style}
+    />
+  );
 }
 
 /**

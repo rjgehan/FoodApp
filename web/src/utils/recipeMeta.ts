@@ -67,3 +67,35 @@ export function moveToDrawer(
     ),
   };
 }
+
+/*
+ * Which shared recipes are new to you: shared since this device last opened Shared with you.
+ * Kept on the device rather than the server — it is only a nudge, and a phone and a laptop each
+ * saying "New" once is no harm. Before the list has ever been opened here, anything shared in
+ * the last week counts.
+ */
+const sharedSeenKey = (householdId: string) => `mp_sharedSeenAt_${householdId}`;
+const NEW_FOR_MS = 7 * 86_400_000;
+
+export function sharedSeenAt(householdId: string): number | null {
+  try {
+    const stored = Number(localStorage.getItem(sharedSeenKey(householdId)));
+    return Number.isFinite(stored) && stored > 0 ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+export function markSharedSeen(householdId: string): void {
+  try {
+    localStorage.setItem(sharedSeenKey(householdId), String(Date.now()));
+  } catch {
+    // Private browsing and the like: they stay "New" a little longer.
+  }
+}
+
+export function isNewShare(recipe: { sharedAt?: string | null }, seenAt: number | null): boolean {
+  const at = recipe.sharedAt ? Date.parse(recipe.sharedAt) : NaN;
+  if (Number.isNaN(at)) return false;
+  return seenAt !== null ? at > seenAt : Date.now() - at < NEW_FOR_MS;
+}

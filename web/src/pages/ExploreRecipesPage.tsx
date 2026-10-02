@@ -70,7 +70,7 @@ export default function ExploreRecipesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col">
-      <NavBar back="/explore" backLabel="Explore" sides="w-24" title="Global recipes" />
+      <NavBar back="/explore" backLabel="Explore" title="Global recipes" />
 
       <div className="flex flex-col gap-2.5 pb-3 pt-1">
         <SearchField

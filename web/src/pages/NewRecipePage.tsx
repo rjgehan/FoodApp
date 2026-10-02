@@ -177,7 +177,7 @@ export default function NewRecipePage() {
           title={titles[way]}
           back={() => setWay(null)}
           backLabel="New"
-          sides="w-20"
+         
           right={way === 'type' ? saveButton('type-recipe') : undefined}
         />
       ) : (

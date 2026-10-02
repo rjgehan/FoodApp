@@ -48,7 +48,7 @@ export default function HouseholdPage() {
         backLabel="Settings"
         back={back}
         className="-mx-1 mb-1.5"
-        sides="w-24"
+       
       />
       {activeHousehold ? (
         <HouseholdHome key={activeHousehold.id} />

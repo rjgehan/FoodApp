@@ -260,6 +260,10 @@ export interface Recipe {
   /** Everything else, in order. */
   photoIds: string[];
   ingredients: RecipeIngredient[];
+  /** Shared with you: the drawer it is in at the household that owns it. Absent from older servers. */
+  ownerSection?: RecipeSection | null;
+  /** Shared with you: when it was sent here (ISO), if the server knows. */
+  sharedAt?: string | null;
 }
 
 /** What someone with a share link sees. No household, no sharing state, no filing. */
@@ -351,6 +355,8 @@ export interface SavedLink {
   createdAt: string;
   /** On a save only: it was already there, and that one was updated. */
   alreadySaved: boolean;
+  /** Whether you may delete it: whoever saved it, or anyone once they have gone. Absent from older servers. */
+  canDelete?: boolean;
 }
 
 /** Somewhere you eat instead of cooking. Only the name is required. */

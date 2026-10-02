@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection, SavedLink } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
-import { Card, cx, EmptyState, List, Row, SearchField, SectionLabel, Tile } from '../components/ui';
+import { Card, cx, EmptyState, List, Pill, Row, SearchField, SectionLabel, Tile } from '../components/ui';
 import { Icon } from '../components/icons';
-import { SECTION_OPTIONS, SHARED_KEY, sectionSlug } from '../utils/recipeMeta';
+import { isNewShare, SECTION_OPTIONS, SHARED_KEY, sectionSlug, sharedSeenAt } from '../utils/recipeMeta';
 import { DEFAULT_SECTION_ICONS } from '../components/FoodIcons';
 import { SAVED_LINKS_PATH, sourceLabel } from '../utils/savedLinks';
 import { buildTree } from '../utils/categoryTree';
@@ -83,6 +83,8 @@ export default function RecipesPage() {
 
   const all = recipes ?? [];
   const shared = all.filter((r) => r.section === null);
+  const seenAt = sharedSeenAt(activeHouseholdId);
+  const newShares = shared.filter((r) => isNewShare(r, seenAt)).length;
   const searching = q !== '' || focused;
 
   function cancelSearch() {
@@ -96,7 +98,8 @@ export default function RecipesPage() {
       {/* Searching takes the top of the screen, as it does on iOS; a computer keeps its title. */}
       {searching && <HideTopBar />}
       <div className={cx(searching && 'hidden md:block')}>
-        <PageTitle title="Recipes">
+        {/* The search sits close under the title, as in the mockup: the page's own gap is enough. */}
+        <PageTitle title="Recipes" className="max-md:pb-0">
           <Link
             to="/recipes/new"
             aria-label="Add a recipe"
@@ -217,6 +220,7 @@ export default function RecipesPage() {
                   title="Shared with you"
                   subtitle={fromWhom(shared)}
                   detail={shared.length}
+                  end={newShares > 0 ? <Pill tone="accent">{newShares} new</Pill> : undefined}
                   chevron
                 />
               )}

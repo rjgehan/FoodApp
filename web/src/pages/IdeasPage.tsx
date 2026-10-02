@@ -167,7 +167,7 @@ export default function IdeasPage() {
         title="Ideas"
         back={back}
         className="-mx-1"
-        sides="w-24"
+       
         right={
           !closed && (
             <button

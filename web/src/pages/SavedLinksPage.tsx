@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NoHousehold from '../components/NoHousehold';
 import { api, ApiError, imageUrl } from '../api/client';
-import type { RecipeSection, SavedLink, SavedLinkSource } from '../api/types';
+import type { RecipeSection, SavedLink } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import type { RecipeDraft } from '../components/RecipeForm';
 import type { FromSavedLink } from './NewRecipePage';
@@ -31,12 +31,13 @@ import { Icon } from '../components/icons';
 import { usePushedScreen } from '../components/Layout';
 import { SECTION_OPTIONS, sectionLabel } from '../utils/recipeMeta';
 import { isSafeLink } from '../utils/videoLink';
-import { saveLink, sourceLabel } from '../utils/savedLinks';
+import { isVideo, linkKind, saveLink, sourceLabel, timeAgo, type LinkKind } from '../utils/savedLinks';
 
 type Action = 'menu' | 'rename' | 'move' | 'delete' | 'plan' | 'import';
 
-const SOURCES: { value: SavedLinkSource; label: string }[] = [
+const SOURCES: { value: LinkKind; label: string }[] = [
   { value: 'TIKTOK', label: 'TikTok' },
+  { value: 'YOUTUBE', label: 'YouTube' },
   { value: 'INSTAGRAM', label: 'Instagram' },
   { value: 'WEB', label: 'Websites' },
 ];
@@ -54,7 +55,7 @@ export default function SavedLinksPage() {
   const [links, setLinks] = useState<SavedLink[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState(params.get('q') ?? '');
-  const [source, setSource] = useState<SavedLinkSource | null>(null);
+  const [source, setSource] = useState<LinkKind | null>(null);
   const [drawer, setDrawer] = useState<RecipeSection | null>(null);
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<{ action: Action; link: SavedLink } | null>(null);
@@ -79,14 +80,14 @@ export default function SavedLinksPage() {
 
   const all = links ?? [];
   // Filters only for what there is: one source or no drawers means nothing to choose between.
-  const sources = SOURCES.filter((s) => all.some((l) => l.source === s.value));
+  const sources = SOURCES.filter((s) => all.some((l) => linkKind(l) === s.value));
   const drawers = SECTION_OPTIONS.filter((s) => all.some((l) => l.section === s.value));
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (links ?? []).filter(
       (l) =>
-        (!source || l.source === source) &&
+        (!source || linkKind(l) === source) &&
         (!drawer || l.section === drawer) &&
         (!q || l.name.toLowerCase().includes(q) || sourceLabel(l).toLowerCase().includes(q)),
     );
@@ -398,18 +399,7 @@ export default function SavedLinksPage() {
 /** "TikTok · saved by Jo · 3 days ago" — where it is from, who kept it, and when. */
 function linkMeta(link: SavedLink): string {
   const by = link.mine ? 'saved by you' : link.savedByName ? `saved by ${link.savedByName}` : null;
-  return [sourceLabel(link), by, ago(link.createdAt)].filter(Boolean).join(' · ');
-}
-
-function ago(iso: string): string | null {
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return null;
-  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
-  if (days <= 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days} days ago`;
-  if (days < 14) return 'last week';
-  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return [sourceLabel(link), by, timeAgo(link.createdAt)].filter(Boolean).join(' · ');
 }
 
 /**
@@ -465,7 +455,20 @@ function LinkActions({
           onClick={onJustMe}
         />
       )}
-      <Row lead={<Tile icon="trash" tone="accent" size={34} />} title="Delete" tone="danger" onClick={onDelete} />
+      {/* Only whoever saved it can delete it (the server says so in canDelete; an older one
+          lets anyone). For someone else's it says whose call it is, rather than vanishing. */}
+      {(link.canDelete ?? true) ? (
+        <Row lead={<Tile icon="trash" tone="accent" size={34} />} title="Delete" tone="danger" onClick={onDelete} />
+      ) : (
+        <Row
+          lead={<Tile icon="trash" tone="accent" size={34} />}
+          title="Delete"
+          tone="danger"
+          titleClassName="opacity-55"
+          subtitle={`Only ${link.savedByName ?? 'whoever saved it'} can delete this`}
+          aria-label={`Delete — only ${link.savedByName ?? 'whoever saved it'} can delete this`}
+        />
+      )}
     </List>
   );
 }
@@ -492,7 +495,7 @@ function LinkPicture({ link, className, small = false }: { link: SavedLink; clas
     <Photo seed={link.id} icon={null} className={className}>
       {/* What kind of link it is, drawn big: the line under it says where from. */}
       <Icon
-        name={link.source === 'WEB' ? 'globe' : 'play'}
+        name={isVideo(link) ? 'play' : 'globe'}
         strokeWidth={small ? 2 : 1.6}
         className={cx('relative opacity-90', small ? 'h-[40%] w-[40%]' : 'h-[34%] w-[34%]')}
       />
@@ -508,7 +511,7 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
   const from = !link.mine && link.savedByName ? `from ${link.savedByName}` : null;
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <a
         href={isSafeLink(link.url) ? link.url : undefined}
         target="_blank"
@@ -535,10 +538,12 @@ function SavedLinkTile({ link, onMenu }: { link: SavedLink; onMenu: () => void }
         aria-label={`More for ${link.name}`}
         title="More"
         onClick={onMenu}
-        className="press absolute right-1 top-1 flex h-9 w-9 items-center justify-center"
+        // Small and see-through, so it does not fight the picture; with a mouse it only shows
+        // on the card you point at.
+        className="press absolute right-0.5 top-0.5 flex h-9 w-9 items-center justify-center transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm">
-          <Icon name="more" size={16} />
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm">
+          <Icon name="more" size={14} />
         </span>
       </button>
     </div>

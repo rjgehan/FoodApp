@@ -32,12 +32,14 @@ export default function EditGroupsScreen({
   const [names, setNames] = useState<Record<string, string>>({});
   const [icons, setIcons] = useState<Record<string, string | null>>({});
   const [removed, setRemoved] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string | null>(groups[0]?.id ?? null);
+  // Null until a row is tapped: the first group is the one being edited until then, which also
+  // covers groups that arrive after the screen opens (straight from a link, or a reload).
+  const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const kept = groups.filter((g) => !removed.includes(g.id));
-  const current = kept.find((g) => g.id === selected) ?? null;
+  const current = kept.find((g) => g.id === selected) ?? kept[0] ?? null;
   const nameOf = (g: RecipeCategory) => names[g.id] ?? g.name;
   const iconOf = (g: RecipeCategory) => (g.id in icons ? icons[g.id] : g.iconKey ?? null);
 
@@ -74,12 +76,13 @@ export default function EditGroupsScreen({
         className="-mx-2.5"
         title="Edit groups"
         left={
-          <button type="button" className="press -ml-1.5 h-11 text-[1.0625rem] text-accent-ink" onClick={onClose}>
+          // Words rather than a chevron sit in from the edge, as every bar's back text does.
+          <button type="button" className="press h-11 pl-0.5 text-[1.0625rem] text-accent-ink" onClick={onClose}>
             Cancel
           </button>
         }
         right={
-          <button type="button" className="press h-11 font-semibold disabled:opacity-45" disabled={busy} onClick={save}>
+          <button type="button" className="press h-11 pr-0.5 font-semibold disabled:opacity-45" disabled={busy} onClick={save}>
             {busy ? 'Saving…' : 'Done'}
           </button>
         }
@@ -92,7 +95,7 @@ export default function EditGroupsScreen({
       ) : (
         <ul aria-label={`Groups in ${place}`} className="card card-rows inset-rows">
           {kept.map((g) => {
-            const on = g.id === selected;
+            const on = g.id === current?.id;
             return (
               <li key={g.id} className={cx('flex min-h-[3.75rem] items-center gap-3 py-3 pl-4 pr-3', on && 'bg-surface2/50')}>
                 <button

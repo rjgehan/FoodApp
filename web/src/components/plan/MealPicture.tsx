@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isVideo } from '../../utils/savedLinks';
 import { imageUrl } from '../../api/client';
 import type { MealPlanEntry, Recipe } from '../../api/types';
 import { cx, Photo, Tile } from '../ui';
@@ -55,7 +56,7 @@ export default function MealPicture({
   return (
     <Photo
       seed={key || entry.id}
-      icon={entry.savedLinkId ? (entry.savedLinkSource === 'WEB' ? 'globe' : 'play') : dishIcon(recipe ?? { name: entry.recipeName }, entry.mealType)}
+      icon={entry.savedLinkId ? (isVideo({ source: entry.savedLinkSource, url: entry.savedLinkUrl }) ? 'play' : 'globe') : dishIcon(recipe ?? { name: entry.recipeName }, entry.mealType)}
       className={className}
       style={style}
     />

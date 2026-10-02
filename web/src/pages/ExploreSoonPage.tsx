@@ -21,7 +21,7 @@ export default function ExploreSoonPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
-      <NavBar back="/explore" backLabel="Explore" sides="w-24" title={destination.title} />
+      <NavBar back="/explore" backLabel="Explore" title={destination.title} />
       <SoonPanel destination={destination} />
     </div>
   );

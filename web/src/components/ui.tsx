@@ -148,6 +148,10 @@ export function SubHeading({ children, className }: { children: ReactNode; class
 /**
  * The centred bar at the top of a pushed screen: back on the left in the accent ink, the title in
  * the middle, an action or two on the right. `back` is a path, or a function for history.
+ *
+ * The title is centred on the screen while both sides leave it room, and slides over to use an
+ * empty side rather than cut itself short — "Shared with you" beside "‹ Recipes" fits on a phone
+ * only because nothing is on the right. Neither side is ever squeezed.
  */
 export function NavBar({
   title,
@@ -156,7 +160,6 @@ export function NavBar({
   left,
   right,
   className,
-  sides = 'w-28',
 }: {
   title?: ReactNode;
   back?: string | (() => void);
@@ -165,8 +168,6 @@ export function NavBar({
   left?: ReactNode;
   right?: ReactNode;
   className?: string;
-  /** The width of each side, which the title is centred between — narrower for a long title. */
-  sides?: string;
 }) {
   const backCls = 'press -ml-1.5 flex h-11 items-center gap-0.5 whitespace-nowrap text-[1.0625rem] text-accent-ink';
   const backInner = (
@@ -176,8 +177,13 @@ export function NavBar({
     </>
   );
   return (
-    <div className={cx('flex h-12 items-center justify-between gap-2', className)}>
-      <div className={cx('flex shrink-0 items-center', sides)}>
+    <div
+      className={cx(
+        'grid h-12 grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)] items-center gap-2',
+        className,
+      )}
+    >
+      <div className="flex items-center">
         {left ??
           (typeof back === 'string' ? (
             <Link to={back} className={backCls}>
@@ -189,8 +195,8 @@ export function NavBar({
             </button>
           ) : null)}
       </div>
-      <h1 className="min-w-0 flex-1 truncate text-center text-[1.0625rem] font-semibold">{title}</h1>
-      <div className={cx('flex shrink-0 items-center justify-end gap-4 text-[1.0625rem] text-accent-ink', sides)}>{right}</div>
+      <h1 className="min-w-0 truncate text-center text-[1.0625rem] font-semibold">{title}</h1>
+      <div className="flex items-center justify-end gap-4 text-[1.0625rem] text-accent-ink">{right}</div>
     </div>
   );
 }
@@ -1082,7 +1088,9 @@ export function Sheet({
 
   return (
     <div
-      className="fixed inset-x-0 z-40 flex items-end justify-center sm:items-center sm:p-6"
+      // Back to the page's own text: a sheet opened from a nav bar's ••• is drawn inside that bar,
+      // and would otherwise take on its tomato ink and 17px type.
+      className="fixed inset-x-0 z-40 flex items-end justify-center text-left text-base font-normal leading-[1.45] text-ink sm:items-center sm:p-6"
       style={{ top: viewport.top, height: viewport.height }}
     >
       <div ref={scrim} className="absolute inset-0 bg-scrim" onClick={dismiss} aria-hidden="true" />
@@ -1304,7 +1312,7 @@ export function ActionMenu({
 export function MenuList({ items, onPicked }: { items: MenuItem[]; onPicked: (item: MenuItem) => void }) {
   const anyIcon = items.some((i) => i.icon);
   return (
-    <List inset={anyIcon ? 66 : 16}>
+    <List inset={anyIcon ? 62 : 16}>
       {items.map((item, i) => (
         <Row
           key={i}

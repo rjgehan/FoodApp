@@ -17,16 +17,19 @@ import {
   Input,
   List,
   MenuList,
+  type MenuItem,
   NavBar,
+  Pill,
   Row,
   SearchField,
   SectionLabel,
   Sheet,
 } from '../components/ui';
 import { Icon } from '../components/icons';
-import { SHARED_KEY, sectionFromSlug, sectionLabel } from '../utils/recipeMeta';
+import { isNewShare, markSharedSeen, SHARED_KEY, sectionFromSlug, sectionLabel, sharedSeenAt } from '../utils/recipeMeta';
+import { timeAgo } from '../utils/savedLinks';
 import { iconByKey } from '../components/FoodIcons';
-import { buildTree, isIn, suggestGroup, suggestSplit, type CategoryTree } from '../utils/categoryTree';
+import { buildTree, isIn, suggestGroups, suggestSplit, type CategoryTree } from '../utils/categoryTree';
 import { formatMinutes, totalMinutes } from '../utils/recipeFormat';
 import IconPicker from '../components/IconPicker';
 import EditGroupsScreen from '../components/catalogue/EditGroupsScreen';
@@ -160,7 +163,13 @@ export default function RecipeSectionPage() {
   }
 
   if (isShared) {
-    return <SharedWithYou recipes={recipes === null ? null : inSection} onBack={() => navigate('/recipes')} />;
+    return (
+      <SharedWithYou
+        householdId={activeHouseholdId}
+        recipes={recipes === null ? null : inSection}
+        onBack={() => navigate('/recipes')}
+      />
+    );
   }
 
   const drawerName = sectionLabel(section);
@@ -362,6 +371,7 @@ export default function RecipeSectionPage() {
                 householdId={activeHouseholdId}
                 recipes={loose}
                 groups={allChildren}
+                tree={tree}
                 from={group}
                 onFiled={load}
               />
@@ -434,7 +444,22 @@ function Loading() {
  * Recipes other households shared into yours, by the household they came from (3.19). Read-only
  * until you open one and save it to your own recipes, which files it in a drawer of yours.
  */
-function SharedWithYou({ recipes, onBack }: { recipes: Recipe[] | null; onBack: () => void }) {
+function SharedWithYou({
+  householdId,
+  recipes,
+  onBack,
+}: {
+  householdId: string;
+  recipes: Recipe[] | null;
+  onBack: () => void;
+}) {
+  // What counted as new when the list opened stays new while you look at it; next time it won't.
+  const [seenAt] = useState(() => sharedSeenAt(householdId));
+  const loaded = recipes !== null;
+  useEffect(() => {
+    if (loaded) markSharedSeen(householdId);
+  }, [loaded, householdId]);
+
   const byHousehold = useMemo(() => {
     const groups = new Map<string, Recipe[]>();
     for (const r of recipes ?? []) {
@@ -460,14 +485,21 @@ function SharedWithYou({ recipes, onBack }: { recipes: Recipe[] | null; onBack: 
               <SectionLabel>From {from}</SectionLabel>
               <List label={`From ${from}`}>
                 {list.map((r) => {
+                  // Where it lives over there and when it came: "Dinner · shared 2 days ago".
+                  const ago = timeAgo(r.sharedAt);
                   const total = totalMinutes(r);
+                  const subtitle =
+                    [r.ownerSection ? sectionLabel(r.ownerSection) : null, ago ? `shared ${ago}` : null]
+                      .filter(Boolean)
+                      .join(' · ') || (total ? formatMinutes(total) : undefined);
                   return (
                     <Row
                       key={r.id}
                       to={`/recipes/${r.id}`}
                       lead={<RecipePicture recipe={r} className="h-12 w-12 rounded-xl" />}
                       title={r.name}
-                      subtitle={`Serves ${r.servings}${total ? ` · ${formatMinutes(total)}` : ''}`}
+                      subtitle={subtitle}
+                      end={isNewShare(r, seenAt) ? <Pill tone="accent">New</Pill> : undefined}
                     />
                   );
                 })}
@@ -484,23 +516,27 @@ function SharedWithYou({ recipes, onBack }: { recipes: Recipe[] | null; onBack: 
 }
 
 /**
- * The recipes at this level that are in none of the groups below, each with where it most likely
- * goes as the first, filled chip (3.3) — one tap files it and it drops off the card. Every other
- * group is a tap further, under More. A long list starts folded to the first few.
+ * The recipes at this level that are in none of the groups below, each on one line with where
+ * it most likely goes as the first, filled chip and one other beside it (3.3) — one tap files it
+ * and it drops off the card. Tapping the name offers every group, and the recipe itself. A long
+ * list starts folded to the first few.
  */
 function UnfiledCard({
   householdId,
   recipes,
   groups,
+  tree,
   from,
   onFiled,
 }: {
   householdId: string;
   recipes: Recipe[];
   groups: RecipeCategory[];
+  tree: CategoryTree;
   from: RecipeCategory | null;
   onFiled: () => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const [filed, setFiled] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
   const [choosingFor, setChoosingFor] = useState<Recipe | null>(null);
@@ -508,6 +544,11 @@ function UnfiledCard({
   const left = recipes.filter((r) => !filed.includes(r.id));
   if (left.length === 0 && !error) return null;
   const shown = showAll ? left : left.slice(0, 5);
+  // Likeliest first, then the rest in their usual order.
+  const ordered = (recipe: Recipe) => {
+    const likely = suggestGroups(recipe, groups, tree);
+    return { likely, all: [...likely, ...groups.filter((g) => !likely.includes(g))] };
+  };
 
   async function file(recipe: Recipe, target: RecipeCategory) {
     setError(null);
@@ -537,38 +578,30 @@ function UnfiledCard({
       </h2>
       <ul className="flex flex-col gap-2">
         {shown.map((recipe) => {
-          const likely = suggestGroup(recipe, groups);
-          const ordered = likely ? [likely, ...groups.filter((g) => g.id !== likely.id)] : groups;
+          const { likely, all } = ordered(recipe);
           return (
-            <li key={recipe.id} className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1.5">
-              <Link to={`/recipes/${recipe.id}`} className="min-w-0 flex-1 basis-32 truncate text-sm font-medium">
+            <li key={recipe.id} className="flex min-h-9 items-center gap-2">
+              <button
+                type="button"
+                aria-label={`Every group for ${recipe.name}`}
+                onClick={() => setChoosingFor(recipe)}
+                className="press min-w-0 flex-1 truncate text-left text-sm font-medium"
+              >
                 {recipe.name}
-              </Link>
-              <span className="flex shrink-0 items-center gap-1.5">
-                {ordered.slice(0, 2).map((g, i) => (
-                  <Chip
-                    key={g.id}
-                    aria-label={`Put ${recipe.name} in ${g.name}`}
-                    // The likely one is filled; a guess that is only alphabetical is not.
-                    active={i === 0 && likely !== null}
-                    aria-pressed={undefined}
-                    className="!px-[9px] !py-1 !text-xs"
-                    onClick={() => file(recipe, g)}
-                  >
-                    {g.name}
-                  </Chip>
-                ))}
-                {ordered.length > 2 && (
-                  <Chip
-                    aria-label={`Other groups for ${recipe.name}`}
-                    aria-pressed={undefined}
-                    className="!px-[9px] !py-1 !text-xs"
-                    onClick={() => setChoosingFor(recipe)}
-                  >
-                    More
-                  </Chip>
-                )}
-              </span>
+              </button>
+              {all.slice(0, 2).map((g, i) => (
+                <Chip
+                  key={g.id}
+                  aria-label={`Put ${recipe.name} in ${g.name}`}
+                  // The likely one is filled; a guess that is only alphabetical is not.
+                  active={i === 0 && likely.length > 0}
+                  aria-pressed={undefined}
+                  className="!px-[9px] !py-1 !text-xs"
+                  onClick={() => file(recipe, g)}
+                >
+                  {g.name}
+                </Chip>
+              ))}
             </li>
           );
         })}
@@ -585,12 +618,17 @@ function UnfiledCard({
       {error && <ErrorText>{error}</ErrorText>}
 
       {choosingFor && (
-        <Sheet title={`Put ${choosingFor.name} in…`} onClose={() => setChoosingFor(null)}>
+        <Sheet title={choosingFor.name} subtitle="Put it in a group, or open it." onClose={() => setChoosingFor(null)}>
           <MenuList
-            items={groups.map((g) => ({
-              label: g.name,
-              onSelect: () => file(choosingFor, g),
-            }))}
+            items={[
+              ...ordered(choosingFor).all.map((g): MenuItem => ({
+                label: g.name,
+                icon: 'folder',
+                iconTone: 'mustard',
+                onSelect: () => file(choosingFor, g),
+              })),
+              { label: 'Open the recipe', icon: 'book', iconTone: 'herb', onSelect: () => navigate(`/recipes/${choosingFor.id}`) },
+            ]}
             onPicked={(item) => {
               setChoosingFor(null);
               item.onSelect();

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
+import { cx } from './ui';
 
 /** How a page tells the header its title has scrolled out of sight (null: it is visible again). */
 const CompactTitle = createContext<(title: string | null) => void>(() => {});
@@ -15,6 +16,7 @@ export function PageTitle({
   title,
   over,
   subtitle,
+  className,
   children,
 }: {
   title: string;
@@ -22,6 +24,7 @@ export function PageTitle({
   over?: ReactNode;
   /** A line under the title. */
   subtitle?: ReactNode;
+  className?: string;
   children?: ReactNode;
 }) {
   const setCompact = useContext(CompactTitle);
@@ -43,9 +46,11 @@ export function PageTitle({
   }, [title, setCompact]);
 
   // On a phone the overline sits 8px under the top bar's household pill, as the mockup's does:
-  // the bar is 56px tall with 12px under its pill, so the title pulls up into that a little.
+  // the bar is 56px tall with 12px under its pill, so the title pulls up into that a little. A
+  // round button beside the title is taller than its line, and pulled up as far would have its
+  // top shaved off flat by the bar — so with one the row only rises as far as the bar's edge.
   return (
-    <div className="pb-3 pt-1 max-md:-mt-2 max-md:pt-0">
+    <div className={cx('pb-3 pt-1 max-md:pt-0', children ? 'max-md:-mt-1' : 'max-md:-mt-2', className)}>
       <div className="flex items-end justify-between gap-2.5">
         <div className="min-w-0">
           {over && <p className="mb-0.5 text-[0.8125rem] font-medium text-muted">{over}</p>}
@@ -53,7 +58,7 @@ export function PageTitle({
             {title}
           </h1>
         </div>
-        {children && <div className="mb-0.5 flex shrink-0 items-center gap-2.5">{children}</div>}
+        {children && <div className="flex shrink-0 items-center gap-2.5">{children}</div>}
       </div>
       {subtitle && <p className="mt-1.5 text-muted">{subtitle}</p>}
     </div>

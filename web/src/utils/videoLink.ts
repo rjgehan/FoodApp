@@ -21,13 +21,44 @@ export function isSafeLink(url: string | null | undefined): boolean {
  */
 const VIDEO_HOSTS = ['tiktok.com', 'youtube.com', 'youtu.be', 'instagram.com', 'vimeo.com'];
 
-/** Sites people know by name rather than by address. */
+/**
+ * Sites people know by name rather than by address: the video sites, and the recipe publishers
+ * people save from most — "BBC Good Food", not "bbcgoodfood.com". iOS keeps the same list
+ * (RecipeLinks.swift). Anything else is called by its address.
+ */
 const SITE_NAMES: [string, string][] = [
   ['tiktok.com', 'TikTok'],
   ['youtube.com', 'YouTube'],
   ['youtu.be', 'YouTube'],
   ['instagram.com', 'Instagram'],
   ['vimeo.com', 'Vimeo'],
+  ['bbcgoodfood.com', 'BBC Good Food'],
+  ['cooking.nytimes.com', 'NYT Cooking'],
+  ['allrecipes.com', 'Allrecipes'],
+  ['seriouseats.com', 'Serious Eats'],
+  ['bonappetit.com', 'Bon Appétit'],
+  ['epicurious.com', 'Epicurious'],
+  ['foodnetwork.com', 'Food Network'],
+  ['food52.com', 'Food52'],
+  ['thekitchn.com', 'The Kitchn'],
+  ['simplyrecipes.com', 'Simply Recipes'],
+  ['delish.com', 'Delish'],
+  ['tasty.co', 'Tasty'],
+  ['budgetbytes.com', 'Budget Bytes'],
+  ['recipetineats.com', 'RecipeTin Eats'],
+  ['smittenkitchen.com', 'Smitten Kitchen'],
+  ['jamieoliver.com', 'Jamie Oliver'],
+  ['minimalistbaker.com', 'Minimalist Baker'],
+  ['halfbakedharvest.com', 'Half Baked Harvest'],
+  ['kingarthurbaking.com', 'King Arthur Baking'],
+  ['cookieandkate.com', 'Cookie and Kate'],
+  ['loveandlemons.com', 'Love and Lemons'],
+  ['pinchofyum.com', 'Pinch of Yum'],
+  ['tasteofhome.com', 'Taste of Home'],
+  ['eatingwell.com', 'EatingWell'],
+  ['olivemagazine.com', 'olive'],
+  ['nigella.com', 'Nigella'],
+  ['pinterest.com', 'Pinterest'],
 ];
 
 /**
@@ -53,7 +84,13 @@ export function isVideoLink(url: string): boolean {
   return host !== null && VIDEO_HOSTS.some((site) => onHost(host, site));
 }
 
-/** "TikTok", "YouTube", or the address without its www — what a link is called by default. */
+/** Whether a link is to YouTube, which the server files as a website. */
+export function isYouTubeLink(url: string): boolean {
+  const host = hostOf(url);
+  return host !== null && (onHost(host, 'youtube.com') || onHost(host, 'youtu.be'));
+}
+
+/** "TikTok", "BBC Good Food", or the address without its www — what a link is called by default. */
 export function linkSiteName(url: string): string | null {
   const host = hostOf(url);
   if (!host) return null;

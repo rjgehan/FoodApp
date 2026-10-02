@@ -61,7 +61,7 @@ export default function HouseholdSetupPage() {
         title="Household"
         back={back}
         className="-mx-1 mb-1.5"
-        sides="w-24"
+       
         right={
           <button type="submit" disabled={saving || (isOwner && !name.trim())} className="press font-semibold disabled:opacity-45">
             {saving ? 'Saving…' : 'Save'}

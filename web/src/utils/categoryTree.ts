@@ -151,12 +151,40 @@ export function suggestSplit(recipes: Recipe[], skip: Set<string>): { name: stri
   return KINDS.filter((k) => buckets.has(k.name)).map((k) => ({ name: k.name, recipeIds: buckets.get(k.name)! }));
 }
 
-/** Which of these groups a recipe most likely belongs in, for sorting by hand. */
-export function suggestGroup(recipe: Recipe, groups: RecipeCategory[]): RecipeCategory | null {
-  const kind = kindOf(recipe);
-  const byKind = kind ? groups.find((g) => g.name.toLowerCase() === kind.toLowerCase()) : undefined;
-  if (byKind) return byKind;
-  // A group of their own making — "Tacos" — still matches on its name.
+/**
+ * The groups a recipe most likely belongs in, likeliest first, for filing by hand (3.3). A group
+ * is a match on its own name — the kind of dish the recipe is, or a word of a group the
+ * household made up, like "Tacos" — or on a group inside it: a chicken pot pie goes in Main dish
+ * when Chicken is one of Main dish's groups. A main with nowhere better goes in a "Main…" group.
+ * Groups that match nothing are left out.
+ */
+export function suggestGroups(recipe: Recipe, groups: RecipeCategory[], tree?: CategoryTree): RecipeCategory[] {
+  const kind = kindOf(recipe)?.toLowerCase() ?? null;
   const text = [recipe.name, ...recipe.ingredients.map((i) => i.ingredientName)].join(' | ').toLowerCase();
-  return groups.find((g) => hasWord(text, g.name.toLowerCase().replace(/s$/, ''))) ?? null;
+  const said = (name: string) => hasWord(text, name.toLowerCase().replace(/s$/, ''));
+  const inside = (g: RecipeCategory) => {
+    if (!tree) return [];
+    const names = tree.namesWithin(g.id);
+    names.delete(g.name.toLowerCase());
+    return [...names];
+  };
+  const isMain = kind !== null && PROTEINS.some((p) => p.name.toLowerCase() === kind);
+
+  const tests: ((g: RecipeCategory) => boolean)[] = [
+    (g) => kind !== null && g.name.toLowerCase() === kind,
+    (g) => kind !== null && inside(g).includes(kind),
+    (g) => said(g.name),
+    (g) => inside(g).some(said),
+    (g) => isMain && /\bmains?\b/i.test(g.name),
+  ];
+  const found: RecipeCategory[] = [];
+  for (const test of tests) {
+    for (const g of groups) if (!found.includes(g) && test(g)) found.push(g);
+  }
+  return found;
+}
+
+/** The group a recipe most likely belongs in, or null. */
+export function suggestGroup(recipe: Recipe, groups: RecipeCategory[], tree?: CategoryTree): RecipeCategory | null {
+  return suggestGroups(recipe, groups, tree)[0] ?? null;
 }
