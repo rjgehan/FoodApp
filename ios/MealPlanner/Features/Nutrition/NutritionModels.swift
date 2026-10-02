@@ -399,18 +399,51 @@ enum NutritionText {
         return "\(number(scaled)) \(detail.unit)"
     }
 
+    /// USDA's group words: the food is the next part ("Fish, salmon" is salmon).
+    private static let groupOnly: Set<String> = [
+        "fish", "nuts", "spices", "seeds", "snacks", "cereals", "beverages", "alcoholic beverage", "alcoholic beverages",
+        "candies", "crustaceans", "mollusks", "leavening agents", "game meat", "sweeteners", "soup", "babyfood",
+    ]
+    /// Group words that end the food's name: "Oil, olive" is olive oil, "Cheese, cheddar" cheddar cheese.
+    private static let groupAfter: Set<String> = ["oil", "cheese", "sauce", "beans", "vinegar", "rice", "milk", "yogurt"]
+    /// Meats, said first: "Chicken, broilers or fryers, breast" is chicken breast.
+    private static let groupBefore: Set<String> = ["beef", "pork", "chicken", "lamb", "veal", "turkey", "duck"]
+    /// Parts of a USDA name that say how it was bred, sold or cooked rather than what it is.
+    private static let notTheFood = #"^(raw|cooked|fresh|frozen|canned|dry|dried|boiled|roasted|fluid|mature seeds|broilers? or fryers|roasting|fryers|all classes|retail parts|all grades|composite of .*|variety meats and by-products|new zealand|australian|imported|domestic|commercial|regular|plain|whole|nfs)$"#
+
     /**
      A USDA name made readable: "Chickpeas (garbanzo beans, bengal gram), mature seeds, canned,
      drained solids" is "Chickpeas", with "mature seeds, canned, drained solids" to say which. The
-     bracketed other names and the first comma are where USDA puts the food and its kind.
+     bracketed other names and the first comma are where USDA puts the food and its kind — except
+     where the first part is only a group ("Fish, salmon, Atlantic"), when the food is the next
+     part: Salmon, Olive oil, Coconut milk, Curry powder, Cheddar cheese, Chicken breast. The title
+     is also what Add to list and Cupboard add, so it must be the food, never "Fish". (The web's
+     foodTitle does the same.)
      */
     static func foodTitle(_ name: String) -> (title: String, detail: String) {
         let plain = name.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\s+,"#, with: ",", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-        guard let comma = plain.firstIndex(of: ",") else { return (plain, "") }
-        return (String(plain[..<comma]).trimmingCharacters(in: .whitespaces),
-                String(plain[plain.index(after: comma)...]).trimmingCharacters(in: .whitespaces))
+        let parts = plain.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard let head = parts.first else { return (plain, "") }
+        let group = head.lowercased()
+        let next = parts.indices.first { $0 > 0 && parts[$0].range(of: notTheFood, options: [.regularExpression, .caseInsensitive]) == nil }
+        if let next, groupOnly.contains(group) || groupAfter.contains(group) || groupBefore.contains(group) {
+            let what = parts[next]
+            let title: String
+            if groupOnly.contains(group) {
+                title = capitalised(what)
+            } else if groupAfter.contains(group) {
+                title = "\(capitalised(what)) \(group)"
+            } else if what.lowercased() == "ground" {
+                title = "Ground \(group)"
+            } else {
+                title = "\(head) \(what.lowercased())"
+            }
+            let detail = parts.indices.filter { $0 != 0 && $0 != next }.map { parts[$0] }.joined(separator: ", ")
+            return (title, detail)
+        }
+        return (head, parts.dropFirst().joined(separator: ", "))
     }
 
     /// "Chickpeas, mature seeds, canned": the USDA name without its bracketed other names.

@@ -340,6 +340,18 @@ check(NutritionAssist.checkedLabel(name: "", column: "per serving", servingGrams
 check(NutritionText.kcal(2140) == "2,140" && NutritionText.kcal(nil) == "–", "kcal with a thousands comma")
 check(NutritionText.grams(0.7) == "0.7g" && NutritionText.grams(6.0) == "6g" && NutritionText.grams(17.4) == "17g", "grams as the label prints them")
 check(NutritionText.foodTitle("Chickpeas (garbanzo beans, bengal gram), mature seeds, canned").title == "Chickpeas", "USDA names made readable")
+// What Add to list and Cupboard add: the food, never its group.
+check(NutritionText.foodTitle("Fish, salmon, Atlantic, farmed, raw") == ("Salmon", "Atlantic, farmed, raw"), "salmon, not Fish")
+check(NutritionText.foodTitle("Nuts, coconut milk, canned (liquid expressed from grated meat and water)").title == "Coconut milk",
+      "coconut milk, not Nuts")
+check(NutritionText.foodTitle("Spices, curry powder").title == "Curry powder", "curry powder, not Spices")
+check(NutritionText.foodTitle("Oil, olive, salad or cooking").title == "Olive oil", "olive oil, not Oil")
+check(NutritionText.foodTitle("Cheese, cheddar (Includes foods for USDA's Food Distribution Program)").title == "Cheddar cheese",
+      "cheddar cheese, not Cheese")
+check(NutritionText.foodTitle("Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw").title == "Chicken breast",
+      "chicken breast, past broilers or fryers")
+check(NutritionText.foodTitle("Beef, ground, 85% lean meat / 15% fat, raw").title == "Ground beef", "ground beef")
+check(NutritionText.foodTitle("Egg, whole, raw, fresh").title == "Egg", "a plain first word stays")
 check(NutritionText.isBarcode("5000112637922") && !NutritionText.isBarcode("egg"), "barcodes are 8 to 14 digits")
 
 // MARK: - Meal plans (MealPlanChecks.swift)
