@@ -262,6 +262,24 @@ public class RecipeService {
     }
 
     /**
+     * The recipe itself, for a feature that reads it on someone's behalf (its nutrition, say),
+     * with the same rule as {@link #get}: readable when it is visible to the household you are
+     * looking from, or when you belong to the household that owns it.
+     */
+    @Transactional(readOnly = true)
+    public Recipe readable(UUID recipeId, UUID householdId, UUID requesterId) {
+        Recipe recipe = recipeRepository.findById(recipeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Recipe not found"));
+        if (!isVisibleTo(recipe, householdId)) {
+            householdService.assertMember(recipe.getHousehold().getId(), requesterId);
+        }
+        if (householdId != null) {
+            householdService.assertMember(householdId, requesterId);
+        }
+        return recipe;
+    }
+
+    /**
      * The recipe as its own household sees it, filing and all, with no membership check — for
      * the admin pages only, which have already checked that the reader is the admin.
      */
