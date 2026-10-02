@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -74,9 +75,41 @@ public class CupboardItem {
     @Builder.Default
     private Instant createdAt = Instant.now();
 
+    /**
+     * The date on the packet, when somebody bothered to put it in — optional, and most things
+     * never get one. With it, "use soon" is a fact ("by Thu"); without it, a guess from what the
+     * thing is and when it was bought (see mealplans.UseSoon). Nullable, so adding it touched no
+     * existing row.
+     */
+    private LocalDate useBy;
+
+    /**
+     * When it last came into the house — Done shopping, or added again by hand. What a use-soon
+     * guess counts from: spinach bought on Monday is not spinach bought last month. Null on items
+     * from before this was kept, which count from {@link #createdAt} instead.
+     */
+    private Instant boughtAt;
+
     /** Counted, and the count is down to nothing — as good as not having it. */
     public boolean isUsedUp() {
         return quantity != null && quantity.signum() <= 0;
+    }
+
+    /** When it came into the house, as near as is known. */
+    public Instant arrivedAt() {
+        return boughtAt != null ? boughtAt : createdAt;
+    }
+
+    /**
+     * Bought again: the clock a use-soon guess runs on starts over. A use-by date that has
+     * already passed was the old packet's, so it goes; one still ahead is kept, because the
+     * older one in the cupboard is still the one to use first.
+     */
+    public void arrived(Instant now, LocalDate today) {
+        boughtAt = now;
+        if (useBy != null && useBy.isBefore(today)) {
+            useBy = null;
+        }
     }
 
     /** Low or used up: planning should not count on it. */

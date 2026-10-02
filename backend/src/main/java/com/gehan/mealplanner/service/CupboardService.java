@@ -6,6 +6,7 @@ import com.gehan.mealplanner.domain.GroceryCategory;
 import com.gehan.mealplanner.domain.GroceryListItem;
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.Ingredient;
+import com.gehan.mealplanner.domain.StoreSection;
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
 import com.gehan.mealplanner.dto.CupboardDtos.AddStartersResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.CopyCupboardResponse;
@@ -17,12 +18,16 @@ import com.gehan.mealplanner.repository.BlacklistedIngredientRepository;
 import com.gehan.mealplanner.repository.CupboardItemRepository;
 import com.gehan.mealplanner.repository.GroceryListItemRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
+import com.gehan.mealplanner.mealplans.UseSoon;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -99,6 +104,7 @@ public class CupboardService {
         if (Boolean.TRUE.equals(request.staple())) {
             item.setStaple(true);
         }
+        item.arrived(restockClock.now(), today());
         restockClock.bought(householdId, ingredient.getId());
         return toResponse(cupboardRepository.save(item), householdId);
     }
@@ -124,6 +130,11 @@ public class CupboardService {
                     if (request.runningLow() != null) {
                         kept.setRunningLow(request.runningLow());
                     }
+                    // Two packets are one thing now; the sooner date is the one that matters.
+                    kept.setUseBy(sooner(kept.getUseBy(), item.getUseBy()));
+                    if (request.useBy() != null) {
+                        kept.setUseBy(parseUseBy(request.useBy()));
+                    }
                     cupboardRepository.delete(item);
                     return toResponse(cupboardRepository.save(kept), householdId);
                 }
@@ -135,6 +146,9 @@ public class CupboardService {
         }
         if (request.staple() != null) {
             item.setStaple(request.staple());
+        }
+        if (request.useBy() != null) {
+            item.setUseBy(parseUseBy(request.useBy()));
         }
         if (Boolean.FALSE.equals(request.trackQuantity())) {
             item.setQuantity(null);
@@ -166,6 +180,28 @@ public class CupboardService {
 
     private static String blankToNull(String value) {
         return value.isBlank() ? null : value.trim();
+    }
+
+    /** "" clears the date; anything else has already been checked to look like one. */
+    private static LocalDate parseUseBy(String value) {
+        if (value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "That isn't a date.");
+        }
+    }
+
+    private static LocalDate sooner(LocalDate a, LocalDate b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isBefore(b) ? a : b;
+    }
+
+    private LocalDate today() {
+        return LocalDate.ofInstant(restockClock.now(), ZoneId.systemDefault());
     }
 
     /** Used up, and that is all. */
@@ -352,6 +388,7 @@ public class CupboardService {
                                              List<GroceryCategory> categories, Set<UUID> onList) {
         Ingredient ingredient = item.getIngredient();
         GroceryCategory category = IngredientSections.resolve(ingredient, overrides, categories);
+        UseSoon.Verdict soon = useSoon(item, category, today());
         return new CupboardItemResponse(
                 item.getId(),
                 ingredient.getId(),
@@ -362,6 +399,23 @@ public class CupboardService {
                 category != null,
                 onList.contains(ingredient.getId()),
                 item.getQuantity(),
-                item.getUnit());
+                item.getUnit(),
+                item.getUseBy(),
+                soon.soon(),
+                soon.soon() && soon.reason() == UseSoon.Reason.GUESS,
+                soon.label());
+    }
+
+    /**
+     * Whether it wants using soon, by its date or by the server's guess. The aisle decides what
+     * the thing is before its name does — "pepper" in Spices is not the vegetable — and a
+     * household's own aisle counts by the section it was made from.
+     */
+    public static UseSoon.Verdict useSoon(CupboardItem item, GroceryCategory category, LocalDate today) {
+        Ingredient ingredient = item.getIngredient();
+        StoreSection section = category != null && category.getSeededFrom() != null
+                ? category.getSeededFrom() : ingredient.getSection();
+        LocalDate arrived = item.arrivedAt() == null ? null : LocalDate.ofInstant(item.arrivedAt(), ZoneId.systemDefault());
+        return UseSoon.of(ingredient.getName(), section, item.getUseBy(), arrived, item.isStaple(), today);
     }
 }

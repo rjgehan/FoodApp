@@ -343,6 +343,7 @@ public class GroceryListService {
         CupboardItem item = cupboardRepository.findByHouseholdIdAndIngredientId(household.getId(), ingredient.getId())
                 .orElseGet(() -> CupboardItem.builder().household(household).ingredient(ingredient).build());
         item.setRunningLow(false);
+        item.arrived(restockClock.now(), LocalDate.ofInstant(restockClock.now(), java.time.ZoneId.systemDefault()));
         if (item.getQuantity() != null && bought.getQuantity() != null
                 && IngredientLine.sameUnit(item.getUnit(), bought.getUnit())) {
             item.setQuantity(item.getQuantity().add(bought.getQuantity()));
