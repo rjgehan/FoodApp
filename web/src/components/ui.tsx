@@ -960,6 +960,7 @@ export function Sheet({
   children,
   tall = false,
   head,
+  action,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -976,6 +977,11 @@ export function Sheet({
    * you pull. `title` then only names the dialog to assistive tech.
    */
   head?: ReactNode;
+  /**
+   * A text action in place of the round close — the edit sheet's "Save" (mockup 4.7). The scrim,
+   * Escape and a pull down still close it.
+   */
+  action?: ReactNode;
 }) {
   const viewport = useVisibleViewport();
   const panel = useRef<HTMLDivElement>(null);
@@ -1089,8 +1095,10 @@ export function Sheet({
   return (
     <div
       // Back to the page's own text: a sheet opened from a nav bar's ••• is drawn inside that bar,
-      // and would otherwise take on its tomato ink and 17px type.
-      className="fixed inset-x-0 z-40 flex items-end justify-center text-left text-base font-normal leading-[1.45] text-ink sm:items-center sm:p-6"
+      // and would otherwise take on its tomato ink and 17px type. And no margin: a page root's
+      // space-y-* would push the whole overlay down, leaving a band at the top undimmed and the
+      // sheet's last few pixels below the screen.
+      className="fixed inset-x-0 z-40 !m-0 flex items-end justify-center text-left text-base font-normal leading-[1.45] text-ink sm:items-center sm:p-6"
       style={{ top: viewport.top, height: viewport.height }}
     >
       <div ref={scrim} className="absolute inset-0 bg-scrim" onClick={dismiss} aria-hidden="true" />
@@ -1128,9 +1136,11 @@ export function Sheet({
               </h2>
               {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
             </div>
-            <IconButton label="Close" shape="plain" onClick={dismiss} className="!h-8 !w-8 shrink-0 text-ink">
-              <Icon name="x" size={16} strokeWidth={2.4} />
-            </IconButton>
+            {action ?? (
+              <IconButton label="Close" shape="plain" onClick={dismiss} className="!h-8 !w-8 shrink-0 text-ink">
+                <Icon name="x" size={16} strokeWidth={2.4} />
+              </IconButton>
+            )}
           </header>
           )}
         </div>
@@ -1175,7 +1185,7 @@ export function Alert({
     });
   }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-9">
+    <div className="fixed inset-0 z-50 !m-0 flex items-center justify-center px-9">
       <div className="absolute inset-0 bg-scrim" onClick={onDismiss} aria-hidden="true" />
       <div
         ref={panel}

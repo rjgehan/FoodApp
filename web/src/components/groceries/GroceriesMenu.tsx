@@ -57,7 +57,7 @@ export default function GroceriesMenu({ label, items }: { label: string; items: 
       </IconButton>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-30 !m-0" aria-hidden="true" onClick={() => setOpen(false)} />
           <div
             ref={panel}
             role="dialog"

@@ -20,10 +20,12 @@ export interface SwipeAction {
   onAction: () => void;
 }
 
+// White on every fill, in both themes, as the mockup draws them (4.6): the page colour would turn
+// the labels dark ink on the lighter dark-mode herb and tomato.
 const ACTION_TONES: Record<SwipeAction['tone'], string> = {
-  danger: 'bg-danger text-bg',
+  danger: 'bg-danger text-white',
   accent: 'bg-accent text-on-accent',
-  herb: 'bg-herb text-bg',
+  herb: 'bg-herb text-white',
 };
 
 const ACTION_WIDTH = 84;
@@ -40,8 +42,19 @@ const openRows = new Set<() => void>();
  * Vertical movement is left to the page (touch-action: pan-y), so scrolling a list of these
  * still feels like scrolling. The direction is only decided after 10px, so a slightly diagonal
  * scroll does not catch a row by accident.
+ *
+ * `squeeze` narrows the row instead of sliding it away, for a row whose controls are on the
+ * right (the cupboard's Have / Low): its name stays in sight, cut short ("Ta…"), beside them.
  */
-export default function SwipeRow({ actions, children }: { actions: SwipeAction[]; children: ReactNode }) {
+export default function SwipeRow({
+  actions,
+  squeeze = false,
+  children,
+}: {
+  actions: SwipeAction[];
+  squeeze?: boolean;
+  children: ReactNode;
+}) {
   const content = useRef<HTMLDivElement>(null);
   const tray = useRef<HTMLDivElement>(null);
   const offset = useRef(0);
@@ -58,7 +71,16 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
 
   const paint = (value: number) => {
     offset.current = value;
-    if (content.current) content.current.style.transform = `translate3d(${value}px, 0, 0)`;
+    const el = content.current;
+    if (el) {
+      if (squeeze && value < 0) {
+        el.style.transform = '';
+        el.style.width = `max(0px, 100% - ${-value}px)`;
+      } else {
+        el.style.width = '';
+        el.style.transform = `translate3d(${value}px, 0, 0)`;
+      }
+    }
     if (tray.current) {
       // Past the buttons the last one stretches to fill: the tell that letting go will do it.
       tray.current.style.width = `${Math.max(reveal, -value)}px`;
@@ -90,6 +112,9 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
     };
   }, []);
 
+  /** The whole row's width — not the sliding part's, which a squeezed row narrows as it goes. */
+  const rowWidth = (e: ReactPointerEvent<HTMLDivElement>) => e.currentTarget.parentElement?.offsetWidth ?? e.currentTarget.offsetWidth;
+
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     swallowClick.current = false;
@@ -117,7 +142,7 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
     }
     if (g.axis !== 'x') return;
 
-    const width = e.currentTarget.offsetWidth;
+    const width = rowWidth(e);
     let value = g.from + dx;
     if (value > 0) value = rubberband(value, width);
     else if (value < -width) value = -width - rubberband(-width - value, width);
@@ -159,13 +184,13 @@ export default function SwipeRow({ actions, children }: { actions: SwipeAction[]
     // The release is a sample too: a finger that stopped before lifting has no speed left.
     g.samples.push({ t: e.timeStamp, v: e.clientX });
     trimSamples(g.samples, e.timeStamp);
-    settle(e.currentTarget.offsetWidth, velocityOf(g.samples));
+    settle(rowWidth(e), velocityOf(g.samples));
   }
 
   function onPointerCancel(e: ReactPointerEvent<HTMLDivElement>) {
     const g = gesture.current;
     gesture.current = null;
-    if (g?.axis === 'x') settle(e.currentTarget.offsetWidth, 0);
+    if (g?.axis === 'x') settle(rowWidth(e), 0);
   }
 
   return (

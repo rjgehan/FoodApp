@@ -98,7 +98,7 @@ export default function FillSlot({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-center sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-40 !m-0 flex justify-center sm:items-center sm:p-6">
       <div className="absolute inset-0 hidden bg-scrim sm:block" onClick={onClose} aria-hidden="true" />
       <div
         ref={panel}

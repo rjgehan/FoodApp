@@ -142,9 +142,10 @@ export default function CupboardPage() {
   return (
     <div className="space-y-3.5">
       <PageTitle title="Cupboard">
+        {/* Quiet beside the barcode button, which is the one the mockup shows: these are for
+            filling a new cupboard, once, not for every visit. */}
         <ActionMenu
           label="Cupboard options"
-          shape="round"
           items={[
             { label: 'Start with the basics…', onSelect: () => setFilling('starters') },
             // Only for somebody with a second house to fill, which is almost nobody — so it is

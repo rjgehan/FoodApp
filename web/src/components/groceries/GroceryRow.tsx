@@ -4,6 +4,7 @@ import { Icon } from '../icons';
 import SwipeRow from '../SwipeRow';
 import { CheckCircle, cx, IconButton } from '../ui';
 import { amountOf, cupboardSays, rowDetail } from './groceryParts';
+import { useAuth } from '../../auth/AuthContext';
 
 /**
  * One row of the list (mockup 4.1): the amount in bold before the name, the recipes it is for
@@ -30,7 +31,8 @@ export default function GroceryRow({
   onRemove: () => void;
 }) {
   const amount = amountOf(item);
-  const detail = rowDetail(item);
+  const { session } = useAuth();
+  const detail = rowDetail(item, session?.userId);
   // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
   const have = item.inCupboard && !item.checked;
 

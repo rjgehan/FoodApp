@@ -1,11 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../api/client';
 import type { CupboardItem, GroceryCategory, RestockReminder } from '../../api/types';
-import { Button, ErrorText, Field, Input, List, NoteBox, Row, Segmented, Select, Sheet, Toggle } from '../ui';
+import { ErrorText, Field, Input, List, NoteBox, Row, Segmented, Select, Sheet, Tile, Toggle } from '../ui';
 import UnitInput from '../UnitInput';
 import { RestockField, saveRestock } from '../Restock';
 import { everyLabel } from '../../utils/restock';
 import { CountStepper, countOf } from './CupboardParts';
+import { titleCase } from '../groceries/groceryParts';
 
 type Amount = 'have' | 'low' | 'exact';
 
@@ -13,6 +14,9 @@ type Amount = 'have' | 'low' | 'exact';
  * Everything about one cupboard item (mockup 4.7): its name, its aisle, how much there is, whether
  * you always have it, and a restock reminder. Renaming it to something already in the cupboard
  * merges the two rather than keeping both — the sheet says so before Save, not after.
+ *
+ * Save is the header's text action, as on the iPhone; there is no close button, because the scrim,
+ * Escape and a pull down all leave without saving. Remove is a quiet last row.
  */
 export default function CupboardItemSheet({
   householdId,
@@ -35,7 +39,9 @@ export default function CupboardItemSheet({
   onClose: () => void;
 }) {
   const startAmount: Amount = item.quantity != null ? 'exact' : item.runningLow ? 'low' : 'have';
-  const [name, setName] = useState(item.name);
+  const formId = useId();
+  // As the row it was opened from says it: "Chickpeas (tin)", not the stored "chickpeas (tin)".
+  const [name, setName] = useState(() => titleCase(item.name));
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
   const [staple, setStaple] = useState(item.staple);
   const [amount, setAmount] = useState<Amount>(startAmount);
@@ -46,7 +52,8 @@ export default function CupboardItemSheet({
   const [error, setError] = useState<string | null>(null);
 
   const trimmed = name.trim();
-  const renamed = trimmed !== item.name;
+  // Only a change of letters is a rename: capitalising the first one is how it is shown anyway.
+  const renamed = trimmed.toLowerCase() !== item.name.toLowerCase();
   const mergesWith = renamed ? others.find((o) => o.id !== item.id && o.name.toLowerCase() === trimmed.toLowerCase()) : undefined;
   const exact = amount === 'exact';
   const quantityModeChanged = exact !== (item.quantity != null);
@@ -59,7 +66,12 @@ export default function CupboardItemSheet({
 
   async function save(e?: FormEvent) {
     e?.preventDefault();
-    if (!trimmed || !changed || busy) return;
+    if (busy) return;
+    // Nothing to send: Save just closes, as it does on the iPhone.
+    if (!trimmed || !changed) {
+      onClose();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -92,8 +104,21 @@ export default function CupboardItemSheet({
   }
 
   return (
-    <Sheet title="Edit item" onClose={onClose}>
-      <form onSubmit={save} className="space-y-4">
+    <Sheet
+      title="Edit item"
+      onClose={onClose}
+      action={
+        <button
+          type="submit"
+          form={formId}
+          disabled={busy}
+          className="press -mr-1 shrink-0 self-start px-1 py-1 text-[1.0625rem] font-semibold text-accent-ink disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : mergesWith ? 'Merge' : 'Save'}
+        </button>
+      }
+    >
+      <form id={formId} onSubmit={save} className="space-y-4">
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" />
         </Field>
@@ -181,14 +206,15 @@ export default function CupboardItemSheet({
         )}
 
         {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex gap-2">
-          <Button type="submit" size="lg" className="flex-1" disabled={busy || !trimmed || !changed}>
-            {busy ? 'Saving…' : mergesWith ? 'Merge' : 'Save'}
-          </Button>
-          <Button type="button" size="lg" variant="danger" disabled={busy} onClick={onRemove}>
-            Remove
-          </Button>
-        </div>
+
+        <List inset={0}>
+          <Row
+            lead={<Tile icon="trash" tone="accent" size={34} />}
+            title="Remove from cupboard"
+            titleClassName="text-accent-ink"
+            onClick={onRemove}
+          />
+        </List>
       </form>
     </Sheet>
   );

@@ -47,6 +47,8 @@ export default function ScanToCupboard({
 }) {
   const [stage, setStage] = useState<Stage>({ at: 'scanning' });
   const [error, setError] = useState<string | null>(null);
+  // The camera would not open: the viewfinder says why, and the way on is typing the name.
+  const [cameraOff, setCameraOff] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const card = useRef<HTMLDivElement>(null);
@@ -130,7 +132,7 @@ export default function ScanToCupboard({
       aria-label="Scan a barcode"
       className="fixed inset-0 z-[60] flex flex-col bg-[linear-gradient(160deg,#3b3029,#15100d)] text-white"
     >
-      {stage.at === 'scanning' && <BarcodeScanner variant="fill" onFound={lookUp} onError={(message) => setError(message)} />}
+      {stage.at === 'scanning' && <BarcodeScanner variant="fill" onFound={lookUp} onError={() => setCameraOff(true)} />}
 
       <div className="relative flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <IconButton label="Close" shape="plain" onClick={onClose} className="!bg-white/20 !text-white">
@@ -140,8 +142,23 @@ export default function ScanToCupboard({
 
       <div className="flex-1" />
 
-      {stage.at === 'scanning' && error && (
+      {stage.at === 'scanning' && error && !cameraOff && (
         <p className="relative mx-6 mb-6 rounded-2xl bg-black/50 px-4 py-3 text-center text-sm text-white">{error}</p>
+      )}
+
+      {stage.at === 'scanning' && cameraOff && (
+        <div className="relative mx-6 mb-[max(1.5rem,env(safe-area-inset-bottom))] flex justify-center">
+          <Button
+            variant="secondary"
+            icon="pencil"
+            onClick={() => {
+              setName('');
+              setStage({ at: 'unknown', barcode: '' });
+            }}
+          >
+            Type it instead
+          </Button>
+        </div>
       )}
 
       {stage.at !== 'scanning' && (
@@ -168,8 +185,10 @@ export default function ScanToCupboard({
                     </label>
                   ) : stage.at === 'found' ? (
                     <p className="truncate text-base font-semibold">{stage.product.name}</p>
-                  ) : (
+                  ) : barcode ? (
                     <p className="text-base font-semibold">Not in the catalogue.</p>
+                  ) : (
+                    <p className="text-base font-semibold">What is it?</p>
                   )}
                   <p className="truncate text-xs text-muted">
                     {[stage.at === 'found' ? describe(stage.product) : '', barcode].filter(Boolean).join(' · ')}
@@ -190,7 +209,9 @@ export default function ScanToCupboard({
               {stage.at === 'unknown' && (
                 <div className="space-y-2">
                   <p className="text-[0.8125rem] text-muted">
-                    Nothing is published under that barcode. Give it a name and it still goes in the cupboard.
+                    {barcode
+                      ? 'Nothing is published under that barcode. Give it a name and it still goes in the cupboard.'
+                      : 'Give it a name and it goes in the cupboard, or on the list.'}
                   </p>
                   <input
                     value={name}
@@ -228,16 +249,18 @@ export default function ScanToCupboard({
                   Add to list
                 </Button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setStage({ at: 'scanning' });
-                }}
-                className="press block w-full text-center text-sm font-semibold text-accent-ink"
-              >
-                Scan another
-              </button>
+              {!cameraOff && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setStage({ at: 'scanning' });
+                  }}
+                  className="press block w-full text-center text-sm font-semibold text-accent-ink"
+                >
+                  Scan another
+                </button>
+              )}
             </>
           )}
         </div>

@@ -310,14 +310,14 @@ test('groceries and cupboard: the outer edges of a row are part of the row', asy
   const rice = await edgesOf('rice');
   await page.mouse.click(rice.left, rice.y);
   await expect(sheet(page).getByRole('heading', { name: 'Edit item' })).toBeVisible();
-  await expect(sheet(page).getByLabel('Name')).toHaveValue('rice');
+  await expect(sheet(page).getByLabel('Name')).toHaveValue('Rice');
   await page.keyboard.press('Escape');
   await expect(sheet(page)).toHaveCount(0);
 
   // An "Always have" row has only its pill on the right, so its right edge is the row too.
   const salt = await edgesOf('salt');
   await page.mouse.click(salt.right, salt.y);
-  await expect(sheet(page).getByLabel('Name')).toHaveValue('salt');
+  await expect(sheet(page).getByLabel('Name')).toHaveValue('Salt');
 });
 
 test('groceries: Move an item to another aisle and it sticks', async ({ page }) => {

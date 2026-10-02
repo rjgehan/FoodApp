@@ -89,7 +89,8 @@ export default function DoneShoppingSheet({
                 >
                   <CheckBox checked={on && toCupboard} />
                   <span className={cx('min-w-0 flex-1 truncate text-base font-medium', !on && 'text-muted')}>
-                    {amount && <b className="font-semibold">{amount} </b>}
+                    {/* Bold against the medium name, as the mockup sets it (`<b>2 lb</b> chicken thighs`). */}
+                    {amount && <b className="font-bold">{amount} </b>}
                     <span>{item.name}</span>
                   </span>
                   {!on && toCupboard && <span className="shrink-0 text-xs text-muted">Not for the house</span>}

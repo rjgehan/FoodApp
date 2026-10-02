@@ -74,14 +74,16 @@ export function countOf(quantity: number): string {
   return formatQuantity(quantity) || '0';
 }
 
-/** The line under a cupboard row: "Always have", "Restock every 3 weeks", "On the list". */
+/**
+ * The line under a cupboard row — one short fact, as the mockup has it ("Restock every month"),
+ * since two joined up are cut off mid-word on a phone. On the list matters most (it is about to
+ * be bought), then the reminder, then "Always have", which the Always pill says again anyway.
+ */
 export function cupboardDetail(item: CupboardItem, reminder?: RestockReminder): string | null {
-  const parts = [
-    item.staple && 'Always have',
-    reminder && `Restock ${everyLabel(reminder.everyDays)}`,
-    item.onList && 'On the list',
-  ].filter(Boolean);
-  return parts.length ? parts.join(' · ') : null;
+  if (item.onList) return 'On the list';
+  if (reminder) return `Restock ${everyLabel(reminder.everyDays)}`;
+  if (item.staple) return 'Always have';
+  return null;
 }
 
 /**
@@ -121,6 +123,7 @@ export function CupboardRow({
 
   return (
     <SwipeRow
+      squeeze
       actions={[
         { label: 'Buy again', tone: 'herb', icon: 'cart', onAction: onBuyAgain },
         { label: 'Remove', tone: 'danger', icon: 'trash', onAction: onRemove },

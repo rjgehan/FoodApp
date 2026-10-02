@@ -41,11 +41,16 @@ export default function BarcodeScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [starting, setStarting] = useState(true);
+  // Why the camera did not open, once it has not: the caption says so instead of "Starting…".
+  const [problem, setProblem] = useState<string | null>(null);
   // Callbacks in a ref so that a parent re-rendering never restarts the camera.
   const found = useRef(onFound);
   const failed = useRef(onError);
   found.current = onFound;
-  failed.current = onError;
+  failed.current = (message: string) => {
+    setProblem(message);
+    onError(message);
+  };
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -141,11 +146,17 @@ export default function BarcodeScanner({
       <div className="absolute inset-0 overflow-hidden">
         <video ref={videoRef} className="h-full w-full object-cover" playsInline muted aria-label="Camera" />
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-24">
-          <div className="relative h-[170px] w-[270px] max-w-[80vw] rounded-[24px] border-[3px] border-white/95 shadow-[0_0_0_100vmax_rgba(0,0,0,0.25)]">
-            <div className="absolute inset-x-[18px] top-1/2 h-0.5 bg-accent shadow-[0_0_12px_rgb(var(--accent))]" />
+          <div
+            className={cx(
+              'relative h-[170px] w-[270px] max-w-[80vw] rounded-[24px] border-[3px] shadow-[0_0_0_100vmax_rgba(0,0,0,0.25)]',
+              problem ? 'border-white/30' : 'border-white/95',
+            )}
+          >
+            {/* No scan line over a camera that is not there: it would say it is still looking. */}
+            {!problem && <div className="absolute inset-x-[18px] top-1/2 h-0.5 bg-accent shadow-[0_0_12px_rgb(var(--accent))]" />}
           </div>
-          <p className="mt-[18px] text-[0.9375rem] font-medium text-white/90">
-            {starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at a barcode'}
+          <p className="mt-[18px] max-w-[80vw] text-center text-[0.9375rem] font-medium text-white/90">
+            {problem ?? (starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at a barcode')}
           </p>
         </div>
       </div>
@@ -174,7 +185,7 @@ export default function BarcodeScanner({
       </div>
       <p className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4
                     text-center text-sm text-white">
-        {starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at the barcode'}
+        {problem ?? (starting ? 'Starting the camera…' : kind === 'qr' ? 'Point at the invite QR code' : 'Point at the barcode')}
       </p>
     </div>
   );
