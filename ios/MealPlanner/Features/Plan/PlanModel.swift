@@ -125,6 +125,30 @@ enum PlanText {
         return dishes.count == 1 ? "1 dish" : "\(dishes.count) dishes"
     }
 
+    /**
+     The icon on a recipe's drawn plate: what kind of dish it is, so a dinner of chicken, potatoes
+     and a salad is three different plates rather than three of the same. Its name first (a curry
+     is eaten from a bowl whatever drawer it is in), then its groups (a Side is a fork and knife),
+     then its drawer — a dinner's main gets the chef's hat, as the mockup draws one. The web's
+     dishIcon, in the same order.
+     */
+    static func dishIcon(name: String?, section: RecipeSection?, groups: [String], meal: MealType) -> String {
+        let name = name ?? ""
+        let filed = groups.joined(separator: " ")
+        func has(_ pattern: String, _ text: String) -> Bool {
+            text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        let greens = #"\b(salads?|slaw|greens|veg|veggies?|vegetables?)\b"#
+        let spoon = #"\b(soups?|curry|curries|stews?|chil[il]i|ramen|pho|broth|dh?al|laksa|chowder|gumbo|risotto|porridge|oats)\b"#
+        if has(greens, name) { return "leaf" }
+        if has(spoon, name) { return "asset:FoodIcons/pot" }
+        if has(#"\begg"#, name) { return "asset:FoodIcons/egg" }
+        if has(#"\bside"#, filed) { return "fork.knife" }
+        if has(greens, filed) { return "leaf" }
+        if (section ?? sectionFor(meal)) == .dinner { return "asset:ChefHat" }
+        return icon(section: section, meal: meal)
+    }
+
     /// The SF Symbol a recipe's drawn plate carries: what kind of meal it is.
     static func icon(section: RecipeSection?, meal: MealType) -> String {
         switch section ?? sectionFor(meal) {

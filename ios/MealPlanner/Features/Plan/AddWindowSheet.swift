@@ -5,7 +5,12 @@ import SwiftUI
  something on the list — each with its meals and how many things it adds — so it is obvious at a
  glance whether you meant one day or seven. A day the list already has is shown unticked, so you
  can see why it is not counted. Counted by ingredient, as the list is: garlic on Tuesday and
- garlic on Thursday is one row. What adds nothing is said underneath.
+ garlic on Thursday is one row. What adds nothing is said underneath, in one note.
+
+ A day whose meals are all in the cupboard starts unticked too. The list does take things the
+ cupboard has when you ask (having some oats is not having enough), so its number is what ticking
+ it would really add — but nothing of it goes on unless you tick it, which is what "all in
+ cupboard" promises.
 */
 struct AddWindowSheet: View {
     let store: PlanStore
@@ -45,8 +50,9 @@ struct AddWindowSheet: View {
             )
         }
         self.lines = lines
-        // A day that would add nothing starts unticked: the list already has it.
-        _ticked = State(initialValue: Set(lines.filter { shopping == nil || !$0.ingredients.isEmpty }.map(\.date)))
+        // A day that would add nothing starts unticked (the list already has it), and so does one
+        // the cupboard already covers.
+        _ticked = State(initialValue: Set(lines.filter { shopping == nil || (!$0.ingredients.isEmpty && !$0.allInCupboard) }.map(\.date)))
     }
 
     var body: some View {
@@ -68,7 +74,7 @@ struct AddWindowSheet: View {
                                 if on { ticked.remove(line.date) } else { ticked.insert(line.date) }
                             } label: {
                                 ListRow("\(PlanText.shortDay(Day.date(line.date) ?? Date())) · \(line.slots)",
-                                        subtitle: nothing ? "Already on the list" : line.allInCupboard ? "\(line.dishes) · all in cupboard" : line.dishes,
+                                        subtitle: line.allInCupboard ? "\(line.dishes) · all in cupboard" : nothing ? "Already on the list" : line.dishes,
                                         detail: shopping != nil && !nothing ? "\(line.ingredients.count)" : nil,
                                         titleColor: nothing && !on ? Palette.muted : nil,
                                         leading: { CheckBox(isOn: on) }, trailing: { EmptyView() })
@@ -100,31 +106,46 @@ struct AddWindowSheet: View {
         .kitchenSheet([.large])
     }
 
+    /**
+     Everything that adds nothing, in one sentence rather than a stack of boxes pushing the button
+     down: "Nothing to buy for Fri 2 dinner (eat out), Green salad (single food) and Honey garlic
+     chicken (saved link)." Only eating out keeps the mockup's plum note of its own.
+     */
     private var notes: [(text: String, tone: Tone, icon: String)] {
-        var out: [(String, Tone, String)] = []
-        let out_ = entries.filter { $0.placeId != nil }
+        let eatingOut = entries.filter { $0.placeId != nil }
             .map { "\(PlanText.shortDay(Day.date($0.date) ?? Date())) \($0.mealType.title.lowercased())" }
-        if !out_.isEmpty {
-            out.append(("\(Self.listOf(out_)) \(out_.count == 1 ? "is" : "are") eat out, so nothing to buy.", .plum, "fork.knife"))
+        let names = Self.unique(entries.filter { $0.needsIngredients == true }.compactMap(\.recipeName))
+        let singles = Self.unique(entries.compactMap(\.itemName))
+        let links = Self.unique(entries.filter { $0.savedLinkId != nil && $0.recipeDeleted != true }.map(\.label))
+        let all = Self.tagged(eatingOut, "eat out") + Self.tagged(names, "no ingredients yet")
+            + Self.tagged(singles, singles.count == 1 ? "single food" : "single foods")
+            + Self.tagged(links, links.count == 1 ? "saved link" : "saved links")
+        if all.isEmpty { return [] }
+        if !eatingOut.isEmpty && all.count == 1 {
+            return [(text: "\(Self.listOf(eatingOut)) \(eatingOut.count == 1 ? "is" : "are") eat out, so nothing to buy.",
+                     tone: .plum, icon: "fork.knife")]
         }
-        let names = Array(Set(entries.filter { $0.needsIngredients == true }.compactMap(\.recipeName))).sorted()
-        if !names.isEmpty {
-            out.append(("\(Self.listOf(names)) \(names.count == 1 ? "has no ingredients yet, so it adds" : "have no ingredients yet, so they add") nothing.",
-                        .mustard, "pencil"))
-        }
-        if let single = entries.first(where: { $0.itemName != nil })?.itemName {
-            out.append(("Single foods like \(single) aren’t included. Add one from its meal’s options.", .sky, "cabinet"))
-        }
-        if entries.contains(where: { $0.savedLinkId != nil && $0.recipeDeleted != true }) {
-            out.append(("Saved links have no ingredients, so they add nothing. Make one a recipe to shop for it.", .sky, "link"))
-        }
-        return out.map { (text: $0.0, tone: $0.1, icon: $0.2) }
+        let hint = singles.isEmpty ? "" : " A single food has its own button in its meal’s options."
+        return [(text: "Nothing to buy for \(Self.listOf(all, capitalise: false)).\(hint)", tone: .sky, icon: "info.circle")]
+    }
+
+    /// In the order planned, each once.
+    private static func unique(_ things: [String]) -> [String] {
+        var seen = Set<String>()
+        return things.filter { seen.insert($0).inserted }
+    }
+
+    /// "Fri 2 dinner and Sun 4 dinner (eat out)": a kind of thing, said once after the last of them.
+    private static func tagged(_ things: [String], _ what: String) -> [String] {
+        guard let last = things.last else { return [] }
+        return things.dropLast() + ["\(last) (\(what))"]
     }
 
     /// "Wed 30 dinner, Fri 2 lunch and Sat 3 dinner"
-    private static func listOf(_ things: [String]) -> String {
+    private static func listOf(_ things: [String], capitalise: Bool = true) -> String {
         guard let last = things.last else { return "" }
-        return things.count == 1 ? last : things.dropLast().joined(separator: ", ") + " and " + last
+        let joined = things.count == 1 ? last : things.dropLast().joined(separator: ", ") + " and " + last
+        return capitalise ? joined.prefix(1).uppercased() + joined.dropFirst() : joined
     }
 
     private func add() async {

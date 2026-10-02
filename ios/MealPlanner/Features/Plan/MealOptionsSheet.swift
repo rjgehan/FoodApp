@@ -73,7 +73,7 @@ struct MealOptionsSheet: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
-                    MealPicture(entry: entry, recipe: recipe, size: 52)
+                    MealPicture(entry: entry, recipe: recipe, place: place, size: 52)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.label).font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(2)
                         Text("\(PlanText.longDay(day)) · \(entry.mealType.title)").font(.system(size: 13)).foregroundStyle(Palette.muted)

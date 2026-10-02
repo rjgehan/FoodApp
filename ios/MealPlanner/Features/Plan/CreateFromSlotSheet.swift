@@ -30,6 +30,10 @@ struct CreateFromSlotSheet: View {
     @State private var reading = false
     @State private var busy = false
     @State private var error: String?
+    /// The sheet is as tall as what is in it, with the slot still showing behind (the mockup's
+    /// 2.6); going on to Type it out, a link or Paste needs the whole screen.
+    @State private var height: CGFloat = 560
+    @State private var detent: PresentationDetent = .height(560)
 
     init(store: PlanStore, initialName: String, meal: MealType, day: Date, onFill: @escaping (Filling) async -> Void) {
         self.store = store
@@ -49,7 +53,7 @@ struct CreateFromSlotSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     SheetHeader("New recipe", subtitle: "It goes straight into \(slotName).", onClose: { dismiss() })
-                    FieldBox("Name", text: $name, prompt: "Chicken pot pie")
+                    FieldBox("Name", text: $name, prompt: "Chicken pot pie").autofocused()
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                         card(.name, "pencil", .accent, "Just the name", "Fill it in later")
                         card(.type, "list.bullet", .herb, "Type it out", "Ingredients + method")
@@ -70,7 +74,12 @@ struct CreateFromSlotSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
                 .padding(.bottom, 16)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in
+                    height = measured + 12
+                    if going == nil { detent = .height(height) }
+                }
             }
+            .scrollBounceBehavior(.basedOnSize)
             .pageBackground()
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $going) { way in
@@ -100,7 +109,11 @@ struct CreateFromSlotSheet: View {
                 }
             }
         }
-        .kitchenSheet([.large])
+        .presentationDetents([.height(height), .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(28)
+        .presentationBackground(Palette.bg)
+        .onChange(of: going) { detent = going == nil ? .height(height) : .large }
     }
 
     private func card(_ w: Way, _ symbol: String, _ tone: Tone, _ title: String, _ detail: String) -> some View {

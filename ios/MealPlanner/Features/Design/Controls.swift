@@ -23,6 +23,8 @@ struct FieldBox<Trailing: View>: View {
     var secure = false
     var hint: String?
     var trailing: Trailing
+    /// Focused as it appears, keyboard up — the one field a sheet is for. See `autofocused()`.
+    var autofocus = false
 
     @FocusState private var focused: Bool
     @State private var revealed = false
@@ -81,6 +83,19 @@ struct FieldBox<Trailing: View>: View {
                 Text(hint).font(.system(size: 12)).foregroundStyle(Palette.muted)
             }
         }
+        .task {
+            guard autofocus else { return }
+            // A beat after a sheet's slide-up starts, or the focus is dropped on the way in.
+            try? await Task.sleep(for: .milliseconds(350))
+            focused = true
+        }
+    }
+
+    /// The field focused as it appears.
+    func autofocused(_ on: Bool = true) -> Self {
+        var copy = self
+        copy.autofocus = on
+        return copy
     }
 
     private var promptText: Text { Text(prompt).foregroundStyle(Palette.faint) }

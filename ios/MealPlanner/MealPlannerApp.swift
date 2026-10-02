@@ -132,19 +132,32 @@ struct Themed: ViewModifier {
     }
 }
 
-/// A tab's label as an outline icon, like the mockup's; a tab bar fills SF Symbols unless told
-/// not to.
+/**
+ A tab's label as an outline icon, like the mockup's; a tab bar fills SF Symbols unless told not
+ to. The tabs you are not on draw their icon already coloured in the theme's muted ink: from iOS 26
+ the glass bar ignores the unselected colour Chrome gives it and draws them black, or filled,
+ depending on what is scrolling underneath — and it fills the one you are on. So each icon is
+ drawn already coloured, the tab you are on in the accent's ink.
+*/
 private struct TabLabel: View {
     let title: String
     let systemImage: String
+    var selected = false
 
-    init(_ title: String, systemImage: String) {
+    init(_ title: String, systemImage: String, selected: Bool) {
         self.title = title
         self.systemImage = systemImage
+        self.selected = selected
     }
 
     var body: some View {
-        Label(title, systemImage: systemImage).environment(\.symbolVariants, .none)
+        if let icon = UIImage(systemName: systemImage,
+                              withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular, scale: .large))?
+            .withTintColor(Palette.ui(selected ? \.accentInk : \.muted), renderingMode: .alwaysOriginal) {
+            Label { Text(title) } icon: { Image(uiImage: icon) }
+        } else {
+            Label(title, systemImage: systemImage).environment(\.symbolVariants, .none)
+        }
     }
 }
 
@@ -234,19 +247,19 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $tab) {
             PlanView(session: session)
-                .tabItem { TabLabel("Plan", systemImage: "calendar") }
+                .tabItem { TabLabel("Plan", systemImage: "calendar", selected: tab == "plan") }
                 .tag("plan")
             RecipesView(session: session)
-                .tabItem { TabLabel("Recipes", systemImage: "book") }
+                .tabItem { TabLabel("Recipes", systemImage: "book", selected: tab == "recipes") }
                 .tag("recipes")
             GroceriesView(session: session)
-                .tabItem { TabLabel("Groceries", systemImage: "cart") }
+                .tabItem { TabLabel("Groceries", systemImage: "cart", selected: tab == "groceries") }
                 .tag("groceries")
             CupboardView(session: session)
-                .tabItem { TabLabel("Cupboard", systemImage: "cabinet") }
+                .tabItem { TabLabel("Cupboard", systemImage: "cabinet", selected: tab == "cupboard") }
                 .tag("cupboard")
             ExploreView(session: session)
-                .tabItem { TabLabel("Explore", systemImage: "safari") }
+                .tabItem { TabLabel("Explore", systemImage: "safari", selected: tab == "explore") }
                 .tag("explore")
         }
     }

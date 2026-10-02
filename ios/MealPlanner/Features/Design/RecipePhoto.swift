@@ -27,12 +27,15 @@ enum Hue: String, CaseIterable, Hashable {
         return LinearGradient(colors: [a, b], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// The same hue for the same recipe every time: the string hash the covers use (the web's
-    /// coverClass), over the ten, by the recipe's id (or name, before it has one).
+    /// The same hue for the same recipe every time, and the same one the web gives it: the web's
+    /// hueFor exactly — a signed 32-bit string hash, its absolute value, over the ten — by the
+    /// recipe's id (or name, before it has one). Unsigned, as this was, a recipe wore one colour
+    /// on the phone and another in the browser.
     static func of(_ key: String) -> Hue {
-        var hash: UInt32 = 0
-        for scalar in key.unicodeScalars { hash = hash &* 31 &+ scalar.value }
-        return allCases[Int(hash % UInt32(allCases.count))]
+        var hash: Int32 = 0
+        for unit in key.utf16 { hash = hash &* 31 &+ Int32(unit) }
+        let index = Int(abs(Int64(hash)) % Int64(allCases.count))
+        return allCases[index]
     }
 }
 
@@ -61,13 +64,13 @@ struct RecipePhotoPlaceholder: View {
                                endRadius: max(geo.size.width, geo.size.height) * 0.55)
                 if m > 150 {
                     // A hero: a big, faint icon off the bottom-right corner.
-                    Image(systemName: systemImage)
+                    glyph(m * 0.5)
                         .font(.system(size: m * 0.5, weight: .light))
                         .foregroundStyle(.white.opacity(0.18))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .offset(x: geo.size.width * 0.06, y: geo.size.height * 0.08)
                 } else {
-                    Image(systemName: systemImage)
+                    glyph(m * 0.36)
                         .font(.system(size: m * 0.36, weight: .regular))
                         .foregroundStyle(.white.opacity(0.9 * 0.92))
                 }
@@ -76,6 +79,20 @@ struct RecipePhotoPlaceholder: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .accessibilityHidden(true)
+    }
+
+    /// An SF Symbol, or one of the app's own drawings named "asset:ChefHat" — the chef's hat the
+    /// mockup gives a dinner, which SF Symbols has no picture of.
+    @ViewBuilder private func glyph(_ side: CGFloat) -> some View {
+        if systemImage.hasPrefix("asset:") {
+            Image(String(systemImage.dropFirst(6)))
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: side, height: side)
+        } else {
+            Image(systemName: systemImage)
+        }
     }
 }
 

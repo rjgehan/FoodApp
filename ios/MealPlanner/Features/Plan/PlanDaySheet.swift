@@ -165,7 +165,7 @@ struct PlanDaySheet: View {
                 let recipe = dish.recipeId.flatMap { store.recipeById[$0] }
                 Button { options = dish.id } label: {
                     HStack(spacing: 12) {
-                        MealPicture(entry: dish, recipe: recipe, size: 44, radius: 10)
+                        MealPicture(entry: dish, recipe: recipe, place: dish.placeId.flatMap { store.placeById[$0] }, size: 44, radius: 10)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(dish.label).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
                             Text(dish.placeId != nil ? (dish.placeId.flatMap { store.placeById[$0]?.notes } ?? "Eat out")

@@ -1,43 +1,59 @@
 import SwiftUI
 
 /**
- A planned dish's picture: the mockup's food-coloured plate with an icon for the kind of meal, a
- plum shop front for eating out, the cupboard for a single food. A saved link is its picture —
- the video's cover is how you know which one — so it shows its own, as the plan always has. The
- phone downloads no recipe covers for the plan, the same as the web on a phone.
+ A planned dish's picture: the recipe's cover, the restaurant's photo or the saved link's, when
+ there is one — the same recipe wears its photo on the plan as in Fill a slot and on the web.
+ Otherwise the mockup's food-coloured plate with an icon for the kind of dish, a plum shop front
+ for eating out, and a herb leaf for a single food (the sky cupboard tile is for cupboard rows).
 */
 struct MealPicture: View {
     let entry: MealPlanEntry
     var recipe: Recipe?
+    var place: Place?
     var size: CGFloat = 52
     var radius: CGFloat = 12
 
+    private var photo: UUID? {
+        if entry.placeId != nil { return place?.imageId }
+        if entry.savedLinkId != nil { return entry.savedLinkImageId }
+        return recipe?.coverImageId
+    }
+
     var body: some View {
         Group {
-            if entry.placeId != nil {
-                Tile("storefront", tone: .plum, size: size, radius: radius)
-            } else if entry.itemName != nil {
-                Tile("cabinet", tone: .sky, size: size, radius: radius)
-            } else if entry.savedLinkId != nil, let id = entry.savedLinkImageId, let url = APIClient.shared.imageURL(id) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    plate
+            if let id = photo, let url = APIClient.shared.imageURL(id) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        drawn
+                    }
                 }
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             } else {
-                plate
+                drawn
             }
         }
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var drawn: some View {
+        if entry.placeId != nil {
+            Tile("storefront", tone: .plum, size: size, radius: radius)
+        } else if entry.itemName != nil {
+            RecipePhotoPlaceholder(hue: .green, systemImage: "leaf", size: size, radius: radius)
+        } else {
+            plate
+        }
     }
 
     private var plate: some View {
         let key = (entry.recipeId ?? entry.savedLinkId ?? entry.id).uuidString.lowercased()
         let icon = entry.savedLinkId != nil
             ? (entry.savedLinkSource == .web ? "globe" : "play")
-            : PlanText.icon(section: recipe?.section, meal: entry.mealType)
+            : PlanText.dishIcon(name: recipe?.name ?? entry.recipeName, section: recipe?.section,
+                                groups: recipe?.categories ?? [], meal: entry.mealType)
         return RecipePhotoPlaceholder(hue: .of(key), systemImage: icon, size: size, radius: radius)
     }
 }
@@ -85,11 +101,14 @@ struct PlanDayBlock: View {
 
     private func row(_ slot: PlanSlot) -> some View {
         let main = slot.main
-        let mark = SlotMark.of(slot.dishes, shopping: shopping)
+        // A day gone by is history: what it meant for the shopping no longer matters, and "Not on
+        // list" with a "+ Add" beside last week's dinner would only invite buying it again.
+        let past = day < Date().startOfDay
+        let mark = SlotMark.of(slot.dishes, shopping: past ? nil : shopping)
         let place = main.placeId.flatMap { places[$0] }
         let second = main.placeId != nil ? place?.notes : PlanText.sides(slot.dishes)
         return HStack(alignment: .center, spacing: 12) {
-            MealPicture(entry: main, recipe: main.recipeId.flatMap { recipes[$0] })
+            MealPicture(entry: main, recipe: main.recipeId.flatMap { recipes[$0] }, place: main.placeId.flatMap { places[$0] })
             VStack(alignment: .leading, spacing: 2) {
                 Text(slot.meal.title + (PlanText.clock(PlanText.time(slot.dishes)).map { " · \($0)" } ?? ""))
                     .font(.system(size: 11, weight: .semibold))

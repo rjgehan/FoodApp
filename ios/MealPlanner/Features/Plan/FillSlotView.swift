@@ -70,10 +70,15 @@ struct FillSlotView: View {
             .toolbar {
                 // Plain accent text, as the mockup's nav bar has it — not a glass bubble.
                 BareToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .font(.system(size: 17))
-                        .foregroundStyle(Palette.accentInk)
-                        .buttonStyle(PressFade())
+                    // Its own width, always: the centred title squeezed it to "Can…".
+                    Button { dismiss() } label: {
+                        Text("Cancel").lineLimit(1).fixedSize()
+                    }
+                    .font(.system(size: 17))
+                    .foregroundStyle(Palette.accentInk)
+                    .buttonStyle(PressFade())
+                    .fixedSize()
+                    .layoutPriority(1)
                 }
             }
         }
@@ -96,8 +101,24 @@ struct FillSlotView: View {
     private var groups: [String] {
         Set(store.recipes.flatMap(\.categories)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
-    private func isMain(_ g: String) -> Bool { g.range(of: "main", options: .caseInsensitive) != nil }
-    private func isSide(_ g: String) -> Bool { g.range(of: "side", options: .caseInsensitive) != nil }
+    private func isMain(_ g: String) -> Bool { g.range(of: #"\bmain"#, options: [.regularExpression, .caseInsensitive]) != nil }
+    private func isSide(_ g: String) -> Bool { g.range(of: #"\bside"#, options: [.regularExpression, .caseInsensitive]) != nil }
+
+    /// A group's path from the top of its drawer down: Main › Chicken.
+    private func path(of name: String) -> [String] {
+        let byId = Dictionary(store.groups.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        guard var group = store.groups.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return [name] }
+        var out = [group.name]
+        var seen: Set<UUID> = [group.id]
+        while let parent = group.parentId.flatMap({ byId[$0] }), seen.insert(parent.id).inserted {
+            out.insert(parent.name, at: 0)
+            group = parent
+        }
+        return out
+    }
+
+    /// A recipe in Chicken, inside Main, is a main: its groups and every group they sit in.
+    private func filedUnder(_ recipe: Recipe) -> [String] { recipe.categories.flatMap(path(of:)) }
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
 
     private var shownRecipes: [Recipe] {
@@ -109,8 +130,8 @@ struct FillSlotView: View {
             .filter { q.isEmpty || $0.name.lowercased().contains(q) }
             .filter {
                 switch filter {
-                case .mains: return $0.categories.contains(where: isMain)
-                case .sides: return $0.categories.contains(where: isSide)
+                case .mains: return filedUnder($0).contains(where: isMain)
+                case .sides: return filedUnder($0).contains(where: isSide)
                 case .group(let g): return $0.categories.contains(g)
                 default: return true
                 }
@@ -139,8 +160,8 @@ struct FillSlotView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     chip(.all, "All")
-                    if groups.contains(where: isMain) { chip(.mains, "Mains") }
-                    if groups.contains(where: isSide) { chip(.sides, "Sides") }
+                    if store.recipes.contains(where: { filedUnder($0).contains(where: isMain) }) { chip(.mains, "Mains") }
+                    if store.recipes.contains(where: { filedUnder($0).contains(where: isSide) }) { chip(.sides, "Sides") }
                     if !store.cupboard.isEmpty { chip(.cupboard, "Cupboard") }
                     if !store.links.isEmpty { chip(.links, "Links") }
                     ForEach(groups.filter { !isMain($0) && !isSide($0) }, id: \.self) { chip(.group($0), $0) }
@@ -154,9 +175,7 @@ struct FillSlotView: View {
                             ForEach(shownRecipes) { recipe in
                                 Button { pick(recipe) } label: {
                                     rowFace(title: highlight(recipe.name), subtitle: filing(recipe)) {
-                                        RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString.lowercased()),
-                                                               systemImage: PlanText.icon(section: recipe.section, meal: target.meal),
-                                                               size: 40, radius: 10)
+                                        RecipeThumb(recipe: recipe, meal: target.meal)
                                     } trailing: {
                                         if recipe.id == target.replacing?.recipeId {
                                             CheckCircle(isOn: true)
@@ -274,18 +293,30 @@ struct FillSlotView: View {
         return Text(name[..<a]).fontWeight(.medium) + Text(name[a..<b]).fontWeight(.bold) + Text(name[b...]).fontWeight(.medium)
     }
 
+    /// "Dinner › Main › Chicken": where it is filed, as the path you would tap down in Recipes —
+    /// the deepest group's path, and any group not on it beside it ("… › Chicken · Quick").
     private func filing(_ recipe: Recipe) -> String {
         let drawer = recipe.section?.title
-        let groups = recipe.categories.joined(separator: " · ")
-        let line = [drawer, groups.isEmpty ? nil : groups].compactMap { $0 }.joined(separator: " › ")
+        let paths = recipe.categories.map(path(of:)).sorted { $0.count > $1.count }
+        var groups: [String] = []
+        if let deepest = paths.first, let leaf = deepest.last {
+            let onPath = Set(deepest.map { $0.lowercased() })
+            let beside = paths.dropFirst().compactMap(\.last).filter { !onPath.contains($0.lowercased()) }
+            groups = deepest.dropLast() + [([leaf] + beside).joined(separator: " · ")]
+        }
+        let line = ([drawer].compactMap { $0 } + groups).joined(separator: " › ")
         return line.isEmpty ? "Serves \(recipe.servings)" : line
     }
 
+    /// "Have 3 · Tins & jars": how much there is, and which aisle it lives in.
     private func cupboardLine(_ item: CupboardItem) -> String {
-        if item.staple { return "Always have" }
-        if item.runningLow { return "Running low" }
-        if let q = item.quantity { return "Have \(q == q.rounded() ? String(Int(q)) : String(q))\(item.unit.map { " \($0)" } ?? "")" }
-        return "In the cupboard"
+        let aisle = item.categoryId.flatMap { id in store.aisles.first { $0.id == id }?.name }
+        let stock: String
+        if item.staple { stock = "Always have" }
+        else if item.runningLow { stock = "Running low" }
+        else if let q = item.quantity { stock = "Have \(q == q.rounded() ? String(Int(q)) : String(q))\(item.unit.map { " \($0)" } ?? "")" }
+        else { stock = aisle == nil ? "In the cupboard" : "Have it" }
+        return aisle.map { "\(stock) · \($0)" } ?? stock
     }
 
     private func pick(_ recipe: Recipe) {
@@ -302,7 +333,13 @@ struct FillSlotView: View {
         let typed = query.trimmingCharacters(in: .whitespaces)
         let shown = store.places.filter { typed.isEmpty || $0.name.lowercased().contains(typed.lowercased()) }
         let canCreate = !typed.isEmpty && !store.places.contains { $0.name.caseInsensitiveCompare(typed) == .orderedSame }
-        let chosenName: String? = newPlace && canCreate ? typed : store.places.first { $0.id == picked }?.name
+        // What the button would plan is always a row you can see ticked. A place the search has
+        // hidden is not chosen while it is hidden (clearing the search brings it back, still
+        // ticked); a name nobody has saved, with nothing else matching, is that new place.
+        let visiblePick = shown.first { $0.id == picked }?.id
+        let creating = canCreate && (newPlace || (visiblePick == nil && shown.isEmpty))
+        let choice: UUID? = creating ? nil : visiblePick
+        let chosenName: String? = creating ? typed : shown.first { $0.id == choice }?.name
         return VStack(spacing: 12) {
             SearchBox(text: $query, prompt: "Search or add a place")
                 .padding(.horizontal, 20)
@@ -318,18 +355,19 @@ struct FillSlotView: View {
                                 } label: {
                                     ListRow(place.name, subtitle: place.notes, leading: {
                                         Tile("storefront", tone: Self.placeTones[index % Self.placeTones.count], size: 40)
-                                    }) { CheckCircle(isOn: !newPlace && picked == place.id) }
+                                    }) { CheckCircle(isOn: choice == place.id) }
                                 }
                                 .buttonStyle(PressFade())
-                                .accessibilityAddTraits(!newPlace && picked == place.id ? .isSelected : [])
+                                .accessibilityAddTraits(choice == place.id ? .isSelected : [])
                             }
                             if canCreate {
                                 Button { newPlace = true } label: {
                                     ListRow("Add “\(typed)”", subtitle: "A new place, saved for next time", leading: {
                                         Tile("plus", tone: .accent, size: 40)
-                                    }) { CheckCircle(isOn: newPlace) }
+                                    }) { CheckCircle(isOn: creating) }
                                 }
                                 .buttonStyle(PressFade())
+                                .accessibilityAddTraits(creating ? .isSelected : [])
                             }
                         }
                     } else {
@@ -350,7 +388,19 @@ struct FillSlotView: View {
                             HStack {
                                 Text(day.formatted(.dateTime.weekday(.wide))).font(.system(size: 15)).foregroundStyle(Palette.text)
                                 Spacer()
-                                DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute).labelsHidden()
+                                // "7:30 pm", as everywhere on the plan, over the system's own
+                                // picker ("7:30PM"), which still takes the tap and opens the wheel.
+                                ZStack(alignment: .trailing) {
+                                    DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                                        .labelsHidden()
+                                        .opacity(0.02)
+                                    Text(PlanText.clock(TimeSheet.hhmm(time)) ?? "")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(Palette.text)
+                                        .allowsHitTesting(false)
+                                        .accessibilityHidden(true)
+                                }
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -365,7 +415,7 @@ struct FillSlotView: View {
                 .padding(.bottom, 16)
             }
             Button {
-                Task { await planOut(typed: typed, create: newPlace && canCreate) }
+                Task { await planOut(typed: typed, create: creating, place: choice) }
             } label: {
                 Text(chosenName.map { "Plan \($0)" } ?? "Pick a place")
             }
@@ -378,12 +428,12 @@ struct FillSlotView: View {
 
     private static let placeTones: [Tone] = [.plum, .accent, .mustard, .herb, .sky]
 
-    private func planOut(typed: String, create: Bool) async {
+    private func planOut(typed: String, create: Bool, place: UUID?) async {
         busy = true
         defer { busy = false }
         do {
             let id: UUID
-            if create { id = try await store.place(named: typed).id } else if let picked { id = picked } else { return }
+            if create { id = try await store.place(named: typed).id } else if let place { id = place } else { return }
             await put(.place(id, time: timed ? TimeSheet.hhmm(time) : nil))
         } catch {
             self.error = "Could not add that place."
@@ -419,6 +469,28 @@ private struct LinkPicture: View {
             AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { plate }
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            plate
+        }
+    }
+}
+
+/// A recipe's cover in the list, or its drawn plate — the same picture the plan gives it.
+private struct RecipeThumb: View {
+    let recipe: Recipe
+    let meal: MealType
+
+    var body: some View {
+        let plate = RecipePhotoPlaceholder(hue: .of(recipe.id.uuidString.lowercased()),
+                                           systemImage: PlanText.dishIcon(name: recipe.name, section: recipe.section,
+                                                                          groups: recipe.categories, meal: meal),
+                                           size: 40, radius: 10)
+        if let id = recipe.coverImageId, let url = APIClient.shared.imageURL(id) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image { image.resizable().scaledToFill() } else { plate }
+            }
+            .frame(width: 40, height: 40)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         } else {
             plate
         }
