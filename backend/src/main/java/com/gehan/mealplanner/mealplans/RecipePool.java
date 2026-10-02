@@ -70,11 +70,14 @@ public class RecipePool {
             return new CupboardPlanner.Dish(id(), name(), section, yours, needs());
         }
 
-        /** The name and every ingredient, lower-cased — what preferences ("no pork") are checked against. */
+        /**
+         * The name and every ingredient, lower-cased — what preferences ("no pork") are checked
+         * against. Optional lines too: "optional bacon" on a recipe's page is not vegetarian, and
+         * whoever cooks it may well add it.
+         */
         public String words() {
             StringBuilder words = new StringBuilder(recipe.getName().toLowerCase());
             for (RecipeIngredient line : recipe.getIngredients()) {
-                if (line.isOptional()) continue;
                 words.append(" | ").append(line.getIngredient().getName().toLowerCase());
             }
             return words.toString();

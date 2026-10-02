@@ -42,15 +42,24 @@ public final class Preferences {
     static final Pattern PORK = words("pork|bacon|ham\\b|gammon|chorizo|salami|pepperoni|pancetta|prosciutto|lardons?|lard\\b"
             + "|sausage|nduja|'nduja|guanciale|spare ?ribs");
     static final Pattern BEEF = words("beef|steak|veal|brisket|oxtail|bresaola");
-    static final Pattern MEAT = words("chicken|beef|pork|lamb|mutton|veal|turkey|duck|goose|venison|rabbit|bacon|ham\\b|gammon"
+    static final Pattern MEAT = words("chicken|beef|pork|lamb|mutton|veal|turkey|duck|goose\\b|venison|rabbit|bacon|ham\\b|gammon"
             + "|sausage|chorizo|salami|pepperoni|pancetta|prosciutto|lardons?|lard\\b|mince\\b|minced (beef|lamb|pork|meat)"
-            + "|steak|meatballs?|liver|kidney|gelatine?|suet|bone broth|chicken stock|beef stock|nduja|guanciale|brisket");
+            + "|steak|meatballs?|liver\\b|kidneys?\\b|gelatine?|suet|bone broth|chicken stock|beef stock|nduja|guanciale|brisket");
     static final Pattern FISH = words("fish|salmon|tuna|cod\\b|haddock|mackerel|sardines?|anchov|prawns?|shrimps?|crab|lobster"
             + "|mussels?|clams?|scallops?|squid|calamari|octopus|hake|trout|sea bass|pollock|oysters?|kipper|caviar|roe\\b");
     static final Pattern DAIRY = words("milk|cheese|butter|cream|yogh?urt|crème fraîche|creme fraiche|ghee|paneer|mozzarella"
             + "|cheddar|parmesan|parmigiano|pecorino|feta|ricotta|halloumi|mascarpone|quark|kefir|whey|gruy[eè]re|brie|camembert");
     static final Pattern EGG = words("eggs?\\b|mayonnaise|mayo\\b|meringue");
     static final Pattern HONEY = words("honey");
+    /**
+     * Things named after meat that are not meat, taken out before looking for meat: kidney beans,
+     * vegetable suet, mince pies, a cauliflower steak, and the veggie versions of sausages and the
+     * like. Fish steaks are taken out of the meat check too (the fish check still sees the fish).
+     */
+    static final Pattern NOT_MEAT = Pattern.compile("\\bkidney beans?|\\bvegetable suet|\\bvegetarian suet"
+            + "|\\bmince pies?|\\b(cauliflower|celeriac|cabbage|aubergine|mushroom|tuna|salmon|swordfish) steaks?"
+            + "|\\b(veggie|vegetarian|vegan|plant[- ]based|meat[- ]free|meatless|quorn|soya?|tofu) "
+            + "(sausages?|mince|burgers?|meatballs?|chicken|bacon|ham|pieces|chunks|fillets?)");
     /** Plant milks, nut butters and the like, taken out before looking for dairy (and eggplant for eggs). */
     static final Pattern NOT_DAIRY = Pattern.compile("\\b(coconut|almond|oat|soya?|rice|cashew|peanut|nut|cocoa|shea) "
             + "(milk|butter|cream|yogh?urt|cheese)|butter ?beans?|butternut|cream of tartar|eggplant|ice cream sandwich");
@@ -79,19 +88,22 @@ public final class Preferences {
     /**
      * Whether a recipe is allowed at all.
      *
-     * @param words   its name and ingredients, lower-cased (see RecipePool.PoolRecipe#words)
+     * @param words   its name and every ingredient, optional ones included, lower-cased (see
+     *                RecipePool.PoolRecipe#words): a vegetarian plan never offers a recipe whose
+     *                page suggests adding bacon
      * @param minutes prep + cook, or null when the recipe doesn't say
      */
     public boolean allows(String words, Integer minutes) {
         String w = words.toLowerCase(Locale.ROOT);
         String noPlant = NOT_DAIRY.matcher(w).replaceAll(" ");
-        boolean meat = MEAT.matcher(w).find(), fish = FISH.matcher(w).find();
+        String noVeg = NOT_MEAT.matcher(w).replaceAll(" ");
+        boolean meat = MEAT.matcher(noVeg).find(), fish = FISH.matcher(w).find();
         if (has("vegan") && (meat || fish || DAIRY.matcher(noPlant).find() || EGG.matcher(noPlant).find()
                 || HONEY.matcher(w).find())) return false;
         if (has("vegetarian") && (meat || fish)) return false;
         if (has("pescatarian") && meat) return false;
-        if (has("no-pork") && PORK.matcher(w).find()) return false;
-        if (has("no-beef") && BEEF.matcher(w).find()) return false;
+        if (has("no-pork") && PORK.matcher(noVeg).find()) return false;
+        if (has("no-beef") && BEEF.matcher(noVeg).find()) return false;
         if (has("dairy-free") && !has("dairy-ok") && DAIRY.matcher(noPlant).find()) return false;
         if (has("under-30") && minutes != null && minutes > 30) return false;
         for (String a : avoid) {
