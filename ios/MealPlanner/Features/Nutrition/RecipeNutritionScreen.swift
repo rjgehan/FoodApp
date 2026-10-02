@@ -73,12 +73,16 @@ struct RecipeNutritionScreen: View {
 
     @ViewBuilder private func content(_ n: RecipeNutrition) -> some View {
         let shown = n.forServings
-        let pct = n.percentOfReference.kcal
+        // With nothing counted there is nothing to scale or rank: the list is only what was left out.
+        let nothingCounted = n.contributors.isEmpty
+        let pct = nothingCounted ? nil : n.percentOfReference.kcal
         HStack {
             Text("\(n.recipeServings) \(n.recipeServings == 1 ? "serving" : "servings") in the recipe")
                 .font(.system(size: 14)).foregroundStyle(Palette.muted)
             Spacer(minLength: 8)
             ServingsStepper(value: $servings, label: true)
+                .disabled(nothingCounted)
+                .opacity(nothingCounted ? 0.45 : 1)
         }
 
         VStack(alignment: .leading, spacing: 14) {
@@ -107,7 +111,7 @@ struct RecipeNutritionScreen: View {
         .cardSurface()
 
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel("Biggest contributors")
+            SectionLabel(nothingCounted ? "Not counted" : "Biggest contributors")
             contributors(n)
             if checking > 0 {
                 HStack(spacing: 8) {
@@ -145,7 +149,8 @@ struct RecipeNutritionScreen: View {
                 ForEach(shown) { c in
                     let counted = include.contains(c.recipeIngredientId)
                     Button { if counted { toggle(c.recipeIngredientId) } } label: {
-                        ListRow(NutritionText.capitalised(c.name), subtitle: subtitle(c, countedIn: counted),
+                        ListRow(NutritionText.capitalised(c.name), subtitle: subtitle(c, countedIn: counted, in: n),
+                                wrapSubtitle: true,
                                 leading: { lead("\(Int((c.share * 100).rounded()))%") },
                                 trailing: {
                                     if c.foodChosenByModel || c.weightEstimatedByModel {
@@ -188,12 +193,16 @@ struct RecipeNutritionScreen: View {
             .frame(width: 38, alignment: .leading)
     }
 
-    /// "318 kcal · 38g protein": its calories, and the macro that brings the most of them.
-    private func subtitle(_ c: NutritionContributor, countedIn: Bool) -> String {
+    /// "318 kcal · 38g protein": its calories, and the macro that brings the most of them; then
+    /// the amount and what it was weighed as ("4 fillets · ≈130g each"), so a wrong weight shows.
+    private func subtitle(_ c: NutritionContributor, countedIn: Bool, in n: RecipeNutrition) -> String {
         let main = [(4 * c.protein, "\(NutritionText.grams(c.protein)) protein"),
                     (4 * c.carbs, "\(NutritionText.grams(c.carbs)) carbs"),
                     (9 * c.fat, "\(NutritionText.grams(c.fat)) fat")].max { $0.0 < $1.0 }!.1
-        return "\(NutritionText.kcal(c.kcal)) kcal · \(main)" + (countedIn ? " · optional, tap to leave out" : "")
+        let first = "\(NutritionText.kcal(c.kcal)) kcal · \(main)" + (countedIn ? " · optional, tap to leave out" : "")
+        let scale = n.recipeServings > 0 ? n.servings / Double(n.recipeServings) : 0
+        let each = NutritionText.eachText(c, scale: scale)
+        return each.isEmpty ? first : first + "\n" + each
     }
 
     private func why(_ reason: String) -> String {

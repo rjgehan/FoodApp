@@ -352,6 +352,14 @@ check(NutritionText.foodTitle("Chicken, broiler or fryers, breast, skinless, bon
       "chicken breast, past broilers or fryers")
 check(NutritionText.foodTitle("Beef, ground, 85% lean meat / 15% fat, raw").title == "Ground beef", "ground beef")
 check(NutritionText.foodTitle("Egg, whole, raw, fresh").title == "Egg", "a plain first word stays")
+
+// Each line says what it was weighed as.
+do {
+    let salmon = contributor(UUID(), "salmon fillets", amount: "4 fillets", how: "TYPICAL", grams: 130)
+    check(NutritionText.eachText(salmon, scale: 0.25) == "4 fillets · ≈130g each", "a counted fillet shows its grams each")
+    let mince = contributor(UUID(), "beef mince", amount: "500 g", how: "WEIGHT", grams: 125)
+    check(NutritionText.eachText(mince, scale: 0.25) == "500 g", "a weight is just its amount")
+}
 check(NutritionText.isBarcode("5000112637922") && !NutritionText.isBarcode("egg"), "barcodes are 8 to 14 digits")
 
 // MARK: - Meal plans (MealPlanChecks.swift)

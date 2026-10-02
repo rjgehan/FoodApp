@@ -169,7 +169,10 @@ struct NutritionReference: Codable, Hashable {
     let saltG: Double?
     let fibre: Double?
     let label: String
+    /// "reference" (the EU/UK reference intake) or "target" (the viewer's own plan for a health target).
     let source: String?
+    /// With source "target": the plan's name ("Lean bulk"). Only ever sent to its owner.
+    var plan: String? = nil
 
     subscript(macro: Macro) -> Double {
         switch macro {
@@ -450,6 +453,19 @@ enum NutritionText {
     static func plainFoodName(_ name: String) -> String {
         let (title, detail) = foodTitle(name)
         return detail.isEmpty ? title : "\(title), \(detail)"
+    }
+
+    /**
+     What a recipe line was weighed as, so a wrong weight can be seen: "4 fillets · ≈130g each",
+     "600 g", "1 knob · 15g". A contributor's grams are for the servings shown; `scale` is those
+     servings over the recipe's, to get back to the recipe's own amount. (The web's eachText too.)
+     */
+    static func eachText(_ c: NutritionContributor, scale: Double) -> String {
+        let amount = (c.amount ?? "").trimmingCharacters(in: .whitespaces)
+        guard !amount.isEmpty, c.gramsHow != "WEIGHT", scale > 0,
+              let quantity = Double(amount.split(separator: " ").first ?? ""), quantity > 0 else { return amount }
+        let grams = (c.estimated ? "≈" : "") + NutritionText.grams(c.grams / scale / quantity)
+        return "\(amount) · \(quantity == 1 ? grams : "\(grams) each")"
     }
 
     /// The first letter up: ingredient names are stored as typed ("chicken breast").
