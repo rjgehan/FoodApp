@@ -53,6 +53,12 @@ test('sharing with a household lets them file it but not edit it', async () => {
   const shared = theirList.find((x: any) => x.id === r.id);
   expect(shared).toBeTruthy();
   expect(shared.section).toBeNull();
+  // Where it lives at home and when it was sent, for "Dinner · shared today" on Shared with you.
+  expect(shared.ownerSection).toBe(r.section);
+  expect(Date.now() - Date.parse(shared.sharedAt)).toBeLessThan(5 * 60_000);
+  // Your own recipes carry neither.
+  const own = (await call('GET', `/api/households/${mine.id}/recipes`, { token: owner.token })).find((x: any) => x.id === r.id);
+  expect(own).toMatchObject({ ownerSection: null, sharedAt: null });
 
   await call('PUT', `/api/households/${theirs.id}/recipes/${r.id}/filing`, {
     token: owner.token, body: { section: 'DINNER', categories: ['Main dish'] },

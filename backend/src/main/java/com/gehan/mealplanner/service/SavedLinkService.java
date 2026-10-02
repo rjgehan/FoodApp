@@ -187,6 +187,11 @@ public class SavedLinkService {
     @Transactional
     public void delete(UUID householdId, UUID linkId, UUID requesterId) {
         SavedLink link = visible(householdId, linkId, requesterId);
+        if (!canDelete(link, householdId, requesterId)) {
+            String who = link.getCreatedBy().getDisplayName();
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only " + (who == null || who.isBlank() ? "whoever saved it" : who) + " can delete this.");
+        }
         for (MealPlanEntry entry : mealPlanEntryRepository.findBySavedLinkId(linkId)) {
             entry.setSavedLink(null);
             entry.setDeletedRecipeName(link.getName());
@@ -251,6 +256,17 @@ public class SavedLinkService {
         return link.getHousehold().getId().equals(householdId) && (!link.isPersonal() || isMine(link, userId));
     }
 
+    /**
+     * Whoever saved a link is the one who decides it is no longer wanted — it may be on their
+     * list of things to try even if nobody else cares. A link whose saver has gone (account
+     * deleted, or left the household) is anyone's to tidy away, or it could never go.
+     */
+    private boolean canDelete(SavedLink link, UUID householdId, UUID userId) {
+        return link.getCreatedBy() == null
+                || isMine(link, userId)
+                || !householdService.isMember(householdId, link.getCreatedBy().getId());
+    }
+
     private static boolean isMine(SavedLink link, UUID userId) {
         return link.getCreatedBy() != null && link.getCreatedBy().getId().equals(userId);
     }
@@ -276,6 +292,7 @@ public class SavedLinkService {
                 isMine(link, requesterId),
                 link.getCreatedBy() == null ? null : link.getCreatedBy().getDisplayName(),
                 link.getCreatedAt(),
-                alreadySaved);
+                alreadySaved,
+                canDelete(link, link.getHousehold().getId(), requesterId));
     }
 }

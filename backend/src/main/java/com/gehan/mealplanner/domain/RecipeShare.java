@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -34,4 +35,11 @@ public class RecipeShare {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "household_id", nullable = false)
     private Household household;
+
+    /**
+     * When it was shared, for "shared 2 days ago" and the New pill on Shared with you. Null on
+     * shares made before this was kept: they are simply not new.
+     */
+    @Column(name = "created_at")
+    private Instant createdAt;
 }

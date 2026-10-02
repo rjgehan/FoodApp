@@ -74,6 +74,17 @@ test('only the household sees its links, and a "just me" one only whoever saved 
   const unfiled = await call('PATCH', `${base(hh.id)}/${shared.id}`, { token: owner.token, body: { clearSection: true } });
   expect(unfiled.section).toBeNull();
   expect(unfiled.name).toBe('Pasta bake, the good one');
+
+  // Only whoever saved it can delete it, and the list says so to everyone else.
+  const partnerView = (await call('GET', base(hh.id), { token: partner.token })).find((l: any) => l.id === shared.id);
+  expect(partnerView).toMatchObject({ mine: false, canDelete: false });
+  expect((await call('GET', base(hh.id), { token: owner.token })).find((l: any) => l.id === shared.id))
+    .toMatchObject({ mine: true, canDelete: true });
+  expect(await statusOf('DELETE', `${base(hh.id)}/${shared.id}`, { token: partner.token })).toBe(403);
+  const theirs = await save(hh.id, partner.token, { url: TIKTOK, name: 'Partner cake' });
+  expect(theirs.canDelete).toBe(true);
+  await call('DELETE', `${base(hh.id)}/${theirs.id}`, { token: partner.token });
+  expect((await call('GET', base(hh.id), { token: partner.token })).map((l: any) => l.id)).not.toContain(theirs.id);
 });
 
 test('saving the same link again updates the one already saved', async () => {

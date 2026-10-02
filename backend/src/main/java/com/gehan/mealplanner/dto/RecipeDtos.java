@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Size;
 import jakarta.validation.Valid;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -167,7 +168,11 @@ public class RecipeDtos {
             List<UUID> sharedWith,
             UUID coverImageId,
             List<UUID> photoIds,
-            List<RecipeIngredientResponse> ingredients) {
+            List<RecipeIngredientResponse> ingredients,
+            /** On a recipe another household shared with you: the drawer it is in over there. */
+            RecipeSection ownerSection,
+            /** On a recipe another household shared with you: when they shared it, if known. */
+            Instant sharedAt) {
     }
 
     /** `parentId` is the group this one sits inside; null at the top of a drawer. */

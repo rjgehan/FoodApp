@@ -50,6 +50,11 @@ public class SavedLinkDtos {
              * Only on a save: the link was already in the list, so that one was updated rather
              * than a second made. False everywhere else.
              */
-            boolean alreadySaved) {
+            boolean alreadySaved,
+            /**
+             * Whether the person asking may delete it: whoever saved it, or anyone once they have
+             * gone. Older apps ignore it and find out from the 403.
+             */
+            boolean canDelete) {
     }
 }

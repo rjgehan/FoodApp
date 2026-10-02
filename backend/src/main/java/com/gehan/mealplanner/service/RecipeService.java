@@ -523,7 +523,7 @@ public class RecipeService {
             if (!already.contains(targetId)) {
                 Household target = householdRepository.findById(targetId)
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-                shareRepository.save(RecipeShare.builder().recipe(recipe).household(target).build());
+                shareRepository.save(RecipeShare.builder().recipe(recipe).household(target).createdAt(Instant.now()).build());
             }
         }
         shareRepository.flush();
@@ -1015,19 +1015,36 @@ public class RecipeService {
                         .toList();
 
         List<SourceLink> links = SourceLinks.of(recipe);
+        List<RecipeShare> shares = shareRepository.findByRecipeId(recipe.getId());
+
+        // Someone else's recipe: which of their drawers it is in, and when it was sent here —
+        // "Dinner · shared 2 days ago" on Shared with you.
+        boolean shared = !recipe.getHousehold().getId().equals(viewingHouseholdId);
+        RecipeSection ownerSection = null;
+        Instant sharedAt = null;
+        if (shared) {
+            ownerSection = filingRepository.findByHouseholdIdAndRecipeId(recipe.getHousehold().getId(), recipe.getId())
+                    .map(RecipeFiling::getSection).orElse(null);
+            sharedAt = shares.stream()
+                    .filter(sh -> sh.getHousehold().getId().equals(viewingHouseholdId))
+                    .map(RecipeShare::getCreatedAt)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst().orElse(null);
+        }
 
         return new RecipeResponse(
                 recipe.getId(), recipe.getHousehold().getId(), recipe.getName(), recipe.getDescription(),
                 recipe.getInstructions(), recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(),
                 recipe.getServings(), SourceLinks.firstSource(links), SourceLinks.firstVideo(links), links,
                 filing == null ? null : filing.getSection(), categories,
-                !recipe.getHousehold().getId().equals(viewingHouseholdId),
+                shared,
                 recipe.getHousehold().getName(),
                 recipe.isPublished(),
-                shareRepository.findByRecipeId(recipe.getId()).stream()
-                        .map(sh -> sh.getHousehold().getId()).toList(),
+                shares.stream().map(sh -> sh.getHousehold().getId()).toList(),
                 recipe.getCoverImage() == null ? null : recipe.getCoverImage().getId(),
                 recipe.getPhotos().stream().map(StoredImage::getId).toList(),
-                ingredients);
+                ingredients,
+                ownerSection,
+                sharedAt);
     }
 }
