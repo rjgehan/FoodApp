@@ -162,9 +162,9 @@ test('capture every screen', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.removeItem('mp_tutorialSeen'));
     await page.goto('/');
-    await shot(page, 'Tutorial · plan the week together', 'Placeholder picture: the mockup of Plan.');
+    await shot(page, 'Tutorial · plan the week together', 'A screenshot of Plan, light or dark with the page.');
     await page.getByRole('button', { name: 'Next' }).click();
-    await shot(page, 'Tutorial · one list for the shop', 'Placeholder picture: the mockup of Groceries.');
+    await shot(page, 'Tutorial · one list for the shop', 'A screenshot of Groceries, light or dark with the page.');
     await page.getByRole('button', { name: 'Next' }).click();
     await shot(page, 'Tutorial · light or dark?', 'Applies at once; saved to the account after sign-in if it has none.');
     await page.evaluate(() => localStorage.setItem('mp_tutorialSeen', '1'));

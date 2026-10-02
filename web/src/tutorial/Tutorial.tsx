@@ -12,24 +12,24 @@ import { markTutorialSeen } from './seen';
  joined) straight into the app.
 
  Each slide is a picture of the real app in a phone's frame, a title and one line. The pictures
- are placeholders until the redesign's own screenshots are taken: public/tutorial/README.md says
- how to swap them.
+ are screenshots of the app itself, light and dark: public/tutorial/README.md says how they were
+ taken, for when the screens change enough to want new ones.
 */
 
 const SLIDES = [
   {
     title: 'Plan the week together',
     line: 'Everyone in the house sees the same plan, and fills it in from their own phone.',
-    light: '/tutorial/placeholder-plan-light.png',
-    dark: '/tutorial/placeholder-plan-dark.png',
+    light: '/tutorial/plan-light.jpg',
+    dark: '/tutorial/plan-dark.jpg',
     alt: 'The Plan screen: a month calendar with the planning week tinted, and the next meals under it.',
   },
   {
     title: 'One list for the shop',
     line: 'Planned meals become one grocery list, sorted by aisle and ticked off live as you shop.',
-    light: '/tutorial/placeholder-groceries-light.png',
-    dark: '/tutorial/placeholder-groceries-dark.png',
-    alt: 'The Groceries screen: one shared list grouped by aisle, with items ticked off.',
+    light: '/tutorial/groceries-light.jpg',
+    dark: '/tutorial/groceries-dark.jpg',
+    alt: 'The Groceries screen: one shared list grouped by aisle, each item saying which meal it is for.',
   },
 ] as const;
 
@@ -169,7 +169,7 @@ function PhoneFrame({ light, dark, alt }: { light: string; dark: string; alt: st
   );
 }
 
-const PREVIEW = { LIGHT: '/tutorial/placeholder-plan-light.png', DARK: '/tutorial/placeholder-plan-dark.png' };
+const PREVIEW = { LIGHT: '/tutorial/plan-light.jpg', DARK: '/tutorial/plan-dark.jpg' };
 
 /** The third step: two big cards showing the app each way, and "Match my phone". */
 function LightOrDark({ mode, onChoose }: { mode: ThemeMode; onChoose: (mode: ThemeMode) => void }) {

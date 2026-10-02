@@ -6,8 +6,8 @@ import SwiftUI
  straight into the app. The same as the web's (web/src/tutorial).
 
  Each slide is a picture of the real app in a phone's frame, a title and one line. The pictures
- are placeholders until the redesign's own screenshots are taken: TutorialPlanPlaceholder and
- TutorialGroceriesPlaceholder in the asset catalog, each with a dark appearance.
+ are screenshots of the app itself: TutorialPlan and TutorialGroceries in the asset catalog, each
+ with a dark appearance (web/public/tutorial/README.md says how they were taken).
  */
 
 /// Whether this phone has had the tutorial. Once per phone, ever; finishing and skipping both
@@ -78,12 +78,12 @@ struct TutorialView: View {
     private static let slides = [
         Slide(title: "Plan the week together",
               line: "Everyone in the house sees the same plan, and fills it in from their own phone.",
-              image: "TutorialPlanPlaceholder",
+              image: "TutorialPlan",
               description: "The Plan screen: a month calendar with the planning week tinted, and the next meals under it."),
         Slide(title: "One list for the shop",
               line: "Planned meals become one grocery list, sorted by aisle and ticked off live as you shop.",
-              image: "TutorialGroceriesPlaceholder",
-              description: "The Groceries screen: one shared list grouped by aisle, with items ticked off."),
+              image: "TutorialGroceries",
+              description: "The Groceries screen: one shared list grouped by aisle, each item saying which meal it is for."),
     ]
     private static var steps: Int { slides.count + 1 }
 

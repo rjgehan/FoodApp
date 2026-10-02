@@ -216,6 +216,19 @@ await plan(weekDay(6), 'DINNER', { recipeId: pick('Tuna Nicoise') });
 await plan(weekDay(7), 'DINNER', { recipeId: pick('Lasagne') });
 await plan(weekDay(8), 'DINNER', { recipeId: pick('Parmentier') });
 await plan(weekDay(9), 'DINNER', { recipeId: pick('Teriyaki Salmon') });
+await plan(weekDay(10), 'DINNER', { recipeId: pick('Eggplant') });
+await plan(weekDay(11), 'DINNER', { recipeId: pick('Wellington') });
+await plan(weekDay(12), 'DINNER', { recipeId: pick('Cassoulet') });
+
+// --- recipes to try, kept as links ---------------------------------------------------------------
+// Named here, so saving one never has to reach out to the site for its title.
+for (const [url, name] of [
+  ['https://www.bbcgoodfood.com/recipes/chicken-katsu-curry', 'Chicken katsu curry'],
+  ['https://www.youtube.com/watch?v=showcase-ramen', 'Quick miso ramen'],
+  ['https://cooking.nytimes.com/recipes/showcase-shakshuka', 'Shakshuka'],
+]) {
+  await call('POST', `/api/households/${H}/saved-links`, { token, body: { url, name } }).catch((e) => console.warn(String(e)));
+}
 
 // --- the shopping ------------------------------------------------------------------------------------
 await call('POST', `/api/households/${H}/grocery-list/add-all?start=${day(0)}&end=${day(6)}`, { token });
@@ -266,6 +279,8 @@ for (const [name, section] of [['Katsu Chicken curry', 'DINNER'], ['Banana Panca
     },
   });
   await call('PUT', `/api/recipes/${r.id}/published`, { token, body: { published: true } });
+  // One of them shared straight into the house too, for Shared with you.
+  if (section === 'BREAKFAST') await call('PUT', `/api/recipes/${r.id}/shares`, { token, body: { householdIds: [H] } });
   console.log(`published to Explore: ${meal.strMeal}`);
 }
 

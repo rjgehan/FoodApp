@@ -1,7 +1,7 @@
 {
   "images": [
     {
-      "filename": "placeholder-plan-light.png",
+      "filename": "plan-light.jpg",
       "idiom": "universal"
     },
     {
@@ -11,7 +11,7 @@
           "value": "dark"
         }
       ],
-      "filename": "placeholder-plan-dark.png",
+      "filename": "plan-dark.jpg",
       "idiom": "universal"
     }
   ],
