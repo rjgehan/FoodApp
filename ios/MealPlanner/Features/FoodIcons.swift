@@ -105,7 +105,9 @@ struct FoodIconPicker: View {
     ) -> some View {
         Button(action: action) {
             content()
-                .frame(maxWidth: .infinity)
+                // Both ways, or "No icon" (a symbol, not a resizable drawing) keeps its own height
+                // and comes out a flat bar in a row of squares.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .aspectRatio(1, contentMode: .fit)
                 .foregroundStyle(isOn ? Palette.accentInk : Color.secondary)
                 .background(isOn ? Palette.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: 10))
