@@ -4,7 +4,7 @@ import { NoneIcon } from './icons';
 
 /**
  * Every food drawing as a tap target, the chosen one ringed. Used for drawers, which always
- * wear something, and for groups, which can wear nothing — `allowNone` adds that choice first.
+ * wear something, and for tags, which can wear nothing — `allowNone` adds that choice first.
  *
  * The chosen one is named under the grid: a phone has no hover to show a title, and a burger
  * and a sandwich are close cousins at this size, so a tap is confirmed in words.

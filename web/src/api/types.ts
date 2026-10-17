@@ -111,15 +111,21 @@ export interface ShareTarget {
   shared: boolean;
 }
 
-/** A household's recipe group. Groups nest — Chicken inside Main dish — one tree for every drawer. */
+/**
+ * A tag: a word a household's recipes wear in one drawer — "Chicken", "Quick". Flat (a recipe
+ * can wear several, and a tag sits inside nothing), and one name once per drawer: Dinner and
+ * Breakfast can each have a "Main", and they are two tags. The API still calls them
+ * recipe-categories, from when they were nested groups; recipes carry them by name.
+ */
 export interface RecipeCategory {
   id: string;
   name: string;
+  /** How many of the household's recipes in its drawer wear it. */
   recipeCount: number;
-  /** The group this one sits inside; null at the top of a drawer. */
+  /** Always null now: tags do not nest. Still sent, for older phones that read it. */
   parentId: string | null;
-  /** The drawer it belongs to; null means it shows in every drawer. */
-  section: RecipeSection | null;
+  /** The drawer it belongs to. */
+  section: RecipeSection;
   /** Which of the FoodIcons its tile wears; null (or absent, from an older server) for none. */
   iconKey?: string | null;
 }
@@ -135,6 +141,19 @@ export interface Household {
   memberCount: number;
   /** How many recipes its Recipes tab lists — what a "which household?" picker says under it. */
   recipeCount?: number;
+  /*
+   * The household's kitchen: its optional features and the machines it has. Absent from an older
+   * server, which has every feature and no kitchen setup — so read a missing flag as on, and a
+   * missing kitchenSetUp as done, and an old server keeps showing everything it always did.
+   */
+  /** Keeps a cupboard, so grocery lists can skip what is at home. */
+  cupboardEnabled?: boolean;
+  /** Plans meals ahead on the Plan tab. */
+  planEnabled?: boolean;
+  /** Its kitchen machines, as keys from utils/machines.ts, in that order. */
+  machines?: string[];
+  /** Someone has been through the kitchen setup (or skipped it). */
+  kitchenSetUp?: boolean;
 }
 
 /** A household's own grocery aisle — added, renamed, reordered and deleted from Household settings. */
@@ -253,7 +272,7 @@ export interface Recipe {
   links: SourceLink[];
   /** Where this household filed it. null means unfiled, which shows up under "Shared". */
   section: RecipeSection | null;
-  /** This household's sub-categories for it, by name. */
+  /** The tags this household gave it in its drawer, by name, alphabetical. */
   categories: string[];
   /** Another household owns it: you can file it in your catalog, but not edit it. */
   shared: boolean;
@@ -272,6 +291,11 @@ export interface Recipe {
   ownerSection?: RecipeSection | null;
   /** Shared with you: when it was sent here (ISO), if the server knows. */
   sharedAt?: string | null;
+  /**
+   * The kitchen machines it needs, as keys from utils/machines.ts in that order — spotted in the
+   * method when it is saved, unless somebody picked them by hand. Absent from older servers.
+   */
+  appliances?: string[];
 }
 
 /** What someone with a share link sees. No household, no sharing state, no filing. */
@@ -288,6 +312,8 @@ export interface PublicRecipe {
   coverImageId: string | null;
   photoIds: string[];
   ingredients: PublicIngredient[];
+  /** The kitchen machines it needs (utils/machines.ts keys). Absent from older servers. */
+  appliances?: string[];
 }
 
 export interface PublicIngredient {
@@ -518,6 +544,7 @@ export interface AdminRecipeRow {
   householdId: string;
   householdName: string;
   section: RecipeSection | null;
+  /** The tags it wears in its drawer (named from when they were groups). */
   groups: string[];
   createdAt: string;
   published: boolean;

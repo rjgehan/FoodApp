@@ -10,6 +10,7 @@ import { toast, Toaster } from '../components/toast';
 import { formatMinutes, formatQuantity, instructionSteps } from '../utils/recipeFormat';
 import { isSafeLink, isVideoLink, linkName, videoHostLabel } from '../utils/videoLink';
 import LoginPage from './LoginPage';
+import { APP_NAME } from '../brand';
 
 /** Each household's colour in the picker, as in the app's switcher. */
 const HOUSE_TONES: Tone[] = ['herb', 'sky', 'plum', 'mustard', 'accent'];
@@ -157,7 +158,7 @@ export default function PublicRecipePage() {
         title="This recipe is no longer shared"
         actions={
           <Button variant="secondary" full size="lg" onClick={() => navigate(session ? '/recipes' : '/', { replace: true })}>
-            {session ? 'Open Meal Planner' : 'Go to sign in'}
+            {session ? `Open ${APP_NAME}` : 'Go to sign in'}
           </Button>
         }
       >

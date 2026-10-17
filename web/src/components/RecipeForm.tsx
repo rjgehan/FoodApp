@@ -1,16 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { Recipe, RecipeCategory, RecipeSection, SourceLink } from '../api/types';
+import type { Recipe, RecipeSection, SourceLink } from '../api/types';
 import UnitInput from './UnitInput';
 import { Button, Chip, cx, ErrorText, Input, NumberInput, Pill, SectionLabel, Textarea } from './ui';
 import { Icon, type IconName } from './icons';
 import CoverPicker from './recipe/CoverPicker';
 import RecipeClassifier from './RecipeClassifier';
 import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from './LinksEditor';
+import { rememberRecipe, useTags } from './catalogue/catalogueStore';
 import { SECTION_OPTIONS, DEFAULT_FILING, moveToDrawer, type Filing } from '../utils/recipeMeta';
 import { parseQuantity, splitAmount, UNIT_ALIASES } from '../utils/amount';
 import { formatQuantity } from '../utils/recipeFormat';
+import { MACHINES, machineByKey, orderedMachines } from '../utils/machines';
+import { MachineIcon } from './MachineIcons';
 
 export interface DraftIngredient {
   ingredientName: string;
@@ -45,7 +48,7 @@ export interface RecipeDraft {
  * Laid out as the mockup's "Check recipe" (3.16): the picture beside the name, the times and
  * servings in a row, then each ingredient as one line — the amount and unit as small chips, the
  * name, and a leaf that makes it optional — the way a recipe is written, so a list of twelve
- * fits on a phone screen instead of three. Filing comes last, as chips.
+ * fits on a phone screen instead of three. Filing and the machines it needs come last, as chips.
  *
  * `id` names the form, so a Save in the screen's top bar can submit it from outside.
  */
@@ -55,7 +58,7 @@ export default function RecipeForm({
   recipe,
   draft,
   section,
-  groups,
+  tags,
   savedLinkId,
   onSaved,
 }: {
@@ -66,8 +69,8 @@ export default function RecipeForm({
   draft?: RecipeDraft;
   /** Where a new recipe is filed to begin with — Breakfast, when made from the breakfast slot. */
   section?: RecipeSection;
-  /** Groups a new recipe starts in — the one you were looking at when you pressed Add recipe. */
-  groups?: string[];
+  /** Tags a new recipe starts with — the ones you were looking at when you pressed Add recipe. */
+  tags?: string[];
   /**
    * The saved link this new recipe is being made from. Saving takes the link off Saved links,
    * and moves any meal planned with it over to the recipe.
@@ -97,26 +100,14 @@ export default function RecipeForm({
     // A recipe you own is normally filed, but an unfiled one still has to land somewhere.
     recipe
       ? { section: recipe.section ?? DEFAULT_FILING.section, categories: recipe.categories }
-      : { section: section ?? DEFAULT_FILING.section, categories: groups ?? DEFAULT_FILING.categories },
+      : { section: section ?? DEFAULT_FILING.section, categories: tags ?? DEFAULT_FILING.categories },
   );
-  // Groups sit with the drawer, and open when there is already one ticked — a recipe started
-  // from inside Chicken should show Chicken ticked, not hide it behind a button.
-  const [showGroups, setShowGroups] = useState(filing.categories.length > 0);
-  // The household's groups, so changing the drawer knows which ticked ones live in the new one.
-  const [known, setKnown] = useState<RecipeCategory[]>([]);
+  // The household's tags (kept from wherever they were last loaded), so changing the drawer
+  // knows which ticked ones live in the new one.
+  const known = useTags(householdId) ?? [];
   const [parked, setParked] = useState<string[]>([]);
 
-  useEffect(() => {
-    let live = true;
-    api<RecipeCategory[]>('GET', `/api/households/${householdId}/recipe-categories`)
-      .then((all) => live && setKnown(all))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [householdId]);
-
-  // Started from inside Veggie and then moved to Lunch: Veggie is a Dinner group, so it is set
+  // Started with Veggie ticked and then moved to Lunch: Veggie is a Dinner tag, so it is set
   // aside rather than made again, empty, in Lunch — and comes back if Dinner is picked again.
   function chooseSection(section: RecipeSection) {
     const moved = moveToDrawer(filing, section, known, parked);
@@ -131,6 +122,26 @@ export default function RecipeForm({
   // stays the picture until somebody chooses their own.
   const [coverImageId, setCoverImageId] = useState<string | null>(seed?.coverImageId ?? null);
   const [links, setLinks] = useState<DraftLink[]>(() => toDraftLinks(seed?.links));
+
+  // The machines it needs. A recipe already saved starts with what it has (spotted from its
+  // method, or picked before); a new one starts empty, and the server spots them when it is saved.
+  const [startingMachines] = useState<string[]>(() => recipe?.appliances ?? []);
+  const [machines, setMachines] = useState<Set<string>>(() => new Set(startingMachines));
+  // Sent only when the choice really changed: a list tells the server these were picked by hand,
+  // and from then on it stops spotting machines in the method for this recipe. Ticking a chip
+  // and unticking it again is no change.
+  const machinesChanged = editing
+    ? machines.size !== startingMachines.length || startingMachines.some((m) => !machines.has(m))
+    : machines.size > 0;
+
+  function toggleMachine(key: string) {
+    setMachines((all) => {
+      const next = new Set(all);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,16 +215,26 @@ export default function RecipeForm({
         // A blank amount goes as none — "salt and pepper" is "some", not 1 of it.
         ingredients: ingredients.filter((i) => i.ingredientName.trim()),
         ...(savedLinkId && !editing ? { savedLinkId } : {}),
+        // In the catalogue's order, keeping any key a newer server knows and this page does not.
+        ...(machinesChanged
+          ? {
+              appliances: [
+                ...orderedMachines(machines).map((m) => m.key),
+                ...[...machines].filter((key) => !machineByKey(key)),
+              ],
+            }
+          : {}),
       };
-      onSaved(
-        editing
-          ? await api<Recipe>('PUT', `/api/recipes/${recipe.id}`, payload)
-          : await api<Recipe>(
-              'POST',
-              `/api/households/${householdId}/recipes${anotherCopy ? '?allowDuplicate=true' : ''}`,
-              payload,
-            ),
-      );
+      const saved = editing
+        ? await api<Recipe>('PUT', `/api/recipes/${recipe.id}`, payload)
+        : await api<Recipe>(
+            'POST',
+            `/api/households/${householdId}/recipes${anotherCopy ? '?allowDuplicate=true' : ''}`,
+            payload,
+          );
+      // The drawer it is filed in shows it as saved, without waiting to be loaded again.
+      rememberRecipe(householdId, saved);
+      onSaved(saved);
     } catch (err) {
       // Already in the catalog — the same link or the same name. Say which, rather than a bare
       // refusal, and let a second copy through when that is what's meant.
@@ -369,15 +390,29 @@ export default function RecipeForm({
             </Chip>
           ))}
         </div>
-        {showGroups ? (
-          <div className="mt-2">
-            <RecipeClassifier householdId={householdId} value={filing} onChange={setFiling} groups={known} sectionsHidden />
-          </div>
-        ) : (
-          <Button type="button" variant="ghost" size="sm" icon="plus" className="-ml-2 self-start" onClick={() => setShowGroups(true)}>
-            Put it in a group
-          </Button>
-        )}
+        <div className="mt-2">
+          <RecipeClassifier householdId={householdId} value={filing} onChange={setFiling} tags={known} sectionsHidden />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <SectionLabel className="!px-0">Machines</SectionLabel>
+        <p className="-mt-1 text-[0.8125rem] text-muted">
+          {editing
+            ? 'What it’s cooked with — your drawers can be filtered by these.'
+            : 'We’ll spot machines from the method when you save.'}
+        </p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Machines">
+          {MACHINES.map((m) => {
+            const on = machines.has(m.key);
+            return (
+              <Chip key={m.key} active={on} title={m.label} onClick={() => toggleMachine(m.key)}>
+                <MachineIcon machine={m.key} size={16} className="-ml-0.5 shrink-0" />
+                {m.short}
+              </Chip>
+            );
+          })}
+        </div>
       </section>
 
       {error && <ErrorText>{error}</ErrorText>}

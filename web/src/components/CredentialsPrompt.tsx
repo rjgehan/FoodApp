@@ -21,17 +21,32 @@ function dismissed(): boolean {
  *
  * "Not now" is honoured until the next open rather than for good: the whole point is that
  * everyone gets there eventually.
+ *
+ * One of the prompts in Layout's single slot: `held` keeps it waiting while one before it is up
+ * (the kitchen questions), and `onAsking` tells the slot whether it is still finding out or
+ * asking, so "Time to restock?" waits its turn behind it.
  */
-export default function CredentialsPrompt() {
+export default function CredentialsPrompt({
+  held = false,
+  onAsking,
+}: {
+  held?: boolean;
+  onAsking?: (asking: boolean) => void;
+}) {
   const { session } = useAuth();
   const [me, setMe] = useState<Me | null>(null);
   const [open, setOpen] = useState(false);
+  const [checking, setChecking] = useState(() => !!session && !dismissed());
   // Kept open after Save to say it worked; otherwise saving and "Not now" look the same.
   const [savedEmail, setSavedEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session || dismissed()) return;
+    if (!session || dismissed()) {
+      setChecking(false);
+      return;
+    }
     let cancelled = false;
+    setChecking(true);
     api<Me>('GET', '/api/users/me')
       .then((fetched) => {
         if (cancelled) return;
@@ -40,11 +55,19 @@ export default function CredentialsPrompt() {
       })
       .catch(() => {
         // Offline or signed out: nothing to ask about right now.
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
       });
     return () => {
       cancelled = true;
     };
   }, [session?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const asking = checking || (open && !!me);
+  useEffect(() => {
+    onAsking?.(asking);
+  }, [asking, onAsking]);
 
   function notNow() {
     try {
@@ -55,7 +78,7 @@ export default function CredentialsPrompt() {
     setOpen(false);
   }
 
-  if (!open || !me) return null;
+  if (!open || !me || held) return null;
 
   if (savedEmail) {
     return (

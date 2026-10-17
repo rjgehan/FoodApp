@@ -9,7 +9,7 @@ import { useAuth } from '../../auth/AuthContext';
 /**
  * One row of the list (mockup 4.1): the amount in bold before the name, the recipes it is for
  * underneath, and the two things worth knowing before buying it — the cupboard says you have
- * some (sky), or a restock reminder is set on it (the mustard bell).
+ * some (sky) — in a household that keeps one — or a restock reminder is set on it (the mustard bell).
  *
  * The whole row ticks it off: in a shop, with a basket on one arm, the circle alone is too small
  * a target. Swiping it left offers More (its aisle, a reminder, the cupboard) and Remove. A mouse
@@ -18,6 +18,7 @@ import { useAuth } from '../../auth/AuthContext';
 export default function GroceryRow({
   item,
   reminder,
+  cupboard = true,
   stock,
   onToggle,
   onOpen,
@@ -25,6 +26,8 @@ export default function GroceryRow({
 }: {
   item: GroceryListItem;
   reminder?: RestockReminder;
+  /** The household keeps a cupboard, so the row can say what it has. */
+  cupboard?: boolean;
   stock?: CupboardItem;
   onToggle: () => void;
   onOpen: () => void;
@@ -34,7 +37,7 @@ export default function GroceryRow({
   const { session } = useAuth();
   const detail = rowDetail(item, session?.userId);
   // A meal put it here, but the cupboard says you have some. Worth a look before buying a third jar.
-  const have = item.inCupboard && !item.checked;
+  const have = cupboard && item.inCupboard && !item.checked;
 
   return (
     <SwipeRow

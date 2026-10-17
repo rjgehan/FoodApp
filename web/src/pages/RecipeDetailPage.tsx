@@ -8,12 +8,14 @@ import { kcalText, type RecipeNutrition } from '../api/nutrition';
 import { Icon } from '../components/icons';
 import { usePushedScreen } from '../components/Layout';
 import PlanRecipeSheet from '../components/PlanRecipeSheet';
+import AddToGroceriesSheet from '../components/recipe/AddToGroceriesSheet';
 import RecipeIndexCard from '../components/RecipeIndexCard';
 import ImagePicker from '../components/ImagePicker';
 import { toast } from '../components/toast';
 import { ServingsStepper } from '../components/plan/PlanBits';
 import RecipeHero, { HeroButton } from '../components/recipe/RecipeHero';
 import {
+  GroceriesButton,
   IngredientList,
   LinkButtons,
   MethodSteps,
@@ -33,12 +35,16 @@ import {
   type RecipeOption,
 } from '../components/recipe/RecipeSheets';
 import { instructionSteps } from '../utils/recipeFormat';
+import { cachedRecipe, forgetRecipe } from '../components/catalogue/catalogueStore';
+import { planOn } from '../utils/features';
 
 /**
  * A recipe (the mockup's 3.7, Option 1): the photo hero with its name on it, then Ingredients,
- * Method and Photos as tabs that stick to the top as you scroll, and Add to plan along the
- * bottom between the previous and next recipe. Everything else — organising it, its photos and
- * links, sharing, editing, deleting — waits behind the ••• on the photo.
+ * Method and Photos as tabs that stick to the top as you scroll, and along the bottom, between
+ * the previous and next recipe, the one filled button: Add to plan, with Add to groceries as the
+ * cart beside it — or, in a house that does not plan meals, Add to groceries itself. Everything
+ * else — organising it, its photos and links, sharing, editing, deleting — waits behind the •••
+ * on the photo.
  */
 export default function RecipeDetailPage() {
   const { recipeId } = useParams<{ recipeId: string }>();
@@ -46,20 +52,21 @@ export default function RecipeDetailPage() {
   const { activeHouseholdId, activeHousehold, households } = useHousehold();
   usePushedScreen();
 
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  // Opened from a drawer or a search, the recipe is already in hand: drawn at once, then fetched.
+  const [recipe, setRecipe] = useState<Recipe | null>(() => cachedRecipe(activeHouseholdId, recipeId));
   const [siblings, setSiblings] = useState<Recipe[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<RecipeTab>('ingredients');
   /** How many the amounts are shown for: the recipe's own number until the stepper moves. */
   const [servings, setServings] = useState<number | null>(null);
-  const [open, setOpen] = useState<RecipeOption | 'options' | 'plan' | null>(null);
+  const [open, setOpen] = useState<RecipeOption | 'options' | 'plan' | 'groceries' | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
   /** A serving's calories and its few words, for the way into the recipe's nutrition (5.6). */
   const [nutrition, setNutrition] = useState<Pick<RecipeNutrition, 'perServing' | 'highlights'> | null>(null);
 
   useEffect(() => {
     if (!recipeId) return;
-    setRecipe(null);
+    setRecipe(cachedRecipe(activeHouseholdId, recipeId));
     setError(null);
     setOpen(null);
     setTab('ingredients');
@@ -166,6 +173,8 @@ export default function RecipeDetailPage() {
   );
   const shown = servings ?? recipe.servings;
   const scale = recipe.servings > 0 ? shown / recipe.servings : 1;
+  // A house that does not plan meals has no Add to plan: the list is where a recipe goes next.
+  const plans = planOn(activeHousehold);
 
   if (open === 'card') {
     return (
@@ -245,7 +254,8 @@ export default function RecipeDetailPage() {
             <ServingsStepper value={shown} onChange={setServings} className="ml-auto mt-[3px]" />
           </div>
           {recipe.ingredients.length === 0 ? (
-            <TabEmpty>No ingredients yet — until they're in, planning this adds nothing to Groceries.</TabEmpty>
+            // Groceries, not planning: Add to groceries is on the page whether or not the house plans.
+            <TabEmpty>No ingredients yet — until they're in, there's nothing to add to Groceries.</TabEmpty>
           ) : (
             <IngredientList ingredients={recipe.ingredients} scale={scale} />
           )}
@@ -304,10 +314,23 @@ export default function RecipeDetailPage() {
       {activeHouseholdId && (
         <RecipeBottomBar>
           <StepButton direction="prev" disabled={!prev} onClick={() => flipTo(prev)} />
-          {/* The next step from a recipe is the plan, so that is the one filled button here. */}
-          <Button size="lg" icon="calendar" className="min-w-0 flex-1" onClick={() => setOpen('plan')}>
-            Add to plan
-          </Button>
+          {/* The next step from a recipe is the plan, so that is the one filled button here — and
+              the list, in a house that shops without planning. Never two filled buttons. */}
+          {plans ? (
+            <>
+              {/* Its calendar only where there is room for it as well as the Groceries button
+                  beside it: on most phones the words need all the width there is. */}
+              <Button size="lg" className="min-w-0 flex-1 max-[409px]:px-3" onClick={() => setOpen('plan')}>
+                <Icon name="calendar" size={19} className="shrink-0 max-[409px]:hidden" />
+                <span className="truncate">Add to plan</span>
+              </Button>
+              <GroceriesButton expanded={open === 'groceries'} onClick={() => setOpen('groceries')} />
+            </>
+          ) : (
+            <Button size="lg" icon="cart" className="min-w-0 flex-1" onClick={() => setOpen('groceries')}>
+              Add to groceries
+            </Button>
+          )}
           <StepButton direction="next" disabled={!next} onClick={() => flipTo(next)} />
         </RecipeBottomBar>
       )}
@@ -345,11 +368,35 @@ export default function RecipeDetailPage() {
           recipe={recipe}
           households={households}
           onCancel={() => setOpen(null)}
-          onDeleted={() => navigate('/recipes', { replace: true })}
+          onDeleted={() => {
+            if (activeHouseholdId) forgetRecipe(activeHouseholdId, recipe.id);
+            navigate('/recipes', { replace: true });
+          }}
         />
       )}
 
-      {open === 'plan' && activeHouseholdId && (
+      {open === 'groceries' && activeHouseholdId && (
+        <AddToGroceriesSheet
+          householdId={activeHouseholdId}
+          recipe={recipe}
+          servings={shown}
+          mine={mine}
+          onClose={() => setOpen(null)}
+          onAdded={(rows) => {
+            setOpen(null);
+            // Nothing comes back only when everything it needs is an "always have" staple, which
+            // the list leaves off while the house keeps a cupboard.
+            if (rows.length === 0) return toast('Nothing to add — you always have all of it', { icon: 'check' });
+            // Counted as the list counts them: two lines of garlic are one row.
+            toast(`Added ${rows.length} ${rows.length === 1 ? 'thing' : 'things'} to Groceries`, {
+              icon: 'cart',
+              action: { label: 'See list', onClick: () => navigate('/grocery-list') },
+            });
+          }}
+        />
+      )}
+
+      {open === 'plan' && plans && activeHouseholdId && (
         <PlanRecipeSheet
           householdId={activeHouseholdId}
           recipe={recipe}

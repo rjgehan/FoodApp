@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, imageUrl } from '../../api/client';
-import type { CupboardItem, Place, Recipe, RecipeCategory, SavedLink } from '../../api/types';
+import { imageUrl } from '../../api/client';
+import type { CupboardItem, Place, Recipe, SavedLink } from '../../api/types';
 import { useHousehold } from '../../household/HouseholdContext';
-import { buildTree } from '../../utils/categoryTree';
+import { filingLine, isMain, isMainOrSideTag, isSide } from '../../utils/tags';
 import { isVideo, sourceLabel } from '../../utils/savedLinks';
 import { Icon } from '../icons';
 import {
@@ -24,7 +24,7 @@ import {
   Toggle,
   type Tone,
 } from '../ui';
-import { dishIcon, filingLine, slotTime } from './planModel';
+import { dishIcon, slotTime } from './planModel';
 
 const PLACE_TONES: Tone[] = ['plum', 'accent', 'mustard', 'herb', 'sky'];
 
@@ -152,16 +152,13 @@ export default function FillSlot({
   );
 }
 
-type Filter = { kind: 'all' } | { kind: 'mains' } | { kind: 'sides' } | { kind: 'cupboard' } | { kind: 'links' } | { kind: 'group'; name: string };
-
-const MAIN = /\bmain/i;
-const SIDE = /\bside/i;
+type Filter = { kind: 'all' } | { kind: 'mains' } | { kind: 'sides' } | { kind: 'cupboard' } | { kind: 'links' } | { kind: 'tag'; name: string };
 
 /**
  * Everything eaten at home in one search: a recipe, a saved link, something from the cupboard,
  * or anything you type. A name nothing matches offers both ways forward — plan it as typed, or
  * make it a recipe right here — so the meal you had in mind never means a trip to Recipes and
- * back. The household's own groups are filters too, after the mockup's five.
+ * back. The household's own tags are filters too, after the mockup's five.
  */
 function EatIn({
   role,
@@ -182,43 +179,23 @@ function EatIn({
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
-  const { activeHouseholdId, groceryCategories } = useHousehold();
+  const { groceryCategories } = useHousehold();
   const typed = query.trim();
-
-  // The household's groups, to write each recipe's filing as the path it is nested in. Until
-  // they arrive (or if they cannot), the groups are listed as they are.
-  const [tree, setTree] = useState<ReturnType<typeof buildTree> | null>(null);
-  useEffect(() => {
-    if (!activeHouseholdId) return;
-    let live = true;
-    api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`)
-      .then((groups) => live && setTree(buildTree(groups)))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [activeHouseholdId]);
   const aisles = useMemo(() => new Map(groceryCategories.map((c) => [c.id, c.name])), [groceryCategories]);
   const q = typed.toLowerCase();
 
-  const groups = useMemo(() => {
-    const names = new Set<string>();
-    for (const r of recipes) for (const c of r.categories) names.add(c);
-    return [...names].sort((a, b) => a.localeCompare(b));
+  // Every tag a recipe here wears, once by name: Dinner's "Quick" and Lunch's "Quick" are one chip.
+  const tags = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const r of recipes) for (const c of r.categories) if (!names.has(c.toLowerCase())) names.set(c.toLowerCase(), c);
+    return [...names.values()].sort((a, b) => a.localeCompare(b));
   }, [recipes]);
-  // A recipe in Chicken, inside Main, is a main: its groups and every group they sit in.
-  const filedUnder = (r: Recipe): string[] =>
-    tree
-      ? r.categories.flatMap((c) => {
-          const g = tree.byName.get(c.toLowerCase());
-          return g ? tree.path(g.id).map((p) => p.name) : [c];
-        })
-      : r.categories;
-  const isMain = (r: Recipe) => filedUnder(r).some((c) => MAIN.test(c));
-  const isSide = (r: Recipe) => filedUnder(r).some((c) => SIDE.test(c));
-  const hasMains = recipes.some(isMain);
-  const hasSides = recipes.some(isSide);
-  const otherGroups = groups.filter((g) => !MAIN.test(g) && !SIDE.test(g));
+  // A recipe tagged Main — or Chicken, which is one — is a main.
+  const main = (r: Recipe) => isMain(r.categories);
+  const side = (r: Recipe) => isSide(r.categories);
+  const hasMains = recipes.some(main);
+  const hasSides = recipes.some(side);
+  const otherTags = tags.filter((t) => !isMainOrSideTag(t));
 
   const matches = (name: string) => !q || name.toLowerCase().includes(q);
   const k = filter.kind;
@@ -229,11 +206,11 @@ function EatIn({
           .filter((r) => matches(r.name))
           .filter((r) =>
             k === 'mains'
-              ? isMain(r)
+              ? main(r)
               : k === 'sides'
-                ? isSide(r)
-                : k === 'group'
-                  ? r.categories.includes(filter.name)
+                ? side(r)
+                : k === 'tag'
+                  ? r.categories.some((c) => c.toLowerCase() === filter.name.toLowerCase())
                   : true,
           )
           .sort((a, b) => a.name.localeCompare(b.name));
@@ -253,7 +230,7 @@ function EatIn({
   const nothing = shownRecipes.length + shownLinks.length + shownCupboard.length === 0;
 
   const chip = (f: Filter, label: string) => {
-    const on = filter.kind === f.kind && (f.kind !== 'group' || (filter.kind === 'group' && filter.name === f.name));
+    const on = filter.kind === f.kind && (f.kind !== 'tag' || (filter.kind === 'tag' && filter.name === f.name));
     return (
       <Chip key={label} active={on} onClick={() => setFilter(on && f.kind !== 'all' ? { kind: 'all' } : f)}>
         {label}
@@ -284,7 +261,7 @@ function EatIn({
           {hasSides && chip({ kind: 'sides' }, 'Sides')}
           {cupboard.length > 0 && chip({ kind: 'cupboard' }, 'Cupboard')}
           {savedLinks.length > 0 && chip({ kind: 'links' }, 'Links')}
-          {otherGroups.map((g) => chip({ kind: 'group', name: g }, g))}
+          {otherTags.map((t) => chip({ kind: 'tag', name: t }, t))}
         </div>
       </div>
 
@@ -306,7 +283,7 @@ function EatIn({
                   }
                   title={<Highlight text={r.name} query={q} />}
                   titleClassName="font-medium"
-                  subtitle={filingLine(r, tree) || `Serves ${r.servings}`}
+                  subtitle={filingLine(r)}
                   end={
                     r.id === current ? (
                       <CheckCircle checked />

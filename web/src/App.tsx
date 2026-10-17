@@ -1,13 +1,14 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
-import { HouseholdProvider } from './household/HouseholdContext';
+import { HouseholdProvider, useHousehold } from './household/HouseholdContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import HouseholdPage from './pages/HouseholdPage';
 import HouseholdPlacesPage from './pages/HouseholdPlacesPage';
 import HouseholdSetupPage from './pages/HouseholdSetupPage';
 import HouseholdAislesPage from './pages/HouseholdAislesPage';
+import HouseholdKitchenPage from './pages/HouseholdKitchenPage';
 import RecipesPage from './pages/RecipesPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeSectionPage from './pages/RecipeSectionPage';
@@ -36,6 +37,8 @@ import IdeasPage from './pages/IdeasPage';
 import ThemePage from './pages/ThemePage';
 import Tutorial from './tutorial/Tutorial';
 import { tutorialSeen } from './tutorial/seen';
+import { cupboardOn, planOn, useHouseholdKnown } from './utils/features';
+import { useHomePath } from './utils/homePath';
 
 /** Every building block on one page, for development only: production builds leave it out. */
 const GalleryPage = import.meta.env.DEV ? lazy(() => import('./pages/GalleryPage')) : null;
@@ -111,12 +114,13 @@ export default function App() {
     <HouseholdProvider>
       <Layout>
         <Routes>
-          {/* No home screen: the week's plan is where the day starts. */}
-          <Route path="/" element={<Navigate to="/meal-plan" replace />} />
+          {/* No home screen of its own: Recipes is home (utils/homePath.ts). */}
+          <Route path="/" element={<Home />} />
           <Route path="/household" element={<HouseholdPage />} />
           <Route path="/household/places" element={<HouseholdPlacesPage />} />
           <Route path="/household/setup" element={<HouseholdSetupPage />} />
           <Route path="/household/aisles" element={<HouseholdAislesPage />} />
+          <Route path="/household/kitchen" element={<HouseholdKitchenPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<NewRecipePage />} />
           <Route path="/recipes/section/:section" element={<RecipeSectionPage />} />
@@ -125,9 +129,9 @@ export default function App() {
           <Route path="/recipes/:recipeId/edit" element={<EditRecipePage />} />
           <Route path="/recipes/:recipeId/share" element={<RecipeSharePage />} />
           <Route path="/recipes/:recipeId/nutrition" element={<RecipeNutritionPage />} />
-          <Route path="/meal-plan" element={<MealPlanPage />} />
+          <Route path="/meal-plan" element={<Needs plan><MealPlanPage /></Needs>} />
           <Route path="/grocery-list" element={<GroceryListPage />} />
-          <Route path="/cupboard" element={<CupboardPage />} />
+          <Route path="/cupboard" element={<Needs cupboard><CupboardPage /></Needs>} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/explore/recipes" element={<ExploreRecipesPage />} />
           {/* A published recipe, read-only until it is moved into your recipes. */}
@@ -137,14 +141,16 @@ export default function App() {
           <Route path="/explore/nutrition/products/:barcode" element={<NutritionProductPage />} />
           <Route path="/explore/nutrition/foods/:fdcId" element={<NutritionFoodPage />} />
           {/* Meal plans: the front page, cooking from the cupboard (setup, then its draft), a
-              ready-made plan, and your own private ones with the form that makes and changes them. */}
-          <Route path="/explore/meal-plans" element={<MealPlansPage />} />
-          <Route path="/explore/meal-plans/cupboard" element={<CupboardSetupPage />} />
-          <Route path="/explore/meal-plans/cupboard/plan" element={<CupboardResultPage />} />
-          <Route path="/explore/meal-plans/ready-made/:preset" element={<TargetPlanPage />} />
-          <Route path="/explore/meal-plans/new" element={<TargetPlanFormPage />} />
-          <Route path="/explore/meal-plans/plans/:planId" element={<TargetPlanPage />} />
-          <Route path="/explore/meal-plans/plans/:planId/edit" element={<TargetPlanFormPage />} />
+              ready-made plan, and your own private ones with the form that makes and changes them.
+              Each is put on the Plan, so they are there only while the household plans meals; and
+              cooking from the cupboard needs a cupboard too. */}
+          <Route path="/explore/meal-plans" element={<Needs plan><MealPlansPage /></Needs>} />
+          <Route path="/explore/meal-plans/cupboard" element={<Needs plan cupboard><CupboardSetupPage /></Needs>} />
+          <Route path="/explore/meal-plans/cupboard/plan" element={<Needs plan cupboard><CupboardResultPage /></Needs>} />
+          <Route path="/explore/meal-plans/ready-made/:preset" element={<Needs plan><TargetPlanPage /></Needs>} />
+          <Route path="/explore/meal-plans/new" element={<Needs plan><TargetPlanFormPage /></Needs>} />
+          <Route path="/explore/meal-plans/plans/:planId" element={<Needs plan><TargetPlanPage /></Needs>} />
+          <Route path="/explore/meal-plans/plans/:planId/edit" element={<Needs plan><TargetPlanFormPage /></Needs>} />
           {/* Explore used to be a room inside Recipes. Links and bookmarks still work. */}
           <Route path="/recipes/explore" element={<Navigate to="/explore/recipes" replace />} />
           {/* The server owner's read-only view of everything. Not a tab: reached from Settings,
@@ -164,9 +170,30 @@ export default function App() {
               }
             />
           )}
-          <Route path="*" element={<Navigate to="/meal-plan" replace />} />
+          <Route path="*" element={<Home />} />
         </Routes>
       </Layout>
     </HouseholdProvider>
   );
+}
+
+/** Where the app opens, and where a link to nowhere lands: Recipes (utils/homePath.ts). */
+function Home() {
+  return <Navigate to={useHomePath()} replace />;
+}
+
+/**
+ * A screen of a part of the app the household can turn off — the Plan, the Cupboard, or both.
+ * With that part off it is home instead, so an old bookmark or a link from another phone lands
+ * somewhere real rather than on a screen for something the house does not use. Until the
+ * household is known (utils/features.ts) it is nothing at all, for the moment that takes: not
+ * the screen, fetching for a part the house may not have, and not a bounce home that may be wrong.
+ */
+function Needs({ plan = false, cupboard = false, children }: { plan?: boolean; cupboard?: boolean; children: ReactNode }) {
+  const { activeHousehold } = useHousehold();
+  const known = useHouseholdKnown();
+  const home = useHomePath();
+  if (!known) return null;
+  if ((plan && !planOn(activeHousehold)) || (cupboard && !cupboardOn(activeHousehold))) return <Navigate to={home} replace />;
+  return <>{children}</>;
 }

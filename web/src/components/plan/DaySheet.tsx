@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../../api/client';
 import type { CupboardItem, MealPlanEntry, MealType, Place, Recipe, SavedLink } from '../../api/types';
 import { entryLabel } from '../../utils/planEntry';
+import { useFeatures } from '../../utils/features';
 import { Icon } from '../icons';
 import { toast } from '../toast';
 import { Button, ConfirmAlert, cx, ErrorText, NoteBox, Pill, Sheet } from '../ui';
@@ -76,6 +77,7 @@ export default function DaySheet({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const { cupboard: keepsCupboard } = useFeatures();
   const day = fromIso(date);
   const recipeById = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
   const placeById = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
@@ -99,9 +101,14 @@ export default function DaySheet({
   const [cupboard, setCupboard] = useState<CupboardItem[]>([]);
 
   useEffect(() => {
-    api<CupboardItem[]>('GET', `/api/households/${householdId}/cupboard`).then(setCupboard).catch(() => setCupboard([]));
+    // The picker's Cupboard chip and rows, for a household that keeps one; none, and no fetch, otherwise.
+    if (keepsCupboard) {
+      api<CupboardItem[]>('GET', `/api/households/${householdId}/cupboard`).then(setCupboard).catch(() => setCupboard([]));
+    } else {
+      setCupboard([]);
+    }
     api<SavedLink[]>('GET', `/api/households/${householdId}/saved-links`).then(setSavedLinks).catch(() => setSavedLinks([]));
-  }, [householdId]);
+  }, [householdId, keepsCupboard]);
 
   // Opened for one dish's options and they have gone, with nothing else on top: done.
   useEffect(() => {
@@ -291,7 +298,7 @@ export default function DaySheet({
                                 d.needsIngredients || d.recipeDeleted ? 'text-accent-ink' : 'text-muted',
                               )}
                             >
-                              {d.placeId ? place?.notes || 'Eat out' : dishDetail(d, recipe)}
+                              {d.placeId ? place?.notes || 'Eat out' : dishDetail(d, recipe, keepsCupboard)}
                             </span>
                           </span>
                           {!d.placeId && (

@@ -5,6 +5,7 @@ import { inviteUrl } from '../../utils/appLinks';
 import { Icon } from '../icons';
 import { Button, ConfirmAlert, ErrorText, Sheet } from '../ui';
 import { LinkWell, QrCode, sendLink } from './HouseholdParts';
+import { APP_NAME } from '../../brand';
 
 /*
  How anybody new gets in: the household's invite link, sent as a message or held up as a QR code
@@ -35,7 +36,7 @@ export function useInviteLink(householdId: string, generation: number) {
   return { link, error, reload: load };
 }
 
-const shareTitle = (name: string) => `Join ${name} on Meal Planner`;
+const shareTitle = (name: string) => `Join ${name} on ${APP_NAME}`;
 
 /**
  * The tomato card at the top of Household (mockup 6.2): who can join, and the two ways to hand

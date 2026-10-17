@@ -7,6 +7,7 @@ import { AppMark, IconField, PasswordField, WelcomePage } from '../components/we
 import Keypad, { PinDots } from '../components/Keypad';
 import { PIN_LENGTH } from '../auth/pin';
 import { PASSWORD_MIN, PASSWORD_RULE } from '../auth/password';
+import { APP_NAME, APP_TAGLINE } from '../brand';
 
 /*
  * Email and password first. The name-and-PIN screens are the older way in, kept behind a link
@@ -238,15 +239,15 @@ export default function LoginPage({
         <div className="flex flex-col gap-3.5">
           <AppMark />
           <div className="flex flex-col gap-1.5">
-            <h1 className="serif text-[2rem] leading-tight">Meal Planner</h1>
-            <p className="text-base text-muted">Plan the week together. One list, everyone's phone.</p>
+            <h1 className="serif text-[2rem] leading-tight">{APP_NAME}</h1>
+            <p className="text-base text-muted">{APP_TAGLINE}</p>
           </div>
         </div>
       ) : (
         step !== 'setup-form' && (
           <div className="mb-6 flex items-center gap-3">
             <AppMark size={40} />
-            <span className="serif text-[1.375rem]">Meal Planner</span>
+            <span className="serif text-[1.375rem]">{APP_NAME}</span>
           </div>
         )
       )}
@@ -393,10 +394,11 @@ export default function LoginPage({
       {step === 'setup-form' && (
         <form onSubmit={onSetupSubmit} className="flex flex-col gap-5 pt-[22px] sm:pt-0">
           <div className="flex flex-col gap-2.5">
+            {/* Not "set up your kitchen": that is the questions straight after this one. */}
             <h1 className="serif text-[1.75rem] leading-[1.15]">
-              Let's set up
+              Create your
               <br />
-              your kitchen
+              household
             </h1>
             <p className="text-[0.9375rem] text-muted">You'll be the owner. Invite everyone else after.</p>
           </div>

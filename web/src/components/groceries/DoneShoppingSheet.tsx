@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../api/client';
 import type { GroceryListItem } from '../../api/types';
-import { Button, CheckBox, cx, ErrorText, Sheet, Tile, Toggle } from '../ui';
+import { Button, CheckBox, CheckCircle, cx, ErrorText, Sheet, Tile, Toggle } from '../ui';
 import { amountOf } from './groceryParts';
 
 /**
@@ -9,15 +9,22 @@ import { amountOf } from './groceryParts';
  * goes in the cupboard. All of it starts ticked because most of a shop is for the house — you
  * untick the birthday card, rather than ticking everything else. The switch at the top is for a
  * shop that was not for the house at all.
+ *
+ * A household that keeps no cupboard has nothing to put away: the sheet just says what leaves
+ * the list. Everything still goes to the server as put away, which stocks nothing in such a
+ * house but restarts each thing's restock reminder — it was just bought.
  */
 export default function DoneShoppingSheet({
   householdId,
   items,
+  cupboard = true,
   onDone,
   onClose,
 }: {
   householdId: string;
   items: GroceryListItem[];
+  /** The household keeps a cupboard, so the shop can go into it. */
+  cupboard?: boolean;
   onDone: (clearedIds: string[], stocked: number) => void;
   onClose: () => void;
 }) {
@@ -25,7 +32,7 @@ export default function DoneShoppingSheet({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(items.map((i) => i.id)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const stocking = toCupboard ? items.filter((i) => selected.has(i.id)) : [];
+  const stocking = !cupboard ? items : toCupboard ? items.filter((i) => selected.has(i.id)) : [];
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -43,7 +50,7 @@ export default function DoneShoppingSheet({
     const leaveOut = items.filter((i) => !putAway.includes(i.id)).map((i) => i.id);
     try {
       await api('POST', `/api/households/${householdId}/grocery-list/put-away`, { putAway, leaveOut });
-      onDone([...putAway, ...leaveOut], putAway.length);
+      onDone([...putAway, ...leaveOut], cupboard ? putAway.length : 0);
     } catch {
       setError('Could not finish the shop.');
       setBusy(false);
@@ -51,6 +58,37 @@ export default function DoneShoppingSheet({
   }
 
   const count = items.length;
+
+  if (!cupboard) {
+    return (
+      <Sheet
+        title="Done shopping?"
+        subtitle={`${count} ticked ${count === 1 ? 'item leaves' : 'items leave'} the list.`}
+        onClose={onClose}
+      >
+        <div className="space-y-3.5">
+          <ul className="card card-rows inset-rows" aria-label="Ticked items">
+            {items.map((item) => {
+              const amount = amountOf(item);
+              return (
+                <li key={item.id} className="flex min-h-[46px] items-center gap-3 px-4 py-2">
+                  <CheckCircle checked />
+                  <span className="min-w-0 flex-1 truncate text-base font-medium text-muted line-through">
+                    {amount && <b className="font-semibold">{amount} </b>}
+                    <span>{item.name}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button size="lg" full disabled={busy} onClick={finish}>
+            {busy ? 'Clearing…' : `Clear ${count} ticked`}
+          </Button>
+        </div>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet

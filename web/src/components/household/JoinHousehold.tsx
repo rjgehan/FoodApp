@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { parseAppLink } from '../../utils/appLinks';
 import BarcodeScanner from '../BarcodeScanner';
 import { Button, ErrorText, Input, Sheet, usernameInputProps } from '../ui';
+import { APP_NAME } from '../../brand';
 
 /**
  * Joining somebody else's house: paste the link they sent, or scan the code on their screen
@@ -19,7 +20,7 @@ export function JoinHouseholdForm({ onOpened }: { onOpened?: () => void }) {
   function open(value: string) {
     const link = parseAppLink(value);
     if (!link) {
-      setError("That isn't a Meal Planner invite link. It looks like …/invite/ followed by a long code.");
+      setError(`That isn't a ${APP_NAME} invite link. It looks like …/invite/ followed by a long code.`);
       return false;
     }
     onOpened?.();
@@ -115,7 +116,7 @@ function ScanInvite({ onFound }: { onFound: (value: string) => void }) {
           if (parseAppLink(value)) {
             onFound(value);
           } else {
-            setProblem("That QR code isn't a Meal Planner invite. Point at the code on the Invite card.");
+            setProblem(`That QR code isn't a ${APP_NAME} invite. Point at the code on the Invite card.`);
             setAttempt((n) => n + 1);
           }
         }}

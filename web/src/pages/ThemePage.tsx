@@ -7,6 +7,7 @@ import { Button, cx, ErrorText, NavBar, Pill, SectionLabel, Segmented } from '..
 import { contrast, hexToRgb, normalizeHex } from '../theme/colors';
 import { pickTheme, saveTheme, useTheme } from '../theme/sync';
 import { accentOf, activeKey, CUSTOM, THEMES, type Theme, type ThemeMode } from '../theme/theme';
+import { useHomePath } from '../utils/homePath';
 
 const MODES: { value: ThemeMode; label: string }[] = [
   { value: 'LIGHT', label: 'Light' },
@@ -30,6 +31,7 @@ export default function ThemePage() {
   const theme = useTheme();
   const key = activeKey(theme);
   const navigate = useNavigate();
+  const home = useHomePath();
   const from = (useLocation().state as ThemeScreenState | null)?.from;
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -83,7 +85,7 @@ export default function ThemePage() {
       <NavBar
         title="Theme"
         backLabel="Settings"
-        back={() => navigate(from ?? '/meal-plan', { state: { openSettings: true } })}
+        back={() => navigate(from ?? home, { state: { openSettings: true } })}
         className="-mx-1 mb-1.5"
       />
 

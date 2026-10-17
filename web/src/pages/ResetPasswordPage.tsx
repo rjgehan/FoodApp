@@ -7,6 +7,7 @@ import { PASSWORD_MAX, PASSWORD_MIN } from '../auth/password';
 import { Button, ErrorText, Pill, Tile, usernameInputProps } from '../components/ui';
 import { Icon } from '../components/icons';
 import { IconField, MessageScreen, PasswordField, WelcomePage } from '../components/welcome';
+import { APP_NAME } from '../brand';
 
 /**
  * Where an owner's reset link lands. Works signed out — that is the whole point — and signs the
@@ -74,7 +75,7 @@ export default function ResetPasswordPage() {
         actions={
           // Opened again after it was used, they are usually signed in already.
           <Button variant="secondary" full size="lg" onClick={() => navigate('/', { replace: true })}>
-            {session ? 'Open Meal Planner' : 'Go to sign in'}
+            {session ? `Open ${APP_NAME}` : 'Go to sign in'}
           </Button>
         }
       >

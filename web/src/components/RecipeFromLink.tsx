@@ -36,7 +36,7 @@ export function FromALink({
   link: handed,
   initialServings,
   section,
-  groups,
+  tags,
   onSaved,
   onLinkSaved,
   onDraft,
@@ -49,8 +49,8 @@ export function FromALink({
   initialServings?: number;
   /** Where the finished recipe is filed to begin with. */
   section?: RecipeSection;
-  /** Groups the recipe starts in — see RecipeForm. */
-  groups?: string[];
+  /** Tags the recipe starts with — see RecipeForm. */
+  tags?: string[];
   onSaved: (recipe: Recipe) => void;
   /**
    * What to do with a link kept in Saved links instead of read. Without it, this says where it
@@ -176,7 +176,7 @@ export function FromALink({
         householdId={householdId}
         draft={draft}
         section={section}
-        groups={groups}
+        tags={tags}
         again="Try another link"
         note={draftNote(draft)}
         aside={

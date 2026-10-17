@@ -7,7 +7,7 @@ import { amountOf, cupboardState, reminderLine, titleCase } from './groceryParts
 
 /**
  * One grocery item (mockup 4.2): which aisle it goes in, a restock reminder, what the cupboard
- * says, and taking it off the list. Everything here takes effect as it is tapped — there is no
+ * says (when the household keeps one), and taking it off the list. Everything here takes effect as it is tapped — there is no
  * Save — because each is one decision about one thing.
  *
  * The aisle belongs to the ingredient, not this row, so picking one moves it for good: next
@@ -18,6 +18,7 @@ export default function GroceryItemSheet({
   item,
   categories,
   reminder,
+  cupboard = true,
   stock,
   onMove,
   onReminder,
@@ -28,6 +29,8 @@ export default function GroceryItemSheet({
   item: GroceryListItem;
   categories: GroceryCategory[];
   reminder: RestockReminder | null;
+  /** The household keeps a cupboard: the row saying what it has, and the way to it. */
+  cupboard?: boolean;
   stock: CupboardItem | undefined;
   onMove: (categoryId: string) => void;
   onReminder: (reminder: RestockReminder | null) => void;
@@ -110,13 +113,15 @@ export default function GroceryItemSheet({
               </span>
             </li>
           )}
-          <Row
-            lead={<Tile icon="cupboard" tone="sky" size={34} />}
-            title="Cupboard"
-            subtitle={cupboardState(stock)}
-            chevron
-            onClick={() => navigate(`/cupboard?q=${encodeURIComponent(item.name)}`)}
-          />
+          {cupboard && (
+            <Row
+              lead={<Tile icon="cupboard" tone="sky" size={34} />}
+              title="Cupboard"
+              subtitle={cupboardState(stock)}
+              chevron
+              onClick={() => navigate(`/cupboard?q=${encodeURIComponent(item.name)}`)}
+            />
+          )}
           <Row
             lead={<Tile icon="trash" tone="accent" size={34} />}
             title="Remove from list"

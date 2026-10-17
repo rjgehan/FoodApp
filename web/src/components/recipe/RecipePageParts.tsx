@@ -9,7 +9,8 @@ import { cx, EmptyState, Pill, StepNumber } from '../ui';
 
 /*
  The pieces of the recipe page under its hero (the mockup's 3.7): the tabs that stick to the top
- as you scroll, what each tab holds, and the bar along the bottom with Add to plan.
+ as you scroll, what each tab holds, and the bar along the bottom with Add to plan and Add to
+ groceries.
 */
 
 export type RecipeTab = 'ingredients' | 'method' | 'photos';
@@ -227,9 +228,10 @@ export function TabEmpty({ children }: { children: ReactNode }) {
 }
 
 /**
- * Along the bottom: the previous and next recipe either side of Add to plan — the one filled
- * button, because the plan is where a recipe goes next. Over the tab bar on a phone, as the
- * mockup draws it: the recipe is a page you pushed into, and leave by going back.
+ * Along the bottom: the previous and next recipe either side of the one filled button — Add to
+ * plan in a house that plans meals (with Add to groceries as a cart beside it), Add to groceries
+ * in one that does not. Over the tab bar on a phone, as the mockup draws it: the recipe is a page
+ * you pushed into, and leave by going back.
  */
 export function RecipeBottomBar({ children }: { children: ReactNode }) {
   return (
@@ -241,6 +243,46 @@ export function RecipeBottomBar({ children }: { children: ReactNode }) {
         <div className="mx-auto flex w-full max-w-[calc(48rem+2.5rem)] items-center gap-2.5 px-5">{children}</div>
       </div>
     </>
+  );
+}
+
+/**
+ * Add to groceries as the bottom bar's outlined button beside Add to plan: there when a recipe is
+ * wanted for the shop and not for a day, without a second filled button competing with the plan.
+ * On a phone it is the cart with "Groceries" under it — a word, so it never reads as a third
+ * arrow beside Previous and Next — and the small plus on the cart says it adds, rather than
+ * opening the list. On a wide screen there is room to say it all in a line, and the plus goes.
+ */
+export function GroceriesButton({ onClick, expanded }: { onClick: () => void; expanded: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label="Add to groceries"
+      title="Add to groceries"
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      onClick={onClick}
+      className={cx(
+        'press flex h-[3.25rem] min-w-[3.25rem] shrink-0 flex-col items-center justify-center gap-[3px] rounded-btn border border-line bg-surface px-1.5',
+        'font-semibold text-ink active:bg-surface2 md:flex-row md:gap-2 md:px-5 md:text-[1.0625rem]',
+      )}
+    >
+      <span className="relative flex shrink-0">
+        <Icon name="cart" size={21} className="md:h-[19px] md:w-[19px]" />
+        <span
+          aria-hidden="true"
+          className="absolute -right-[7px] -top-[5px] flex h-[14px] w-[14px] items-center justify-center rounded-full bg-accent text-on-accent ring-2 ring-surface md:hidden"
+        >
+          <Icon name="plus" size={9} strokeWidth={3.4} />
+        </span>
+      </span>
+      <span aria-hidden="true" className="text-[0.6875rem] leading-none md:hidden">
+        Groceries
+      </span>
+      <span aria-hidden="true" className="hidden md:inline">
+        Add to groceries
+      </span>
+    </button>
   );
 }
 

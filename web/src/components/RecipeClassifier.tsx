@@ -1,23 +1,22 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api } from '../api/client';
+import { useState, type ReactNode } from 'react';
 import type { RecipeCategory, RecipeSection } from '../api/types';
-import { Button, Chip, Field, Input, SectionLabel } from './ui';
-import { PlusIcon } from './icons';
+import { Chip, Field, SectionLabel } from './ui';
 import { SECTION_OPTIONS, moveToDrawer, type Filing } from '../utils/recipeMeta';
-import { buildTree } from '../utils/categoryTree';
+import { sameName, tagsIn } from '../utils/tags';
+import { AddTagChip, NewTagField } from './catalogue/CatalogueParts';
+import { useTags } from './catalogue/catalogueStore';
 
 /**
- * Files a recipe: which drawer it goes in, and which of this household's groups it carries.
- * Groups are laid out as they nest — each top group on its own line, with the groups inside it
- * after it — so picking Chicken reads as "Main dish, then Chicken". Typing a name that does not
- * exist yet creates a top-level group; making one inside another happens in the drawer itself.
+ * Files a recipe: which drawer it goes in, and which of that drawer's tags it wears — as many as
+ * fit, "Chicken" and "Quick" both. Every tag is a chip, flat and A to Z. "+ New tag" types one the
+ * drawer does not have yet; the server makes it in the recipe's drawer when the recipe is saved.
  */
 export default function RecipeClassifier({
   householdId,
   value,
   onChange,
   sectionsHidden = false,
-  groups,
+  tags,
   sectionLabels = false,
 }: {
   householdId: string;
@@ -25,25 +24,18 @@ export default function RecipeClassifier({
   onChange: (next: Filing) => void;
   /** The add-recipe form shows its own drawer picker, so it suppresses this one. */
   sectionsHidden?: boolean;
-  /** The household's groups, when the caller already has them; otherwise they are fetched here. */
-  groups?: RecipeCategory[];
+  /** The household's tags, when the caller already has them; otherwise the kept ones are used. */
+  tags?: RecipeCategory[];
   /**
-   * Head the two parts "Drawer" and "Groups" in the sheet's own section labels, for a sheet whose
+   * Head the two parts "Drawer" and "Tags" in the sheet's own section labels, for a sheet whose
    * other parts are headed that way ("Which household" in Move into my recipes).
    */
   sectionLabels?: boolean;
 }) {
-  const [fetched, setFetched] = useState<RecipeCategory[]>([]);
-  const known = groups ?? fetched;
-  const [draft, setDraft] = useState('');
+  const kept = useTags(tags ? null : householdId);
+  const known = tags ?? kept ?? [];
   const [parked, setParked] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (groups) return;
-    api<RecipeCategory[]>('GET', `/api/households/${householdId}/recipe-categories`)
-      .then(setFetched)
-      .catch(() => setFetched([]));
-  }, [householdId, groups]);
+  const [naming, setNaming] = useState(false);
 
   function chooseSection(section: RecipeSection) {
     const moved = moveToDrawer(value, section, known, parked);
@@ -51,106 +43,56 @@ export default function RecipeClassifier({
     onChange(moved.filing);
   }
 
-  // Only this drawer's groups, plus any that belong to every drawer.
-  const inSection = useMemo(
-    () => known.filter((c) => c.section === null || c.section === value.section),
-    [known, value.section],
-  );
-  const tree = useMemo(() => buildTree(inSection), [inSection]);
+  const inDrawer = tagsIn(known, value.section);
+  const isPicked = (name: string) => value.categories.some((c) => sameName(c, name));
 
-  function isPicked(name: string) {
-    return value.categories.some((c) => c.toLowerCase() === name.toLowerCase());
-  }
-
-  function toggleCategory(name: string) {
+  function toggle(name: string) {
     onChange({
       ...value,
-      categories: isPicked(name)
-        ? value.categories.filter((c) => c.toLowerCase() !== name.toLowerCase())
-        : [...value.categories, name],
+      categories: isPicked(name) ? value.categories.filter((c) => !sameName(c, name)) : [...value.categories, name],
     });
   }
 
-  function addDraft(e?: { preventDefault: () => void }) {
-    // Called from a button and from Enter — preventDefault stops the surrounding form submitting.
-    e?.preventDefault();
-    const name = draft.trim().replace(/\s+/g, ' ');
-    if (!name) return;
-    if (!isPicked(name)) {
-      onChange({ ...value, categories: [...value.categories, name] });
-    }
-    setDraft('');
+  function addNew(name: string) {
+    setNaming(false);
+    const existing = inDrawer.find((t) => sameName(t.name, name));
+    if (!isPicked(name)) onChange({ ...value, categories: [...value.categories, existing?.name ?? name] });
   }
 
-  /** A top group and everything inside it, depth-first, with how deep each one sits. */
-  function family(root: RecipeCategory): { category: RecipeCategory; depth: number }[] {
-    const out: { category: RecipeCategory; depth: number }[] = [];
-    const walk = (c: RecipeCategory, depth: number) => {
-      out.push({ category: c, depth });
-      tree.children(c.id).forEach((child) => walk(child, depth + 1));
-    };
-    walk(root, 0);
-    return out;
-  }
-
-  // Anything picked that the household does not know about yet is brand new.
-  const unknownPicked = value.categories.filter((c) => !tree.byName.has(c.toLowerCase()));
+  // Anything ticked that this drawer has no tag for yet is brand new.
+  const typedNew = value.categories.filter((c) => !inDrawer.some((t) => sameName(t.name, c)));
 
   return (
     <div className="space-y-4">
       {!sectionsHidden && (
-      <Part label={sectionLabels ? 'Drawer' : 'Filed under'} asSection={sectionLabels}>
-        <div className="flex flex-wrap gap-2">
-          {SECTION_OPTIONS.map((s) => (
-            <Chip
-              key={s.value}
-              active={value.section === s.value}
-              onClick={() => chooseSection(s.value)}
-            >
-              {s.label}
-            </Chip>
-          ))}
-        </div>
-      </Part>
+        <Part label={sectionLabels ? 'Drawer' : 'Filed under'} asSection={sectionLabels}>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Drawer">
+            {SECTION_OPTIONS.map((s) => (
+              <Chip key={s.value} active={value.section === s.value} onClick={() => chooseSection(s.value)}>
+                {s.label}
+              </Chip>
+            ))}
+          </div>
+        </Part>
       )}
 
-      <Part label="Groups" asSection={sectionLabels} hint="Pick the most specific one — Chicken rather than Main dish.">
-        {(inSection.length > 0 || unknownPicked.length > 0) && (
-          <div className="mb-2 space-y-2">
-            {tree.children(null).map((root) => (
-              <div key={root.id} className="flex flex-wrap gap-2">
-                {family(root).map(({ category, depth }) => (
-                  <Chip key={category.id} active={isPicked(category.name)} onClick={() => toggleCategory(category.name)}>
-                    {depth > 0 ? `${'›'.repeat(depth)} ${category.name}` : category.name}
-                  </Chip>
-                ))}
-              </div>
-            ))}
-            {unknownPicked.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {unknownPicked.map((name) => (
-                  <Chip key={name} active onClick={() => toggleCategory(name)}>
-                    {name} · new
-                  </Chip>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') addDraft(e);
-            }}
-            placeholder="A new group…"
-            aria-label="New group name"
-          />
-          <Button type="button" variant="secondary" disabled={!draft.trim()} onClick={() => addDraft()}>
-            <PlusIcon className="h-5 w-5" />
-            Add
-          </Button>
+      <Part label="Tags" asSection={sectionLabels} hint="As many as fit — Chicken and Quick, say.">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Tags">
+          {inDrawer.map((tag) => (
+            <Chip key={tag.id} active={isPicked(tag.name)} onClick={() => toggle(tag.name)}>
+              {tag.name}
+            </Chip>
+          ))}
+          {typedNew.map((name) => (
+            <Chip key={name} active onClick={() => toggle(name)}>
+              {name} · new
+            </Chip>
+          ))}
+          {naming ? (
+            <NewTagField onSubmit={addNew} onCancel={() => setNaming(false)} submitOnBlur />
+          ) : (
+            <AddTagChip label="New tag" onClick={() => setNaming(true)} />
+          )}
         </div>
       </Part>
     </div>

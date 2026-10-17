@@ -1,145 +1,55 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import NoHousehold from '../components/NoHousehold';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { ApiError } from '../api/client';
 import type { Recipe, RecipeCategory, RecipeSection } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { usePushedScreen } from '../components/Layout';
-import {
-  ActionMenu,
-  Button,
-  Card,
-  CheckBox,
-  Chip,
-  EmptyState,
-  ErrorText,
-  Field,
-  Input,
-  List,
-  MenuList,
-  type MenuItem,
-  NavBar,
-  Pill,
-  Row,
-  SearchField,
-  SectionLabel,
-  Sheet,
-} from '../components/ui';
+import { Button, Card, EmptyState, ErrorText, List, NavBar, Pill, Row, SearchField, SectionLabel } from '../components/ui';
 import { Icon } from '../components/icons';
+import { toast } from '../components/toast';
 import { isNewShare, markSharedSeen, SHARED_KEY, sectionFromSlug, sectionLabel, sharedSeenAt } from '../utils/recipeMeta';
 import { timeAgo } from '../utils/savedLinks';
-import { iconByKey } from '../components/FoodIcons';
-import { buildTree, isIn, suggestGroups, suggestSplit, type CategoryTree } from '../utils/categoryTree';
 import { formatMinutes, totalMinutes } from '../utils/recipeFormat';
-import IconPicker from '../components/IconPicker';
-import EditGroupsScreen from '../components/catalogue/EditGroupsScreen';
+import { orderedMachines, type Machine } from '../utils/machines';
+import { readTagNames, sameName, suggestTags, tagNamed, tagsIn, wears } from '../utils/tags';
 import {
-  Breadcrumbs,
-  CARD_GRID,
-  FloatingAddRecipe,
-  GroupCard,
-  groupDetail,
-  NewGroupTile,
-  RecipePicture,
+  AddTagChip,
+  ChipRow,
+  HideTabBar,
+  MachineChip,
+  NewTagField,
+  QuickTagCard,
   RecipePhotoGrid,
-  RecipeResultRow,
-  filingTrail,
+  RecipePicture,
+  TagChip,
 } from '../components/catalogue/CatalogueParts';
+import { createTag, tagRecipes, useCatalogue } from '../components/catalogue/catalogueStore';
+import ManageTagsScreen from '../components/catalogue/ManageTagsScreen';
+import { MoveRecipesSheet, TagRecipesSheet } from '../components/catalogue/TagSheets';
 
 function errorMessage(err: unknown, fallback: string): string {
-  return (err instanceof ApiError ? (err.body as { message?: string } | null)?.message : null) ?? fallback;
+  return err instanceof ApiError ? err.message : fallback;
 }
 
 /**
- * One drawer of the catalogue, a level at a time (the mockup's 3.3 and 3.4). A drawer or a group
- * shows the groups directly inside it as cards; once there is nothing smaller to open, it shows
- * its recipes as photo cards. The current group is in the URL (?group=), so opening one moves
- * down a level and Back walks back up the way you came. Recipes at a level that are in none of
- * the groups below get a card of one-tap suggestions for where they go, likely group first.
+ * One drawer of the catalogue (the mockup's 3.3 and 3.4, flattened into tags). Every recipe in
+ * the drawer is a photo card, with the drawer's tags as a row of chips over them: tap one to see
+ * only those, tap two to see what wears both. The machines its recipes need are a second row,
+ * for "what can I make in the air fryer". What is chosen is kept in the address (?tags=Chicken),
+ * so coming back from a recipe finds the drawer as it was left.
  *
- * Edit groups (?edit=1) is its own screen over the same level (3.6); a big group with nothing
- * inside it offers to split itself up (3.5).
+ * Tagging is quick on purpose: "+ Tag" makes one and goes straight to picking its recipes; Select
+ * tags or moves several at once; a card offers the obvious tag for recipes that have none. Each
+ * change shows at once and is one request — nothing reloads the catalogue. Manage tags (?edit=1)
+ * renames, draws and deletes them.
  */
 export default function RecipeSectionPage() {
   const { section: slug } = useParams<{ section: string }>();
-  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { activeHouseholdId } = useHousehold();
-  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [categories, setCategories] = useState<RecipeCategory[]>([]);
-  const [query, setQuery] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [splitting, setSplitting] = useState(false);
-  // Remembered on this phone: a suggestion closed once that comes back on the next visit is nagging.
-  const [splitDismissed, setSplitDismissed] = useState<string[]>(readDismissedSplits);
+  const catalogue = useCatalogue(activeHouseholdId);
   usePushedScreen();
-
-  const isShared = slug === SHARED_KEY;
-  const section = sectionFromSlug(slug);
-  const groupId = params.get('group');
-  const editingGroups = params.get('edit') === '1';
-
-  const load = useCallback(async () => {
-    if (!activeHouseholdId) return;
-    const [all, groups] = await Promise.all([
-      api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`),
-      api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`),
-    ]);
-    setRecipes(all);
-    setCategories(groups);
-  }, [activeHouseholdId]);
-
-  useEffect(() => {
-    setRecipes(null);
-    load();
-  }, [load, slug]);
-
-  // Another level is another screen: whatever you were doing on the last one stays there.
-  useEffect(() => {
-    setQuery('');
-    setAdding(false);
-    setEditing(false);
-    setSplitting(false);
-  }, [groupId, slug]);
-
-  // A drawer shows its own groups, plus any group that belongs to every drawer.
-  const tree = useMemo(
-    () => buildTree(categories.filter((c) => c.section === null || c.section === section)),
-    [categories, section],
-  );
-
-  const inSection = useMemo(
-    () =>
-      (recipes ?? [])
-        .filter((r) => (isShared ? r.section === null : r.section === section))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [recipes, section, isShared],
-  );
-
-  const group = groupId ? (tree.byId.get(groupId) ?? null) : null;
-  const here = useMemo(
-    () => (group ? inSection.filter((r) => isIn(r, group.id, tree)) : inSection),
-    [group, inSection, tree],
-  );
-  // Every group one level down — shown whether or not it holds a recipe from this drawer.
-  const allChildren = tree.children(group?.id ?? null);
-  // Here, but in none of the groups below: filed on this group itself, or on nothing at all.
-  const loose = here.filter((r) => !allChildren.some((c) => isIn(r, c.id, tree)));
-
-  // Names a split-up group cannot take: this group and the ones above it.
-  const splits = useMemo(() => {
-    if (!group || allChildren.length > 0 || here.length < 3) return [];
-    const taken = new Set(tree.path(group.id).map((c) => c.name.toLowerCase()));
-    return suggestSplit(here, taken);
-  }, [group, allChildren.length, here, tree]);
-
-  // Offered once, by itself, the first time the group is opened — when it would really split, into
-  // two groups or more; after that (or for a single group) it is in the •••.
-  const offerSplit = splits.length > 1 && group !== null && !splitDismissed.includes(group.id);
-  useEffect(() => {
-    if (offerSplit && recipes !== null) setSplitting(true);
-  }, [offerSplit, recipes]);
 
   if (!activeHouseholdId) {
     return (
@@ -149,7 +59,12 @@ export default function RecipeSectionPage() {
     );
   }
 
-  if (!isShared && !section) {
+  if (slug === SHARED_KEY) {
+    return <SharedWithYou householdId={activeHouseholdId} recipes={catalogue.recipes} onBack={() => navigate('/recipes')} />;
+  }
+
+  const section = sectionFromSlug(slug);
+  if (!section) {
     return (
       <Card>
         <EmptyState>
@@ -162,121 +77,351 @@ export default function RecipeSectionPage() {
     );
   }
 
-  if (isShared) {
-    return (
-      <SharedWithYou
-        householdId={activeHouseholdId}
-        recipes={recipes === null ? null : inSection}
-        onBack={() => navigate('/recipes')}
-      />
+  // A drawer of its own each time: what you were doing in Dinner stays in Dinner.
+  return <Drawer key={`${activeHouseholdId}:${section}`} householdId={activeHouseholdId} section={section} catalogue={catalogue} />;
+}
+
+function Drawer({
+  householdId,
+  section,
+  catalogue,
+}: {
+  householdId: string;
+  section: RecipeSection;
+  catalogue: ReturnType<typeof useCatalogue>;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState('');
+  const [naming, setNaming] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  /** A tag just made with "+ Tag" (or "Tag recipes"): select mode picks its recipes, Done tags them. */
+  const [pickingFor, setPickingFor] = useState<RecipeCategory | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [sheet, setSheet] = useState<'tag' | 'move' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** A tag just made or used, whose chip may be off the end of the row: scrolled into view. */
+  const [reveal, setReveal] = useState<string | null>(null);
+  // Remembered on this device: a suggestion closed once that comes back next visit is nagging.
+  const [dismissed, setDismissed] = useState<string[]>(readDismissed);
+
+  const drawerName = sectionLabel(section);
+  const tags = useMemo(() => tagsIn(catalogue.tags ?? [], section), [catalogue.tags, section]);
+  const all = useMemo(
+    () => (catalogue.recipes ?? []).filter((r) => r.section === section).sort((a, b) => a.name.localeCompare(b.name)),
+    [catalogue.recipes, section],
+  );
+
+  // What is chosen lives in the address, by name. So that a tag renamed — in Manage tags, which
+  // Back returns from to the address as it was, or on another phone — stays chosen under its new
+  // name, every name each tag has had while the drawer is open is remembered by the tag's id; a
+  // tag deleted stops being chosen, rather than coming back chosen the day a new tag takes its name.
+  const namesSeen = useRef(new Map<string, string>());
+  for (const t of tags) namesSeen.current.set(t.name.trim().toLowerCase(), t.id);
+  const askedFor = readTagNames(params.get('tags'), [...namesSeen.current.keys()]);
+  const chosenNames = askedFor.flatMap((name) => {
+    if (tags.some((t) => sameName(t.name, name))) return [name];
+    const id = namesSeen.current.get(name.trim().toLowerCase());
+    // Never a tag here (an old link): left in the address, choosing nothing.
+    if (!id) return [name];
+    const now = tags.find((t) => t.id === id);
+    return now ? [now.name] : [];
+  });
+  const chosen = tags.filter((t) => chosenNames.some((n) => sameName(n, t.name)));
+  const untaggedOnly = params.get('untagged') === '1' && chosen.length === 0;
+  const machines = (params.get('machines') ?? '').split(',').filter(Boolean);
+  const editing = params.get('edit') === '1';
+
+  // ...and the address follows, so a reload or a copied link says what is on screen. Not from
+  // inside Manage tags, whose way out is Back to the address it came from.
+  const askedKey = askedFor.join(',');
+  const chosenKey = chosenNames.join(',');
+  useEffect(() => {
+    if (editing || catalogue.tags === null || chosenKey === askedKey) return;
+    setFilters({ tags: chosenNames });
+  }, [editing, catalogue.tags, chosenKey, askedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // An old link into a group (?group=<id>) opens the drawer with that tag chosen, if it is here.
+  const legacyGroup = params.get('group');
+  useEffect(() => {
+    if (!legacyGroup || catalogue.tags === null) return;
+    const tag = catalogue.tags.find((t) => t.id === legacyGroup && t.section === section);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('group');
+        if (tag) next.set('tags', tag.name);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [legacyGroup, catalogue.tags, section, setParams]);
+
+  useEffect(() => {
+    if (!reveal) return;
+    document
+      .querySelector(`[data-tag="${CSS.escape(reveal.trim().toLowerCase())}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    setReveal(null);
+  }, [reveal]);
+
+  const tagged = useMemo(() => new Set(tags.map((t) => t.name.trim().toLowerCase())), [tags]);
+  const isUntagged = (r: Recipe) => !r.categories.some((c) => tagged.has(c.trim().toLowerCase()));
+  const untagged = useMemo(() => all.filter(isUntagged), [all, tagged]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Counted from the recipes, so a change shows at once; the server's own count until they arrive.
+  const loaded = catalogue.recipes !== null;
+  const counts = useMemo(
+    () => new Map(tags.map((t) => [t.id, loaded ? all.filter((r) => wears(r, t)).length : t.recipeCount])),
+    [tags, all, loaded],
+  );
+
+  // The machines this drawer's recipes need, and any still chosen from before (so it can be undone).
+  const machineCounts = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of all) for (const key of r.appliances ?? []) n.set(key, (n.get(key) ?? 0) + 1);
+    return n;
+  }, [all]);
+  const machineChips = orderedMachines([...machineCounts.keys(), ...machines]);
+
+  const q = query.trim().toLowerCase();
+  // Picking a tag's recipes looks through the whole drawer, whatever the chips said: only the
+  // search narrows it, and what is picked stays picked while the search hides it.
+  const shown = all.filter(
+    (r) =>
+      (pickingFor ||
+        ((untaggedOnly ? isUntagged(r) : chosen.every((t) => wears(r, t))) &&
+          machines.every((m) => (r.appliances ?? []).includes(m)))) &&
+      (!q ||
+        r.name.toLowerCase().includes(q) ||
+        r.categories.some((c) => c.toLowerCase().includes(q)) ||
+        r.ingredients.some((i) => i.ingredientName.toLowerCase().includes(q))),
+  );
+
+  const suggestion = useMemo(
+    () =>
+      suggestTags(
+        untagged,
+        tags.map((t) => t.name),
+      ).find((s) => !dismissed.includes(dismissKey(householdId, section, s.name))) ?? null,
+    [untagged, tags, dismissed, householdId, section],
+  );
+
+  function setFilters(change: { tags?: string[]; untagged?: boolean; machines?: string[] }) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        const put = (key: string, value: string) => (value ? next.set(key, value) : next.delete(key));
+        if (change.tags) put('tags', change.tags.join(','));
+        if (change.untagged !== undefined) put('untagged', change.untagged ? '1' : '');
+        if (change.machines) put('machines', change.machines.join(','));
+        return next;
+      },
+      { replace: true },
     );
   }
 
-  const drawerName = sectionLabel(section);
-  const place = group?.name ?? drawerName;
-  const parent = group?.parentId ? (tree.byId.get(group.parentId) ?? null) : null;
-  // A recipe started from in here is filed in here — the drawer, and the group you are in.
-  const addHere = `/recipes/new?${new URLSearchParams({ section: section ?? '', ...(groupId ? { group: groupId } : {}) })}`;
-  const countFor = (id: string) => here.filter((r) => isIn(r, id, tree)).length;
-
-  function goTo(id: string | null) {
-    setParams(id ? { group: id } : {});
+  function toggleTag(tag: RecipeCategory) {
+    const on = chosen.some((t) => t.id === tag.id);
+    const names = on ? chosen.filter((t) => t.id !== tag.id).map((t) => t.name) : [...chosen.map((t) => t.name), tag.name];
+    setFilters({ tags: names, untagged: false });
   }
 
-  function setEditingGroups(on: boolean) {
-    const next = new URLSearchParams(params);
-    if (on) next.set('edit', '1');
-    else next.delete('edit');
-    setParams(next, { replace: !on });
+  function toggleMachine(machine: Machine) {
+    setFilters({ machines: machines.includes(machine.key) ? machines.filter((m) => m !== machine.key) : [...machines, machine.key] });
   }
 
-  function dismissSplit() {
-    setSplitting(false);
-    if (!group) return;
-    setSplitDismissed((ids) => {
-      if (ids.includes(group.id)) return ids;
-      const next = [...ids, group.id];
-      saveDismissedSplits(next);
+  function setEditing(on: boolean) {
+    if (on) {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('edit', '1');
+          return next;
+        },
+        { state: { manageTags: true } },
+      );
+    } else if ((location.state as { manageTags?: boolean } | null)?.manageTags) {
+      // Opened from here: closing it is Back, so the drawer is not in the history twice.
+      navigate(-1);
+    } else {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('edit');
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }
+
+  function startSelecting() {
+    setNaming(false);
+    setPickingFor(null);
+    setPicked(new Set());
+    setSelecting(true);
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setPickingFor(null);
+    setPicked(new Set());
+    setSheet(null);
+  }
+
+  /** Out of picking, by Done or Cancel: its search was for finding the tag's recipes, so it goes too. */
+  function stopPicking() {
+    setQuery('');
+    stopSelecting();
+  }
+
+  /** Straight into choosing a tag's recipes: every recipe in the drawer, the ones wearing it ticked. */
+  function startPicking(tag: RecipeCategory) {
+    setNaming(false);
+    setQuery('');
+    setPickingFor(tag);
+    setPicked(new Set(all.filter((r) => wears(r, tag)).map((r) => r.id)));
+    setSelecting(true);
+  }
+
+  function togglePicked(recipe: Recipe) {
+    setPicked((ids) => {
+      const next = new Set(ids);
+      if (next.has(recipe.id)) next.delete(recipe.id);
+      else next.add(recipe.id);
       return next;
     });
   }
 
-  if (editingGroups) {
+  /** "+ Tag", Return: the tag is there at once, and its recipes are picked next. */
+  function makeTag(name: string) {
+    setNaming(false);
+    setError(null);
+    const existing = tagNamed(tags, section, name);
+    if (existing) return startPicking(existing);
+    const { tag, saved } = createTag(householdId, section, name);
+    saved.then(
+      // The tag as the server has it — or the one another phone had already made by that name,
+      // now fetched and on the chips: either way, the one whose recipes are being picked.
+      (made) => setPickingFor((p) => (p?.id === tag.id ? made : p)),
+      (err) => {
+        setError(errorMessage(err, `Could not make ${name}.`));
+        stopPicking();
+      },
+    );
+    startPicking(tag);
+  }
+
+  /** Done while picking: one request puts the tag on (and takes it off) the lot, then shows it. */
+  async function finishPicking() {
+    const tag = pickingFor;
+    if (!tag) return;
+    const had = new Set(all.filter((r) => wears(r, tag)).map((r) => r.id));
+    const add = [...picked].filter((id) => !had.has(id));
+    const remove = [...had].filter((id) => !picked.has(id));
+    stopPicking();
+    setFilters({ tags: [tag.name], untagged: false });
+    setReveal(tag.name);
+    if (add.length === 0 && remove.length === 0) return;
+    try {
+      setError(null);
+      await tagRecipes(householdId, tag, add, remove);
+      if (add.length > 0) toast(`Tagged ${add.length} ${add.length === 1 ? 'recipe' : 'recipes'} ${tag.name}`, { icon: 'check' });
+    } catch (err) {
+      setError(errorMessage(err, `Could not tag those ${tag.name}.`));
+    }
+  }
+
+  /** The quick-tag card's one tap: onto the drawer's tag of that name, or a new one — one request. */
+  async function quickTag(name: string, recipeIds: string[]) {
+    setBusy(true);
+    setError(null);
+    try {
+      const existing = tagNamed(tags, section, name);
+      if (existing) await tagRecipes(householdId, existing, recipeIds, []);
+      else await createTag(householdId, section, name, recipeIds).saved;
+      toast(`Tagged ${recipeIds.length} ${recipeIds.length === 1 ? 'recipe' : 'recipes'} ${name}`, { icon: 'check' });
+    } catch (err) {
+      setError(errorMessage(err, 'Could not tag those.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function dismiss(name: string) {
+    setDismissed((keys) => {
+      const next = [...keys, dismissKey(householdId, section, name)];
+      saveDismissed(next);
+      return next;
+    });
+  }
+
+  if (editing) {
     return (
-      <EditGroupsScreen
-        householdId={activeHouseholdId}
-        place={place}
-        groups={allChildren}
-        onClose={() => setEditingGroups(false)}
-        onSaved={async () => {
-          await load();
-          setEditingGroups(false);
-        }}
+      <ManageTagsScreen
+        householdId={householdId}
+        section={section}
+        tags={tags}
+        counts={counts}
+        loaded={catalogue.tags !== null}
+        onClose={() => setEditing(false)}
       />
     );
   }
 
-  const q = query.trim().toLowerCase();
-  const found = q
-    ? here.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.categories.some((c) => c.toLowerCase().includes(q)) ||
-          r.ingredients.some((i) => i.ingredientName.toLowerCase().includes(q)),
-      )
-    : [];
-  const recipesLevel = allChildren.length === 0;
+  // A recipe started from in here starts in here: the drawer, and the tags you were looking at.
+  const addHere = `/recipes/new?${new URLSearchParams({
+    section,
+    ...(chosen.length ? { tags: chosen.map((t) => t.name).join(',') } : {}),
+  })}`;
+  const pickedRecipes = all.filter((r) => picked.has(r.id));
+  const everyPicked = shown.length > 0 && shown.every((r) => picked.has(r.id));
+  const title = pickingFor
+    ? `Pick recipes for ${pickingFor.name}`
+    : selecting
+      ? picked.size
+        ? `${picked.size} selected`
+        : 'Select recipes'
+      : drawerName;
 
   return (
     <>
+      {selecting && <HideTabBar />}
       <div className="space-y-4">
         <NavBar
           className="-mx-2.5"
-          title={place}
-          back={() => (group ? goTo(parent?.id ?? null) : navigate('/recipes'))}
-          backLabel={group ? (parent?.name ?? drawerName) : 'Recipes'}
+          title={title}
+          back="/recipes"
+          backLabel="Recipes"
+          // Select mode's way out is its own bar (Cancel, Done); the title needs the room.
+          left={selecting ? <span /> : undefined}
           right={
-            group ? (
-              <ActionMenu
-                label={`Options for ${group.name}`}
-                title={group.name}
-                className="-mr-2.5 text-accent-ink"
-                items={[
-                  allChildren.length > 0 && {
-                    label: `Edit groups inside ${group.name}`,
-                    icon: 'pen',
-                    iconTone: 'plum',
-                    onSelect: () => setEditingGroups(true),
-                  },
-                  {
-                    label: `Add a group inside ${group.name}`,
-                    icon: 'plus',
-                    iconTone: 'herb',
-                    onSelect: () => setAdding(true),
-                  },
-                  splits.length > 0 && {
-                    label: `Split ${group.name} into groups`,
-                    icon: 'sparkles',
-                    iconTone: 'mustard',
-                    onSelect: () => setSplitting(true),
-                  },
-                  {
-                    label: 'Edit group',
-                    icon: 'folder',
-                    iconTone: 'sky',
-                    onSelect: () => setEditing(true),
-                  },
-                ]}
-              />
+            selecting ? (
+              <button
+                type="button"
+                className="press disabled:opacity-45"
+                disabled={shown.length === 0}
+                onClick={() =>
+                  setPicked((ids) => {
+                    const next = new Set(ids);
+                    for (const r of shown) {
+                      if (everyPicked) next.delete(r.id);
+                      else next.add(r.id);
+                    }
+                    return next;
+                  })
+                }
+              >
+                {everyPicked ? 'None' : 'All'}
+              </button>
             ) : (
               <>
-                <button
-                  type="button"
-                  aria-label="Edit groups"
-                  title="Edit groups"
-                  className="press"
-                  onClick={() => setEditingGroups(true)}
-                >
+                <button type="button" className="press disabled:opacity-45" disabled={all.length === 0} onClick={startSelecting}>
+                  Select
+                </button>
+                <button type="button" aria-label="Edit tags" title="Edit tags" className="press" onClick={() => setEditing(true)}>
                   <Icon name="pen" size={20} />
                 </button>
                 <Link to={addHere} aria-label="Add recipe" title="Add recipe" className="press">
@@ -287,148 +432,191 @@ export default function RecipeSectionPage() {
           }
         />
 
-        {group && (
-          <Breadcrumbs
-            steps={[
-              { label: drawerName, onClick: () => goTo(null) },
-              ...tree.path(group.id).map((g) => ({
-                label: g.name,
-                onClick: g.id === group.id ? undefined : () => goTo(g.id),
-              })),
-            ]}
-          />
-        )}
-
-        {/* A group that opens further can be searched; a shelf of recipes is short enough to see. */}
-        {!recipesLevel && here.length > 0 && (
+        {all.length > 0 && (
           <SearchField
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${place}`}
-            aria-label={`Search ${place}`}
+            placeholder={`Search ${drawerName}`}
+            aria-label={`Search ${drawerName}`}
           />
         )}
 
-        {recipes === null ? (
-          <Loading />
-        ) : q ? (
-          found.length === 0 ? (
+        {pickingFor ? (
+          <p className="text-[0.9375rem] text-muted">
+            Tap every recipe that is <b className="font-semibold text-ink">{pickingFor.name}</b>, then {picked.size ? 'Tag' : 'Done'}.
+          </p>
+        ) : (
+          <>
+            {catalogue.tags !== null && (
+              // All and Untagged first, and "+ Tag" held at the end of the row however far it
+              // scrolls: on a phone a drawer's tags run well off the screen, and the two ways to
+              // sort out untagged recipes should not be three swipes away behind them.
+              <ChipRow
+                label="Tags"
+                end={
+                  naming ? (
+                    <NewTagField onSubmit={makeTag} onCancel={() => setNaming(false)} />
+                  ) : (
+                    !selecting && <AddTagChip onClick={() => setNaming(true)} />
+                  )
+                }
+              >
+                <TagChip
+                  label="All"
+                  count={all.length}
+                  active={chosen.length === 0 && !untaggedOnly}
+                  onClick={() => setFilters({ tags: [], untagged: false })}
+                />
+                {untagged.length > 0 && (
+                  <TagChip
+                    label="Untagged"
+                    count={untagged.length}
+                    active={untaggedOnly}
+                    onClick={() => setFilters({ untagged: !untaggedOnly, tags: [] })}
+                  />
+                )}
+                {tags.map((tag) => (
+                  <TagChip
+                    key={tag.id}
+                    label={tag.name}
+                    iconKey={tag.iconKey}
+                    count={counts.get(tag.id) ?? 0}
+                    active={chosen.some((t) => t.id === tag.id)}
+                    data-tag={tag.name.trim().toLowerCase()}
+                    onClick={() => toggleTag(tag)}
+                  />
+                ))}
+              </ChipRow>
+            )}
+
+            {machineChips.length > 0 && (
+              <ChipRow label="Machines">
+                {machineChips.map((m) => (
+                  <MachineChip
+                    key={m.key}
+                    machine={m}
+                    count={machineCounts.get(m.key) ?? 0}
+                    active={machines.includes(m.key)}
+                    onClick={() => toggleMachine(m)}
+                  />
+                ))}
+              </ChipRow>
+            )}
+
+            {/* About the untagged recipes, so not while looking at a tag or a machine. */}
+            {!selecting && !q && chosen.length === 0 && machines.length === 0 && suggestion && (
+              <QuickTagCard
+                name={suggestion.name}
+                count={suggestion.recipeIds.length}
+                busy={busy}
+                onTag={() => quickTag(suggestion.name, suggestion.recipeIds)}
+                onDismiss={() => dismiss(suggestion.name)}
+              />
+            )}
+          </>
+        )}
+
+        {error && <ErrorText>{error}</ErrorText>}
+
+        {catalogue.recipes === null ? (
+          catalogue.failed ? (
             <Card>
-              <EmptyState>Nothing in {place} matches that.</EmptyState>
+              <EmptyState>
+                Couldn’t load the recipes.{' '}
+                <button type="button" className="font-medium text-accent-ink underline" onClick={catalogue.retry}>
+                  Try again
+                </button>
+              </EmptyState>
             </Card>
           ) : (
-            <div>
-              <SectionLabel>Recipes · {found.length}</SectionLabel>
-              <List label="Recipes found">
-                {found.map((r) => (
-                  <RecipeResultRow key={r.id} recipe={r} subtitle={filingTrail(r, tree)} />
-                ))}
-              </List>
-            </div>
+            <Loading />
           )
-        ) : here.length === 0 && recipesLevel ? (
+        ) : all.length === 0 ? (
           <Card>
             <EmptyState>
-              {group ? `Nothing from ${drawerName} in ${group.name} yet.` : 'Nothing filed here yet.'}{' '}
+              Nothing filed in {drawerName} yet.{' '}
               <Link to={addHere} className="font-medium text-accent-ink underline">
                 Add a recipe
               </Link>
             </EmptyState>
           </Card>
-        ) : recipesLevel ? (
-          // Nothing smaller to open: this is where the recipes are.
-          <RecipePhotoGrid recipes={here} />
+        ) : shown.length === 0 ? (
+          <NothingMatches
+            drawerName={drawerName}
+            searching={!!q}
+            untaggedOnly={untaggedOnly}
+            chosen={chosen}
+            machines={orderedMachines(machines)}
+            onTagRecipes={!q && machines.length === 0 && chosen.length === 1 ? () => startPicking(chosen[0]) : undefined}
+          />
         ) : (
-          <>
-            <ul className={CARD_GRID}>
-              {allChildren.map((child) => (
-                <li key={child.id}>
-                  <GroupCard
-                    group={child}
-                    detail={groupDetail(countFor(child.id), tree.children(child.id).length)}
-                    onOpen={() => goTo(child.id)}
-                  />
-                </li>
-              ))}
-              <li>
-                <NewGroupTile onClick={() => setAdding(true)} />
-              </li>
-            </ul>
-
-            {/* Groups but no recipes yet — a new household. The groups are what there is to see. */}
-            {here.length === 0 && (
-              <p className="text-[0.9375rem] text-muted">
-                Nothing filed in {place} yet.{' '}
-                <Link to={addHere} className="font-medium text-accent-ink underline">
-                  Add a recipe
-                </Link>
-                , or open a group.
-              </p>
-            )}
-
-            {loose.length > 0 && (
-              <UnfiledCard
-                householdId={activeHouseholdId}
-                recipes={loose}
-                groups={allChildren}
-                tree={tree}
-                from={group}
-                onFiled={load}
-              />
-            )}
-          </>
+          <RecipePhotoGrid recipes={shown} picked={selecting ? picked : undefined} onPick={selecting ? togglePicked : undefined} />
         )}
+
+        {/* Room at the bottom for select mode's bar, so the last row of cards can be reached. */}
+        {selecting && <div className="h-20" aria-hidden="true" />}
       </div>
 
-      {/* Overlays sit outside the stack of sections, so its spacing does not push them down. */}
-      {group && <FloatingAddRecipe to={addHere} />}
-
-      {adding && (
-        <Sheet title={group ? `New group inside ${group.name}` : 'New group'} onClose={() => setAdding(false)}>
-          <AddGroup
-            householdId={activeHouseholdId}
-            parent={group}
-            section={section}
-            onCancel={() => setAdding(false)}
-            onAdded={async () => {
-              setAdding(false);
-              await load();
-            }}
-          />
-        </Sheet>
+      {selecting && (
+        <div className="material-bar edge-top fixed inset-x-0 bottom-0 z-30 pb-safe">
+          <div
+            role="toolbar"
+            aria-label={pickingFor ? `Tagging ${pickingFor.name}` : 'Selected recipes'}
+            className="mx-auto flex w-full max-w-3xl items-center gap-2 px-5 py-2.5 md:px-8 lg:max-w-5xl"
+          >
+            {pickingFor ? (
+              <>
+                <Button variant="secondary" size="sm" onClick={stopPicking}>
+                  Cancel
+                </Button>
+                <span className="flex-1" />
+                {/* A tag's name can be long; the title above has it whole, so here it gives way. */}
+                <Button size="sm" className="min-w-0" onClick={finishPicking}>
+                  <span className="truncate">{picked.size ? `Tag ${picked.size} ${pickingFor.name}` : 'Done'}</span>
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold">{picked.size} selected</span>
+                <Button variant="secondary" size="sm" icon="tag" disabled={picked.size === 0} onClick={() => setSheet('tag')}>
+                  Tag
+                </Button>
+                <Button variant="secondary" size="sm" icon="arrowR" disabled={picked.size === 0} onClick={() => setSheet('move')}>
+                  Move
+                </Button>
+                <Button size="sm" onClick={stopSelecting}>
+                  Done
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
-      {splitting && group && (
-        <SplitSheet
-          householdId={activeHouseholdId}
-          group={group}
-          total={here.length}
-          suggestions={splits}
-          examples={(ids) => here.find((r) => r.id === ids[0])?.name ?? ''}
-          tree={tree}
-          onDone={async () => {
-            setSplitting(false);
-            await load();
+      {sheet === 'tag' && (
+        <TagRecipesSheet
+          householdId={householdId}
+          section={section}
+          tags={tags}
+          recipes={pickedRecipes}
+          onClose={() => setSheet(null)}
+          onSaved={(said) => {
+            setSheet(null);
+            toast(said, { icon: 'check' });
           }}
-          onDismiss={dismissSplit}
         />
       )}
-
-      {editing && group && (
-        <EditGroup
-          householdId={activeHouseholdId}
-          group={group}
-          upTo={parent?.name ?? drawerName}
-          onClose={() => setEditing(false)}
-          onRenamed={async () => {
-            setEditing(false);
-            await load();
-          }}
-          onIconChanged={load}
-          onDeleted={async () => {
-            setEditing(false);
-            goTo(parent?.id ?? null);
-            await load();
+      {sheet === 'move' && (
+        <MoveRecipesSheet
+          householdId={householdId}
+          section={section}
+          recipes={pickedRecipes}
+          tags={catalogue.tags ?? []}
+          counts={drawerCounts(catalogue.recipes ?? [])}
+          onClose={() => setSheet(null)}
+          onMoved={(said) => {
+            stopSelecting();
+            toast(said, { icon: 'check' });
           }}
         />
       )}
@@ -436,8 +624,87 @@ export default function RecipeSectionPage() {
   );
 }
 
+/** How many recipes each drawer holds. */
+function drawerCounts(recipes: Recipe[]): Partial<Record<RecipeSection, number>> {
+  const counts: Partial<Record<RecipeSection, number>> = {};
+  for (const r of recipes) if (r.section) counts[r.section] = (counts[r.section] ?? 0) + 1;
+  return counts;
+}
+
+/** "the oven and air fryer": machines as they are said in a sentence. */
+function machineWords(machines: Machine[]): string {
+  const words = machines.map((m) => (m.key === 'pressure-cooker' ? m.short : m.short.toLowerCase()));
+  return words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : (words[0] ?? '');
+}
+
+/** Said for what is chosen — "Nothing tagged Chicken + Quick." — with the way to fix it. */
+function NothingMatches({
+  drawerName,
+  searching,
+  untaggedOnly,
+  chosen,
+  machines,
+  onTagRecipes,
+}: {
+  drawerName: string;
+  searching: boolean;
+  untaggedOnly: boolean;
+  chosen: RecipeCategory[];
+  machines: Machine[];
+  onTagRecipes?: () => void;
+}) {
+  const needs = machines.length ? ` needs the ${machineWords(machines)}` : '';
+  const names = chosen.map((t) => t.name).join(' + ');
+  const line = searching
+    ? `Nothing in ${drawerName} matches that.`
+    : untaggedOnly
+      ? needs
+        ? `No untagged recipe${needs}.`
+        : 'Every recipe here has a tag.'
+      : names
+        ? `Nothing tagged ${names}${needs}.`
+        : `Nothing here${needs}.`;
+  return (
+    <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <p className="text-[0.9375rem] text-muted">{line}</p>
+      {onTagRecipes && (
+        <Button variant="soft" size="sm" icon="tag" onClick={onTagRecipes}>
+          Tag recipes
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function Loading() {
   return <p className="py-8 text-center text-sm text-muted">Loading…</p>;
+}
+
+/*
+ * Quick-tag suggestions somebody closed, per household, drawer and tag name, kept on this device
+ * so "not now" is not asked again next visit. Capped, so it never grows without end.
+ */
+const DISMISSED_KEY = 'mp_dismissedTagSuggestions';
+
+function dismissKey(householdId: string, section: RecipeSection, name: string): string {
+  return `${householdId}:${section}:${name.trim().toLowerCase()}`;
+}
+
+function readDismissed(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((key): key is string => typeof key === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissed(keys: string[]) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(keys.slice(-200)));
+  } catch {
+    // Private browsing and the like: it just won't be remembered.
+  }
 }
 
 /**
@@ -446,7 +713,7 @@ function Loading() {
  */
 function SharedWithYou({
   householdId,
-  recipes,
+  recipes: everything,
   onBack,
 }: {
   householdId: string;
@@ -455,11 +722,15 @@ function SharedWithYou({
 }) {
   // What counted as new when the list opened stays new while you look at it; next time it won't.
   const [seenAt] = useState(() => sharedSeenAt(householdId));
-  const loaded = recipes !== null;
+  const loaded = everything !== null;
   useEffect(() => {
     if (loaded) markSharedSeen(householdId);
   }, [loaded, householdId]);
 
+  const recipes = useMemo(
+    () => everything?.filter((r) => r.section === null).sort((a, b) => a.name.localeCompare(b.name)) ?? null,
+    [everything],
+  );
   const byHousehold = useMemo(() => {
     const groups = new Map<string, Recipe[]>();
     for (const r of recipes ?? []) {
@@ -512,459 +783,5 @@ function SharedWithYou({
         </>
       )}
     </div>
-  );
-}
-
-/**
- * The recipes at this level that are in none of the groups below, each on one line with where
- * it most likely goes as the first, filled chip and one other beside it (3.3) — one tap files it
- * and it drops off the card. Tapping the name offers every group, and the recipe itself. A long
- * list starts folded to the first few.
- */
-function UnfiledCard({
-  householdId,
-  recipes,
-  groups,
-  tree,
-  from,
-  onFiled,
-}: {
-  householdId: string;
-  recipes: Recipe[];
-  groups: RecipeCategory[];
-  tree: CategoryTree;
-  from: RecipeCategory | null;
-  onFiled: () => Promise<void>;
-}) {
-  const navigate = useNavigate();
-  const [filed, setFiled] = useState<string[]>([]);
-  const [showAll, setShowAll] = useState(false);
-  const [choosingFor, setChoosingFor] = useState<Recipe | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const left = recipes.filter((r) => !filed.includes(r.id));
-  if (left.length === 0 && !error) return null;
-  const shown = showAll ? left : left.slice(0, 5);
-  // Likeliest first, then the rest in their usual order.
-  const ordered = (recipe: Recipe) => {
-    const likely = suggestGroups(recipe, groups, tree);
-    return { likely, all: [...likely, ...groups.filter((g) => !likely.includes(g))] };
-  };
-
-  async function file(recipe: Recipe, target: RecipeCategory) {
-    setError(null);
-    setFiled((ids) => [...ids, recipe.id]);
-    try {
-      await api('POST', `/api/households/${householdId}/recipe-categories/${target.id}/recipes`, {
-        recipeIds: [recipe.id],
-        fromCategoryId: from?.id ?? null,
-      });
-      await onFiled();
-    } catch (err) {
-      setFiled((ids) => ids.filter((id) => id !== recipe.id));
-      setError(errorMessage(err, `Could not file ${recipe.name}.`));
-    }
-  }
-
-  return (
-    <section
-      aria-label="Unfiled recipes"
-      className="flex flex-col gap-2.5 rounded-[18px] border border-mustard bg-mustard-soft p-4 shadow-card"
-    >
-      <h2 className="flex items-center gap-2 text-mustard">
-        <Icon name="folder" size={16} />
-        <span className="text-sm font-semibold">
-          {left.length} unfiled {left.length === 1 ? 'recipe' : 'recipes'}
-        </span>
-      </h2>
-      <ul className="flex flex-col gap-2">
-        {shown.map((recipe) => {
-          const { likely, all } = ordered(recipe);
-          return (
-            <li key={recipe.id} className="flex min-h-9 items-center gap-2">
-              <button
-                type="button"
-                aria-label={`Every group for ${recipe.name}`}
-                onClick={() => setChoosingFor(recipe)}
-                className="press min-w-0 flex-1 truncate text-left text-sm font-medium"
-              >
-                {recipe.name}
-              </button>
-              {all.slice(0, 2).map((g, i) => (
-                <Chip
-                  key={g.id}
-                  aria-label={`Put ${recipe.name} in ${g.name}`}
-                  // The likely one is filled; a guess that is only alphabetical is not.
-                  active={i === 0 && likely.length > 0}
-                  aria-pressed={undefined}
-                  className="!px-[9px] !py-1 !text-xs"
-                  onClick={() => file(recipe, g)}
-                >
-                  {g.name}
-                </Chip>
-              ))}
-            </li>
-          );
-        })}
-      </ul>
-      {left.length > shown.length && (
-        <button
-          type="button"
-          className="press self-start text-sm font-semibold text-mustard"
-          onClick={() => setShowAll(true)}
-        >
-          Show all {left.length}
-        </button>
-      )}
-      {error && <ErrorText>{error}</ErrorText>}
-
-      {choosingFor && (
-        <Sheet title={choosingFor.name} subtitle="Put it in a group, or open it." onClose={() => setChoosingFor(null)}>
-          <MenuList
-            items={[
-              ...ordered(choosingFor).all.map((g): MenuItem => ({
-                label: g.name,
-                icon: 'folder',
-                iconTone: 'mustard',
-                onSelect: () => file(choosingFor, g),
-              })),
-              { label: 'Open the recipe', icon: 'book', iconTone: 'herb', onSelect: () => navigate(`/recipes/${choosingFor.id}`) },
-            ]}
-            onPicked={(item) => {
-              setChoosingFor(null);
-              item.onSelect();
-            }}
-          />
-        </Sheet>
-      )}
-    </section>
-  );
-}
-
-const DISMISSED_SPLITS_KEY = 'mp_dismissedSplits';
-
-function readDismissedSplits(): string[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem(DISMISSED_SPLITS_KEY) ?? '[]');
-    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveDismissedSplits(ids: string[]) {
-  try {
-    localStorage.setItem(DISMISSED_SPLITS_KEY, JSON.stringify(ids.slice(-200)));
-  } catch {
-    // Private browsing and the like: it just won't be remembered.
-  }
-}
-
-/**
- * "Your Main dish looks like Chicken, Beef and Seafood — make those?" (3.5). Read from the
- * recipes' names and ingredients, so it costs nothing, and every group can be unticked before
- * anything happens. Closing it is "not now", remembered on this phone.
- */
-function SplitSheet({
-  householdId,
-  group,
-  total,
-  suggestions,
-  examples,
-  tree,
-  onDone,
-  onDismiss,
-}: {
-  householdId: string;
-  group: RecipeCategory;
-  total: number;
-  suggestions: { name: string; recipeIds: string[] }[];
-  /** A recipe from a suggestion, to say what it would hold. */
-  examples: (recipeIds: string[]) => string;
-  tree: CategoryTree;
-  onDone: () => Promise<void>;
-  onDismiss: () => void;
-}) {
-  const [chosen, setChosen] = useState<string[]>(suggestions.map((s) => s.name));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const picked = suggestions.filter((s) => chosen.includes(s.name));
-  const stay = total - picked.reduce((n, s) => n + s.recipeIds.length, 0);
-
-  async function apply() {
-    setBusy(true);
-    setError(null);
-    try {
-      for (const s of picked) {
-        // A group with that name may exist already — an unused "Vegetarian", say. Move it in
-        // rather than failing on the name.
-        const existing = tree.byName.get(s.name.toLowerCase());
-        const target = existing
-          ? existing.parentId === group.id
-            ? existing
-            : await api<RecipeCategory>('PATCH', `/api/households/${householdId}/recipe-categories/${existing.id}`, {
-                parentId: group.id,
-              })
-          : await api<RecipeCategory>('POST', `/api/households/${householdId}/recipe-categories`, {
-              name: s.name,
-              parentId: group.id,
-            });
-        await api('POST', `/api/households/${householdId}/recipe-categories/${target.id}/recipes`, {
-          recipeIds: s.recipeIds,
-          fromCategoryId: group.id,
-        });
-      }
-      await onDone();
-    } catch (err) {
-      setError(errorMessage(err, 'Could not make those groups.'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Sheet
-      title={`Split "${group.name}"?`}
-      subtitle={`${total} ${total === 1 ? 'recipe' : 'recipes'}, no subgroups yet. We found these:`}
-      onClose={onDismiss}
-    >
-      <div className="space-y-4">
-        <List label="Groups to make">
-          {suggestions.map((s) => {
-            const on = chosen.includes(s.name);
-            const example = examples(s.recipeIds);
-            return (
-              <Row
-                key={s.name}
-                role="checkbox"
-                aria-checked={on}
-                aria-label={s.name}
-                onClick={() => setChosen((names) => (on ? names.filter((n) => n !== s.name) : [...names, s.name]))}
-                lead={<CheckBox checked={on} />}
-                title={s.name}
-                subtitle={`${s.recipeIds.length} ${s.recipeIds.length === 1 ? 'recipe' : 'recipes'}`}
-                end={
-                  example ? (
-                    <span className="max-w-[40%] shrink-0 truncate text-[0.8125rem] text-muted">{example}…</span>
-                  ) : undefined
-                }
-              />
-            );
-          })}
-        </List>
-        {stay > 0 && (
-          <p className="text-[0.8125rem] text-muted">
-            {stay} {stay === 1 ? "recipe doesn't match and stays" : "recipes don't match and stay"} in {group.name}.
-          </p>
-        )}
-        {error && <ErrorText>{error}</ErrorText>}
-        <Button size="lg" full disabled={busy || picked.length === 0} onClick={apply}>
-          {busy ? 'Making…' : `Create ${picked.length} ${picked.length === 1 ? 'group' : 'groups'}`}
-        </Button>
-      </div>
-    </Sheet>
-  );
-}
-
-export function AddGroup({
-  householdId,
-  parent,
-  section = null,
-  onAdded,
-  onCancel,
-}: {
-  householdId: string;
-  parent: RecipeCategory | null;
-  /** The drawer a new top-level group joins. Ignored when it goes inside another group. */
-  section?: RecipeSection | null;
-  onAdded: () => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState('');
-  const [iconKey, setIconKey] = useState<string | null>(null);
-  const [choosingIcon, setChoosingIcon] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const Chosen = iconByKey(iconKey)?.Icon;
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api('POST', `/api/households/${householdId}/recipe-categories`, {
-        name: name.trim(),
-        parentId: parent?.id ?? null,
-        // A group inside another joins its drawer; a top-level one joins the drawer it is made in.
-        section: parent ? null : section,
-        iconKey,
-      });
-      await onAdded();
-    } catch (err) {
-      setError(errorMessage(err, 'Could not add that group.'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <Field label="Name">
-        <Input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={parent ? 'A kind of ' + parent.name.toLowerCase() + '…' : 'Main dish, Side…'}
-        />
-      </Field>
-      {/* Optional, and folded away so a quick "Add" is still just a name. */}
-      {choosingIcon ? (
-        <IconPicker
-          allowNone
-          value={iconKey}
-          onChange={(key) => {
-            setIconKey(key);
-            setChoosingIcon(false);
-          }}
-        />
-      ) : (
-        <Button type="button" variant="ghost" size="sm" className="-ml-3" onClick={() => setChoosingIcon(true)}>
-          {Chosen ? <Chosen className="h-5 w-5" /> : <Icon name="plus" size={16} />}
-          {Chosen ? 'Change icon' : 'Pick an icon'}
-        </Button>
-      )}
-      {error && <ErrorText>{error}</ErrorText>}
-      <div className="flex gap-2">
-        <Button type="submit" size="lg" className="flex-1" disabled={busy || !name.trim()}>
-          Add
-        </Button>
-        <Button type="button" size="lg" variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-/**
- * Rename, pick its icon, or delete — which moves everything in it up a level rather than losing
- * it. An icon is saved the moment it is tapped and the sheet stays open, so you can see it take.
- */
-export function EditGroup({
-  householdId,
-  group,
-  upTo,
-  onClose,
-  onRenamed,
-  onIconChanged,
-  onDeleted,
-}: {
-  householdId: string;
-  group: RecipeCategory;
-  upTo: string;
-  onClose: () => void;
-  onRenamed: () => Promise<void>;
-  /** Reload whatever draws the tile, without closing the sheet. */
-  onIconChanged: () => Promise<void>;
-  onDeleted: () => Promise<void>;
-}) {
-  const [name, setName] = useState(group.name);
-  const [iconKey, setIconKey] = useState<string | null>(group.iconKey ?? null);
-  // One icon at a time: two taps racing could leave the ring on one and the server on the other.
-  const [savingIcon, setSavingIcon] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function rename(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || name.trim() === group.name) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api('PATCH', `/api/households/${householdId}/recipe-categories/${group.id}`, { name: name.trim() });
-      await onRenamed();
-    } catch (err) {
-      setError(errorMessage(err, 'Could not rename it.'));
-      setBusy(false);
-    }
-  }
-
-  async function chooseIcon(key: string | null) {
-    const before = iconKey;
-    setIconKey(key);
-    setSavingIcon(true);
-    setError(null);
-    try {
-      // An empty string is how the server is told to take it off; null would mean "unchanged".
-      await api('PATCH', `/api/households/${householdId}/recipe-categories/${group.id}`, { iconKey: key ?? '' });
-    } catch (err) {
-      setIconKey(before);
-      setError(errorMessage(err, 'Could not change the icon.'));
-      return;
-    } finally {
-      setSavingIcon(false);
-    }
-    // Saved by now, so a reload that fails only leaves the tile behind a moment — not an error
-    // about an icon that did change.
-    await onIconChanged().catch(() => undefined);
-  }
-
-  async function remove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api('DELETE', `/api/households/${householdId}/recipe-categories/${group.id}`);
-      await onDeleted();
-    } catch (err) {
-      setError(errorMessage(err, 'Could not delete it.'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Sheet title={group.name} onClose={onClose}>
-      <div className="space-y-5">
-        <form onSubmit={rename} className="space-y-2">
-          <Field label="Name">
-            <div className="flex gap-2">
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-              <Button
-                type="submit"
-                variant="secondary"
-                className="h-[3.25rem]"
-                disabled={busy || !name.trim() || name.trim() === group.name}
-              >
-                Rename
-              </Button>
-            </div>
-          </Field>
-        </form>
-
-        <Field label="Icon">
-          <IconPicker allowNone value={iconKey} onChange={chooseIcon} disabled={busy || savingIcon} />
-        </Field>
-
-        {confirming ? (
-          <div className="space-y-2">
-            <p className="text-sm text-muted">
-              Its recipes and groups move up into {upTo}. Nothing is deleted but the group itself.
-            </p>
-            <div className="flex gap-2">
-              <Button variant="danger" className="flex-1" disabled={busy} onClick={remove}>
-                Delete {group.name}
-              </Button>
-              <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Button variant="ghost" className="-ml-4 text-danger" onClick={() => setConfirming(true)}>
-            Delete this group
-          </Button>
-        )}
-        {error && <ErrorText>{error}</ErrorText>}
-      </div>
-    </Sheet>
   );
 }

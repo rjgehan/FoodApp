@@ -12,6 +12,7 @@ import {
   type ProductLabel,
 } from '../api/nutrition';
 import { useHousehold } from '../household/HouseholdContext';
+import { useFeatures } from '../utils/features';
 import { useTablessScreen } from '../components/Layout';
 import { Icon } from '../components/icons';
 import { toast } from '../components/toast';
@@ -277,10 +278,12 @@ function ShareButton({ name, kcal, unit, url }: { name: string; kcal: number | n
 
 /**
  * The cupboard and the grocery list (5.5's bottom bar): the two places a thing you have just
- * looked up can go. Both take the name as the list would say it.
+ * looked up can go — just the list, in a house that keeps no cupboard. Both take the name as the
+ * list would say it.
  */
 function KeepIt({ name }: { name: string }) {
   const { activeHouseholdId } = useHousehold();
+  const { cupboard } = useFeatures();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   if (!activeHouseholdId) return null;
@@ -305,9 +308,11 @@ function KeepIt({ name }: { name: string }) {
 
   return (
     <NutritionBottomBar>
-      <Button size="lg" variant="secondary" icon="cupboard" className="min-w-0 flex-1" disabled={busy} onClick={() => add('cupboard')} aria-label="Add to the cupboard">
-        Cupboard
-      </Button>
+      {cupboard && (
+        <Button size="lg" variant="secondary" icon="cupboard" className="min-w-0 flex-1" disabled={busy} onClick={() => add('cupboard')} aria-label="Add to the cupboard">
+          Cupboard
+        </Button>
+      )}
       <Button size="lg" icon="cart" className="min-w-0 flex-1" disabled={busy} onClick={() => add('list')} aria-label="Add to the grocery list">
         Add to list
       </Button>

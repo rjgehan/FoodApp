@@ -47,11 +47,32 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export const CREDENTIALS_PROMPT_DISMISSED = 'mp_credentialsPromptDismissed';
 
 /**
- * Where the first-run setup leaves the new household's id, so its empty cupboard is offered the
- * starter list: the household provider that offers it does not exist until the session does.
- * sessionStorage, so a reload in the middle still offers it and a later visit does not.
+ * The household whose kitchen questions (components/kitchen/KitchenSetup) are to be asked next:
+ * one this browser has just made — the first-run setup, Start another household — or just
+ * joined through an invite. Left here by whatever made or joined it, because the household
+ * provider that asks them does not exist yet: the first-run setup has no session until it is
+ * done, and the invite page is outside the app's frame. The frame asks only while the household
+ * still says nobody has answered them, so a joiner of a house that is set up is never asked.
+ * sessionStorage, so a reload in the middle still asks and a later visit does not.
  */
-export const START_CUPBOARD_KEY = 'mp_startCupboard';
+export const KITCHEN_SETUP_KEY = 'mp_kitchenSetup';
+
+/** Ask the kitchen questions for this household once the app is up (see KITCHEN_SETUP_KEY). */
+export function askKitchenSetupLater(householdId: string | null | undefined) {
+  if (!householdId) return;
+  try {
+    sessionStorage.setItem(KITCHEN_SETUP_KEY, householdId);
+  } catch {
+    // Storage blocked: no questions this once. The card on Recipes still offers them.
+  }
+}
+
+/**
+ * Your households as last fetched, so the app opens with the right tabs straight away rather
+ * than drawing Plan and Cupboard for a moment and taking them back. Whoever is signed in owns
+ * it, so it goes when they do.
+ */
+export const HOUSEHOLDS_CACHE = 'mp_households';
 
 /** Tokens last 30 days; swapping at most once a day keeps a used session alive indefinitely. */
 const REFRESH_AFTER_SECONDS = 24 * 60 * 60;
@@ -89,6 +110,7 @@ function clearSession() {
   localStorage.removeItem('mp_userId');
   localStorage.removeItem('mp_displayName');
   localStorage.removeItem('mp_activeHouseholdId');
+  localStorage.removeItem(HOUSEHOLDS_CACHE);
   resetTheme();
 }
 
@@ -133,11 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setup = useCallback(async (input: SetupInput) => {
     const auth = await api<AuthResponse>('POST', '/api/auth/setup', input);
-    try {
-      if (auth.lastHouseholdId) sessionStorage.setItem(START_CUPBOARD_KEY, auth.lastHouseholdId);
-    } catch {
-      // Storage blocked: no starter list this once, and it is still on the Cupboard's •••.
-    }
+    // A brand new household: its kitchen questions come first, once the app is up.
+    askKitchenSetupLater(auth.lastHouseholdId);
     signIn(auth);
   }, [signIn]);
 

@@ -6,14 +6,15 @@ import { ServingsStepper } from '../components/plan/PlanBits';
 import { toast } from '../components/toast';
 import { cx, ErrorText, Field, Input, NavBar } from '../components/ui';
 import { useBackToHousehold } from '../components/household/HouseholdParts';
+import { planOn } from '../utils/features';
 
 /** The planning windows offered, as the mockup's row of five. */
 const WINDOWS = [3, 5, 7, 10, 14];
 
 /**
  * Name, servings & planning (mockup 6.6): what the house is called (the owner's to change), how
- * many a recipe is planned for unless you say otherwise, and how many days ahead the Plan runs.
- * One Save for all three, in the bar.
+ * many a recipe is planned for unless you say otherwise, and how many days ahead the Plan runs —
+ * that last only while the house plans meals at all. One Save for all three, in the bar.
  */
 export default function HouseholdSetupPage() {
   usePushedScreen();
@@ -36,6 +37,7 @@ export default function HouseholdSetupPage() {
   if (!activeHousehold) return <NoHousehold />;
 
   const isOwner = activeHousehold.role === 'OWNER';
+  const plans = planOn(activeHousehold);
   const renamed = isOwner && name.trim() !== '' && name.trim() !== activeHousehold.name;
   // A window set before these five were offered (or on another phone) is kept, and shown with them.
   const windows = WINDOWS.includes(days) ? WINDOWS : [...WINDOWS, days].sort((a, b) => a - b);
@@ -78,40 +80,45 @@ export default function HouseholdSetupPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-base font-semibold">Default servings</p>
-              <p className="text-[0.8125rem] text-muted">Used when you plan a recipe</p>
+              <p className="text-[0.8125rem] text-muted">{plans ? 'Used when you plan a recipe' : 'How many you usually cook for'}</p>
             </div>
             <ServingsStepper value={servings} onChange={setServings} className="[&>span]:text-[0.9375rem]" />
           </div>
-          <div className="h-px bg-line" />
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-base font-semibold">Plan ahead</p>
-                <p className="text-[0.8125rem] text-muted">The planning window on Plan</p>
+          {/* The planning window is the Plan's; a house without one has nothing to set. */}
+          {plans && (
+            <>
+              <div className="h-px bg-line" />
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold">Plan ahead</p>
+                    <p className="text-[0.8125rem] text-muted">The planning window on Plan</p>
+                  </div>
+                  <span className="shrink-0 text-[1.0625rem] font-semibold">
+                    {days} {days === 1 ? 'day' : 'days'}
+                  </span>
+                </div>
+                <div role="radiogroup" aria-label="Days to plan ahead" className="flex gap-1.5">
+                  {windows.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      role="radio"
+                      aria-checked={n === days}
+                      aria-label={`${n} days`}
+                      onClick={() => setDays(n)}
+                      className={cx(
+                        'press flex-1 rounded-[11px] py-[9px] text-center text-[0.875rem] font-semibold tabular-nums',
+                        n === days ? 'bg-ink text-bg' : 'bg-surface2 text-muted',
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className="shrink-0 text-[1.0625rem] font-semibold">
-                {days} {days === 1 ? 'day' : 'days'}
-              </span>
-            </div>
-            <div role="radiogroup" aria-label="Days to plan ahead" className="flex gap-1.5">
-              {windows.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  role="radio"
-                  aria-checked={n === days}
-                  aria-label={`${n} days`}
-                  onClick={() => setDays(n)}
-                  className={cx(
-                    'press flex-1 rounded-[11px] py-[9px] text-center text-[0.875rem] font-semibold tabular-nums',
-                    n === days ? 'bg-ink text-bg' : 'bg-surface2 text-muted',
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
+            </>
+          )}
         </div>
         {error && <ErrorText>{error}</ErrorText>}
       </div>

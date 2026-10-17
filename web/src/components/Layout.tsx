@@ -11,25 +11,32 @@ import { themeSummary } from '../theme/theme';
 import CredentialsPrompt from './CredentialsPrompt';
 import StartCupboardSheet from './StartCupboardSheet';
 import { RestockPrompt } from './Restock';
+import KitchenSetup from './kitchen/KitchenSetup';
+import { cupboardOn, needsKitchenSetup, planOn, useHouseholdKnown } from '../utils/features';
 import { CompactTitleProvider } from './PageTitle';
 import { Icon, type IconName } from './icons';
 import { Toaster } from './toast';
 import type { ThemeScreenState } from '../pages/ThemePage';
 import { JoinHouseholdSheet } from './household/JoinHousehold';
 import type { HouseholdScreenState } from './household/HouseholdParts';
+import { APP_NAME } from '../brand';
 
 /*
- Named for what is behind each tab. Five, the most a phone tab bar should hold.
+ Named for what is behind each tab. Five at most, the most a phone tab bar should hold.
 
- Household used to have the last one and does not any more: it is where you go once, to set
- the place up, and it was spending a fifth of the app's navigation on that. It lives behind
- your own face in the corner now, with the rest of the settings.
+ Recipes first: it is home, and with the grocery list it is the app — every household has those
+ two. Plan and Cupboard are a household's to turn off (Household → Kitchen & features), and
+ their tabs go with them; Explore is always last.
+
+ Household used to have a tab and does not any more: it is where you go once, to set the place
+ up, and it was spending a fifth of the app's navigation on that. It lives behind your own face
+ in the corner now, with the rest of the settings.
 */
-const navItems: { to: string; label: string; icon: IconName }[] = [
-  { to: '/meal-plan', label: 'Plan', icon: 'calendar' },
+const NAV_ITEMS: { to: string; label: string; icon: IconName; needs?: 'plan' | 'cupboard' }[] = [
   { to: '/recipes', label: 'Recipes', icon: 'book' },
   { to: '/grocery-list', label: 'Groceries', icon: 'cart' },
-  { to: '/cupboard', label: 'Cupboard', icon: 'cupboard' },
+  { to: '/meal-plan', label: 'Plan', icon: 'calendar', needs: 'plan' },
+  { to: '/cupboard', label: 'Cupboard', icon: 'cupboard', needs: 'cupboard' },
   { to: '/explore', label: 'Explore', icon: 'compass' },
 ];
 
@@ -60,6 +67,14 @@ const TablessScreen = createContext<(tabless: boolean) => void>(() => {});
 
 export function useTablessScreen() {
   usePushedScreen();
+  useHiddenTabBar();
+}
+
+/**
+ * Only the tab bar, for a moment of a screen that puts a bar of its own along the bottom — a
+ * drawer's select mode, with its Tag and Move — and leaves the top of the screen as it was.
+ */
+export function useHiddenTabBar() {
   const set = useContext(TablessScreen);
   useEffect(() => {
     set(true);
@@ -98,9 +113,15 @@ export default function Layout({ children }: { children: ReactNode }) {
     setActiveHouseholdId,
     lostHousehold,
     dismissLostHousehold,
-    starterCupboardFor,
-    dismissStarterCupboard,
   } = useHousehold();
+  // Plan and Cupboard only once the household is known: on a first open with no list kept from
+  // before, they come in late rather than appear and then vanish.
+  const known = useHouseholdKnown();
+  const navItems = NAV_ITEMS.filter(
+    (item) =>
+      !item.needs ||
+      (known && (item.needs !== 'plan' || planOn(activeHousehold)) && (item.needs !== 'cupboard' || cupboardOn(activeHousehold))),
+  );
   const activeName = households.find((h) => h.id === activeHouseholdId)?.name;
   const activeIndex = households.findIndex((h) => h.id === activeHouseholdId);
   const [compactTitle, setCompactTitle] = useState<string | null>(null);
@@ -165,9 +186,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       aria-label={`Household: ${activeName ?? 'none'}. Switch household`}
       className="press flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-surface2 py-1 pl-[5px] pr-2.5"
     >
-      <Avatar name={activeName ?? 'M'} tone={houseTone(activeIndex)} size={22} />
+      <Avatar name={activeName ?? APP_NAME} tone={houseTone(activeIndex)} size={22} />
       <span data-household-name className="min-w-0 truncate text-[0.8125rem] font-semibold">
-        {activeName ?? 'Meal Planner'}
+        {activeName ?? APP_NAME}
       </span>
       <Icon name="chevD" size={14} className="shrink-0 text-muted" />
     </button>
@@ -417,16 +438,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
           {joining && <JoinHouseholdSheet onClose={() => setJoining(false)} />}
 
-          <CredentialsPrompt />
-          {/* "Time to restock?" — here so it asks whichever page the app opens on. */}
-          <RestockPrompt />
-
-          {/* A household made a moment ago, wherever it was made: fill its cupboard before anything
-              else. Here rather than on the page that made it, because the first-run setup has no
-              page to come back to. */}
-          {starterCupboardFor && households.some((h) => h.id === starterCupboardFor) && (
-            <StartCupboardSheet householdId={starterCupboardFor} first onClose={dismissStarterCupboard} />
-          )}
+          <PromptSlot />
 
           {/* Taken out of the house they were in, and moved to another of theirs: said once, so
               the switch does not look like the app losing its place. With no house left, the
@@ -492,5 +504,60 @@ export default function Layout({ children }: { children: ReactNode }) {
       </CompactTitleProvider>
       </TablessScreen.Provider>
     </PushedScreen.Provider>
+  );
+}
+
+/**
+ * The questions the app asks on its own, over whatever page it opened on — one at a time, in
+ * this order, so two never stack and none is hidden behind another:
+ *
+ *  1. the kitchen questions, for a household just made or joined in this browser (or asked for
+ *     from the card on Recipes), while nobody has answered them;
+ *  2. the starter list, for a cupboard just turned on with nothing in it;
+ *  3. add an email and password;
+ *  4. "Time to restock?" — here so it asks whichever page the app opens on.
+ *
+ * Each waits while one before it is up, or is still finding out whether it has anything to ask.
+ * Here rather than on the page that made a household, because the first-run setup and an invite
+ * have no page of the app's to come back to.
+ */
+function PromptSlot() {
+  const {
+    activeHousehold,
+    fresh,
+    kitchenSetupFor,
+    dismissKitchenSetup,
+    starterCupboardFor,
+    dismissStarterCupboard,
+    starterCupboardPending,
+  } = useHousehold();
+  const [credentialsAsking, setCredentialsAsking] = useState(true);
+  // Only ever about the house on screen: the one just made or joined is the one opened, and a
+  // question about a house you have since switched away from would be asked of the wrong one.
+  const onScreen = activeHousehold && activeHousehold.id === kitchenSetupFor ? activeHousehold : null;
+  const kitchen = onScreen && needsKitchenSetup(onScreen) ? onScreen : null;
+  // The list on screen may be the last visit's; whether there is anything to ask waits for today's.
+  const kitchenUndecided = !!kitchenSetupFor && !kitchen && !fresh;
+  const starter = !kitchen && starterCupboardFor && starterCupboardFor === activeHousehold?.id ? starterCupboardFor : null;
+  // Between the kitchen questions turning a cupboard on and knowing whether the starter list follows.
+  const starterUndecided = !!starterCupboardPending && !starter;
+  const ahead = !!kitchen || kitchenUndecided || !!starter || starterUndecided;
+
+  // Joined a house somebody had already set up — or it was answered on another phone meanwhile,
+  // the house has gone, or you have moved to another: nothing to ask, nothing to wait for.
+  useEffect(() => {
+    if (kitchenSetupFor && fresh && !kitchen) dismissKitchenSetup();
+  }, [kitchenSetupFor, fresh, kitchen, dismissKitchenSetup]);
+
+  return (
+    <>
+      {kitchen ? (
+        <KitchenSetup key={kitchen.id} household={kitchen} onClose={dismissKitchenSetup} />
+      ) : (
+        starter && <StartCupboardSheet householdId={starter} first onClose={dismissStarterCupboard} />
+      )}
+      <CredentialsPrompt held={ahead} onAsking={setCredentialsAsking} />
+      <RestockPrompt held={ahead || credentialsAsking} />
+    </>
   );
 }

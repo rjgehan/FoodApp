@@ -5,6 +5,7 @@ import type { Filing } from '../../utils/recipeMeta';
 import ImagePicker from '../ImagePicker';
 import LinksEditor, { fromDraftLinks, toDraftLinks, type DraftLink } from '../LinksEditor';
 import RecipeClassifier from '../RecipeClassifier';
+import { rememberRecipe } from '../catalogue/catalogueStore';
 import { Icon } from '../icons';
 import { Alert, Button, ErrorText, List, Row, SectionLabel, Sheet, Tile } from '../ui';
 
@@ -13,12 +14,14 @@ import { Alert, Button, ErrorText, List, Row, SectionLabel, Sheet, Tile } from '
  its rows: organising it, its photos and links, and deleting it (3.20).
 */
 
-export type RecipeOption = 'organise' | 'media' | 'share' | 'card' | 'edit' | 'delete' | 'move';
+export type RecipeOption = 'groceries' | 'organise' | 'media' | 'share' | 'card' | 'edit' | 'delete' | 'move';
 
 /**
  * The recipe's options, as grouped rows. Changing a recipe — editing, deleting, its photos,
  * sharing it on — is for the household that owns it; a recipe shared with you can be filed in
- * your own drawers ("Move into my recipes"), and organised once it is.
+ * your own drawers ("Move into my recipes"), and organised once it is. Add to groceries heads the
+ * list for every recipe, in full words, as on the iPhone: beside Add to plan the bottom bar only
+ * has room for a cart and one word.
  */
 export function RecipeOptionsSheet({
   recipe,
@@ -53,12 +56,19 @@ export function RecipeOptionsSheet({
     <Sheet title={recipe.name} label="Recipe options" head={<></>} onClose={onClose}>
       <div className="flex flex-col gap-3.5">
         <List label="Recipe" inset={0}>
+          <Row
+            onClick={() => onPick('groceries')}
+            lead={<Tile icon="cart" tone="plum" size={34} />}
+            title="Add to groceries"
+            subtitle="Its ingredients, onto the list"
+            chevron
+          />
           {!moving && (
             <Row
               onClick={() => onPick('organise')}
               lead={<Tile icon="folder" tone="mustard" size={34} />}
               title="Organise"
-              subtitle="Drawer and groups"
+              subtitle="Drawer and tags"
               chevron
             />
           )}
@@ -121,9 +131,9 @@ function capitalise(s: string) {
 }
 
 /**
- * The drawer and groups this household keeps the recipe in. For a recipe shared with you and not
- * filed yet, the same thing is "Move into my recipes": once it has a drawer it is one of yours to
- * find, though still the other household's to change.
+ * The drawer this household keeps the recipe in, and the tags it wears there. For a recipe shared
+ * with you and not filed yet, the same thing is "Move into my recipes": once it has a drawer it
+ * is one of yours to find, though still the other household's to change.
  */
 export function OrganiseSheet({
   recipe,
@@ -146,7 +156,10 @@ export function OrganiseSheet({
     setBusy(true);
     setError(null);
     try {
-      onSaved(await api<Recipe>('PUT', `/api/households/${householdId}/recipes/${recipe.id}/filing`, draft));
+      const saved = await api<Recipe>('PUT', `/api/households/${householdId}/recipes/${recipe.id}/filing`, draft);
+      // Its drawer shows it where it now is, without loading every recipe again.
+      rememberRecipe(householdId, saved);
+      onSaved(saved);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
       setBusy(false);

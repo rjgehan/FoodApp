@@ -19,7 +19,7 @@ export function PasteFromAi({
   initialName = '',
   initialServings = 4,
   section,
-  groups,
+  tags,
   onLink,
   onSaved,
   onDraft,
@@ -29,8 +29,8 @@ export function PasteFromAi({
   initialServings?: number;
   /** Where the finished recipe is filed to begin with. */
   section?: RecipeSection;
-  /** Groups the recipe starts in — see RecipeForm. */
-  groups?: string[];
+  /** Tags the recipe starts with — see RecipeForm. */
+  tags?: string[];
   /** A paste that is only a link, for From a link to read. Without it, the paste is told where to go. */
   onLink?: (link: string) => void;
   onSaved: (recipe: Recipe) => void;
@@ -84,7 +84,7 @@ export function PasteFromAi({
         householdId={householdId}
         draft={draft}
         section={section}
-        groups={groups}
+        tags={tags}
         again="Paste again"
         onAgain={() => setDraft(null)}
         onSaved={onSaved}
@@ -185,7 +185,7 @@ export function DraftToCheck({
   householdId,
   draft,
   section,
-  groups,
+  tags,
   again,
   note,
   aside,
@@ -196,7 +196,7 @@ export function DraftToCheck({
   householdId: string;
   draft: RecipeDraft;
   section?: RecipeSection;
-  groups?: string[];
+  tags?: string[];
   /** The button that goes back for another try: "Paste again", "Try another link". */
   again: string;
   /** What to check first, when there is something in particular; otherwise the usual line. */
@@ -225,7 +225,7 @@ export function DraftToCheck({
         householdId={householdId}
         draft={draft}
         section={section}
-        groups={groups}
+        tags={tags}
         savedLinkId={savedLinkId}
         onSaved={onSaved}
       />

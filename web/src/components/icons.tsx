@@ -111,12 +111,14 @@ const IC = {
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
   filter: '<path d="M22 3H2l8 9.46V19l4 2v-8.54z"/>',
   cloudOff: '<path d="m2 2 20 20M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.31-.2M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10.2 5.3"/>',
+  /** The app's own mark, the waxwing and its berry (web/scripts/brand/glyph.svg, drawn on 64, filled). */
+  waxwing: '<g transform="scale(.375)" stroke="none"><path fill-rule="evenodd" d="M41.87 29.7 C42.04 23.31 34.99 17.08 26.69 13.93 C20.05 11.44 10.92 8.78 3.86 3.8 C7.43 10.77 13.57 14.26 16.06 19.99 C17.39 24.55 16.56 29.53 14.24 35.34 C12.16 40.74 9.67 44.47 7.18 49.45 C4.77 54.26 3.28 57.75 2.78 60.24 L52.08 60.24 C52.25 55.26 50.09 50.7 46.19 46.13 C43.29 42.4 41.29 40.32 41.29 37.33 C43.95 35.67 46.77 34.18 48.76 33.02 C46.94 31.52 44.45 30.36 41.87 29.7ZM19.22 24.38 C23.37 25.55 28.35 26.38 32.83 26.54 C35.82 26.71 38.31 27.54 40.3 28.87 L39.8 36.5 C37.48 35.67 34.99 34.84 31.67 33.68 C26.69 31.85 22.54 27.87 19.22 24.38ZM31.41 30.28a2.08 2.08 0 1 0 4.16 0a2.08 2.08 0 1 0 -4.16 0Z"/><path d="M50.42 33.18a5.98 5.98 0 1 0 11.96 0a5.98 5.98 0 1 0 -11.96 0Z"/></g>',
 } as const;
 
 export type IconName = keyof typeof IC;
 
-/** Drawn filled rather than stroked: dots read better solid at this size. */
-const FILLED = new Set<IconName>(['more', 'grip']);
+/** Drawn filled rather than stroked: dots read better solid at this size, and the waxwing is a solid shape. */
+const FILLED = new Set<IconName>(['more', 'grip', 'waxwing']);
 
 export type IconProps = Omit<SVGProps<SVGSVGElement>, 'name'> & {
   name: IconName;
