@@ -490,20 +490,10 @@ actor APIClient {
                        body: body)
     }
 
+    /// Every tag in every drawer (the API's "recipe categories"). Making one, and putting it on
+    /// recipes, is in Catalogue/CatalogueAPI.swift.
     func recipeCategories(household: UUID) async throws -> [RecipeCategory] {
         try await get("/api/households/\(household.uuidString)/recipe-categories")
-    }
-
-    /// Everything every household on this server has published.
-    @discardableResult
-    /// `parent` puts the new group inside another; it then joins that group's drawer.
-    func createRecipeCategory(household: UUID, name: String, section: RecipeSection?,
-                              parent: UUID? = nil, iconKey: String? = nil) async throws -> RecipeCategory {
-        var body: [String: Any] = ["name": name]
-        if let section { body["section"] = section.rawValue }
-        if let parent { body["parentId"] = parent.uuidString }
-        if let iconKey { body["iconKey"] = iconKey }
-        return try await send("POST", "/api/households/\(household.uuidString)/recipe-categories", body: body)
     }
 
     /// Nil takes the icon off — sent as "", because a missing or null key means "leave it".
@@ -543,7 +533,7 @@ actor APIClient {
         _ = try await sendNoContent("DELETE", "/api/recipes/\(id.uuidString)")
     }
 
-    /// Whatever was filed in it moves up a level rather than going with it.
+    /// Takes a tag away and off every recipe that wore it; the recipes themselves stay.
     func deleteRecipeCategory(household: UUID, category: UUID) async throws {
         _ = try await sendNoContent(
             "DELETE", "/api/households/\(household.uuidString)/recipe-categories/\(category.uuidString)")
@@ -893,7 +883,7 @@ actor APIClient {
                 return """
                 Cannot reach \(Config.baseURL). If the phone is on the same wifi, iOS is \
                 probably blocking local network access: Settings → Privacy & Security → \
-                Local Network → Meal Planner.
+                Local Network → Waxwing.
                 """
             }
             return "Cannot reach \(Config.baseURL)."

@@ -7,8 +7,9 @@ import SwiftUI
 
 /**
  The top of a recipe: its cover photo — or its colour, when it has none — edge to edge and up
- under the status bar, the round back, share and ••• buttons over it, and its drawer, name and
- quick facts set on the picture.
+ under the status bar, the round back, share and ••• buttons over it, and its drawer, name, tags,
+ quick facts and the machines it needs set on the picture. The tags are chips of their own rather
+ than a "Dinner › Chicken › Quick" path: they sit side by side, nothing is inside anything.
  */
 struct RecipeHero: View {
     let recipe: Recipe
@@ -19,46 +20,61 @@ struct RecipeHero: View {
     var share: (() -> Void)?
     var options: () -> Void
 
-    /// "Dinner › Chicken", or who shared it while it is not filed.
+    /// The drawer it is in, or who shared it while it is not filed.
     private var filed: String? {
         guard let section = recipe.section else {
             return recipe.shared ? "Shared by \(recipe.ownerName ?? "another household")" : nil
         }
-        return ([section.title] + recipe.categories).joined(separator: " › ")
+        return section.title
     }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            picture
-            LinearGradient(colors: recipe.coverImageId == nil
-                           ? [.clear, .clear, .black.opacity(0.3)]
-                           : [.black.opacity(0.32), .clear, .clear, .black.opacity(0.62)],
-                           startPoint: .top, endPoint: .bottom)
-                .allowsHitTesting(false)
-            VStack(alignment: .leading, spacing: 6) {
-                if let filed {
-                    Pill(filed, tone: recipe.shared && recipe.section == nil ? .plum : .mustard)
-                }
-                Text(recipe.name)
-                    .titleFont(32)
-                    .foregroundStyle(.white)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: 12) {
-                    if let prep = recipe.prepTimeMinutes, prep > 0 { fact("clock", "\(short(prep)) prep") }
-                    if let cook = recipe.cookTimeMinutes, cook > 0 { fact("flame", "\(short(cook)) cook") }
-                    fact("person.2", "\(recipe.servings)")
-                        .accessibilityLabel("Serves \(recipe.servings)")
-                }
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.92))
+        VStack(alignment: .leading, spacing: 6) {
+            if let filed {
+                Pill(filed, tone: recipe.shared && recipe.section == nil ? .plum : .mustard)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+            Text(recipe.name)
+                .titleFont(32)
+                .foregroundStyle(.white)
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
+            if recipe.section != nil && !recipe.categories.isEmpty {
+                tagChips
+            }
+            // The quick facts, then the machines it needs — "what do I need out" is a fact
+            // too. One row that wraps, as the web's does, so a machine that does not fit goes
+            // onto a line of its own rather than squeezing "30 cook" into "30 c…".
+            ChipFlow(spacing: 10) {
+                if let prep = recipe.prepTimeMinutes, prep > 0 { fact("clock", "\(short(prep)) prep") }
+                if let cook = recipe.cookTimeMinutes, cook > 0 { fact("flame", "\(short(cook)) cook") }
+                fact("person.2", "\(recipe.servings)")
+                    .accessibilityLabel("Serves \(recipe.servings)")
+                ForEach(recipe.machines) { machine in machinePill(machine) }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(.white.opacity(0.92))
         }
-        .frame(height: 243 + topInset)
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
+        /*
+         Clear of the round buttons, however much there is to say. The picture used to be a fixed
+         height with all this pinned to its foot, so a long name with a few tags and machines
+         climbed up under Back and out of the top; now the picture grows downwards instead, and
+         an ordinary recipe is the same height as ever.
+        */
+        .padding(.top, topInset + 52)
+        .frame(maxWidth: .infinity, minHeight: 243 + topInset, alignment: .bottomLeading)
+        .background {
+            ZStack {
+                picture
+                LinearGradient(colors: recipe.coverImageId == nil
+                               ? [.clear, .clear, .black.opacity(0.3)]
+                               : [.black.opacity(0.32), .clear, .clear, .black.opacity(0.62)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .allowsHitTesting(false)
+        }
         .clipped()
         .overlay(alignment: .top) {
             HStack(spacing: 8) {
@@ -93,11 +109,49 @@ struct RecipeHero: View {
         }
     }
 
+    /// The tags as small see-through chips on the picture, one line, the first few.
+    private var tagChips: some View {
+        let shown = Array(recipe.categories.prefix(4))
+        let more = recipe.categories.count - shown.count
+        return HStack(spacing: 6) {
+            ForEach(shown, id: \.self) { name in
+                Text(name)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.22), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.35), lineWidth: 1))
+            }
+            if more > 0 { Text("+\(more)") }
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Tags: \(recipe.categories.joined(separator: ", "))")
+    }
+
+    /// As tall as a machine pill, so the two sit level in the row (ChipFlow lines things up by
+    /// their tops).
     private func fact(_ symbol: String, _ text: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 12))
             Text(text)
         }
+        .padding(.vertical, 2)
+    }
+
+    /// A machine it needs, on the picture: its drawing and its short name in a see-through pill,
+    /// like the tags above — `MachinePill` is the same thing for a plain background.
+    private func machinePill(_ machine: KitchenMachine) -> some View {
+        HStack(spacing: 4) {
+            machine.image.resizable().scaledToFit().frame(width: 13, height: 13)
+            Text(machine.short).lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(.white.opacity(0.2), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Needs: \(machine.label)")
     }
 
     /// "15", "1 hr 10": the facts say "prep" and "cook" after them.
@@ -157,15 +211,24 @@ struct RecipeTabBar: View {
     }
 }
 
-/// The mockup's toast: a dark bar with a green tick, for "it worked" that needs no answer.
+/// The mockup's toast: a dark bar with a green tick, for "it worked" that needs no answer — and,
+/// with `actionTitle`, a way on from it ("Added 9 things to Groceries · See list").
 struct RecipeToast: View {
     let text: String
+    var actionTitle: String? = nil
+    var action: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(Palette.herb)
             Text(text).font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.bg)
             Spacer(minLength: 0)
+            if let actionTitle {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.herb)
+                    .buttonStyle(PressFade())
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

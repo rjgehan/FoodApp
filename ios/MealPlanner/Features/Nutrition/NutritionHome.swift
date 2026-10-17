@@ -73,7 +73,10 @@ struct NutritionScreen: View {
                 }
 
                 if q.isEmpty {
-                    WeekCard(week: week, failed: weekFailed, today: NutritionText.day(0))
+                    // The week is the Plan's; a house that does not plan has lookups and recipes only.
+                    if session.planOn || sample != nil {
+                        WeekCard(week: week, failed: weekFailed, today: NutritionText.day(0))
+                    }
                     recentSection
                 } else {
                     results
@@ -288,7 +291,7 @@ struct NutritionScreen: View {
             return
         }
         async let recentAnswer = try? APIClient.shared.recentLookups(household: session.household?.id)
-        if let household = session.household?.id {
+        if session.planOn, let household = session.household?.id {
             do {
                 // The next seven days from today, so the chart is always a week, whatever the
                 // planning window — the same seven days as the web and Explore's door.

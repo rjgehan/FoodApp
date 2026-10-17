@@ -169,7 +169,7 @@ struct PlanDaySheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(dish.label).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
                             Text(dish.placeId != nil ? (dish.placeId.flatMap { store.placeById[$0]?.notes } ?? "Eat out")
-                                 : PlanText.detail(dish, recipe: recipe))
+                                 : PlanText.detail(dish, recipe: recipe, cupboard: store.session.cupboardOn))
                                 .font(.system(size: 12))
                                 .foregroundStyle(dish.needsIngredients == true || dish.recipeDeleted == true ? Palette.accentInk : Palette.muted)
                                 .lineLimit(1)

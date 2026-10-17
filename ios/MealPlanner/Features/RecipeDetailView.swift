@@ -4,8 +4,9 @@ import SwiftUI
 /**
  A recipe (the mockup's 3.7, Option 1): the photo hero with its name on it, then Ingredients,
  Method and Photos as tabs that stick under the status bar as you scroll, and Add to plan along
- the bottom between the previous and next recipe. Everything else — organising it, its photos
- and links, sharing, editing, deleting — waits behind the ••• on the photo.
+ the bottom between the previous and next recipe, with Add to groceries as the cart beside it — or,
+ in a house that does not plan meals, Add to groceries as the one filled button. Everything else —
+ organising it, its photos and links, sharing, editing, deleting — waits behind the ••• on the photo.
  */
 struct RecipeDetailView: View {
     @State var recipe: Recipe
@@ -13,7 +14,7 @@ struct RecipeDetailView: View {
 
     enum Tab: Hashable { case ingredients, method, photos }
     enum Sheet: Identifiable, Hashable {
-        case options, plan, organise, media, edit
+        case options, plan, groceries, organise, media, edit
         var id: Self { self }
     }
 
@@ -26,6 +27,8 @@ struct RecipeDetailView: View {
     /// The catalogue in name order, for previous and next.
     @State private var siblings: [Recipe] = []
     @State private var toast: String?
+    /// The toast offers "See list": what it says was just added to Groceries.
+    @State private var toastSeesList = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var addingPhotos = false
     /// The hero has scrolled out of sight, so the status bar gets the page behind it.
@@ -35,6 +38,8 @@ struct RecipeDetailView: View {
     @State private var showingNutrition = false
     @State private var nutritionDoor = NutritionAvailability.shared
     @Environment(\.dismiss) private var dismissDetail
+    /// The toast's "See list": Groceries to the front, closing a sheet this page is in first.
+    @Environment(\.seeGroceries) private var seeGroceries
 
     private var mine: Bool { !recipe.shared }
 
@@ -91,8 +96,11 @@ struct RecipeDetailView: View {
         .navigationTitle("Recipe")
         .overlay(alignment: .bottom) {
             if let toast {
-                RecipeToast(text: toast).padding(.horizontal, 16).padding(.bottom, 92)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                RecipeToast(text: toast, actionTitle: toastSeesList ? "See list" : nil) {
+                    seeGroceries()
+                }
+                .padding(.horizontal, 16).padding(.bottom, 92)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.2), value: toast)
@@ -120,6 +128,13 @@ struct RecipeDetailView: View {
                 RecipeOptionsSheet(recipe: recipe, sharedCount: recipe.sharedWith?.count ?? 0) { pick($0) }
             case .plan:
                 AddToPlanSheet(recipe: recipe, session: session) { when in say("On the plan for \(when)") }
+            case .groceries:
+                AddToGroceriesSheet(recipe: recipe, session: session, servings: servings ?? recipe.servings) { added in
+                    // Nothing comes back only when everything it needs is an "always have" staple,
+                    // which the list leaves off while the house keeps a cupboard (the web's words).
+                    if added == 0 { return say("Nothing to add — you always have all of it") }
+                    say("Added \(added) \(added == 1 ? "thing" : "things") to Groceries", seeList: true)
+                }
             case .organise:
                 OrganiseSheet(recipe: recipe, session: session) { saved in
                     let moved = recipe.shared && recipe.section == nil
@@ -127,13 +142,20 @@ struct RecipeDetailView: View {
                     say(moved ? "Moved into your recipes" : "Filed")
                 }
             case .media:
-                PhotosLinksSheet(recipe: recipe, session: session) { recipe = $0 }
+                PhotosLinksSheet(recipe: recipe, session: session) { saved in
+                    recipe = saved
+                    // Its cover is on the drawer's card too, and the catalogue does not reload by itself.
+                    NotificationCenter.default.post(name: .recipesChanged, object: saved)
+                }
             case .edit:
                 EditRecipeView(recipe: recipe, session: session, onDeleted: {
                     sheet = nil
                     dismissDetail()
                 }) { saved in
                     recipe = saved
+                    // With the recipe, as Organise does: Recipes puts this one right (its name, tags,
+                    // machines) without fetching the catalogue again.
+                    NotificationCenter.default.post(name: .recipesChanged, object: saved)
                 }
             }
         }
@@ -143,7 +165,7 @@ struct RecipeDetailView: View {
         }
         .task { await loadSiblings() }
         #if DEBUG
-        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-edit|recipe-nutrition
+        // -mp_debug_screen share|recipe-options|recipe-plan|recipe-groceries|recipe-delete|recipe-method|recipe-edit|recipe-nutrition
         // opens that on this recipe, for screenshot runs.
         .task {
             try? await Task.sleep(for: .milliseconds(600))
@@ -151,6 +173,7 @@ struct RecipeDetailView: View {
             case "share" where mine: sharing = true
             case "recipe-options": sheet = .options
             case "recipe-plan": sheet = .plan
+            case "recipe-groceries": sheet = .groceries
             case "recipe-delete" where mine: confirmingDelete = true
             case "recipe-method": tab = .method
             case "recipe-edit" where mine: sheet = .edit
@@ -219,7 +242,9 @@ struct RecipeDetailView: View {
                 ServingsStepper(value: Binding(get: { shown }, set: { servings = $0 }))
             }
             if recipe.ingredients.isEmpty {
-                empty("No ingredients yet — until they're in, planning this adds nothing to Groceries.")
+                // Groceries, not planning: Add to groceries is on the page whether or not the
+                // house plans, and either way it is the list that stays empty.
+                empty("No ingredients yet — until they're in, there's nothing to add to Groceries.")
             } else {
                 VStack(spacing: 0) {
                     ForEach(recipe.ingredients) { ingredient in ingredientRow(ingredient, scale: scale) }
@@ -335,10 +360,35 @@ struct RecipeDetailView: View {
     private var bottomBar: some View {
         HStack(spacing: 10) {
             stepButton("chevron.left", "Previous recipe", previous)
-            // The one filled button on the screen: the step the whole app is built around.
-            Button { sheet = .plan } label: { Label("Add to plan", systemImage: "calendar") }
-                .buttonStyle(.primary)
+            // The one filled button on the screen: Add to plan in a house that plans, with
+            // Add to groceries as the cart beside it — or Add to groceries itself in one that does not.
+            if session?.planOn ?? true {
+                Button { sheet = .plan } label: { Label("Add to plan", systemImage: "calendar") }
+                    .buttonStyle(.primary)
+                    .disabled(session?.household == nil)
+                // The cart with "Groceries" under it, as the web's is: a bare cart between Add to
+                // plan and Next read as a third arrow. The plus on it says it adds rather than opens
+                // the list, and ••• says Add to groceries in full.
+                Button { sheet = .groceries } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: "cart.badge.plus").font(.system(size: 18, weight: .medium))
+                        Text("Groceries").font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(Palette.accentInk)
+                    .frame(width: 52, height: 52)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+                }
+                .buttonStyle(PressFade())
                 .disabled(session?.household == nil)
+                .accessibilityLabel("Add to groceries")
+            } else {
+                Button { sheet = .groceries } label: { Label("Add to groceries", systemImage: "cart") }
+                    .buttonStyle(.primary)
+                    .disabled(session?.household == nil)
+            }
             stepButton("chevron.right", "Next recipe", next)
         }
         .padding(.horizontal, 20)
@@ -373,6 +423,7 @@ struct RecipeDetailView: View {
 
     private func pick(_ option: RecipeOption) {
         switch option {
+        case .groceries: sheet = .groceries
         case .organise, .move: sheet = .organise
         case .media: sheet = .media
         case .share: sharing = true
@@ -381,8 +432,9 @@ struct RecipeDetailView: View {
         }
     }
 
-    private func say(_ text: String) {
+    private func say(_ text: String, seeList: Bool = false) {
         toast = text
+        toastSeesList = seeList
         Task {
             try? await Task.sleep(for: .seconds(3))
             if toast == text { toast = nil }
@@ -419,6 +471,23 @@ struct RecipeDetailView: View {
 private struct HeroBottom: PreferenceKey {
     static let defaultValue: CGFloat = .infinity
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/**
+ What "See list" on a recipe page's toast does: Groceries to the front. Where the page is a tab's,
+ that is all; where it is inside a sheet over the tabs — the copy of a recipe shared into the app —
+ the sheet sets this to close itself as well, or the tab changes behind it and nothing seems to
+ happen.
+*/
+private struct SeeGroceriesKey: EnvironmentKey {
+    static let defaultValue: () -> Void = { NotificationCenter.default.post(name: .showTab, object: "groceries") }
+}
+
+extension EnvironmentValues {
+    var seeGroceries: () -> Void {
+        get { self[SeeGroceriesKey.self] }
+        set { self[SeeGroceriesKey.self] = newValue }
+    }
 }
 
 #Preview("Recipe") {

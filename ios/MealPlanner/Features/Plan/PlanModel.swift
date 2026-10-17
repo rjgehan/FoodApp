@@ -102,14 +102,16 @@ enum PlanText {
         "\(date.formatted(.dateTime.weekday(.wide))) \(date.formatted(.dateTime.day()))"
     }
 
-    /// The line under a dish in the day sheet: what kind of thing it is, and what it means.
-    static func detail(_ entry: MealPlanEntry, recipe: Recipe?) -> String {
+    /// The line under a dish in the day sheet: what kind of thing it is, and what it means. A
+    /// single food says what the cupboard has of it — or, in a house without one, just what it is.
+    static func detail(_ entry: MealPlanEntry, recipe: Recipe?, cupboard: Bool = true) -> String {
         if entry.recipeDeleted == true { return entry.savedLinkDeleted == true ? "Saved link was deleted" : "Recipe was deleted" }
         if entry.placeId != nil { return "Eat out" }
         if entry.savedLinkId != nil {
             return "Saved link · \(SavedLink.label(source: entry.savedLinkSource, url: entry.savedLinkUrl))"
         }
         if entry.itemName != nil {
+            guard cupboard else { return "Single item" }
             if entry.runningLow == true { return "Running low" }
             return entry.inCupboard == true ? "In the cupboard" : "Not in the cupboard"
         }

@@ -18,18 +18,42 @@ struct HouseholdSummary: Codable, Identifiable, Hashable {
     /// Your role in this house — "OWNER" or "MEMBER". Only /api/households sends it; the owner
     /// is the one who can reset somebody's password.
     let role: String?
+    /**
+     The kitchen (Household → Kitchen & features): whether the house uses the cupboard and the
+     Plan, the machines it has (`KitchenMachine` keys), and whether anybody has answered the
+     kitchen questions yet. All optional, and nil reads as on, or answered: the sign-in screen
+     and an older server send none of them, an older server had both tabs, and a copy of this
+     saved in UserDefaults before they existed still has to decode.
+     */
+    let cupboardEnabled: Bool?
+    let planEnabled: Bool?
+    let machines: [String]?
+    let kitchenSetUp: Bool?
 
     init(id: UUID, name: String, memberCount: Int? = nil,
-         defaultServings: Int? = nil, planningHorizonDays: Int? = nil, role: String? = nil) {
+         defaultServings: Int? = nil, planningHorizonDays: Int? = nil, role: String? = nil,
+         cupboardEnabled: Bool? = nil, planEnabled: Bool? = nil, machines: [String]? = nil,
+         kitchenSetUp: Bool? = nil) {
         self.id = id
         self.name = name
         self.memberCount = memberCount
         self.defaultServings = defaultServings
         self.planningHorizonDays = planningHorizonDays
         self.role = role
+        self.cupboardEnabled = cupboardEnabled
+        self.planEnabled = planEnabled
+        self.machines = machines
+        self.kitchenSetUp = kitchenSetUp
     }
 
     var isOwner: Bool { role == "OWNER" }
+
+    /// The Plan, and everything that plans: on unless this house turned it off.
+    var plansMeals: Bool { planEnabled ?? true }
+    /// The cupboard, and everything that reads it: on unless this house turned it off.
+    var tracksCupboard: Bool { cupboardEnabled ?? true }
+    /// Only a server that says "not yet" gets the kitchen questions asked.
+    var kitchenAnswered: Bool { kitchenSetUp ?? true }
 }
 
 /// Somewhere you eat that is not this kitchen — the pub, the Thai place on the corner.
@@ -382,8 +406,11 @@ struct Recipe: Codable, Identifiable, Hashable {
     let prepTimeMinutes: Int?
     let cookTimeMinutes: Int?
     let servings: Int
-    let section: RecipeSection?
-    let categories: [String]
+    /// This household's drawer for it; nil while it is shared with you and not filed yet. A `var`
+    /// so the catalogue can move it on the phone as the server does, without fetching it again.
+    var section: RecipeSection?
+    /// This household's tags on it, by name, in its drawer only — the server sends them sorted.
+    var categories: [String]
     let shared: Bool
     let ownerName: String?
     let coverImageId: UUID?
@@ -407,6 +434,9 @@ struct Recipe: Codable, Identifiable, Hashable {
     var sharedAt: String? = nil
     /// The household that owns it. Nil only when built on the phone (previews, a stub).
     var householdId: UUID? = nil
+    /// The kitchen machines it needs (`KitchenMachine` keys, in the catalogue's order): spotted in
+    /// its method by the server, or set by hand. Nil from a server from before machines.
+    var appliances: [String]? = nil
 
     /// The links to show and to edit, from the list when the server sends one.
     var allLinks: [SourceLink] {
@@ -537,13 +567,19 @@ struct CupboardCopied: Codable {
     let skipped: Int
 }
 
-/// A group inside a drawer — "Main", and "Chicken" inside it. `parentId` is the group it sits
-/// in; `section` is the drawer it belongs to, null meaning it shows in every drawer.
+/**
+ A tag — "Chicken", "Quick" — which the API still calls a recipe category. Tags are flat and
+ belong to one drawer (`section`), a name once per drawer, and a recipe wears as many as fit.
+ Recipes carry them by name (`Recipe.categories`). `parentId` is from when they nested: a
+ server from before tags may still send it, and the phone ignores it.
+*/
 struct RecipeCategory: Codable, Identifiable, Hashable {
     let id: UUID
-    let name: String
+    /// A `var` so a rename shows at once, before the server has answered.
+    var name: String
     let recipeCount: Int
     let parentId: UUID?
+    /// Always set by a server with tags; nil only from an older one's every-drawer group.
     let section: RecipeSection?
     /// Which of the food drawings (`FoodIcon`) its tile wears. Nil for a plain tile, and from a
     /// server older than group icons.

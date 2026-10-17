@@ -79,8 +79,8 @@ extension RecipeDraft {
  paste one from an AI — the same as the web's. Every way ends in the ordinary editor, "Check
  recipe", looked at before anything is saved.
 
- Started from inside a drawer or a group, every way starts filed there — the drawer picked and
- the group ticked, both still yours to change — and the page says where.
+ Started from inside a drawer, every way starts filed there — the drawer picked and the tags you
+ were looking at ticked, all still yours to change — and the page says where.
 */
 struct NewRecipeView: View {
     enum Mode: String, CaseIterable, Identifiable {
@@ -97,7 +97,8 @@ struct NewRecipeView: View {
 
     var session: Session?
     var initialSection: RecipeSection? = nil
-    var initialGroups: [String] = []
+    /// The tags ticked to start with: the ones chosen in the drawer it was started from.
+    var initialTags: [String] = []
     var onSaved: (Recipe) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -113,11 +114,11 @@ struct NewRecipeView: View {
     /// A link or a paste being read. The way in stays put until it is done.
     @State private var reading = false
 
-    init(session: Session?, initialSection: RecipeSection? = nil, initialGroups: [String] = [],
+    init(session: Session?, initialSection: RecipeSection? = nil, initialTags: [String] = [],
          onSaved: @escaping (Recipe) -> Void) {
         self.session = session
         self.initialSection = initialSection
-        self.initialGroups = initialGroups
+        self.initialTags = initialTags
         self.onSaved = onSaved
         #if DEBUG
         // -mp_debug_new type|link|paste opens on that way in, for screenshot runs.
@@ -151,7 +152,7 @@ struct NewRecipeView: View {
                     draft: draft,
                     embedded: true,
                     initialSection: initialSection,
-                    initialGroups: initialGroups
+                    initialTags: initialTags
                 ) { saved in finish(saved) }
                 // "Cancel" as in the mockup's 3.16 and on the web: back to the link or the paste
                 // it was read from, to try again. Swiping back still works.
@@ -166,10 +167,13 @@ struct NewRecipeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let initialSection {
+                    // "Dinner · Chicken, Quick": the drawer, then the tags — the web's line.
                     HStack(spacing: 6) {
-                        Image(systemName: "folder").font(.system(size: 13))
-                        Text("Will be filed in ") + Text(([initialSection.title] + initialGroups).joined(separator: " › "))
-                            .fontWeight(.semibold).foregroundColor(Palette.text)
+                        Image(systemName: "tag").font(.system(size: 13))
+                        Text("Will be filed in ")
+                            + Text(initialTags.isEmpty ? initialSection.title
+                                   : "\(initialSection.title) · \(initialTags.joined(separator: ", "))")
+                                .fontWeight(.semibold).foregroundColor(Palette.text)
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.muted)
@@ -182,7 +186,7 @@ struct NewRecipeView: View {
                      "We give you a ready-made question for any chatbot. Paste its answer back.")
                 HStack(spacing: 12) {
                     Tile("square.and.arrow.up", tone: .herb, size: 36)
-                    Text("You can also share a page or TikTok straight into Meal Planner from any app.")
+                    Text("You can also share a page or TikTok straight into Waxwing from any app.")
                         .font(.system(size: 13)).foregroundStyle(Palette.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -227,7 +231,7 @@ struct NewRecipeView: View {
                 embedded: true,
                 showsSave: mode == .type,
                 initialSection: initialSection,
-                initialGroups: initialGroups
+                initialTags: initialTags
             ) { saved in finish(saved) }
         case .link:
             FromALinkPage(session: session, link: handedLink, active: mode == .link, busy: $reading,
@@ -549,7 +553,7 @@ struct FromALinkPage: View {
             // As typed: the server finds the link in a pasted share-sheet sentence and puts
             // https:// on "tiktok.com/…", the same for the phone and the web.
             let typed = link.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Somebody's Meal Planner link is the web app's page, which the importer would find
+            // Somebody's Waxwing link is the web app's page, which the importer would find
             // empty: it is saved as a copy, pictures and all, as the web page's Save does.
             if let onSaved, let token = SharedRecipeLink.token(in: typed) {
                 onSaved(try await SharedRecipeLink.save(token: token, household: household))

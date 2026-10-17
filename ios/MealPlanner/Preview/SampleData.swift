@@ -106,7 +106,7 @@ enum SampleData {
             cookTimeMinutes: 26,
             servings: 4,
             section: .dinner,
-            categories: ["Chicken"],
+            categories: ["Chicken", "Main"],
             shared: false,
             ownerName: nil,
             coverImageId: nil,
@@ -122,7 +122,8 @@ enum SampleData {
                 SourceLink(url: "https://www.tiktok.com/@cook/video/7300000000000000000", label: nil),
                 SourceLink(url: "https://www.bbcgoodfood.com/recipes/chicken-parmentier", label: "The original"),
                 SourceLink(url: "https://www.instagram.com/reel/C0ffee/", label: nil),
-            ]
+            ],
+            appliances: ["oven", "stovetop"]
         ),
         Recipe(
             id: UUID(),
@@ -133,7 +134,7 @@ enum SampleData {
             cookTimeMinutes: 45,
             servings: 6,
             section: .dinner,
-            categories: ["Full meal"],
+            categories: ["Beef", "Full meal", "Main"],
             shared: false,
             ownerName: nil,
             coverImageId: nil,
@@ -141,7 +142,8 @@ enum SampleData {
             ingredients: [
                 RecipeIngredient(id: UUID(), ingredientName: "lasagne sheets", quantity: 250, unit: "g", notes: nil, optional: false),
                 RecipeIngredient(id: UUID(), ingredientName: "beef mince", quantity: 500, unit: "g", notes: nil, optional: false),
-            ]
+            ],
+            appliances: ["oven", "stovetop"]
         ),
         Recipe(
             id: UUID(),
@@ -158,6 +160,66 @@ enum SampleData {
             coverImageId: nil,
             photoIds: nil,
             ingredients: []
+        ),
+        // Two untagged chicken dinners, so the drawer offers "2 untagged recipes look like Chicken".
+        Recipe(
+            id: UUID(),
+            name: "Lemon herb chicken traybake",
+            description: nil,
+            instructions: "Heat the oven to 200C.\nToss everything in the tray.\nRoast 40 minutes.",
+            prepTimeMinutes: 10,
+            cookTimeMinutes: 40,
+            servings: 4,
+            section: .dinner,
+            categories: [],
+            shared: false,
+            ownerName: nil,
+            coverImageId: nil,
+            photoIds: nil,
+            ingredients: [
+                RecipeIngredient(id: UUID(), ingredientName: "chicken thighs", quantity: 8, unit: nil, notes: nil, optional: false),
+                RecipeIngredient(id: UUID(), ingredientName: "lemons", quantity: 2, unit: nil, notes: nil, optional: false),
+            ],
+            appliances: ["oven"]
+        ),
+        Recipe(
+            id: UUID(),
+            name: "Chicken stir fry",
+            description: nil,
+            instructions: "Fry the chicken.\nAdd the vegetables and the sauce.",
+            prepTimeMinutes: 10,
+            cookTimeMinutes: 10,
+            servings: 2,
+            section: .dinner,
+            categories: [],
+            shared: false,
+            ownerName: nil,
+            coverImageId: nil,
+            photoIds: nil,
+            ingredients: [
+                RecipeIngredient(id: UUID(), ingredientName: "chicken breast", quantity: 2, unit: nil, notes: nil, optional: false),
+                RecipeIngredient(id: UUID(), ingredientName: "soy sauce", quantity: 2, unit: "tbsp", notes: nil, optional: false),
+            ],
+            appliances: ["stovetop"]
+        ),
+        Recipe(
+            id: UUID(),
+            name: "Air fryer salmon",
+            description: nil,
+            instructions: "Season the salmon.\nAir fry 10 minutes at 200C.",
+            prepTimeMinutes: 5,
+            cookTimeMinutes: 10,
+            servings: 2,
+            section: .dinner,
+            categories: ["Main", "Quick", "Seafood"],
+            shared: false,
+            ownerName: nil,
+            coverImageId: nil,
+            photoIds: nil,
+            ingredients: [
+                RecipeIngredient(id: UUID(), ingredientName: "salmon fillets", quantity: 2, unit: nil, notes: nil, optional: false),
+            ],
+            appliances: ["air-fryer"]
         ),
     ]
 
@@ -206,19 +268,21 @@ enum SampleData {
                         lastBoughtAt: "2026-09-22T10:00:00Z", dueAt: nil, snoozedUntil: nil, due: false),
     ]
 
-    static let recipeCategories: [RecipeCategory] = {
-        let main = RecipeCategory(id: UUID(), name: "Main", recipeCount: 4, parentId: nil, section: .dinner)
-        return [
-            main,
-            RecipeCategory(id: UUID(), name: "Full meal", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "full-meal"),
-            RecipeCategory(id: UUID(), name: "Side", recipeCount: 0, parentId: nil, section: .dinner, iconKey: "side"),
-            RecipeCategory(id: UUID(), name: "Veggie", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "veggie"),
-            RecipeCategory(id: UUID(), name: "Beef", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "meat"),
-            RecipeCategory(id: UUID(), name: "Chicken", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "drumstick"),
-            RecipeCategory(id: UUID(), name: "Pork", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "meat"),
-            RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: main.id, section: .dinner, iconKey: "fish"),
-        ]
-    }()
+    /// Flat tags, each in one drawer — Dinner's seeded set, with Quick added, and two of Lunch's,
+    /// so a "Main" lives in two drawers as it does on a real server.
+    static let recipeCategories: [RecipeCategory] = [
+        RecipeCategory(id: UUID(), name: "Main", recipeCount: 3, parentId: nil, section: .dinner, iconKey: "full-meal"),
+        RecipeCategory(id: UUID(), name: "Beef", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "meat"),
+        RecipeCategory(id: UUID(), name: "Chicken", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "drumstick"),
+        RecipeCategory(id: UUID(), name: "Pork", recipeCount: 0, parentId: nil, section: .dinner, iconKey: "meat"),
+        RecipeCategory(id: UUID(), name: "Seafood", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "fish"),
+        RecipeCategory(id: UUID(), name: "Full meal", recipeCount: 1, parentId: nil, section: .dinner, iconKey: "full-meal"),
+        RecipeCategory(id: UUID(), name: "Side", recipeCount: 0, parentId: nil, section: .dinner, iconKey: "side"),
+        RecipeCategory(id: UUID(), name: "Veggie", recipeCount: 0, parentId: nil, section: .dinner, iconKey: "veggie"),
+        RecipeCategory(id: UUID(), name: "Quick", recipeCount: 1, parentId: nil, section: .dinner),
+        RecipeCategory(id: UUID(), name: "Main", recipeCount: 0, parentId: nil, section: .lunch),
+        RecipeCategory(id: UUID(), name: "Sandwiches", recipeCount: 0, parentId: nil, section: .lunch, iconKey: "sandwich"),
+    ]
 }
 
 extension SampleData {

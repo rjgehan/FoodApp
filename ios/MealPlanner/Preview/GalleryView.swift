@@ -17,6 +17,28 @@ struct GalleryView: View {
         return session
     }()
 
+    /// A house that turned the Plan off but keeps a cupboard — Add to groceries as the recipe's
+    /// one filled button, no Meal plans door.
+    private let noPlan: Session = {
+        let session = Session.preview
+        session.household = SampleData.kitchenHousehold
+        return session
+    }()
+
+    /// A house just made, with no cupboard: Done shopping without the cupboard question, the
+    /// "Set up your kitchen" card.
+    private let noCupboard: Session = {
+        let session = Session.preview
+        session.household = SampleData.newHousehold
+        session.households = [SampleData.newHousehold]
+        return session
+    }()
+
+    /// One sample catalogue for the tag screens, so a tag made or renamed on one is there on the
+    /// next — on this phone only; nothing is sent.
+    @State private var catalogue = CatalogueStore(session: nil, sample: SampleData.recipes,
+                                                  sampleCategories: SampleData.recipeCategories)
+
     var body: some View {
         NavigationStack {
             List {
@@ -47,6 +69,16 @@ struct GalleryView: View {
                     }
                     entry("First-time setup", "house.lodge") {
                         NavigationStack { FirstTimeSetup(session: Session()) }
+                    }
+                    entry("Kitchen setup — machines, Plan, cupboard", "frying.pan") {
+                        KitchenSetupSheet(session: noCupboard, household: SampleData.newHousehold.id,
+                                          sample: SampleData.newHousehold)
+                    }
+                    entry("Set up your kitchen — the card on Recipes", "rectangle.and.hand.point.up.left") {
+                        KitchenSetupCard(onStart: {}, onClose: {})
+                            .padding(20)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .pageBackground()
                     }
                     entry("Shared recipe (public link)", "link") {
                         NavigationStack {
@@ -89,6 +121,11 @@ struct GalleryView: View {
                                           sample: true) { _, _ in }
                             .pageBackground()
                     }
+                    entry("Done shopping — no cupboard", "bag.badge.minus") {
+                        DoneShoppingSheet(items: SampleData.groceriesMockup.filter(\.checked), session: noCupboard,
+                                          sample: true) { _, _ in }
+                            .pageBackground()
+                    }
                     entry("Groceries — all bought", "cart.badge.checkmark") {
                         GroceriesView(session: session, sample: [], sampleCategories: SampleData.categories)
                     }
@@ -99,15 +136,29 @@ struct GalleryView: View {
                             sampleCategories: SampleData.recipeCategories
                         )
                     }
-                    entry("Dinner drawer", "fork.knife") {
+                    entry("Dinner drawer — tags, machines, quick tag", "fork.knife") {
                         NavigationStack {
-                            DrawerView(
-                                section: .dinner,
-                                parent: nil,
-                                recipes: SampleData.recipes,
-                                categories: SampleData.recipeCategories
-                            )
+                            DrawerView(section: .dinner, recipes: SampleData.recipes, categories: SampleData.recipeCategories)
                         }
+                    }
+                    entry("Dinner drawer — Chicken chosen", "tag") {
+                        NavigationStack {
+                            DrawerView(section: .dinner, recipes: SampleData.recipes, categories: SampleData.recipeCategories,
+                                       tag: "Chicken")
+                        }
+                    }
+                    entry("Manage tags", "pencil.line") {
+                        NavigationStack { EditTagsView(store: catalogue, section: .dinner) }
+                    }
+                    entry("Tag recipes — some, all, none", "checklist") {
+                        TagRecipesSheet(store: catalogue, section: .dinner,
+                                        recipes: SampleData.recipes.filter { $0.section == .dinner && !$0.shared }) { _ in }
+                    }
+                    entry("Move recipes to another drawer", "arrow.right.square") {
+                        MoveRecipesSheet(store: catalogue, section: .dinner, recipes: Array(SampleData.recipes.prefix(2))) { _ in }
+                    }
+                    entry("Organise — drawer and tags", "tag.circle") {
+                        OrganiseSheet(recipe: SampleData.recipes[0], session: session) { _ in }
                     }
                     entry("Cupboard", "cabinet") {
                         CupboardView(
@@ -172,11 +223,20 @@ struct GalleryView: View {
                     entry("Name, servings & planning", "slider.horizontal.3") {
                         NavigationStack { HouseholdBasicsScreen(session: session) }
                     }
+                    entry("Kitchen & features", "frying.pan") {
+                        NavigationStack { KitchenScreen(session: noPlan, sample: SampleData.kitchenHousehold) }
+                    }
                     entry("Store aisles", "list.bullet") {
                         NavigationStack { AislesScreen(session: session, sample: SampleData.storeAisles) }
                     }
                     entry("Recipe", "text.book.closed") {
                         NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: session) }
+                    }
+                    entry("Recipe — a house without the Plan", "cart") {
+                        NavigationStack { RecipeDetailView(recipe: SampleData.recipes[0], session: noPlan) }
+                    }
+                    entry("Add to groceries", "cart.badge.plus") {
+                        AddToGroceriesSheet(recipe: SampleData.recipes[0], session: session, servings: 4) { _ in }
                     }
                     entry("Ideas (beta)", "lightbulb") {
                         IdeasView(session: session, sample: SampleData.ideas)
@@ -198,7 +258,7 @@ struct GalleryView: View {
                     entry("Ideas board — as the mockup", "lightbulb") {
                         IdeasView(session: session, sample: SampleData.ideasMockup)
                     }
-                    entry("Share to Meal Planner", "square.and.arrow.down") { prompts.share() }
+                    entry("Share to Waxwing", "square.and.arrow.down") { prompts.share() }
                     entry("Rewritten on device", "wand.and.stars") { prompts.rewritten() }
                 }
 

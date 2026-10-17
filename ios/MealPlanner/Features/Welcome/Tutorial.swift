@@ -6,8 +6,9 @@ import SwiftUI
  straight into the app. The same as the web's (web/src/tutorial).
 
  Each slide is a picture of the real app in a phone's frame, a title and one line. The pictures
- are screenshots of the app itself: TutorialPlan and TutorialGroceries in the asset catalog, each
- with a dark appearance (web/public/tutorial/README.md says how they were taken).
+ are screenshots of the app itself: TutorialRecipes (until it exists, TutorialPlan) and
+ TutorialGroceries in the asset catalog, each with a dark appearance (web/public/tutorial/README.md
+ says how they were taken).
  */
 
 /// Whether this phone has had the tutorial. Once per phone, ever; finishing and skipping both
@@ -75,15 +76,20 @@ struct TutorialView: View {
         let description: String
     }
 
+    /*
+     The web's slides, word for word: recipes first, then the list — the two parts every household
+     has. The first picture is TutorialRecipes once a screenshot of Recipes is in the asset
+     catalog; until then it is still the Plan's (see the README's tutorial section).
+    */
     private static let slides = [
-        Slide(title: "Plan the week together",
-              line: "Everyone in the house sees the same plan, and fills it in from their own phone.",
-              image: "TutorialPlan",
-              description: "The Plan screen: a month calendar with the planning week tinted, and the next meals under it."),
+        Slide(title: "Your family's recipes, together",
+              line: "Save recipes from anywhere and share them with everyone in the house.",
+              image: UIImage(named: "TutorialRecipes") != nil ? "TutorialRecipes" : "TutorialPlan",
+              description: "The Recipes screen, open at Dinner: the household's dinners with their photos, and tags such as Beef and Chicken to narrow them down."),
         Slide(title: "One list for the shop",
-              line: "Planned meals become one grocery list, sorted by aisle and ticked off live as you shop.",
+              line: "Add a recipe's ingredients or type your own. Everyone sees one list, ticked off live as you shop.",
               image: "TutorialGroceries",
-              description: "The Groceries screen: one shared list grouped by aisle, each item saying which meal it is for."),
+              description: "The Groceries screen: one shared list grouped by aisle, each item saying which recipe it is for."),
     ]
     private static var steps: Int { slides.count + 1 }
 
@@ -133,7 +139,7 @@ struct TutorialView: View {
 
             VStack(spacing: 20) {
                 dots
-                Button(atTheme ? (finish == .signIn ? "Continue" : "Start planning") : "Next") {
+                Button(atTheme ? (finish == .signIn ? "Continue" : "Get started") : "Next") {
                     if atTheme { done(answered: true) } else { withAnimation(.snappy) { step += 1 } }
                 }
                 .buttonStyle(.primary)
@@ -173,7 +179,7 @@ struct TutorialView: View {
                 VStack(spacing: 8) {
                     Text("Light or dark?").titleFont(28).foregroundStyle(Palette.text)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Pick how Meal Planner looks. You can change it any time in Settings.")
+                    Text("Pick how Waxwing looks. You can change it any time in Settings.")
                         .font(.system(size: 16))
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)

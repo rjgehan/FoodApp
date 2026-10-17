@@ -80,10 +80,24 @@ extension View {
     func householdSheets(_ session: Session, switching: Binding<Bool>, account: Binding<Bool>,
                          ideas: Binding<Bool>) -> some View {
         sheet(isPresented: switching) { HouseholdPicker(session: session) }
-            .sheet(isPresented: account) { SettingsView(session: session) }
+            // RootView is told when Settings opens and closes: a tab turned off in it has to stay
+            // while Settings hangs off it, and go once it has closed.
+            .sheet(isPresented: account, onDismiss: {
+                NotificationCenter.default.post(name: .settingsClosed, object: nil)
+            }) {
+                SettingsView(session: session)
+                    .onAppear { NotificationCenter.default.post(name: .settingsOpened, object: nil) }
+            }
             // A pushed page in the mockup (7.5), filling the screen with Back, not a card over the tab.
             .fullScreenCover(isPresented: ideas) { IdeasView(session: session) }
     }
+}
+
+extension Notification.Name {
+    /// Settings has opened over a tab (`householdSheets`): RootView leaves that tab in the bar.
+    static let settingsOpened = Notification.Name("mp.settingsOpened")
+    /// ...and closed again: RootView takes the tab away now if the house no longer uses it.
+    static let settingsClosed = Notification.Name("mp.settingsClosed")
 }
 
 /// The header itself. A modifier rather than a chain in the extension, so the ideas board can

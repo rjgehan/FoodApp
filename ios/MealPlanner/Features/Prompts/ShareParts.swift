@@ -1,25 +1,25 @@
 import SwiftUI
 
 /*
- The pieces of "Share to Meal Planner" (mockup 7.6) and of a method rewritten on the phone (7.7):
+ The pieces of "Share to Waxwing" (mockup 7.6) and of a method rewritten on the phone (7.7):
  the app's name across the top, the card that says what arrived, the chips that file it, and the
  rewritten steps with their Undo and what was actually said.
 */
 
 // MARK: - 7.6
 
-/// The middle of the share sheet's bar: the app's chef's hat on a tomato tile, and its name.
+/// The middle of the share sheet's bar: the app's waxwing on an accent tile, and its name.
 struct ShareSheetTitle: View {
     var body: some View {
         HStack(spacing: 8) {
-            Image("ChefHat")
+            Image("AppGlyph")
                 .resizable()
                 .renderingMode(.template)
-                .frame(width: 15, height: 15)
+                .frame(width: 16, height: 16)
                 .foregroundStyle(Palette.onAccent)
                 .frame(width: 26, height: 26)
                 .background(Palette.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Meal Planner").font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text)
+            Text("Waxwing").font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text)
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -259,7 +259,7 @@ extension StructuredRecipe {
 #Preview("Shared card — dark") {
     VStack(spacing: 16) {
         SharedItemCard(title: "Raspberry crumble bars", source: "tiktok.com/@bakewithlou", status: "caption found", isVideo: true)
-        HStack { ChipFace(title: "Gehan house", isOn: true); ChipFace(title: "Snacks", isOn: true); ChipFace(title: "+ Group", isOn: false) }
+        HStack { ChipFace(title: "Gehan house", isOn: true); ChipFace(title: "Snacks", isOn: true); ChipFace(title: "+ Tag", isOn: false) }
     }
     .padding(20)
     .frame(maxHeight: .infinity, alignment: .top)

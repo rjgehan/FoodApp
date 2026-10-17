@@ -1,282 +1,286 @@
 import SwiftUI
 
 /**
- The recipes at a level that are in none of the groups below, each on one line with where it most
- likely goes as the first, filled chip and one other beside it (3.3) — one tap files it and it
- drops off the card. Tapping the name offers every group, and the recipe itself. A long list starts
- folded to the first few.
+ Tag, from select mode: every tag in the drawer, each with a box saying whether all, some or
+ none of the picked recipes wear it. A tap goes some → all → none (and back to some, as it was),
+ a new tag can be typed at the bottom, and Save sends one request per tag that changed — all at
+ once, not one after another.
 */
-struct UnfiledCard: View {
+struct TagRecipesSheet: View {
     var store: CatalogueStore
     let section: RecipeSection
     let recipes: [Recipe]
-    let groups: [RecipeCategory]
-    /// The group this level is, so filing takes the recipe out of it; nil at the drawer's top.
-    let from: RecipeCategory?
+    var onSaved: (String) -> Void
 
-    @State private var filed: Set<UUID> = []
-    @State private var showAll = false
-    @State private var choosingFor: Recipe?
-    @State private var opening: Recipe?
+    @Environment(\.dismiss) private var dismiss
+    /// What each tag becomes: true, on all of them; false, on none. A tag left as it was is absent.
+    @State private var wanted: [UUID: Bool] = [:]
+    @State private var newTags: [String] = []
+    @State private var typed = ""
+    @FocusState private var typing: Bool
+    @State private var busy = false
     @State private var error: String?
 
-    private var left: [Recipe] { recipes.filter { !filed.contains($0.id) } }
+    fileprivate enum Mark { case all, partly, off }
+
+    private var tags: [RecipeCategory] { store.tags(in: section) }
+
+    /// The picked recipes as the store has them now, so what a save already did counts.
+    private var live: [Recipe] {
+        let ids = Set(recipes.map(\.id))
+        return store.recipes.filter { ids.contains($0.id) }
+    }
+
+    /// How many of the picked recipes wear it now.
+    private func wearing(_ tag: RecipeCategory) -> Int { live.filter { store.has($0, tag) }.count }
+
+    private func worn(_ tag: RecipeCategory) -> Mark {
+        let n = wearing(tag)
+        return n == 0 ? .off : n == recipes.count ? .all : .partly
+    }
+
+    private func mark(_ tag: RecipeCategory) -> Mark {
+        wanted[tag.id].map { $0 ? Mark.all : Mark.off } ?? worn(tag)
+    }
+
+    /// Some → all → none → some; a tag that started on all or on none just flips.
+    private func tap(_ tag: RecipeCategory) {
+        let was = worn(tag)
+        switch mark(tag) {
+        case .partly: wanted[tag.id] = true
+        case .all: wanted[tag.id] = was == .off ? nil : false
+        case .off: wanted[tag.id] = was == .off ? true : nil
+        }
+    }
+
+    private func subtitle(_ tag: RecipeCategory) -> String? {
+        let n = recipes.count
+        switch (wanted[tag.id], worn(tag)) {
+        case (true?, _): return n == 1 ? "Goes on" : "Goes on all \(n)"
+        case (false?, _): return n == 1 ? "Comes off" : "Comes off all \(n)"
+        case (nil, .partly): return "On \(wearing(tag)) of \(n)"
+        default: return nil
+        }
+    }
+
+    private var changes: Int { wanted.count + newTags.count }
 
     var body: some View {
-        let left = left
-        if !left.isEmpty || error != nil {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("\(left.count) unfiled \(left.count == 1 ? "recipe" : "recipes")", systemImage: "folder")
-                    .labelStyle(GapLabel())
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Palette.mustard)
-                    .accessibilityAddTraits(.isHeader)
-                ForEach(showAll ? left : Array(left.prefix(5))) { recipe in
-                    row(recipe)
+        let n = recipes.count
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                SheetHeader("Tag \(n) \(n == 1 ? "recipe" : "recipes")", subtitle: "Tags in \(section.title)",
+                            onClose: { dismiss() })
+                if tags.isEmpty && newTags.isEmpty {
+                    Text("No tags in \(section.title) yet — type one below.")
+                        .font(.system(size: 14)).foregroundStyle(Palette.muted)
+                } else {
+                    ListGroup {
+                        ForEach(tags) { tag in
+                            Button { tap(tag) } label: {
+                                ListRow(tag.name, subtitle: subtitle(tag), leading: {
+                                    FoodTile(iconKey: tag.iconKey, tone: tag.tone, size: 34)
+                                }) {
+                                    TriBox(mark: mark(tag))
+                                }
+                            }
+                            .buttonStyle(PressFade())
+                            .accessibilityValue(mark(tag) == .all ? "On all" : mark(tag) == .partly ? "On some" : "Off")
+                        }
+                        ForEach(newTags, id: \.self) { name in
+                            ListRow(name, subtitle: n == 1 ? "New tag, goes on" : "New tag, goes on all \(n)", leading: {
+                                FoodTile(iconKey: nil, tone: .herb, size: 34)
+                            }) {
+                                Button { newTags.removeAll { $0 == name } } label: {
+                                    Image(systemName: "xmark").font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Palette.faint).frame(width: 28, height: 28)
+                                }
+                                .buttonStyle(PressFade())
+                                .accessibilityLabel("Don't make \(name)")
+                                TriBox(mark: .all)
+                            }
+                        }
+                    }
                 }
-                if left.count > 5 && !showAll {
-                    Button("Show all \(left.count)") { showAll = true }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Palette.mustard)
+                HStack(spacing: 8) {
+                    TextField("New tag", text: $typed)
+                        .focused($typing)
+                        .submitLabel(.done)
+                        .onSubmit { addTyped() }
+                        .padding(.horizontal, 14)
+                        .frame(height: 44)
+                        .fieldSurface(focused: typing)
+                    Button("Add") { addTyped() }
+                        .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                        .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger)
                 }
+                Button(busy ? "Saving…" : "Save") { Task { await save() } }
+                    .buttonStyle(.primary)
+                    .disabled(busy || (changes == 0 && typed.trimmingCharacters(in: .whitespaces).isEmpty))
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.mustardSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.mustard, lineWidth: 1))
-            .confirmationDialog(choosingFor?.name ?? "", isPresented: Binding(
-                get: { choosingFor != nil }, set: { if !$0 { choosingFor = nil } }), titleVisibility: .visible) {
-                if let recipe = choosingFor {
-                    ForEach(ordered(recipe).all) { group in
-                        Button("Put it in \(group.name)") { Task { await file(recipe, in: group) } }
-                    }
-                    Button("Open the recipe") { opening = recipe }
-                }
-            }
-            .navigationDestination(item: $opening) { recipe in
-                RecipeDetailView(recipe: recipe, session: store.session)
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .pageBackground()
+        .kitchenSheet([.medium, .large])
+    }
+
+    /// A name the drawer already has ticks that tag rather than making a second one.
+    private func addTyped() {
+        let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        typed = ""
+        if let existing = store.tag(named: name, in: section) {
+            wanted[existing.id] = worn(existing) == .all ? nil : true
+        } else if !newTags.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            newTags.append(name)
         }
     }
 
-    /// Likeliest first, then the rest in their usual order.
-    private func ordered(_ recipe: Recipe) -> (likely: [RecipeCategory], all: [RecipeCategory]) {
-        let likely = CategoryKinds.suggestGroups(recipe, among: groups) { store.namesWithin($0, in: section) }
-        return (likely, likely + groups.filter { g in !likely.contains { $0.id == g.id } })
-    }
-
-    private func row(_ recipe: Recipe) -> some View {
-        let (likely, all) = ordered(recipe)
-        return HStack(spacing: 8) {
-            Button { choosingFor = recipe } label: {
-                Text(recipe.name).font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.text)
-                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(PressFade())
-            .accessibilityLabel("Every group for \(recipe.name)")
-            ForEach(Array(all.prefix(2).enumerated()), id: \.element.id) { index, group in
-                smallChip(group.name, filled: index == 0 && !likely.isEmpty) {
-                    Task { await file(recipe, in: group) }
-                }
-                .accessibilityLabel("Put \(recipe.name) in \(group.name)")
-            }
+    private func save() async {
+        addTyped()
+        guard changes > 0 else {
+            dismiss()
+            return
         }
-    }
-
-    /// The mockup's compact chip, the likely group filled with the text colour.
-    private func smallChip(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: filled ? .semibold : .medium))
-                .lineLimit(1)
-                .foregroundStyle(filled ? Palette.bg : Palette.text)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(filled ? Palette.text : Palette.surface, in: Capsule())
-                .overlay(Capsule().strokeBorder(filled ? Palette.text : Palette.border, lineWidth: 1))
-                .fixedSize()
-        }
-        .buttonStyle(PressFade())
-    }
-
-    private func file(_ recipe: Recipe, in group: RecipeCategory) async {
+        busy = true
         error = nil
-        filed.insert(recipe.id)
-        guard let household = store.household else { return }
-        do {
-            try await APIClient.shared.fileRecipes(household: household, in: group.id, recipes: [recipe.id], from: from?.id)
-            await store.load()
-        } catch {
-            filed.remove(recipe.id)
-            self.error = "Could not file \(recipe.name). \(error.localizedDescription)"
+        let ids = Set(recipes.map(\.id))
+        let onlyAdding = !wanted.values.contains(false)
+        let failures = await store.applyTags(wanted, newTags: newTags, to: ids, in: section)
+        busy = false
+        if failures.isEmpty {
+            let n = ids.count
+            onSaved(onlyAdding ? "Tagged \(n) \(n == 1 ? "recipe" : "recipes")"
+                               : "Changed the tags on \(n) \(n == 1 ? "recipe" : "recipes")")
+            dismiss()
+        } else {
+            // What worked stays done; only the rest is said, and can be tried again.
+            wanted = [:]
+            newTags = []
+            error = failures.joined(separator: "\n")
         }
+    }
+}
+
+/// A box for all (ticked), some (a dash) or none (empty): the Tag sheet's three states.
+private struct TriBox: View {
+    let mark: TagRecipesSheet.Mark
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(mark == .off ? Palette.faint : Palette.accent, lineWidth: 1.6)
+            if mark != .off {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.accent)
+                Image(systemName: mark == .all ? "checkmark" : "minus")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Palette.onAccent)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .animation(.easeOut(duration: 0.15), value: mark)
+        .accessibilityHidden(true)
     }
 }
 
 /**
- "Your Main dish looks like Chicken, Beef and Seafood — make those?" (3.5). Read from the recipes'
- names and ingredients, so it costs nothing, and every group can be unticked before anything
- happens. Closing it is "not now", remembered on this phone.
+ Move, from select mode: the other drawers, and the button that moves every picked recipe at
+ once. Tags belong to a drawer, so a recipe keeps only the ones its new drawer already has —
+ never a new, empty copy made there — and the sheet says which come off before anything moves.
 */
-struct SplitSheet: View {
+struct MoveRecipesSheet: View {
     var store: CatalogueStore
-    let group: RecipeCategory
-    let total: Int
-    let suggestions: [(name: String, recipeIds: [UUID])]
-    /// The recipes being split, to name one from each suggestion.
-    let examples: [Recipe]
+    let section: RecipeSection
+    let recipes: [Recipe]
+    var onMoved: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var unticked: Set<String> = []
+    @State private var target: RecipeSection?
     @State private var busy = false
     @State private var error: String?
-    /// As tall as what is in it, with the group still showing behind, dimmed (the mockup's 3.5).
-    @State private var height: CGFloat = 480
 
-    private var picked: [(name: String, recipeIds: [UUID])] { suggestions.filter { !unticked.contains($0.name) } }
+    /// The tag names the move takes off, because the new drawer has no tag by that name.
+    private func dropped(in target: RecipeSection) -> [String] {
+        var names: [String] = []
+        for name in recipes.flatMap(\.categories) where store.tag(named: name, in: target) == nil
+            && !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            names.append(name)
+        }
+        return names
+    }
+
+    /// A String, so Button is not left to guess what `map`'s closure makes.
+    private var moveTitle: String {
+        if busy { return "Moving…" }
+        guard let target else { return "Pick a drawer" }
+        return "Move to \(target.title)"
+    }
 
     var body: some View {
-        let stay = total - picked.reduce(0) { $0 + $1.recipeIds.count }
+        let n = recipes.count
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SheetHeader("Split \"\(group.name)\"?",
-                            subtitle: "\(total) \(total == 1 ? "recipe" : "recipes"), no subgroups yet. We found these:",
+                SheetHeader("Move \(n) \(n == 1 ? "recipe" : "recipes")", subtitle: "From \(section.title) to…",
                             onClose: { dismiss() })
                 ListGroup {
-                    ForEach(suggestions, id: \.name) { s in
-                        let on = !unticked.contains(s.name)
-                        Button {
-                            if on { unticked.insert(s.name) } else { unticked.remove(s.name) }
-                        } label: {
-                            ListRow(s.name, subtitle: "\(s.recipeIds.count) \(s.recipeIds.count == 1 ? "recipe" : "recipes")") {
-                                CheckBox(isOn: on)
-                            } trailing: {
-                                if let example = examples.first(where: { $0.id == s.recipeIds.first }) {
-                                    Text(example.name + "…").font(.system(size: 13)).foregroundStyle(Palette.muted)
-                                        .lineLimit(1).frame(maxWidth: 140, alignment: .trailing)
-                                }
+                    ForEach(RecipeSection.allCases.filter { $0 != section }, id: \.self) { drawer in
+                        let count = store.recipes.filter { $0.section == drawer }.count
+                        Button { target = drawer } label: {
+                            ListRow(drawer.title, subtitle: "\(count) \(count == 1 ? "recipe" : "recipes")", leading: {
+                                FoodTile(iconKey: store.sectionIcons[drawer] ?? drawer.defaultIcon, tone: drawer.tone, size: 36)
+                            }) {
+                                CheckCircle(isOn: target == drawer)
                             }
                         }
                         .buttonStyle(PressFade())
-                        .accessibilityAddTraits(on ? .isSelected : [])
+                        .accessibilityAddTraits(target == drawer ? .isSelected : [])
                     }
                 }
-                if stay > 0 {
-                    Text("\(stay) \(stay == 1 ? "recipe doesn't match and stays" : "recipes don't match and stay") in \(group.name).")
-                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                if let target {
+                    let off = dropped(in: target)
+                    if !off.isEmpty {
+                        NoteBox("\(ListFormatter.localizedString(byJoining: off)) \(off.count == 1 ? "isn't a tag" : "aren't tags") in \(target.title), so \(off.count == 1 ? "it comes" : "they come") off.",
+                                tone: .mustard, systemImage: "tag")
+                    }
                 }
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger)
                 }
-                Button(busy ? "Making…" : "Create \(picked.count) \(picked.count == 1 ? "group" : "groups")") {
-                    Task { await apply() }
+                Button(moveTitle) {
+                    Task { await move() }
                 }
                 .buttonStyle(.primary)
-                .disabled(busy || picked.isEmpty || store.household == nil)
+                .disabled(busy || target == nil)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 24)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 + 8 }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .kitchenSheet([.height(height)])
+        .pageBackground()
+        .kitchenSheet([.medium, .large])
     }
 
-    private func apply() async {
-        guard let household = store.household else { return }
+    private func move() async {
+        guard let target else { return }
         busy = true
         error = nil
-        do {
-            for s in picked {
-                // A group with that name may exist already — an unused "Vegetarian", say. Move
-                // it in rather than failing on the name.
-                let existing = store.categories.first { $0.name.lowercased() == s.name.lowercased() }
-                let target: UUID
-                if let existing {
-                    if existing.parentId != group.id {
-                        try await APIClient.shared.moveRecipeCategory(household: household, category: existing.id, into: group.id)
-                    }
-                    target = existing.id
-                } else {
-                    target = try await APIClient.shared.createRecipeCategory(
-                        household: household, name: s.name, section: nil, parent: group.id).id
-                }
-                try await APIClient.shared.fileRecipes(household: household, in: target, recipes: s.recipeIds, from: group.id)
-            }
-            await store.load()
-            dismiss()
-        } catch {
-            self.error = "Could not make those groups. \(error.localizedDescription)"
-            busy = false
+        let result = await store.move(Set(recipes.map(\.id)), to: target)
+        busy = false
+        if result.moved == 0 && result.failed > 0 {
+            error = "Could not move \(result.failed == 1 ? "it" : "them"). Try again."
+            return
         }
-    }
-}
-
-/// A new group where you are: a name, and a picture if you want one.
-struct NewGroupSheet: View {
-    var store: CatalogueStore
-    let section: RecipeSection
-    let parent: RecipeCategory?
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var iconKey: String?
-    @State private var choosingIcon = false
-    @State private var busy = false
-    @State private var error: String?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SheetHeader(parent.map { "New group inside \($0.name)" } ?? "New group",
-                            subtitle: parent == nil ? "It goes in \(section.title)." : nil, onClose: { dismiss() })
-                FieldBox("Name", text: $name,
-                         prompt: parent.map { "A kind of \($0.name.lowercased())…" } ?? "Main dish, Side…")
-                if choosingIcon {
-                    FoodIconPicker(selected: iconKey, allowNone: true) { key in
-                        iconKey = key
-                        choosingIcon = false
-                    }
-                } else {
-                    Button { choosingIcon = true } label: {
-                        HStack(spacing: 8) {
-                            FoodTile(iconKey: iconKey, tone: .accent, size: 32)
-                            Text(iconKey == nil ? "Pick an icon" : "Change icon")
-                        }
-                    }
-                    .buttonStyle(.kitchen(.ghost, size: .small, fill: false))
-                }
-                if let error {
-                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
-                }
-                Button(busy ? "Adding…" : "Add") { Task { await add() } }
-                    .buttonStyle(.primary)
-                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty || store.household == nil)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 24)
-        }
-    }
-
-    private func add() async {
-        guard let household = store.household else { return }
-        busy = true
-        do {
-            // A group inside another joins its drawer; a top-level one joins the drawer it is made in.
-            try await APIClient.shared.createRecipeCategory(
-                household: household, name: name.trimmingCharacters(in: .whitespaces),
-                section: parent == nil ? section : nil, parent: parent?.id, iconKey: iconKey)
-            await store.load()
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
-            busy = false
-        }
+        var said = "Moved \(result.moved) to \(target.title)"
+        if !result.dropped.isEmpty { said += " · took off \(ListFormatter.localizedString(byJoining: result.dropped))" }
+        if result.failed > 0 { said += " · \(result.failed) could not move" }
+        onMoved(said)
+        dismiss()
     }
 }
 
@@ -380,13 +384,19 @@ enum SharedNews {
     }
 }
 
-#Preview("Split") {
+#Preview("Tag recipes") {
     let store = CatalogueStore(session: nil, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
     return Color.clear.sheet(isPresented: .constant(true)) {
-        SplitSheet(store: store, group: SampleData.recipeCategories[0], total: 41,
-                   suggestions: [("Chicken", [SampleData.recipes[0].id]), ("Beef", [SampleData.recipes[1].id])],
-                   examples: SampleData.recipes)
+        TagRecipesSheet(store: store, section: .dinner, recipes: Array(SampleData.recipes.prefix(2))) { _ in }
     }
+}
+
+#Preview("Move recipes") {
+    let store = CatalogueStore(session: nil, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
+    return Color.clear.sheet(isPresented: .constant(true)) {
+        MoveRecipesSheet(store: store, section: .dinner, recipes: Array(SampleData.recipes.prefix(2))) { _ in }
+    }
+    .preferredColorScheme(.dark)
 }
 
 #Preview("Shared with you") {

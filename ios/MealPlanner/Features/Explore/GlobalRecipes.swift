@@ -567,7 +567,7 @@ struct ExploreHero: View {
 
 /**
  "Move into my recipes" for a published recipe: which of your households (only asked when you
- are in more than one, the one you are looking at ticked first), then the drawer and groups it
+ are in more than one, the one you are looking at ticked first), then the drawer and tags it
  goes in there. It files the recipe rather than copying it, the same as a recipe shared with you:
  it stays the publisher's to change, and is yours to find and plan.
  */
@@ -580,13 +580,13 @@ struct MoveIntoMineSheet: View {
     @State private var picked: UUID?
     // Dinner is the least surprising drawer to start in, as it is for a recipe shared with you.
     @State private var section: RecipeSection = .dinner
-    @State private var groups: Set<String> = []
+    @State private var tags: Set<String> = []
     @State private var parked: Set<String> = []
-    @State private var allGroups: [RecipeCategory] = []
+    @State private var allTags: [RecipeCategory] = []
     @State private var busy = false
     @State private var error: String?
     /// The content's own height: the sheet hugs its button, with no empty panel under it, and a
-    /// long list of groups grows it to full height, where it scrolls.
+    /// long list of tags grows it to full height, where it scrolls.
     @State private var height: CGFloat = 520
 
     private static let tones: [Tone] = [.herb, .sky, .plum, .mustard, .accent]
@@ -637,7 +637,7 @@ struct MoveIntoMineSheet: View {
                         }
                     }
                 }
-                FilingPicker(section: $section, groups: $groups, allGroups: allGroups, labelled: true) { name in await addGroup(name) }
+                FilingPicker(section: $section, tags: $tags, allTags: allTags, labelled: true) { name in await addTag(name) }
                 if let error {
                     Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
@@ -663,29 +663,34 @@ struct MoveIntoMineSheet: View {
         .scrollBounceBehavior(.basedOnSize)
         .pageBackground()
         .kitchenSheet([.height(height)])
-        .task(id: chosen?.id) { await loadGroups() }
-        .onChange(of: section) { _, next in moveGroups(&groups, parked: &parked, to: next, all: allGroups) }
+        .task(id: chosen?.id) { await loadTags() }
+        .onChange(of: section) { _, next in moveTags(&tags, parked: &parked, to: next, all: allTags) }
     }
 
     private func pick(_ house: HouseholdSummary) {
         guard house.id != chosen?.id else { return }
         picked = house.id
-        // Groups belong to a household: the ones ticked for the last one mean nothing in this one.
-        groups = []
+        // Tags belong to a household: the ones ticked for the last one mean nothing in this one.
+        tags = []
         parked = []
     }
 
-    private func loadGroups() async {
-        guard let household = chosen?.id, session.token != "preview" else { return }
-        allGroups = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
+    private func loadTags() async {
+        guard let household = chosen?.id else { return }
+        // The Gallery's sheet shows the sample drawers' tags rather than none.
+        guard session.token != "preview" else {
+            allTags = SampleData.recipeCategories
+            return
+        }
+        allTags = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
     }
 
-    private func addGroup(_ name: String) async {
+    private func addTag(_ name: String) async {
         guard let household = chosen?.id else { return }
         do {
-            let made = try await APIClient.shared.createRecipeCategory(household: household, name: name, section: section)
-            allGroups.append(made)
-            groups.insert(made.name)
+            let made = try await APIClient.shared.createTag(household: household, name: name, section: section)
+            allTags.append(made)
+            tags.insert(made.name)
         } catch {
             self.error = error.localizedDescription
         }
@@ -697,7 +702,7 @@ struct MoveIntoMineSheet: View {
         defer { busy = false }
         do {
             let saved = try await APIClient.shared.fileRecipe(household: household.id, recipe: recipe.id,
-                                                               section: section, categories: Array(groups))
+                                                               section: section, categories: Array(tags))
             NotificationCenter.default.post(name: .recipesChanged, object: nil)
             onMoved(saved, household)
             dismiss()

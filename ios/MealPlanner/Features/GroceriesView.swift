@@ -5,7 +5,7 @@ import UIKit
  The shared list (mockup 4.1): one box to add to it, then everything grouped by aisle in the
  order the household walks the store, each aisle with its count. Each row has its amount in bold,
  the recipes it is for underneath, "Cupboard says you have 1" in sky when the cupboard already
- has some, and a mustard bell when a restock reminder is set on it.
+ has some (only in a house that keeps one), and a mustard bell when a restock reminder is set on it.
 
  The circle ticks a thing off — a whole-row target is too easy to catch with a thumb while
  scrolling a shop list — and the rest of the row opens its sheet (aisle, reminder, cupboard,
@@ -75,7 +75,9 @@ struct GroceriesView: View {
                 }
 
                 if items.isEmpty && error == nil {
-                    Text("Nothing on the list. Add planned meals from Plan, or type something above.")
+                    Text(session.planOn
+                         ? "Nothing on the list. Add planned meals from Plan, or type something above."
+                         : "Nothing on the list. Add a recipe's ingredients from its page, or type an item.")
                         .font(.system(size: 15))
                         .foregroundStyle(Palette.muted)
                         .multilineTextAlignment(.center)
@@ -92,6 +94,7 @@ struct GroceriesView: View {
                             reminder: item.ingredientId.flatMap { reminders[$0] },
                             stock: item.ingredientId.flatMap { cupboard[$0] },
                             me: session.userId,
+                            cupboardOn: session.cupboardOn,
                             onToggle: { Task { await toggle(item) } },
                             onOpen: { open = item }
                         )
@@ -238,6 +241,8 @@ struct GroceriesView: View {
         if let found = try? await APIClient.shared.restockReminders(household: household) {
             reminders = Dictionary(uniqueKeysWithValues: found.map { ($0.ingredientId, $0) })
         }
+        // A house without a cupboard has nothing in one to say.
+        guard session.cupboardOn else { cupboard = [:]; return }
         if let stock = try? await APIClient.shared.cupboard(household: household) {
             cupboard = Dictionary(stock.compactMap { c in c.ingredientId.map { ($0, c) } }, uniquingKeysWith: { a, _ in a })
         }
@@ -364,6 +369,8 @@ struct GroceryRow: View {
     var stock: CupboardItem?
     /// Who is looking, so a row they ticked says "got by you".
     var me: UUID? = nil
+    /// The house keeps a cupboard, so "Cupboard says you have 1" means something.
+    var cupboardOn = true
     var onToggle: () -> Void
     var onOpen: () -> Void
 
@@ -387,7 +394,7 @@ struct GroceryRow: View {
                         if let detail = GroceryWords.detail(item, me: me) {
                             Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
                         }
-                        if item.inCupboard && !item.checked {
+                        if cupboardOn && item.inCupboard && !item.checked {
                             Label(GroceryWords.cupboardSays(stock), systemImage: "cabinet")
                                 .labelStyle(WarningLabel())
                                 .font(.system(size: 12, weight: .semibold))

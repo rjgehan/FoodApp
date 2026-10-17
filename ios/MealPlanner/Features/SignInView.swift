@@ -383,7 +383,7 @@ struct SignInView: View {
                 password = ""
             } else {
                 error = "You're not in a household yet. Ask someone for an invite link, then scan it below — "
-                    + "or start your own on the Meal Planner website."
+                    + "or start your own on the Waxwing website."
             }
         } catch let failure as APIError where failure.lockoutSeconds != nil {
             // Too many tries: the locked state says so and counts down instead of an error.
@@ -418,7 +418,7 @@ struct SignInView: View {
 
 /**
  First-time setup (1.3): only on a brand-new server with no accounts. Makes you, the owner, and
- your household in one go, and signs you in.
+ your household in one go, and signs you in — onto the household's kitchen questions.
  */
 struct FirstTimeSetup: View {
     var session: Session
@@ -434,7 +434,8 @@ struct FirstTimeSetup: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Let's set up\nyour kitchen").titleFont(28).foregroundStyle(Palette.text)
+                    // Not "set up your kitchen": that is the questions straight after this one.
+                    Text("Create your\nhousehold").titleFont(28).foregroundStyle(Palette.text)
                         .lineSpacing(-2)
                         .accessibilityAddTraits(.isHeader)
                     Text("You'll be the owner. Invite everyone else after.")
@@ -492,7 +493,10 @@ struct FirstTimeSetup: View {
         do {
             let auth = try await APIClient.shared.setUp(householdName: trimmed.household, displayName: trimmed.name,
                                                         email: trimmed.email, password: password)
-            try await session.signIn(auth)
+            if try await session.signIn(auth), let made = session.household?.id {
+                // The house is brand new: its kitchen questions come first, once the tabs are up.
+                session.askKitchenSetup(for: made)
+            }
         } catch {
             self.error = error.localizedDescription
         }

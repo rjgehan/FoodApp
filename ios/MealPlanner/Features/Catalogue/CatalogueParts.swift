@@ -1,13 +1,14 @@
 import SwiftUI
 
 /*
- The catalogue's own pieces (the mockup's 3.1–3.6): the drawer and group cards, a recipe as a
- photo card, a search result row, the trail of where you are, and the floating Add recipe.
- Built from the design system's parts; nothing here restyles them.
+ The catalogue's own pieces (the mockup's 3.1–3.6): the drawer cards, the tag chips a drawer is
+ filtered by, a recipe as a photo card (and as one to pick in select mode), a search result row,
+ and the card that offers a tag for untagged recipes. Built from the design system's parts;
+ nothing here restyles them.
 */
 
-/// The mockup's icon tile with one of the hand-drawn food icons on it, or a folder for a group
-/// nobody has given a picture.
+/// The mockup's icon tile with one of the hand-drawn food icons on it, or a plain tag mark for a
+/// tag nobody has given a picture.
 struct FoodTile: View {
     var iconKey: String?
     var tone: Tone
@@ -18,7 +19,7 @@ struct FoodTile: View {
             if let icon = FoodIcon.named(iconKey) {
                 icon.image.resizable().scaledToFit().frame(width: size * 0.66, height: size * 0.66)
             } else {
-                Image(systemName: "folder").font(.system(size: size * 0.42, weight: .medium))
+                Image(systemName: "tag").font(.system(size: size * 0.42, weight: .medium))
             }
         }
         .foregroundStyle(tone.ink)
@@ -51,60 +52,105 @@ struct DrawerCard: View {
     }
 }
 
-/// A group inside a drawer: a smaller card, its tile beside the name.
-struct GroupCard: View {
-    let group: RecipeCategory
-    let detail: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            FoodTile(iconKey: group.iconKey, tone: group.tone, size: 36)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(group.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
-                Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-        .cardSurface()
-        .contentShape(RoundedRectangle(cornerRadius: 18))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The dashed tile at the end of the groups: make another one here.
-struct NewGroupTile: View {
+/**
+ A tag in a drawer's chip row: its little drawing if it has one, its name and how many recipes
+ wear it — "All", "Untagged" and every tag look alike. Filled with the text colour while on,
+ as every chip is.
+*/
+struct TagChip: View {
+    let title: String
+    var iconKey: String?
+    var count: Int?
+    var isOn: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label("New group", systemImage: "plus")
-                .font(.system(size: 14, weight: .semibold))
-                .labelStyle(GapLabel())
-                .foregroundStyle(Palette.accentInk)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(minHeight: 60)
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Palette.faint, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-                .contentShape(Rectangle())
+            HStack(spacing: 5) {
+                if let icon = FoodIcon.named(iconKey) {
+                    icon.image.resizable().scaledToFit().frame(width: 16, height: 16)
+                }
+                Text(title)
+                if let count {
+                    Text("\(count)").foregroundStyle(isOn ? Palette.bg.opacity(0.75) : Palette.muted)
+                }
+            }
+            .font(.system(size: 13, weight: isOn ? .semibold : .medium))
+            .lineLimit(1)
+            .foregroundStyle(isOn ? Palette.bg : Palette.text)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isOn ? Palette.text : Palette.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(isOn ? Palette.text : Palette.border, lineWidth: 1))
+            .fixedSize()
+            .contentShape(Capsule())
         }
         .buttonStyle(PressFade())
+        .accessibilityLabel(count.map { "\(title), \($0)" } ?? title)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
-/// An icon and its title 8pt apart, rather than SwiftUI's wider default.
-struct GapLabel: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 8) { configuration.icon; configuration.title }
+/// The dashed "+ Tag" at the end of the chip row: make one here, without leaving the drawer.
+struct AddTagChip: View {
+    var title = "Tag"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "plus").font(.system(size: 12, weight: .semibold))
+                Text(title)
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Palette.accentInk)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .overlay(Capsule().strokeBorder(Palette.faint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+            .fixedSize()
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel("New tag")
     }
 }
 
-/// "41 recipes · 3 groups" — the recipes, then whether it opens further.
-func groupDetail(recipes: Int, groups: Int) -> String {
-    "\(recipes) \(recipes == 1 ? "recipe" : "recipes")"
-        + (groups > 0 ? " · \(groups) \(groups == 1 ? "group" : "groups")" : "")
+/**
+ "4 untagged recipes look like Chicken" with one button that tags them all: read from the
+ recipes' names and ingredients, so it costs nothing. Only ever a card in the page — it never
+ opens anything by itself — and × is "not now", remembered on this phone.
+*/
+struct QuickTagCard: View {
+    let name: String
+    let count: Int
+    var busy = false
+    let onTag: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            (Text("\(count) untagged recipes look like ") + Text(name).fontWeight(.semibold))
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(busy ? "Tagging…" : "Tag them", action: onTag)
+                .buttonStyle(.kitchen(.dark, size: .small, fill: false))
+                .disabled(busy)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.mustard)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .accessibilityLabel("Not now")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.vertical, 12)
+        .background(Palette.mustardSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.mustard, lineWidth: 1))
+    }
 }
 
 /**
@@ -191,6 +237,35 @@ struct RecipePhotoGrid: View {
     }
 }
 
+/// The same grid in select mode: a tap picks a recipe rather than opening it, and a box on its
+/// picture says which are picked.
+struct SelectableRecipeGrid: View {
+    let recipes: [Recipe]
+    @Binding var picked: Set<UUID>
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 16) {
+            ForEach(recipes) { recipe in
+                let on = picked.contains(recipe.id)
+                Button {
+                    if on { picked.remove(recipe.id) } else { picked.insert(recipe.id) }
+                } label: {
+                    RecipePhotoCard(recipe: recipe)
+                        .overlay(alignment: .topTrailing) {
+                            CheckBox(isOn: on)
+                                .background(on ? Color.clear : Palette.surface,
+                                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                .padding(8)
+                        }
+                }
+                .buttonStyle(PressFade())
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityHint(on ? "Picked. Tap to leave it out." : "Tap to pick it.")
+            }
+        }
+    }
+}
+
 /// One search result: the picture small, the name, and where it is filed.
 struct RecipeResultRow: View {
     let recipe: Recipe
@@ -205,66 +280,45 @@ struct RecipeResultRow: View {
     }
 }
 
-/// "Dinner › Main dish › Chicken" under the bar, the last step in the text colour.
-struct Breadcrumbs: View {
-    let steps: [String]
+/// An icon and its title 8pt apart, rather than SwiftUI's wider default.
+struct GapLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) { configuration.icon; configuration.title }
+    }
+}
+
+private struct CataloguePartsPreview: View {
+    @State private var on: Set<String> = ["Chicken"]
+    @State private var picked: Set<UUID> = [SampleData.recipes[0].id]
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                if index > 0 {
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    DrawerCard(section: .breakfast, count: 24, iconKey: "pancakes")
+                    DrawerCard(section: .dinner, count: 88, iconKey: "pot")
                 }
-                Text(step)
-                    .fontWeight(index == steps.count - 1 ? .semibold : .regular)
-                    .foregroundStyle(index == steps.count - 1 ? Palette.text : Palette.muted)
-                    .lineLimit(1)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        TagChip(title: "All", count: 12, isOn: on.isEmpty) { on = [] }
+                        ForEach(SampleData.recipeCategories.filter { $0.section == .dinner }) { tag in
+                            TagChip(title: tag.name, iconKey: tag.iconKey, count: 3, isOn: on.contains(tag.name)) {
+                                if on.contains(tag.name) { on.remove(tag.name) } else { on.insert(tag.name) }
+                            }
+                        }
+                        AddTagChip {}
+                    }
+                }
+                QuickTagCard(name: "Chicken", count: 4, onTag: {}, onDismiss: {})
+                RecipePhotoGrid(recipes: SampleData.recipes)
+                SelectableRecipeGrid(recipes: SampleData.recipes, picked: $picked)
             }
+            .padding(20)
         }
-        .font(.system(size: 13))
-        .foregroundStyle(Palette.muted)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .pageBackground()
     }
 }
 
-/// The floating "+ Add recipe" over a group's recipes, above the tab bar.
-struct FloatingAddRecipe: View {
-    let action: () -> Void
+#Preview("Catalogue parts") { CataloguePartsPreview() }
 
-    var body: some View {
-        Button(action: action) {
-            Label("Add recipe", systemImage: "plus")
-                .labelStyle(GapLabel())
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Palette.onAccent)
-                .padding(.horizontal, 20)
-                .frame(height: 52)
-                .background(Palette.accent, in: Capsule())
-                .shadow(color: .black.opacity(0.18), radius: 15, y: 10)
-        }
-        .buttonStyle(PressFade())
-        .padding(.trailing, 20)
-        .padding(.bottom, 12)
-    }
-}
-
-#Preview("Catalogue parts") {
-    ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                DrawerCard(section: .breakfast, count: 24, iconKey: "pancakes")
-                DrawerCard(section: .dinner, count: 88, iconKey: "pot")
-            }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(SampleData.recipeCategories.prefix(3)) { GroupCard(group: $0, detail: "41 recipes · 3 groups") }
-                NewGroupTile {}
-            }
-            Breadcrumbs(steps: ["Dinner", "Main dish", "Chicken"])
-            RecipePhotoGrid(recipes: SampleData.recipes)
-            FloatingAddRecipe {}
-        }
-        .padding(20)
-    }
-    .pageBackground()
-}
+#Preview("Catalogue parts — dark") { CataloguePartsPreview().preferredColorScheme(.dark) }

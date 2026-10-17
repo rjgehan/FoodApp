@@ -2,8 +2,9 @@ import SwiftUI
 
 /**
  The household (mockup 6.2): the way to invite somebody, who is here and how each of them signs
- in, and the house's own setup — places, name and servings, aisles, recipe icons — then the two
- ways to another house and the way out of this one.
+ in, and the house's own setup — places, name and servings, its kitchen and which of Plan and
+ Cupboard it uses, aisles, recipe icons — then the two ways to another house and the way out of
+ this one.
 
  Reached from Settings, behind your own face. The owner can tap anybody else for what they can
  do for them: a password-reset link, or taking them out.
@@ -33,7 +34,7 @@ struct HouseholdScreen: View {
     @State private var pushed: Pushed?
 
     /// The pages this one opens, so a debug launch can open one straight away.
-    enum Pushed: String, Hashable { case places, setup, aisles, icons, new }
+    enum Pushed: String, Hashable { case places, setup, kitchen, aisles, icons, new }
 
     private var alone: Bool { people.count <= 1 }
     private var name: String { session.household?.name ?? "this household" }
@@ -63,7 +64,9 @@ struct HouseholdScreen: View {
                     .padding(.bottom, -6)
                 ListGroup {
                     setupRow(.places, "Places we eat", detail: places.map { "\($0.count)" }, tile: ("storefront", .plum))
-                    setupRow(.setup, "Name, servings & planning", detail: basicsDetail, tile: ("house", .herb))
+                    setupRow(.setup, session.planOn ? "Name, servings & planning" : "Name & servings",
+                             detail: basicsDetail, tile: ("house", .herb))
+                    setupRow(.kitchen, "Kitchen & features", detail: kitchenDetail, tile: ("frying.pan", .accent))
                     setupRow(.aisles, "Store aisles", detail: aisles.map { "\($0.count)" }, tile: ("list.bullet", .sky))
                     setupRow(.icons, "Recipe icons", detail: nil, tile: ("photo", .mustard))
                 }
@@ -118,6 +121,7 @@ struct HouseholdScreen: View {
             switch page {
             case .places: PlacesScreen(session: session, sample: samplePlaces)
             case .setup: HouseholdBasicsScreen(session: session)
+            case .kitchen: KitchenScreen(session: session)
             case .aisles: AislesScreen(session: session, sample: sampleAisles)
             case .icons: RecipeIconsScreen(session: session)
             case .new: NewHouseholdScreen(session: session)
@@ -166,8 +170,15 @@ struct HouseholdScreen: View {
     private var basicsDetail: String? {
         guard let household = session.household else { return nil }
         let servings = household.defaultServings ?? 4
+        guard household.plansMeals else { return "\(servings)" }
         let days = household.planningHorizonDays ?? 7
         return "\(servings) · \(days) \(days == 1 ? "day" : "days")"
+    }
+
+    /// "4 machines", once any are saved.
+    private var kitchenDetail: String? {
+        let count = KitchenMachine.ordered(session.household?.machines ?? []).count
+        return count == 0 ? nil : "\(count) \(count == 1 ? "machine" : "machines")"
     }
 
     @ViewBuilder
@@ -319,7 +330,7 @@ struct HouseholdInviteCard: View {
                 HStack(spacing: 8) {
                     Group {
                         if let link {
-                            ShareLink(item: link, subject: Text("Join \(name) on Meal Planner")) {
+                            ShareLink(item: link, subject: Text("Join \(name) on Waxwing")) {
                                 face("Share link", "square.and.arrow.up", fill: .white, ink: Palette.accentInk)
                             }
                         } else {
@@ -398,7 +409,7 @@ struct InviteQRSheet: View {
                         }
                     }
                     .padding(.vertical, 6)
-                    ShareLink(item: url, subject: Text("Join \(name) on Meal Planner")) {
+                    ShareLink(item: url, subject: Text("Join \(name) on Waxwing")) {
                         Label("Share link", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.primary)
@@ -515,7 +526,7 @@ struct MemberSheet: View {
                              + (member.hasEmail == false ? " and add their email" : "")
                              + ", then signs them in. It works once, for 24 hours.")
                             .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                        ShareLink(item: resetLink, subject: Text("Reset your Meal Planner password")) {
+                        ShareLink(item: resetLink, subject: Text("Reset your Waxwing password")) {
                             Label("Send to \(member.shown)", systemImage: "paperplane")
                         }
                         .buttonStyle(.kitchen(.soft, size: .small, fill: true))
