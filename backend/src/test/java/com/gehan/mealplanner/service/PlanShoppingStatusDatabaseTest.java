@@ -3,10 +3,12 @@ package com.gehan.mealplanner.service;
 import com.gehan.mealplanner.domain.MealType;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
+import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.PlannedShoppingResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.dto.MealPlanDtos.AddMealPlanEntryRequest;
+import com.gehan.mealplanner.dto.MealPlanDtos.MealPlanEntryResponse;
 import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.PlaceDtos.PlaceRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientRequest;
@@ -30,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The Plan's shopping marks against the real database: a meal reads "Not on list" until the
- * week's button has added it, then "On grocery list" — and asking never changes the list.
- * Rolled back after each test.
+ * week's button has added it, then "On grocery list" — and asking never changes the list. A
+ * household that has stopped keeping a cupboard is never told something is in it. Rolled back
+ * after each test.
  */
 @SpringBootTest
 @Transactional
@@ -57,6 +60,7 @@ class PlanShoppingStatusDatabaseTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         me = userRepository.save(User.builder().username("status-" + tag).displayName("Me").build());
         home = householdService.create(me.getId(), new CreateHouseholdRequest("Status")).id();
+        Kitchens.turnOnCupboard(householdService, home, me.getId());
     }
 
     @Test
@@ -104,6 +108,39 @@ class PlanShoppingStatusDatabaseTest {
     }
 
     @Test
+    void withoutACupboardNothingIsEverAtHome() {
+        RecipeResponse oats = recipe("Oats", 2, need("oats", "1", "cup"), need("milk", "1", "cup"));
+        RecipeResponse garnish = recipe("Garnish", 2,
+                new RecipeIngredientRequest("parsley-" + tag, BigDecimal.ONE, "bunch", null, true));
+        UUID entry = plan(oats, MONDAY, 2);
+        UUID nothing = plan(garnish, MONDAY.plusDays(1), 2);
+        UUID eggs = single("eggs");
+        UUID yogurt = single("yogurt");
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("oats-" + tag, null));
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("milk-" + tag, null));
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("eggs-" + tag, null));
+        UUID low = cupboardService.add(home, me.getId(), new AddCupboardItemRequest("yogurt-" + tag, null)).id();
+        cupboardService.update(home, low, me.getId(), new UpdateCupboardItemRequest(true, null, null, null, null, null));
+        assertThat(status(entry).status()).isEqualTo("IN_CUPBOARD");
+        assertThat(status(eggs).status()).isEqualTo("IN_CUPBOARD");
+        assertThat(status(nothing).status()).isEqualTo("IN_CUPBOARD");
+        assertThat(planned(eggs).inCupboard()).isTrue();
+        assertThat(planned(yogurt).runningLow()).isTrue();
+
+        Kitchens.turnOffCupboard(householdService, home, me.getId());
+
+        PlannedShoppingResponse shopping = status(entry);
+        assertThat(shopping.status()).isEqualTo("NOT_ON_LIST");
+        assertThat(shopping.inCupboard()).isZero();
+        assertThat(status(eggs).status()).isEqualTo("NOT_ON_LIST");
+        // Only an optional extra, not asked for: nothing to add, so nothing missing from the list.
+        assertThat(status(nothing).status()).isEqualTo("ON_LIST");
+        assertThat(planned(eggs).inCupboard()).isFalse();
+        assertThat(planned(yogurt).inCupboard()).isFalse();
+        assertThat(planned(yogurt).runningLow()).isFalse();
+    }
+
+    @Test
     void placesNamesAndSingleItems() {
         UUID place = placeService.createOrGet(home, me.getId(), new PlaceRequest("Sushi " + tag, null, null, null, null)).id();
         UUID out = mealPlanService.add(home, me.getId(), new AddMealPlanEntryRequest(MONDAY, MealType.DINNER,
@@ -132,6 +169,17 @@ class PlanShoppingStatusDatabaseTest {
     private PlannedShoppingResponse status(UUID entry) {
         List<PlannedShoppingResponse> all = groceryListService.planStatus(home, me.getId(), MONDAY, SUNDAY);
         return all.stream().filter(s -> s.entryId().equals(entry)).findFirst().orElseThrow();
+    }
+
+    /** A single thing to eat, planned for breakfast on Monday. */
+    private UUID single(String name) {
+        return mealPlanService.add(home, me.getId(), new AddMealPlanEntryRequest(MONDAY, MealType.BREAKFAST,
+                null, null, name + "-" + tag, null, null, null, null)).id();
+    }
+
+    private MealPlanEntryResponse planned(UUID entry) {
+        return mealPlanService.listRange(home, me.getId(), MONDAY, SUNDAY).stream()
+                .filter(e -> e.id().equals(entry)).findFirst().orElseThrow();
     }
 
     private RecipeIngredientRequest need(String name, String quantity, String unit) {

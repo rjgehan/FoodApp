@@ -78,6 +78,20 @@ public class GroceryListController {
         return groceryListService.addMealToList(householdId, mealPlanEntryId, userId);
     }
 
+    /**
+     * Adds a recipe's ingredients from its page, no plan needed, scaled to the servings sent. The
+     * body may be left out. 409 with `alreadyOnList` while its things are still waiting on the
+     * list, unless the body says `again`.
+     */
+    @PostMapping("/grocery-list/add-recipe/{recipeId}")
+    public List<GroceryListItemResponse> addRecipe(@AuthenticationPrincipal UUID userId,
+                                                    @PathVariable UUID householdId,
+                                                    @PathVariable UUID recipeId,
+                                                    @Valid @RequestBody(required = false) AddRecipeRequest request) {
+        return groceryListService.addRecipeToList(householdId, recipeId, userId,
+                request != null ? request : new AddRecipeRequest(null, null, null));
+    }
+
     /** Adds the meals planned in the date range (skipping staples). Single items are left out. */
     @PostMapping("/grocery-list/add-all")
     public List<GroceryListItemResponse> addAll(@AuthenticationPrincipal UUID userId,

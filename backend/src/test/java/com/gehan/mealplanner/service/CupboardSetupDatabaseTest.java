@@ -56,6 +56,9 @@ class CupboardSetupDatabaseTest {
         home = householdService.create(me, new CreateHouseholdRequest("Home")).id();
         cabin = householdService.create(me, new CreateHouseholdRequest("Cabin")).id();
         strangers = householdService.create(stranger, new CreateHouseholdRequest("Theirs")).id();
+        Kitchens.turnOnCupboard(householdService, home, me);
+        Kitchens.turnOnCupboard(householdService, cabin, me);
+        Kitchens.turnOnCupboard(householdService, strangers, stranger);
     }
 
     @Test

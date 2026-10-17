@@ -2,6 +2,7 @@ package com.gehan.mealplanner.config;
 
 import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.repository.HouseholdRepository;
+import com.gehan.mealplanner.service.ApplianceDetector;
 import com.gehan.mealplanner.service.CupboardService;
 import com.gehan.mealplanner.service.FoodIcons;
 import com.gehan.mealplanner.service.GroceryCategoryService;
@@ -14,11 +15,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Data moves that bring an existing database up to date, run on every start. Each one only
@@ -30,8 +34,12 @@ public class StartupBackfills {
 
     private static final Logger log = LoggerFactory.getLogger(StartupBackfills.class);
 
-    /** The grocery list's "Pantry staples" became cupboard items marked staple. */
+    /**
+     * The grocery list's "Pantry staples" became cupboard items marked staple. Ordered, so that
+     * {@link #decideWhoKeepsACupboard} can count what it moves.
+     */
     @Bean
+    @Order(20)
     public ApplicationRunner moveStaplesIntoCupboard(CupboardService cupboardService) {
         return args -> {
             try {
@@ -43,6 +51,93 @@ public class StartupBackfills {
                 log.warn("Could not move pantry staples into the cupboard: {}", e.getMessage());
             }
         };
+    }
+
+    /**
+     * The cupboard became something a household chooses. One from before then keeps it if it has
+     * anything in it — a staple counts, which is why this runs after the staples have moved in —
+     * and goes without it if it never used it, as a household made today starts. A household
+     * whose choice is still empty shows the cupboard until this has run, so nothing goes missing
+     * in between; once decided, it is never looked at again.
+     */
+    @Bean
+    @Order(21)
+    public ApplicationRunner decideWhoKeepsACupboard(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int decided = decideCupboards(jdbc);
+                if (decided > 0) {
+                    log.info("Decided whether {} households keep a cupboard", decided);
+                }
+            } catch (Exception e) {
+                log.warn("Could not decide which households keep a cupboard: {}", e.getMessage());
+            }
+        };
+    }
+
+    /** Returns how many households it decided for. */
+    public static int decideCupboards(JdbcTemplate jdbc) {
+        return jdbc.update("""
+                UPDATE households h
+                SET cupboard_enabled = EXISTS (SELECT 1 FROM cupboard_items c WHERE c.household_id = h.id)
+                WHERE h.cupboard_enabled IS NULL
+                """);
+    }
+
+    /**
+     * Recipes from before machines, and recipes last read by older rules: read each one with
+     * today's ApplianceDetector. Never one somebody picked the machines for by hand.
+     *
+     * In plain SQL rather than through the recipe entity, because requests are already being
+     * served while this runs: each recipe is claimed with a conditional update that only matches
+     * while it is still stale and nobody has corrected it, in a transaction of its own — so a
+     * person saving the same recipe at that moment never has their answer overwritten by a save
+     * of the whole recipe from a copy read before theirs.
+     */
+    @Bean
+    public ApplicationRunner detectRecipeAppliances(JdbcTemplate jdbc, TransactionTemplate tx) {
+        return args -> {
+            try {
+                int read = detectAppliances(jdbc, tx);
+                if (read > 0) {
+                    log.info("Read the kitchen machines {} recipes need", read);
+                }
+            } catch (Exception e) {
+                log.warn("Could not read the kitchen machines recipes need: {}", e.getMessage());
+            }
+        };
+    }
+
+    /** Returns how many recipes it read. */
+    public static int detectAppliances(JdbcTemplate jdbc, TransactionTemplate tx) {
+        List<Map<String, Object>> stale = jdbc.queryForList("""
+                SELECT id, name, description, instructions FROM recipes
+                WHERE NOT appliances_edited AND coalesce(appliances_version, 0) < ?
+                """, ApplianceDetector.VERSION);
+        int read = 0;
+        for (Map<String, Object> row : stale) {
+            UUID id = (UUID) row.get("id");
+            Set<String> appliances = ApplianceDetector.detect(
+                    (String) row.get("name"), (String) row.get("description"), (String) row.get("instructions"));
+            Boolean claimed = tx.execute(status -> {
+                int updated = jdbc.update("""
+                        UPDATE recipes SET appliances_version = ?
+                        WHERE id = ? AND NOT appliances_edited AND coalesce(appliances_version, 0) < ?
+                        """, ApplianceDetector.VERSION, id, ApplianceDetector.VERSION);
+                if (updated == 0) {
+                    return false;
+                }
+                jdbc.update("DELETE FROM recipe_appliances WHERE recipe_id = ?", id);
+                for (String appliance : appliances) {
+                    jdbc.update("INSERT INTO recipe_appliances (recipe_id, appliance) VALUES (?, ?)", id, appliance);
+                }
+                return true;
+            });
+            if (Boolean.TRUE.equals(claimed)) {
+                read++;
+            }
+        }
+        return read;
     }
 
     /**

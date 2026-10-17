@@ -51,10 +51,15 @@ public class AdminDtos {
             List<String> sharedWith, boolean hasPublicLink) {
     }
 
-    /** `inviteLive` says whether the house has a working invite link, never what it is. */
+    /**
+     * `inviteLive` says whether the house has a working invite link, never what it is. The kitchen
+     * is on the end: which optional tabs it uses, its machines (KitchenMachines keys), and when it
+     * answered the kitchen questions — null if it never has.
+     */
     public record HouseholdDetail(
             UUID id, String name, Instant createdAt, int defaultServings, int planningHorizonDays,
-            boolean inviteLive, List<HouseholdMemberRow> members, List<HouseholdRecipeRow> recipes) {
+            boolean inviteLive, List<HouseholdMemberRow> members, List<HouseholdRecipeRow> recipes,
+            boolean cupboardEnabled, boolean planEnabled, List<String> machines, Instant kitchenSetUpAt) {
     }
 
     public record UserHousehold(UUID householdId, String name, HouseholdRole role) {

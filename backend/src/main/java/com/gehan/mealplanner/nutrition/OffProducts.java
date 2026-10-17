@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
 @Service
 public class OffProducts {
 
-    static final String WHO_WE_ARE = "MealPlanner/1.0 (rgehan27@gmail.com)";
+    static final String WHO_WE_ARE = "Waxwing/1.0 (rgehan27@gmail.com)";
     private static final Duration KEEP_FOR = Duration.ofDays(30);
     private static final Duration KEEP_MISS_FOR = Duration.ofDays(7);
     private static final Duration KEEP_SEARCH_FOR = Duration.ofDays(1);

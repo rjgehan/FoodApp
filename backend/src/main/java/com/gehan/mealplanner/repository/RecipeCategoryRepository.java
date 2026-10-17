@@ -10,10 +10,7 @@ import java.util.UUID;
 
 public interface RecipeCategoryRepository extends JpaRepository<RecipeCategory, UUID> {
     List<RecipeCategory> findByHouseholdIdOrderByNameAsc(UUID householdId);
-    Optional<RecipeCategory> findByHouseholdIdAndNameIgnoreCase(UUID householdId, String name);
 
-    /** A group in one drawer, or the drawer-less kind that shows in all of them. */
+    /** The tag of that name in one drawer. Names are unique per drawer, ignoring case. */
     Optional<RecipeCategory> findByHouseholdIdAndSectionAndNameIgnoreCase(UUID householdId, RecipeSection section, String name);
-
-    Optional<RecipeCategory> findByHouseholdIdAndSectionIsNullAndNameIgnoreCase(UUID householdId, String name);
 }

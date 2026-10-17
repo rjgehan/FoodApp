@@ -11,21 +11,23 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * A household's own group for recipes — "Main dish", "Chicken", "Grandma's". Created by typing
- * a new name while filing a recipe, or from inside a drawer, and shared by everyone in the
- * household the same way recipes and meal plans are.
+ * A household's own tag for recipes — "Chicken", "Quick", "Grandma's". Made from inside a drawer,
+ * or by typing a new name while filing a recipe, and shared by everyone in the household the same
+ * way recipes and meal plans are. The apps call them tags; the API still says recipe-categories,
+ * which is what every phone already installed asks for.
  *
- * Groups nest: Chicken sits inside Main, so a drawer opens onto a handful of groups rather than
- * every recipe at once.
+ * Tags are flat: a recipe wears as many as it likes, and a drawer is narrowed by tapping a few of
+ * them, rather than by opening one group inside another. They used to nest, and a recipe filed in
+ * Chicken was found under Main because Chicken sat inside it; TagMigration gave every such recipe
+ * its old parents as tags of their own, so Main still finds them.
  *
- * A group belongs to one drawer, so Breakfast and Dinner can each have their own "Main" without
- * meaning the same thing. A group with no drawer (`section == null`) shows in all of them — that
- * is what every group made before drawers were part of a group is, and what a household's own
- * cross-cutting groups ("Grandma's") can stay.
+ * A tag belongs to exactly one drawer, so Breakfast and Dinner can each have their own "Main"
+ * without meaning the same thing, and renaming one never renames the other. Its name is unique
+ * within that drawer, ignoring case.
  */
 @Entity
-// The name is unique within its drawer, which Hibernate cannot express (nulls would slip
-// through), so SchemaTouchUps owns that index instead.
+// The name is unique within its drawer, ignoring case, which Hibernate cannot express (it is an
+// index on lower(name)), so SchemaTouchUps owns that index instead.
 @Table(name = "recipe_categories")
 @Getter
 @Setter
@@ -33,6 +35,12 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class RecipeCategory {
+
+    /**
+     * As long as the apps let a tag's name be typed. Checked on a new name only: a group from
+     * before the limit keeps the name it has, and recipes filed under it still find it.
+     */
+    public static final int MAX_NAME = 100;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -45,25 +53,26 @@ public class RecipeCategory {
     @Column(nullable = false)
     private String name;
 
-    /** The drawer this group belongs to. Null means it shows in every drawer. */
+    /**
+     * The drawer this tag belongs to. Groups made before drawers had none and showed in every
+     * drawer — one row, so renaming it in Dinner renamed it in Lunch too. TagMigration gave each
+     * of those the drawer most of its recipes are in, and then made the column NOT NULL; Hibernate
+     * never tightens a column it has already made, so on an older database that is its doing.
+     */
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private RecipeSection section;
 
-    /** The group this one sits inside. Null for a group at the top of a drawer. */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_id")
-    private RecipeCategory parent;
-
     /**
-     * Which of the built-in food drawings its tile wears (see FoodIcons). Null is a plain colour
-     * tile — what every group made before groups had icons is.
+     * Which of the built-in food drawings its chip wears (see FoodIcons). Null is a plain chip —
+     * what every group made before groups had icons is.
      */
     @Column(length = 40)
     private String iconKey;
 
     /**
-     * When this group was offered the obvious icon for its name (FoodIcons.DEFAULT_GROUP_ICONS).
-     * A group made now has had its chance as it is made — a new household's are seeded with
+     * When this tag was offered the obvious icon for its name (FoodIcons.DEFAULT_GROUP_ICONS).
+     * A tag made now has had its chance as it is made — a new household's are seeded with
      * theirs, and one made by hand wears whatever it was given — so only a group from before
      * group icons is ever null here. StartupBackfills offers those theirs once and fills this
      * in, so an icon somebody takes off later stays off through every restart after.

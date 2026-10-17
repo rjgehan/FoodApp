@@ -6,6 +6,7 @@ import com.gehan.mealplanner.dto.CupboardDtos.AddCupboardItemRequest;
 import com.gehan.mealplanner.dto.CupboardDtos.CupboardItemResponse;
 import com.gehan.mealplanner.dto.CupboardDtos.UpdateCupboardItemRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.AddRecipeRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
 import com.gehan.mealplanner.dto.GroceryListDtos.PutAwayRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
@@ -14,25 +15,47 @@ import com.gehan.mealplanner.dto.MealPlanDtos.UpdateMealPlanEntryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
+import com.gehan.mealplanner.dto.RestockDtos.RestockReminderResponse;
+import com.gehan.mealplanner.realtime.GroceryListEventPublisher;
 import com.gehan.mealplanner.repository.UserRepository;
+import com.gehan.mealplanner.web.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * The grocery list against the real database: pressing "Add this week" again only brings the
- * list up to what the plan needs now, the same thing typed twice is one row, and buying
- * something the cupboard counts adds to the count. Rolled back after each test.
+ * list up to what the plan needs now, the same thing typed twice is one row, buying something
+ * the cupboard counts adds to the count, a recipe added from its page asks before it goes on
+ * twice, and a household without a cupboard has nothing kept off its list or put away. Rolled
+ * back after each test.
  */
 @SpringBootTest
 @Transactional
@@ -46,7 +69,13 @@ class GroceryListDatabaseTest {
     @Autowired MealPlanService mealPlanService;
     @Autowired RecipeService recipeService;
     @Autowired HouseholdService householdService;
+    @Autowired RestockService restockService;
+    @Autowired RestockClock restockClock;
     @Autowired UserRepository userRepository;
+    @Autowired ApiExceptionHandler apiExceptionHandler;
+    @Autowired JsonMapper jsonMapper;
+    /** The real one, still publishing to Redis, watched for what it is asked to send. */
+    @MockitoSpyBean GroceryListEventPublisher eventPublisher;
 
     private User me;
     private UUID home;
@@ -57,6 +86,7 @@ class GroceryListDatabaseTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         me = userRepository.save(User.builder().username("groceries-" + tag).displayName("Me").build());
         home = householdService.create(me.getId(), new CreateHouseholdRequest("Groceries")).id();
+        Kitchens.turnOnCupboard(householdService, home, me.getId());
     }
 
     // --- Adding the week ---
@@ -459,6 +489,207 @@ class GroceryListDatabaseTest {
         assertThat(cupboardItem(beans.id()).quantity()).isEqualByComparingTo("2");
     }
 
+    // --- A recipe from its page ---
+
+    @Test
+    void aRecipeAddsItsThingsForTheServingsAskedOrItsOwn() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"), need("onion", "1", null));
+        RecipeResponse pasta = recipe("Pasta", 2, need("penne", "1", "box"));
+
+        List<GroceryListItemResponse> added = addRecipe(chili, 6, null, false);
+        groceryListService.addRecipeToList(home, pasta.id(), me.getId(), new AddRecipeRequest(null, null, null));
+
+        assertThat(added).hasSize(2);
+        assertThat(amountOf("beans")).isEqualByComparingTo("3");
+        assertThat(amountOf("onion")).isEqualByComparingTo("1.5");
+        assertThat(amountOf("penne")).isEqualByComparingTo("1");
+    }
+
+    @Test
+    void anOptionalExtraOnlyGoesOnWhenAskedFor() {
+        RecipeResponse steak = recipe("Steak", 4, need("ribeye", "1", "lb"), optional("parsley", "1", "bunch"));
+        RecipeResponse soup = recipe("Soup", 4, need("leek", "2", null), optional("croutons", "1", "bag"));
+
+        addRecipe(steak, null, List.of(ingredientId(steak, "parsley")), false);
+        addRecipe(soup, null, null, false);
+
+        assertThat(amountOf("parsley")).isEqualByComparingTo("1");
+        assertThat(find("croutons")).isNull();
+        assertThat(amountOf("leek")).isEqualByComparingTo("2");
+    }
+
+    @Test
+    void aNullAmongTheExtrasAskedForIsSkippedNotRefused() {
+        RecipeResponse steak = recipe("Steak", 4, need("ribeye", "1", "lb"), optional("parsley", "1", "bunch"));
+
+        addRecipe(steak, null, Arrays.asList(null, ingredientId(steak, "parsley")), false);
+
+        assertThat(amountOf("ribeye")).isEqualByComparingTo("1");
+        assertThat(amountOf("parsley")).isEqualByComparingTo("1");
+    }
+
+    @Test
+    void noAmountOrNoneAtAllGoesOnAsSomeNotZero() {
+        RecipeResponse eggs = recipe("Seasoned eggs", 2, some("salt"), need("cumin", "0", "tsp"), need("eggs", "4", null));
+
+        addRecipe(eggs, 6, null, false);
+
+        assertThat(amountOf("salt")).isNull();
+        assertThat(amountOf("cumin")).isNull();
+        assertThat(amountOf("eggs")).isEqualByComparingTo("12");
+    }
+
+    @Test
+    void theRowsSayWhichRecipesTheyAreForAndAMealLeavingTheirPlanLeavesThem() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"), need("onion", "1", null));
+        RecipeResponse tacos = recipe("Tacos", 4, need("beef", "1", "lb"), need("onion", "2", null));
+        UUID entry = plan(chili, MONDAY, 4);
+        addWeek();
+
+        List<GroceryListItemResponse> added = addRecipe(tacos, null, null, false);
+
+        assertThat(added).extracting(GroceryListItemResponse::fromRecipes)
+                .containsExactlyInAnyOrder(List.of("Tacos"), List.of("Chili", "Tacos"));
+        assertThat(find("onion").fromRecipes()).containsExactly("Chili", "Tacos");
+        assertThat(find("beef").fromRecipes()).containsExactly("Tacos");
+        assertThat(find("beef").addedByName()).isEqualTo("Me");
+        assertThat(amountOf("onion")).isEqualByComparingTo("3");
+
+        // Chili makes way for eggs: its onion comes back off, the tacos' stays.
+        mealPlanService.update(entry, me.getId(),
+                new UpdateMealPlanEntryRequest(null, null, "eggs-" + tag, null, null, null, null, null));
+        addWeek();
+        assertThat(find("beans")).isNull();
+        assertThat(amountOf("onion")).isEqualByComparingTo("2");
+        assertThat(find("onion").fromRecipes()).containsExactly("Tacos");
+    }
+
+    @Test
+    void everyRowItTouchesIsSentToTheOtherPhones() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"), need("onion", "1", null));
+        add("onion", "1", null);
+        clearInvocations(eventPublisher);
+
+        List<GroceryListItemResponse> added = addRecipe(chili, null, null, false);
+
+        ArgumentCaptor<GroceryListItemResponse> sent = ArgumentCaptor.forClass(GroceryListItemResponse.class);
+        verify(eventPublisher, times(2)).itemChanged(eq(home), sent.capture());
+        assertThat(sent.getAllValues()).containsExactlyInAnyOrderElementsOf(added);
+        assertThat(list()).hasSize(2);
+    }
+
+    @Test
+    void aRecipeStillWaitingOnTheListIsOnlyAddedAgainWhenThatIsMeant() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"));
+        addRecipe(chili, null, null, false);
+
+        assertThatThrownBy(() -> addRecipe(chili, null, null, false))
+                .isInstanceOfSatisfying(AlreadyOnListException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(amountOf("beans")).isEqualByComparingTo("2");
+
+        addRecipe(chili, null, null, true);
+        assertThat(amountOf("beans")).isEqualByComparingTo("4");
+    }
+
+    @Test
+    void theAppsAskAndAreAnsweredInTheShapesTheyExpect() throws Exception {
+        assertThat(jsonMapper.readValue("{\"servings\":6,\"includedOptionalIngredientIds\":[],\"again\":true}",
+                AddRecipeRequest.class)).isEqualTo(new AddRecipeRequest(6, List.of(), true));
+        assertThat(jsonMapper.readValue("{}", AddRecipeRequest.class)).isEqualTo(new AddRecipeRequest(null, null, null));
+
+        ResponseEntity<Map<String, Object>> refused = apiExceptionHandler.handleAlreadyOnList(new AlreadyOnListException("Chili"));
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(jsonMapper.writeValueAsString(refused.getBody()))
+                .isEqualTo("{\"status\":409,\"message\":\"“Chili” is already on the list.\",\"alreadyOnList\":true}");
+    }
+
+    @Test
+    void aRecipeWhoseThingsAreInTheCartIsAddedWithoutAsking() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"));
+        addRecipe(chili, null, null, false);
+        groceryListService.setChecked(home, find("beans").id(), me.getId(), true);
+
+        addRecipe(chili, null, null, false);
+
+        assertThat(list()).extracting(GroceryListItemResponse::checked, i -> i.quantity().stripTrailingZeros())
+                .containsExactlyInAnyOrder(tuple(true, new BigDecimal("2")), tuple(false, new BigDecimal("2")));
+    }
+
+    @Test
+    void onlyARecipeTheHouseholdCanSeeAndOnlyOntoItsOwnList() {
+        RecipeResponse chili = recipe("Chili", 4, need("beans", "2", "can"));
+        User stranger = userRepository.save(User.builder().username("groceries-stranger-" + tag).displayName("S").build());
+        UUID theirs = householdService.create(stranger.getId(), new CreateHouseholdRequest("Theirs")).id();
+        RecipeResponse secret = recipeService.create(theirs, stranger.getId(), new RecipeRequest("Secret", null, null,
+                null, null, 2, null, null, null, null, null, null, null, List.of(need("saffron", "1", "g"))));
+
+        assertThatThrownBy(() -> addRecipe(secret, null, null, false))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+        assertThatThrownBy(() -> groceryListService.addRecipeToList(home, chili.id(), stranger.getId(),
+                new AddRecipeRequest(null, null, null)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+        assertThat(list()).isEmpty();
+    }
+
+    @Test
+    void aRecipeLeavesOutStaplesAndFlagsWhatTheCupboardHas() {
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("salt-" + tag, true));
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("rice-" + tag, null));
+        RecipeResponse bowl = recipe("Rice bowl", 2, some("salt"), need("rice", "1", "cup"), need("tofu", "1", "block"));
+
+        addRecipe(bowl, null, null, false);
+
+        assertThat(find("salt")).isNull();
+        assertThat(find("rice").inCupboard()).isTrue();
+        assertThat(find("tofu").inCupboard()).isFalse();
+    }
+
+    // --- Without a cupboard ---
+
+    @Test
+    void withoutACupboardNothingSaysItIsInOneAndStaplesGoOnTheList() {
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("salt-" + tag, true));
+        cupboardService.add(home, me.getId(), new AddCupboardItemRequest("rice-" + tag, null));
+        Kitchens.turnOffCupboard(householdService, home, me.getId());
+        RecipeResponse bowl = recipe("Rice bowl", 2, some("salt"), need("rice", "1", "cup"));
+        RecipeResponse fry = recipe("Stir fry", 2, need("salt", "1", "tsp"), need("tofu", "1", "block"));
+
+        List<GroceryListItemResponse> added = addRecipe(bowl, null, null, false);
+        plan(fry, MONDAY, 2);
+        addWeek();
+
+        assertThat(added).extracting(GroceryListItemResponse::inCupboard).containsOnly(false);
+        assertThat(list()).extracting(GroceryListItemResponse::inCupboard).containsOnly(false);
+        assertThat(list()).extracting(GroceryListItemResponse::name)
+                .containsExactlyInAnyOrder("salt-" + tag, "salt-" + tag, "rice-" + tag, "tofu-" + tag);
+    }
+
+    @Test
+    void withoutACupboardDoneShoppingStocksNothingButStartsTheRestockClockOver() {
+        Instant reminded = Instant.parse("2031-09-02T09:00:00Z");
+        Instant shopped = reminded.plus(Duration.ofDays(20));
+        GroceryListItemResponse coffee = add("coffee", "1", "bag");
+        try {
+            restockClock.use(Clock.fixed(reminded, ZoneOffset.UTC));
+            restockService.set(home, coffee.ingredientId(), me.getId(), 14);
+            Kitchens.turnOffCupboard(householdService, home, me.getId());
+            groceryListService.setChecked(home, coffee.id(), me.getId(), true);
+
+            restockClock.use(Clock.fixed(shopped, ZoneOffset.UTC));
+            groceryListService.putAway(home, me.getId(), new PutAwayRequest(List.of(coffee.id()), List.of()));
+        } finally {
+            restockClock.use(Clock.systemUTC());
+        }
+
+        assertThat(list()).isEmpty();
+        assertThat(cupboardService.list(home, me.getId())).isEmpty();
+        assertThat(restockService.list(home, me.getId()))
+                .extracting(RestockReminderResponse::lastBoughtAt).containsExactly(shopped);
+    }
+
     // --- Helpers ---
 
     private RecipeIngredientRequest need(String name, String quantity, String unit) {
@@ -490,6 +721,17 @@ class GroceryListDatabaseTest {
 
     private void addWeek() {
         groceryListService.addAllPlannedToList(home, me.getId(), MONDAY, SUNDAY);
+    }
+
+    private List<GroceryListItemResponse> addRecipe(RecipeResponse recipe, Integer servings, List<UUID> optionals,
+                                                    boolean again) {
+        return groceryListService.addRecipeToList(home, recipe.id(), me.getId(),
+                new AddRecipeRequest(servings, optionals, again));
+    }
+
+    private UUID ingredientId(RecipeResponse recipe, String name) {
+        return recipe.ingredients().stream()
+                .filter(i -> i.ingredientName().equals(name + "-" + tag)).findFirst().orElseThrow().id();
     }
 
     private GroceryListItemResponse add(String name, String quantity, String unit) {

@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The keys of the hand-drawn food icons a drawer or a group can wear. The drawings themselves
+ * The keys of the hand-drawn food icons a drawer or a tag can wear. The drawings themselves
  * live in the apps (web/src/components/FoodIcons.tsx, and the same art in the iPhone app's asset
  * catalog); the server only stores which one was picked, so this is the one list it checks a
  * pick against. A key it has never heard of would draw as nothing on every phone.
@@ -27,8 +27,8 @@ public final class FoodIcons {
     private static final Set<String> KNOWN = Set.copyOf(KEYS);
 
     /**
-     * What the groups a new household starts with wear, so the catalog opens onto pictures
-     * rather than blank tiles. Matched by name; anything not listed starts with no icon.
+     * What the tags a new household starts with wear, so the catalog opens onto pictures
+     * rather than blank chips. Matched by name; anything not listed starts with no icon.
      * StartupBackfills offers the same icons, once, to groups made before groups had icons.
      */
     public static final Map<String, String> DEFAULT_GROUP_ICONS = Map.ofEntries(

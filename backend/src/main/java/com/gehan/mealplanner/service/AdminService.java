@@ -182,7 +182,9 @@ public class AdminService {
                 .anyMatch(i -> i.isLive(now));
 
         return new HouseholdDetail(household.getId(), household.getName(), household.getCreatedAt(),
-                household.getDefaultServings(), household.getPlanningHorizonDays(), inviteLive, members, recipes);
+                household.getDefaultServings(), household.getPlanningHorizonDays(), inviteLive, members, recipes,
+                household.isCupboardEnabled(), household.isPlanEnabled(),
+                KitchenMachines.inOrder(household.getMachines()), household.getKitchenSetUpAt());
     }
 
     // --- People ------------------------------------------------------------------------------

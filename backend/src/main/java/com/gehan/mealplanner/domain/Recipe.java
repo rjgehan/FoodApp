@@ -6,10 +6,13 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -93,6 +96,40 @@ public class Recipe {
     @OneToMany(mappedBy = "recipe", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<RecipeIngredient> ingredients = new ArrayList<>();
+
+    /**
+     * The kitchen machines making it takes, as KitchenMachines keys — an oven, the air fryer, a
+     * blender. Read from the recipe's own words by ApplianceDetector each time it is saved, unless
+     * somebody has picked them by hand ({@link #appliancesEdited}). Strings rather than an enum
+     * column, for the reason KitchenMachines gives. No order: the response puts them in the
+     * catalogue's.
+     *
+     * Batched because the recipe list maps every recipe it sends.
+     */
+    @ElementCollection
+    @CollectionTable(name = "recipe_appliances", joinColumns = @JoinColumn(name = "recipe_id"))
+    @Column(name = "appliance", length = 40)
+    @BatchSize(size = 100)
+    @Builder.Default
+    private Set<String> appliances = new HashSet<>();
+
+    /**
+     * Which version of ApplianceDetector's rules last read this recipe. Null for a recipe from
+     * before machines, which is how the backfill finds them — an empty set alone cannot tell
+     * "needs no machine" from "never looked".
+     */
+    private Integer appliancesVersion;
+
+    /**
+     * Somebody picked the machines themselves. From then on the detector leaves them alone — on
+     * an edit, and in the backfill when its rules change — since a person who said "no oven,
+     * that's the air fryer" should not be argued with by a keyword list.
+     *
+     * The column carries its own default so Hibernate can add it to a table that already has rows.
+     */
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private boolean appliancesEdited = false;
 
     @Column(nullable = false, updatable = false)
     @Builder.Default

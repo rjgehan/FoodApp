@@ -10,15 +10,22 @@ import com.gehan.mealplanner.dto.AuthDtos.LoginRequest;
 import com.gehan.mealplanner.dto.AuthDtos.PasswordResetLinkResponse;
 import com.gehan.mealplanner.dto.AuthDtos.SetPinRequest;
 import com.gehan.mealplanner.dto.AuthDtos.UsePasswordResetRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.AddRecipeRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CredentialsRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MeResponse;
+import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.RecipeRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.RecipeResponse;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.PasswordResetRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import com.gehan.mealplanner.security.JwtService;
 import com.gehan.mealplanner.security.SignInAttemptLimiter;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,16 +35,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * Email and password sign-in against the real database: the rules for adding and changing
  * them, one account per address however it is typed, the remembered household, owner reset
- * links, and the switch that retires the PIN screens. Rolled back after each test.
+ * links, the switch that retires the PIN screens, and deleting an account that leaves things
+ * behind in a house it was in. Rolled back after each test.
  */
 @SpringBootTest
 @Transactional
@@ -47,6 +58,8 @@ class AccountDatabaseTest {
     @Autowired AuthService authService;
     @Autowired HouseholdService householdService;
     @Autowired InviteService inviteService;
+    @Autowired GroceryListService groceryListService;
+    @Autowired RecipeService recipeService;
     @Autowired UserRepository userRepository;
     @Autowired HouseholdRepository householdRepository;
     @Autowired HouseholdMemberRepository memberRepository;
@@ -54,6 +67,7 @@ class AccountDatabaseTest {
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired JwtService jwtService;
     @Autowired SignInAttemptLimiter limiter;
+    @Autowired EntityManager entityManager;
 
     private User owner;
     private User member;
@@ -370,6 +384,26 @@ class AccountDatabaseTest {
 
         accountService.updateCredentials(member.getId(), new CredentialsRequest(email("pinoff"), "still-works", null));
         assertThat(pinOff.loginWithEmail(new EmailLoginRequest(email("pinoff"), "still-works")).userId()).isEqualTo(member.getId());
+    }
+
+    @Test
+    void anAccountThatPutThingsOnTheListOfAHouseItOnlyLeavesCanStillBeDeleted() {
+        // Typed in, and added from one of their recipes: either way the row says who asked for it.
+        groceryListService.addManualItem(householdId, member.getId(), new AddItemRequest("milk-" + tag, null, null));
+        RecipeResponse soup = recipeService.create(householdId, member.getId(), new RecipeRequest("Soup " + tag, null,
+                null, null, null, 2, null, null, null, null, null, null, null,
+                List.of(new RecipeIngredientRequest("leek-" + tag, new BigDecimal("2"), null, null, false))));
+        groceryListService.addRecipeToList(householdId, soup.id(), member.getId(), new AddRecipeRequest(null, null, null));
+
+        householdService.deleteAccount(member.getId());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(userRepository.findById(member.getId())).isEmpty();
+        // The house carries on with its list as it was, just no longer saying who asked.
+        assertThat(groceryListService.listItems(householdId, owner.getId()))
+                .extracting(i -> i.name().toLowerCase(), GroceryListItemResponse::addedByName)
+                .containsExactlyInAnyOrder(tuple("milk-" + tag, null), tuple("leek-" + tag, null));
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.RenameHouseholdRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.UpdateKitchenRequest;
 import com.gehan.mealplanner.service.HouseholdService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -84,6 +85,14 @@ public class HouseholdController {
                                              @PathVariable UUID householdId,
                                              @Valid @RequestBody UpdateHouseholdSettingsRequest request) {
         return householdService.updateSettings(householdId, userId, request);
+    }
+
+    /** Machines, the optional tabs and the kitchen questions. Any member — see HouseholdService.updateKitchen. */
+    @PatchMapping("/{householdId}/kitchen")
+    public HouseholdResponse updateKitchen(@AuthenticationPrincipal UUID userId,
+                                           @PathVariable UUID householdId,
+                                           @Valid @RequestBody UpdateKitchenRequest request) {
+        return householdService.updateKitchen(householdId, userId, request);
     }
 
 }

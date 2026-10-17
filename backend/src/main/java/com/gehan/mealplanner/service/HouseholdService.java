@@ -13,6 +13,7 @@ import com.gehan.mealplanner.dto.HouseholdDtos.UpdateProfileRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.MemberResponse;
 import com.gehan.mealplanner.dto.HouseholdDtos.UpdateHouseholdSettingsRequest;
+import com.gehan.mealplanner.dto.HouseholdDtos.UpdateKitchenRequest;
 import com.gehan.mealplanner.repository.HouseholdInviteRepository;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
@@ -28,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -68,7 +70,13 @@ public class HouseholdService {
         User owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
 
-        Household household = householdRepository.save(Household.builder().name(request.name()).build());
+        // No cupboard to start with, planning on, no machines, and the kitchen questions not yet
+        // answered — the apps ask them of whoever made it. Said outright for the cupboard: a null
+        // there means a household from before it was a choice, which the backfill decides for.
+        Household household = householdRepository.save(Household.builder()
+                .name(request.name())
+                .cupboardEnabled(false)
+                .build());
         memberRepository.save(HouseholdMember.builder()
                 .household(household)
                 .user(owner)
@@ -99,6 +107,43 @@ public class HouseholdService {
     }
 
     /**
+     * The kitchen questions and settings: which machines are in it, whether the household plans
+     * ahead and keeps a cupboard, and whether the questions have been answered. Any member, like
+     * servings — it is everybody's kitchen. Only what is sent changes.
+     *
+     * Turning a tab off hides it and leaves its rows alone: a plan or a cupboard turned back on
+     * is just as it was.
+     *
+     * Under the household's lock, so two phones saving machines at the same moment go one after
+     * the other — side by side, both would write the same machine and the second would fail on it.
+     */
+    @Transactional
+    public HouseholdResponse updateKitchen(UUID householdId, UUID requesterId, UpdateKitchenRequest request) {
+        assertMember(householdId, requesterId);
+        // Checked before anything changes, so a refused request leaves the kitchen as it was.
+        Set<String> machines = request.machines() == null ? null : KitchenMachines.requireKnown(request.machines());
+        Household household = householdRepository.lockById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+
+        if (request.cupboardEnabled() != null) {
+            household.setCupboardEnabled(request.cupboardEnabled());
+        }
+        if (request.planEnabled() != null) {
+            household.setPlanEnabled(request.planEnabled());
+        }
+        if (machines != null) {
+            household.getMachines().retainAll(machines);
+            household.getMachines().addAll(machines);
+        }
+        if (Boolean.TRUE.equals(request.setUp()) && household.getKitchenSetUpAt() == null) {
+            household.setKitchenSetUpAt(Instant.now());
+        } else if (Boolean.FALSE.equals(request.setUp())) {
+            household.setKitchenSetUpAt(null);
+        }
+        return toResponse(householdRepository.save(household), roleOf(householdId, requesterId));
+    }
+
+    /**
      * Renaming is owner-only, unlike the other settings. The name is how everyone else in the
      * app finds this household — on the login screen, in the share list — so changing it is not
      * the same kind of act as changing your own default serving size.
@@ -125,7 +170,11 @@ public class HouseholdService {
                 household.getId(), household.getName(), household.getDefaultServings(),
                 household.getPlanningHorizonDays(), role,
                 memberRepository.findByHouseholdId(household.getId()).size(),
-                recipeCount(household.getId()));
+                recipeCount(household.getId()),
+                household.isCupboardEnabled(), household.isPlanEnabled(),
+                // A plain list, read now: Jackson writes this after the transaction has closed.
+                KitchenMachines.inOrder(household.getMachines()),
+                household.getKitchenSetUpAt() != null);
     }
 
     /** The recipes a household's Recipes tab lists: its own, shared with it, and kept from Explore. */
@@ -236,6 +285,8 @@ public class HouseholdService {
         memberRepository.flush();
 
         jdbc.update("UPDATE grocery_list_items SET checked_by_user_id = NULL WHERE checked_by_user_id = ?", userId);
+        // What they put on the list of a house they only leave stays on it, just no longer saying who asked.
+        jdbc.update("UPDATE grocery_list_items SET added_by_user_id = NULL WHERE added_by_user_id = ?", userId);
         jdbc.update("DELETE FROM password_resets WHERE user_id = ? OR created_by = ?", userId, userId);
         forgetSavedLinks(userId);
         jdbc.update("DELETE FROM idea_votes WHERE user_id = ?", userId);
@@ -402,15 +453,21 @@ public class HouseholdService {
         jdbc.update("DELETE FROM recipe_source_links WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipe_ingredients WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipe_photos WHERE recipe_id IN " + recipesHere, householdId);
+        jdbc.update("DELETE FROM recipe_appliances WHERE recipe_id IN " + recipesHere, householdId);
         jdbc.update("DELETE FROM recipes WHERE household_id = ?", householdId);
-        // Self-referencing through parent_id, but every row of the tree belongs to this
-        // household, so one statement takes the parents and the children together.
+        // The tags, whose links went with the filings above. An older database still has the
+        // parent_id column from when they nested, but it is empty since TagMigration — and even a
+        // left-over parent was this household's own, so one statement takes them all either way.
         jdbc.update("DELETE FROM recipe_categories WHERE household_id = ?", householdId);
 
         // The kitchen: what is in it, what is on the list, and where the aisles are.
         jdbc.update("DELETE FROM cupboard_items WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM restock_reminders WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM grocery_list_item_meals WHERE grocery_list_item_id IN ("
+                + "SELECT id FROM grocery_list_items WHERE household_id = ?)", householdId);
+        // Another household's rows can name one of our recipes too — one shared with them, added
+        // from its page. Those stay: a plain id with no key, which simply finds no name now.
+        jdbc.update("DELETE FROM grocery_list_item_recipes WHERE grocery_list_item_id IN ("
                 + "SELECT id FROM grocery_list_items WHERE household_id = ?)", householdId);
         jdbc.update("DELETE FROM grocery_list_items WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM ingredient_sections WHERE household_id = ?", householdId);
@@ -426,6 +483,7 @@ public class HouseholdService {
 
         jdbc.update("DELETE FROM household_invites WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM household_members WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM household_machines WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM households WHERE id = ?", householdId);
     }
 

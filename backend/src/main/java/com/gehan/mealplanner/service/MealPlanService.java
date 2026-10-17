@@ -204,9 +204,16 @@ public class MealPlanService {
         mealPlanEntryRepository.delete(entry);
     }
 
+    /**
+     * What the cupboard says about planned single items — "in the cupboard", "running low". Empty
+     * for a household that does not keep one: the rows it kept from when it did are out of sight,
+     * and an old "running low" would be a warning about a shelf nobody looks at any more.
+     */
     private Map<UUID, CupboardItem> cupboard(UUID householdId) {
         Map<UUID, CupboardItem> cupboard = new HashMap<>();
-        cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
+        if (householdRepository.findById(householdId).map(Household::isCupboardEnabled).orElse(true)) {
+            cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
+        }
         return cupboard;
     }
 

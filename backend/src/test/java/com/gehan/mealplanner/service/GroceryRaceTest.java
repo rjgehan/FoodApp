@@ -64,6 +64,7 @@ class GroceryRaceTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         owner = userRepository.save(User.builder().username("grocery-race-" + tag).displayName("Owner").build());
         householdId = householdService.create(owner.getId(), new CreateHouseholdRequest("Grocery race")).id();
+        Kitchens.turnOnCupboard(householdService, householdId, owner.getId());
     }
 
     @AfterEach

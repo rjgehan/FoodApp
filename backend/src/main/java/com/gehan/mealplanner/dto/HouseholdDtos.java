@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public class HouseholdDtos {
@@ -25,10 +26,16 @@ public class HouseholdDtos {
      * household and offering to delete it. `recipeCount` is what a "which household?" picker
      * says under each name (saving a shared recipe), since that is what tells two houses apart
      * when the question is where a recipe should go.
+     *
+     * The kitchen comes last, where a phone from before it never looks: `cupboardEnabled` and
+     * `planEnabled` say which of those two tabs the household uses, `machines` are the
+     * KitchenMachines keys it has, in the catalogue's order, and `kitchenSetUp` is whether
+     * anybody has answered (or skipped) the kitchen questions yet — the apps ask while it is false.
      */
     public record HouseholdResponse(
             UUID id, String name, int defaultServings, int planningHorizonDays, HouseholdRole role,
-            int memberCount, int recipeCount) {
+            int memberCount, int recipeCount, boolean cupboardEnabled, boolean planEnabled, List<String> machines,
+            boolean kitchenSetUp) {
     }
 
     public record RenameHouseholdRequest(@NotBlank @Size(max = 60) String name) {
@@ -40,6 +47,17 @@ public class HouseholdDtos {
             @NotNull @Min(1) @Max(MAX_PLANNING_DAYS) Integer planningHorizonDays) {
         public static final int MAX_SERVINGS = 50;
         public static final int MAX_PLANNING_DAYS = 60;
+    }
+
+    /**
+     * The kitchen: which machines are in it, and which of the optional tabs the household uses.
+     * Every field may be left out to keep it as it is, so a settings screen sends only what it
+     * changed. `machines` replaces the whole list — KitchenMachines keys; one it has never heard
+     * of is refused. `setUp: true` marks the kitchen questions answered (the first time only, so
+     * the date stays the first answer's); `false` has the apps ask them again.
+     */
+    public record UpdateKitchenRequest(
+            Boolean cupboardEnabled, Boolean planEnabled, List<String> machines, Boolean setUp) {
     }
 
     /**
