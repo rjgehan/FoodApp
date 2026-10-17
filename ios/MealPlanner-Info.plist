@@ -38,7 +38,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>To use one of your photos as a recipe's picture.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Meal Planner talks to the kitchen server on your home network.</string>
+	<string>Waxwing talks to the kitchen server on your home network.</string>
 	<!--
 	  The title faces (MealPlanner/Fonts, SIL OFL, licences beside them). Fraunces is every
 	  theme's title font except Blueberry's (Nunito) and Nordic's (Inter); UI text stays SF Pro.

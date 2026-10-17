@@ -258,6 +258,137 @@ next time they load, and `/api/ideas/**` answers **404**. The ideas are kept in 
 |---|---|---|
 | `IDEAS_BOARD` | `true` | `false` closes the ideas board and hides its button |
 
+## Recipe groups become tags (one time)
+
+The release that brings tags turns every household's recipe groups into flat tags on its first
+start. Groups nested inside each other are flattened — a recipe that was in `Main › Chicken` now
+wears both `Main` and `Chicken` — and a group that had no drawer, which showed (and renamed) in
+every drawer at once, moves to the one drawer most of its recipes are in. Recipes in other
+drawers move onto their own drawer's tag of the same name if it has one, and lose it if not.
+Recipes themselves, and which drawer each is in, are never touched. The backend log says what
+it did, in one line starting `Turned recipe groups into tags:`.
+
+**Before deploying it:**
+
+- Take a dump (see [Data](#data)). It is the clean way back.
+- Deploy the backend first, then the web app, then the iPhone build straight after. Phones
+  still on the old build keep working against the new backend; they just see every group at
+  the top of its drawer — but they also still offer a cupboard to households that no longer
+  have one, which is why the new build should not wait (see
+  [the kitchen](#the-kitchen-machines-and-the-cupboard-and-plan-made-optional-one-time)).
+
+The move runs in one transaction, so it either happens completely or not at all. If somebody
+is saving a recipe at that moment and it cannot get the tables within five seconds, it logs
+`Could not turn recipe groups into tags, will try again at the next start` and changes nothing —
+restart the backend (`docker compose -f docker-compose.prod.yml restart backend`).
+
+**The groups as they were are kept,** in two tables of their own that nothing in the app reads:
+`recipe_categories_before_tags` and `recipe_filing_categories_before_tags`. To go back:
+
+1. Roll the images back (`IMAGE_TAG` in `.env`, see above) and restore the dump. That is all,
+   if nobody has used the app since.
+2. Or, to keep everything else people have done since, put just the groups back by hand. Any
+   tagging done since the move is lost. The groups that are gone — folded into a tag by the
+   move, or deleted as tags since — go back first, with no parent, and only then is every
+   group's nesting put back: a group can only be put inside one that is there.
+
+   ```sql
+   BEGIN;
+   ALTER TABLE recipe_categories ALTER COLUMN section DROP NOT NULL;
+   DELETE FROM recipe_filing_categories;
+   INSERT INTO recipe_categories (id, household_id, name, section, parent_id, icon_key,
+                                  default_icon_offered_at, created_at)
+   SELECT id, household_id, name, section, NULL, icon_key, default_icon_offered_at, created_at
+     FROM recipe_categories_before_tags b
+    WHERE NOT EXISTS (SELECT 1 FROM recipe_categories c WHERE c.id = b.id)
+      AND EXISTS (SELECT 1 FROM households h WHERE h.id = b.household_id);
+   UPDATE recipe_categories c
+      SET name = b.name, section = b.section, parent_id = b.parent_id, icon_key = b.icon_key
+     FROM recipe_categories_before_tags b WHERE b.id = c.id;
+   INSERT INTO recipe_filing_categories (filing_id, category_id)
+   SELECT filing_id, category_id FROM recipe_filing_categories_before_tags b
+    WHERE EXISTS (SELECT 1 FROM recipe_filings f WHERE f.id = b.filing_id)
+      AND EXISTS (SELECT 1 FROM recipe_categories c WHERE c.id = b.category_id);
+   COMMIT;
+   ```
+
+   Run it with the old images up, since the new backend would simply move the groups again
+   at its next start. Before starting them, drop the three kitchen foreign keys as
+   [the kitchen](#the-kitchen-machines-and-the-cupboard-and-plan-made-optional-one-time) says,
+   or the old backend cannot delete a recipe, a household, or a grocery row a recipe added.
+
+The copies are made once, on the first move, and never refreshed: groups made while rolled
+back are not in them, so after a hand rollback take a fresh dump before going forward again.
+They also outlive anything deleted since — a household deleted later is still in them — which
+is one more reason not to keep them longer than needed.
+
+Once the release has settled and nobody wants the old groups back, drop the copies:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U mealplanner -d mealplanner \
+  -c "DROP TABLE recipe_categories_before_tags, recipe_filing_categories_before_tags;"
+```
+
+## The kitchen: machines, and the cupboard and Plan made optional (one time)
+
+The same release makes the cupboard and meal planning something each household chooses, and
+gives recipes the kitchen machines they need. On its first start:
+
+- **Every household keeps planning.** A household keeps the **cupboard** if it has anything in
+  it, and goes without it if it never used it — as a household made from now on starts. Until
+  that has run, a household shows its cupboard, so nothing disappears in between. The log says
+  `Decided whether N households keep a cupboard`.
+- **Every recipe has its machines read from its method** — oven, air fryer, slow cooker and the
+  rest. The log says `Read the kitchen machines N recipes need`. It runs again, by itself, on the
+  first start after the rules change, and never touches a recipe somebody picked the machines
+  for by hand.
+- Households from before it have not answered the kitchen questions, so the apps offer them as
+  a card on Recipes, which can be dismissed. Nothing changes until somebody answers.
+
+**Ship the new iPhone build straight after the backend.** An iPhone still on the old build
+knows nothing of a household going without a cupboard. It keeps its Cupboard tab, offers to
+stock one the moment somebody starts a household, and has Done shopping put the shopping away.
+In a household without a cupboard — every household made from now on, and every one the first
+start decided goes without — the backend ignores all of that: Done shopping puts nothing in it,
+and what somebody adds by hand, "always have" salt and oil included, is saved but never kept off
+the list or shown as in the cupboard. Nothing on the old build can turn the cupboard on, so
+until everyone has updated, people on it can fill a cupboard that does nothing. Upload the
+TestFlight build (see `ios/README.md`) as soon as the backend is up.
+
+The same release lets a recipe's ingredients go straight onto the grocery list from its page.
+Each row it adds remembers the recipe, in a new `grocery_list_item_recipes` table, only so the
+list can say who it is for. Nothing to do for that either.
+
+None of it needs doing by hand. Rolling the images back leaves it all in place, unread — the
+old backend simply shows the cupboard and the plan to everyone again — with one catch. Three of
+the new tables hang off rows the old backend deletes without knowing about them: a recipe's
+machines (`recipe_appliances`), a household's (`household_machines`), and which recipe a
+grocery row is for (`grocery_list_item_recipes`). With their foreign keys in place the old
+backend cannot delete a recipe, a household, or a grocery row a recipe added. So before
+starting the old images, drop those three keys. The rows stay, and going forward again puts
+the keys back, or logs a warning and carries on without them if the old backend deleted
+something in between:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U mealplanner -d mealplanner -c "
+DO \$\$ DECLARE c record; BEGIN
+  FOR c IN SELECT conrelid::regclass AS t, conname FROM pg_constraint WHERE contype = 'f'
+             AND conrelid::regclass::text IN ('recipe_appliances', 'household_machines', 'grocery_list_item_recipes')
+  LOOP EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', c.t, c.conname); END LOOP;
+END \$\$;"
+```
+
+If the old backend did delete something in between, the new one logs three warnings about
+those keys on every start until the rows left pointing at nothing are cleared. Before going
+forward again:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U mealplanner -d mealplanner -c "
+DELETE FROM recipe_appliances a WHERE NOT EXISTS (SELECT 1 FROM recipes r WHERE r.id = a.recipe_id);
+DELETE FROM household_machines m WHERE NOT EXISTS (SELECT 1 FROM households h WHERE h.id = m.household_id);
+DELETE FROM grocery_list_item_recipes g WHERE NOT EXISTS (SELECT 1 FROM grocery_list_items i WHERE i.id = g.grocery_list_item_id);"
+```
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

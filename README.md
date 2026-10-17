@@ -1,15 +1,22 @@
-# Meal Planner
+# Waxwing
 
-A small meal-planning app for one family and their friends: a shared recipe catalog, a weekly
-plan, and a grocery list that updates live across everyone's phones.
+A family recipe box and one shared grocery list for a family and their friends: everyone's
+recipes in one place, and a list that updates live on everyone's phones. Planning the week and
+keeping track of the cupboard are there for households that want them. (The name and icon are
+explained in [BRAND.md](BRAND.md); the app used to be called Meal Planner, and the internal
+names, bundle id and domain still say so.)
 
 - **Sign in** with an email and a password (older accounts still have a name-and-PIN keypad until
   the server turns it off). New people join through a household's **invite link** or its QR code;
   the owner can take someone out again.
-- **Recipes** are filed into Breakfast / Lunch / Dinner / Snacks / Drinks / Other, with
-  sub-categories you invent yourself, cover photos, and an index-card view.
-- **Plan** a week at a time; a meal can be a main plus its sides.
-- **Groceries** are generated from the plan, aggregated by ingredient, and sync in real time.
+- **Recipes** live in drawers (Breakfast / Lunch / Dinner / Snacks / Drinks / Other) and wear
+  any number of tags the household makes up ("Chicken", "Quick"), with cover photos and an
+  index-card view.
+- **Groceries** come straight from a recipe or from the week's plan, are added up by ingredient,
+  and sync in real time.
+- **Plan** a week at a time (a meal can be a main plus its sides) and keep a **Cupboard**, so the
+  list skips what is already at home. Both are optional: a household turns them on or off under
+  Household → Kitchen & features.
 
 ## Running it locally
 

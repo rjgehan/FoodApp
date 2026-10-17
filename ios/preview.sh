@@ -116,7 +116,7 @@ if [[ -n "$PHONE" ]]; then
       echo "Installed, but the phone does not trust the developer certificate yet."
       echo "On the phone: Settings → General → VPN & Device Management → Developer App"
       echo "  → Apple Development: <your Apple ID> → Trust."
-      echo "Then tap the Meal Planner icon, or rerun this."
+      echo "Then tap the Waxwing icon, or rerun this."
       exit 0
     fi
     tail -6 /tmp/mp-launch.txt >&2

@@ -277,7 +277,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "MealPlanner-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				INFOPLIST_KEY_CFBundleDisplayName = Waxwing;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -304,7 +304,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "MealPlanner-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				INFOPLIST_KEY_CFBundleDisplayName = Waxwing;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -329,7 +329,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "ShareExtension-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				INFOPLIST_KEY_CFBundleDisplayName = Waxwing;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -353,7 +353,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "ShareExtension-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Meal Planner";
+				INFOPLIST_KEY_CFBundleDisplayName = Waxwing;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

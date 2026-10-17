@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" fill="#3A1E36"/>
+  <g transform="translate(-88 0) scale(1.08)">
+    <!-- head, crest and breast -->
+    <path fill="#D0A77C" d="M683 452
+      C685 375 600 300 500 262
+      C420 232 310 200 225 140
+      C268 224 342 266 372 335
+      C388 390 378 450 350 520
+      C325 585 295 630 265 690
+      C225 770 195 880 190 1060
+      L800 1060
+      C812 900 800 740 735 650
+      C700 605 676 580 676 544 Z"/>
+    <!-- folded wing -->
+    <path fill="#7A5F66" d="M265 690
+      C225 770 195 880 190 1060
+      L585 1060
+      C565 880 455 730 265 690 Z"/>
+    <!-- cream edges above and below the mask -->
+    <path fill="#F5E9D3" d="M684 443
+      C650 411 612 401 574 400
+      C520 398 462 391 410 388
+      L500 440 Z"/>
+    <path fill="#F5E9D3" d="M516 478
+      C556 506 606 529 646 539
+      C660 542 670 544 676 544
+      L680 500 L560 470 Z"/>
+    <!-- bandit mask + beak (one shape, no seam) -->
+    <path fill="#1A0F17" d="M410 388
+      C460 402 520 412 574 414
+      C612 416 650 428 683 452
+      C714 460 744 474 766 492
+      C742 506 708 524 676 544
+      C650 534 610 520 560 500
+      C500 478 450 430 410 388 Z"/>
+    <!-- eye -->
+    <circle cx="582" cy="459" r="23" fill="#F5E9D3"/>
+    <!-- berry -->
+    <circle cx="828" cy="497" r="70" fill="#E23B3F"/>
+    <ellipse cx="804" cy="471" rx="18" ry="11" transform="rotate(-35 804 471)" fill="#FBD2C4"/>
+  </g>
+</svg>
