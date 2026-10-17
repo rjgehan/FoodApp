@@ -73,7 +73,7 @@ test('a public link signs you in, lets you pick a household, and saves a copy th
   // Signed out: the recipe reads as before, with a quiet way to keep it.
   await page.goto(`/r/${token}`);
   await expect(page.getByRole('heading', { name: 'Link Lasagna' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Plan', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Recipes', exact: true })).toHaveCount(0);
   const save = page.getByRole('button', { name: 'Save to my recipes' });
   await save.scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath('public-link-signed-out.png'), fullPage: true });

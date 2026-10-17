@@ -390,25 +390,26 @@ test('a recipe with no ingredients says so when planned', async ({ page }) => {
   await expect(sheet(page).getByText(/no ingredients|add ingredients|needs ingredients/i)).toBeVisible();
 });
 
-test('a drawer shows its own groups, not another drawer’s', async ({ page }) => {
+test('a drawer shows its own tags, not another drawer’s', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
+  const tags = page.getByRole('group', { name: 'Tags' });
+  const tagChip = (name: string) => tags.getByRole('button', { name: new RegExp(`^${name}\\b`) });
 
   await page.goto('/recipes/section/breakfast');
   for (const own of ['Main', 'Morning drinks', 'Fruit']) {
-    await expect(page.getByText(own, { exact: true })).toBeVisible();
+    await expect(tagChip(own)).toBeVisible();
   }
   for (const elsewhere of ['Sandwiches', 'Veggie', 'Beef']) {
-    await expect(page.getByText(elsewhere, { exact: true })).toHaveCount(0);
+    await expect(tagChip(elsewhere)).toHaveCount(0);
   }
 
   await page.goto('/recipes/section/dinner');
-  await expect(page.getByText('Full meal', { exact: true })).toBeVisible();
-  await expect(page.getByText('Sandwiches', { exact: true })).toHaveCount(0);
-  // Dinner's Main opens onto the meats.
-  await page.getByText('Main', { exact: true }).click();
-  for (const meat of ['Beef', 'Chicken', 'Pork', 'Seafood']) {
-    await expect(page.getByText(meat, { exact: true })).toBeVisible();
+  await expect(tagChip('Full meal')).toBeVisible();
+  await expect(tagChip('Sandwiches')).toHaveCount(0);
+  // The meats sit beside Main now, each a chip of its own — nothing to open first.
+  for (const meat of ['Main', 'Beef', 'Chicken', 'Pork', 'Seafood']) {
+    await expect(tagChip(meat)).toHaveCount(1);
   }
 });
 

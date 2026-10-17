@@ -33,6 +33,11 @@ if (landing.needsSetup) {
 const { token } = await call('POST', '/api/auth/login', { body: { username: 'e2e-admin', pin: '1234' } });
 const hh = await call('POST', '/api/households', { token, body: { name: 'Test House' } });
 const H = hh.id;
+// Everything on, and its kitchen questions answered: a house that has been lived in.
+await call('PATCH', `/api/households/${H}/kitchen`, {
+  token,
+  body: { cupboardEnabled: true, planEnabled: true, machines: ['oven', 'stovetop', 'microwave', 'blender'], setUp: true },
+});
 
 // In through the house's invite link, the only way in there is — or, when Maya already has an
 // account from an earlier seed, signed in and saying yes to it.

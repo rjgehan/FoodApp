@@ -177,37 +177,36 @@ test('username sign-in turns off iOS auto-capitalisation', async ({ page }) => {
   await expect(page.locator('input').first()).toHaveAttribute('autocapitalize', /none|off/);
 });
 
-test('recipe groups: Not now on a split suggestion is remembered', async ({ page }) => {
+test('recipe tags: Not now on a tag suggestion is remembered, and it never opens a sheet', async ({ page }) => {
   const hh = await newHousehold();
   for (const [name, ing] of [['Beef Stew', 'beef'], ['Beef Tacos', 'ground beef'], ['Chicken Curry', 'chicken thigh']]) {
-    await newRecipe(hh.id, name, [{ name: ing, qty: 1, unit: 'lb' }], { categories: ['Main dish'] });
+    await newRecipe(hh.id, name, [{ name: ing, qty: 1, unit: 'lb' }]);
   }
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  await page.getByText('Main dish', { exact: true }).click();
-  // Offered by itself the first time; closing it is "not now".
-  const offer = page.getByRole('dialog', { name: 'Split "Main dish"?' });
-  await expect(offer).toBeVisible();
-  await expect(offer.getByRole('checkbox', { name: 'Beef' })).toHaveAttribute('aria-checked', 'true');
-  await offer.getByRole('button', { name: 'Close' }).click();
+  // A card in the page — the likeliest tag for the untagged recipes — and nothing pops up.
+  const offer = page.getByRole('region', { name: 'Tag suggestion' });
+  await expect(offer).toContainText('2 untagged recipes look like Beef');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await offer.getByRole('button', { name: 'Not now' }).click();
+  // The next likeliest is only a single recipe, which is quicker to tag by hand: no card.
   await expect(offer).toHaveCount(0);
   await page.reload();
   await expect(page.getByText('Beef Stew')).toBeVisible(); // loaded, so an absence means something
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  // Still there when wanted, from the group's •••.
-  await page.getByRole('button', { name: 'Options for Main dish' }).click();
-  await expect(page.getByRole('button', { name: 'Split Main dish into groups' })).toBeVisible();
+  await expect(offer).toHaveCount(0);
 });
 
-test('group cards are big enough to tap', async ({ page }) => {
+test('tag chips are a comfortable size to tap', async ({ page }) => {
   const hh = await newHousehold();
-  await newRecipe(hh.id, 'Stew', [{ name: 'beef', qty: 1 }], { categories: ['Main dish'] });
+  await newRecipe(hh.id, 'Stew', [{ name: 'beef', qty: 1 }], { categories: ['Main'] });
   await signIn(page, hh.owner, hh.id);
   await page.goto('/recipes/section/dinner');
-  // Once two 24pt buttons on each card; now the whole card is the one thing to tap.
-  const btn = page.getByRole('button', { name: /^Main dish\b/ });
-  const box = await btn.boundingBox();
-  expect(Math.min(box!.width, box!.height)).toBeGreaterThanOrEqual(44);
+  // A whole chip is the one thing to tap, name and count together.
+  for (const name of [/^Main\b/, /^Beef\b/, /^New tag$/]) {
+    const box = await page.getByRole('group', { name: 'Tags' }).getByRole('button', { name }).boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(34);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+  }
 });
 
 test('saving a recipe the house already has says so, and a second copy is one tap', async ({ page }) => {

@@ -34,7 +34,16 @@ Uses the Chrome already installed (`channel: 'chrome'`), so there's no Playwrigh
 | `tests/api/integration.spec.ts` | The home-dashboard API: key, shapes, ranges, category filter, grocery writes |
 | `tests/api/sharing.spec.ts` | Share links, sharing with a household, deleting a shared recipe |
 | `tests/ui/core-loop.spec.ts` | Keypad sign-in, plan next Tuesday, optional prompt, shop and put away, two-phone sync, Today |
-| `tests/ui/forms.spec.ts` | Paste parser, units, links without https, username field, group cards |
+| `tests/ui/forms.spec.ts` | Paste parser, units, links without https, username field, tag suggestions and tag chips |
+| `tests/api/groups.spec.ts` | Tags (still "recipe-categories" on the wire): one drawer each, one name per drawer, bulk tag and untag, old phones' calls |
+| `tests/ui/catalog.spec.ts` | Drawers and tags: tag and machine chips, "+ Tag" and picking its recipes (with search), the quick-tag card, select mode's Tag and Move, Manage tags, a filter that follows a rename, a tag made on another phone, a slow refresh, the recipe hero |
+| `tests/ui/plan-picker.spec.ts` | Filling a slot: Mains (a protein tag counts), Sides, and the household's tags as filters |
+| `tests/api/kitchen.spec.ts` | The kitchen PATCH: machines, Plan and Cupboard on and off, setting up; the machine list agreeing on server, web and iPhone |
+| `tests/ui/kitchen-setup.spec.ts` | The kitchen questions: who is asked, Skip, starting from the house's answers, the card on Recipes, Kitchen & features counting as set up, the starter list with nothing slipping in first |
+| `tests/ui/features-off.spec.ts` | Plan and Cupboard turned off: tabs, redirects, Done shopping with no cupboard, Kitchen & features, no flash of the tabs before the household list arrives |
+| `tests/ui/machines.spec.ts` | The machines a recipe needs, in the form: starting from the recipe's, sent only when changed |
+| `tests/api/recipe-groceries.spec.ts` | A recipe straight onto the list: scaling, optional extras, "some", attribution, already on the list |
+| `tests/ui/add-to-groceries.spec.ts` | Add to groceries on a recipe: the labelled cart beside Add to plan, the servings shown, extras, asking before adding again, the filled button with the Plan off |
 | `tests/api/ideas.spec.ts` | The beta's ideas board: one vote each, Top and New, author-only edits, admin-only status, limits, deleted accounts |
 | `tests/ui/ideas.spec.ts` | Suggesting from the header's lightbulb, upvoting from a second phone, Top vs New, the admin marking one planned |
 | `tests/screens/inventory.spec.ts` | Not a test — captures every screen and sheet for the PDF |
@@ -54,6 +63,10 @@ grep -rn "KNOWN" tests/
 
 - Arrange with the API (`lib/api.ts`: `newHousehold`, `newMember`, `newRecipe`, `plan`, …), then
   click only through the part the test is about. Every test makes its own household.
+- `newHousehold()` keeps a cupboard, plans meals and has answered its kitchen questions — the
+  world most tests expect. A household the server makes starts with the cupboard off and the
+  questions waiting; `newHousehold({ cupboard: false })`, `{ plan: false }` or `{ setUp: false }`
+  (the server's own defaults) test those, and `setKitchen` changes them later.
 - `newMember` joins through the household's invite link with an email and password, as everyone
   new does. `legacyMember` writes an account the way they were made before invite links — a PIN,
   or none yet — straight into the local database (`lib/db.ts`), for tests of the PIN screens.

@@ -126,6 +126,11 @@ if (landing.needsSetup) {
 const { token } = await call('POST', '/api/auth/login', { body: { username: 'e2e-admin', pin: '1234' } });
 const home = await call('POST', '/api/households', { token, body: { name: HOUSEHOLD } });
 const H = home.id;
+// Everything on, and its kitchen questions answered: the showcase shows every part of the app.
+await call('PATCH', `/api/households/${H}/kitchen`, {
+  token,
+  body: { cupboardEnabled: true, planEnabled: true, machines: ['oven', 'stovetop', 'microwave', 'air-fryer', 'blender'], setUp: true },
+});
 
 // Everyone comes in through the house's invite link — the only way in there is.
 const invite = (await call('GET', `/api/households/${H}/invite`, { token })).token;
@@ -259,6 +264,10 @@ if (counted) await call('PATCH', `/api/households/${H}/cupboard/${counted.id}`, 
 
 // --- somebody else's recipes, for Explore ------------------------------------------------------------------
 const neighbours = await call('POST', '/api/households', { token, body: { name: 'The Wilsons' } });
+await call('PATCH', `/api/households/${neighbours.id}/kitchen`, {
+  token,
+  body: { cupboardEnabled: true, planEnabled: true, setUp: true },
+});
 for (const [name, section] of [['Katsu Chicken curry', 'DINNER'], ['Banana Pancakes', 'BREAKFAST'], ['Fish pie', 'DINNER']]) {
   const meal = await lookup(name);
   if (!meal) continue;

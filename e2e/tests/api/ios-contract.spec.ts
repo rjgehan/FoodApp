@@ -311,3 +311,70 @@ test('meal plans: the requests the phone sends, its Apple Intelligence picks, an
   const onPlan = await call('POST', `${base}/targets/${saved.id}/apply`, { token, body: { start: isoDate(10), servings: 2 } });
   expect(onPlan).toMatchObject({ added: 1, from: isoDate(10) });
 });
+
+test('the kitchen: the household fields the phone keeps, and the three ways it sends PATCH /kitchen', async () => {
+  const { token } = await admin();
+  // Start another household (NewHouseholdScreen): the new house comes back with its kitchen.
+  const made = await call('POST', '/api/households', { token, body: { name: `Phone kitchen ${Date.now()}` } });
+  for (const key of ['cupboardEnabled', 'planEnabled', 'machines', 'kitchenSetUp']) expect(made).toHaveProperty(key);
+  expect(made).toMatchObject({ cupboardEnabled: false, planEnabled: true, machines: [], kitchenSetUp: false });
+  const kitchen = `/api/households/${made.id}/kitchen`;
+
+  // Skip on the first question: only the stamp — the phone leaves out every nil.
+  expect(await call('PATCH', kitchen, { token, body: { setUp: true } })).toMatchObject({
+    kitchenSetUp: true, cupboardEnabled: false, planEnabled: true, machines: [],
+  });
+  // Done: every answer, machines as keys in catalogue order.
+  const done = await call('PATCH', kitchen, {
+    token, body: { cupboardEnabled: true, planEnabled: false, machines: ['oven', 'stovetop', 'air-fryer'], setUp: true },
+  });
+  expect(done).toMatchObject({ cupboardEnabled: true, planEnabled: false, machines: ['oven', 'stovetop', 'air-fryer'], kitchenSetUp: true });
+  // Household → Kitchen & features: one switch at a time, each one answering the kitchen
+  // questions too (KitchenScreen sends setUp with every save, as the web's page does).
+  expect(await call('PATCH', kitchen, { token, body: { planEnabled: true, setUp: true } }))
+    .toMatchObject({ planEnabled: true, cupboardEnabled: true, kitchenSetUp: true });
+
+  // The list the phone reloads on coming to the front carries the same fields.
+  const listed = (await call('GET', '/api/households', { token })).find((h: any) => h.id === made.id);
+  expect(listed).toMatchObject({ cupboardEnabled: true, planEnabled: true, machines: ['oven', 'stovetop', 'air-fryer'], kitchenSetUp: true });
+  await call('DELETE', `/api/households/${made.id}`, { token });
+});
+
+test('Add to groceries from a recipe, the 409 the phone asks about, and Done shopping with no cupboard', async () => {
+  const hh = await newHousehold({ cupboard: false });
+  const { token } = await admin();
+  const soup = await newRecipe(hh.id, 'Phone soup', [
+    { name: 'leeks', qty: 2 },
+    { name: 'croutons', qty: 1, unit: 'cup', optional: true },
+  ]);
+  for (const key of ['appliances']) expect(soup).toHaveProperty(key);
+  const croutons = soup.ingredients.find((i: any) => i.ingredientName === 'croutons').id;
+  const path = `/api/households/${hh.id}/grocery-list/add-recipe/${soup.id}`;
+
+  // AddToGroceriesSheet: servings and the ticked extras, always both.
+  const added = await call('POST', path, { token, body: { servings: 8, includedOptionalIngredientIds: [croutons] } });
+  expect(find(added, 'leeks')).toMatchObject({ quantity: 4, fromRecipes: ['Phone soup'], inCupboard: false });
+  expect(find(added, 'croutons')).toBeTruthy();
+
+  // Again: a 409 whose body says why, then the same body with `again: true`.
+  try {
+    await call('POST', path, { token, body: { servings: 4, includedOptionalIngredientIds: [] } });
+    throw new Error('should have been refused');
+  } catch (e: any) {
+    expect(e.status).toBe(409);
+    expect(JSON.parse(e.body)).toMatchObject({ alreadyOnList: true });
+  }
+  const again = await call('POST', path, { token, body: { servings: 4, includedOptionalIngredientIds: [], again: true } });
+  expect(find(again, 'leeks').quantity).toBe(6);
+
+  // Done shopping in a house without a cupboard: every ticked id as putAway, none left out.
+  const list = await call('GET', `/api/households/${hh.id}/grocery-list`, { token });
+  for (const item of list) {
+    await call('PATCH', `/api/households/${hh.id}/grocery-list/items/${item.id}`, { token, body: { checked: true } });
+  }
+  await call('POST', `/api/households/${hh.id}/grocery-list/put-away`, {
+    token, body: { putAway: list.map((i: any) => i.id), leaveOut: [] },
+  });
+  expect(await call('GET', `/api/households/${hh.id}/grocery-list`, { token })).toEqual([]);
+  expect(await call('GET', `/api/households/${hh.id}/cupboard`, { token })).toEqual([]);
+});

@@ -76,22 +76,27 @@ test('recipe detail says which ingredients are optional', async () => {
   expect(detail.ingredients[0].optional).toBe(true);
 });
 
-test('filtering by a parent group includes recipes in its sub-groups', async () => {
+test('the category filter is a plain tag match, and lists every tag a recipe wears', async () => {
   const hh = await newHousehold();
   const owner = await admin();
   const r = await newRecipe(hh.id, 'Brisket', [{ name: 'beef', qty: 3, unit: 'lb' }], { categories: ['Main dish'] });
+  await newRecipe(hh.id, 'Coleslaw', [{ name: 'cabbage', qty: 1 }], { categories: ['Side'] });
   const cats = await call('GET', `/api/households/${hh.id}/recipe-categories`, { token: owner.token });
   const main = cats.find((c: any) => c.name === 'Main dish');
-  // Not "Beef": every new household already has Dinner › Main › Beef, and names are unique
-  // within a drawer, so a second one is refused before the filter is ever asked.
+  // What an old phone's "split" sends: a tag made with only the parent's id, and the recipe
+  // moved into it from the parent. Tags are flat now, so it lands beside Main dish, and the move
+  // only adds — the recipe wears both, which keeps it found under Main dish as it always was.
   const slow = await call('POST', `/api/households/${hh.id}/recipe-categories`, { token: owner.token, body: { name: 'Slow cooked', parentId: main.id } });
+  expect(slow).toMatchObject({ section: 'DINNER', parentId: null });
   await call('POST', `/api/households/${hh.id}/recipe-categories/${slow.id}/recipes`, {
     token: owner.token, body: { recipeIds: [r.id], fromCategoryId: main.id },
   });
-  const byParent = await get(`/households/${hh.id}/recipes?category=Main%20dish`);
-  expect(byParent.map((x: any) => x.name)).toContain('Brisket');
-  // Found through its parent, but it says where it is actually filed — it did move.
-  expect(byParent.find((x: any) => x.name === 'Brisket').categories).toEqual(['Slow cooked']);
+
+  const byMain = await get(`/households/${hh.id}/recipes?category=main%20dish`);
+  expect(byMain.map((x: any) => x.name)).toEqual(['Brisket']);
+  expect(byMain[0].categories).toEqual(['Main dish', 'Slow cooked']);
+  const bySlow = await get(`/households/${hh.id}/recipes?category=Slow%20cooked`);
+  expect(bySlow.map((x: any) => x.name)).toEqual(['Brisket']);
 });
 
 test('grocery writes: add, tick, remove — and nothing across households', async () => {

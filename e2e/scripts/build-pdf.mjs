@@ -53,7 +53,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .intro hr { border: 0; border-top: 0.5pt solid #d1d1d6; margin: 14pt 0; }
 </style></head><body>
   <div class="cover">
-    <h1>${esc(process.env.SCREENS_TITLE ?? 'Meal Planner — Screen Inventory')}</h1>
+    <h1>${esc(process.env.SCREENS_TITLE ?? 'Waxwing — Screen Inventory')}</h1>
     <p>Every screen and sheet at iPhone size (390 × 844 pt), light and dark.</p>
     <p>Captured ${esc(new Date(manifest.capturedAt).toLocaleString())} · ${manifest.shots.length} screens</p>
     <div class="toc">${groups.map((g) => `<div>${esc(g.name)} — ${g.shots.length}</div>`).join('')}</div>
@@ -65,7 +65,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   </div></section>`).join('')}
 </body></html>`;
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await chromium.launch({ channel: process.env.PW_CHANNEL ?? 'chrome' });
 const page = await browser.newPage();
 const tmp = join(OUT, 'screens.html');
 (await import('node:fs')).writeFileSync(tmp, html);

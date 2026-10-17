@@ -90,11 +90,62 @@ let counter = 0;
 export const unique = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-/** A brand new household owned by the admin, so tests never see each other's data. */
-export async function newHousehold(name = unique('House')): Promise<{ id: string; name: string; owner: Session }> {
+/**
+ * What a test household has turned on. A household the server makes starts with the cupboard
+ * off, the Plan on and its kitchen questions unanswered; the suite's world is a household that
+ * has both and has answered them, so that is what `newHousehold()` gives unless a test says.
+ */
+export type KitchenOptions = {
+  /** Keeps a cupboard. Default on. */
+  cupboard?: boolean;
+  /** Plans meals ahead. Default on. */
+  plan?: boolean;
+  /**
+   * The kitchen questions have been answered. Default true. `false` leaves the household as the
+   * server made it — only the flags a test names are changed — so its defaults can be tested.
+   */
+  setUp?: boolean;
+};
+
+/**
+ * Turns a household's features on or off and marks its kitchen questions answered or not, as a
+ * person would from Household → Kitchen & features (`PATCH /kitchen`).
+ */
+export async function setKitchen(
+  householdId: string,
+  body: { cupboardEnabled?: boolean; planEnabled?: boolean; machines?: string[]; setUp?: boolean },
+  as?: Session,
+): Promise<Json> {
+  const who = as ?? (await admin());
+  return call('PATCH', `/api/households/${householdId}/kitchen`, { token: who.token, body });
+}
+
+/**
+ * A brand new household owned by the admin, so tests never see each other's data. It keeps a
+ * cupboard, plans meals and has had its kitchen set up, unless `opts` says otherwise.
+ */
+export async function newHousehold(
+  nameOrOpts: string | KitchenOptions = unique('House'),
+  maybeOpts: KitchenOptions = {},
+): Promise<{ id: string; name: string; owner: Session; household: Json }> {
+  const name = typeof nameOrOpts === 'string' ? nameOrOpts : unique('House');
+  const opts = typeof nameOrOpts === 'string' ? maybeOpts : nameOrOpts;
   const owner = await admin();
-  const hh = await call('POST', '/api/households', { token: owner.token, body: { name } });
-  return { id: hh.id, name, owner };
+  let household = await call('POST', '/api/households', { token: owner.token, body: { name } });
+  if (opts.setUp === false) {
+    // As the server made it, bar what the test names.
+    const body: { cupboardEnabled?: boolean; planEnabled?: boolean } = {};
+    if (opts.cupboard !== undefined) body.cupboardEnabled = opts.cupboard;
+    if (opts.plan !== undefined) body.planEnabled = opts.plan;
+    if (Object.keys(body).length) household = await setKitchen(household.id, body, owner);
+  } else {
+    household = await setKitchen(
+      household.id,
+      { cupboardEnabled: opts.cupboard ?? true, planEnabled: opts.plan ?? true, setUp: true },
+      owner,
+    );
+  }
+  return { id: household.id, name, owner, household };
 }
 
 export type Member = Session & { username: string; email: string; password: string };

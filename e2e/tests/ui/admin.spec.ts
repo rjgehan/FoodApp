@@ -99,9 +99,9 @@ test('anybody else is sent home, and has no Admin row in Settings', async ({ pag
 
   await signIn(page, member, hh.id);
   await page.goto('/admin');
-  await expect(page).toHaveURL(/\/meal-plan$/);
+  await expect(page).toHaveURL(/\/recipes$/);
   await page.goto('/admin/households/' + hh.id);
-  await expect(page).toHaveURL(/\/meal-plan$/);
+  await expect(page).toHaveURL(/\/recipes$/);
 
   await page.getByRole('button', { name: 'Your account' }).click();
   await expect(sheet(page).getByRole('button', { name: /^Household settings/ })).toBeVisible();
@@ -112,7 +112,7 @@ test('the admin signed in with their PIN is sent home like anybody else', async 
   const hh = await newHousehold();
   await signIn(page, await admin(), hh.id);
   await page.goto('/admin');
-  await expect(page).toHaveURL(/\/meal-plan$/);
+  await expect(page).toHaveURL(/\/recipes$/);
   await page.getByRole('button', { name: 'Your account' }).click();
   await expect(sheet(page).getByRole('button', { name: /^Household settings/ })).toBeVisible();
   await expect(sheet(page).getByRole('link', { name: /^Admin/ })).toHaveCount(0);
