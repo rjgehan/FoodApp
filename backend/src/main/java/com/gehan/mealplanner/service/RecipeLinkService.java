@@ -99,7 +99,7 @@ public class RecipeLinkService {
                 recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(), recipe.getServings(),
                 SourceLinks.firstSource(links), SourceLinks.firstVideo(links), links,
                 recipe.getCoverImage() == null ? null : recipe.getCoverImage().getId(),
-                photoIds, ingredients);
+                photoIds, ingredients, KitchenMachines.inOrder(recipe.getAppliances()));
     }
 
     /** Only the household that owns a recipe can hand out or withdraw a link to it. */

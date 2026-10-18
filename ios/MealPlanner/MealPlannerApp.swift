@@ -80,6 +80,12 @@ struct MealPlannerApp: App {
                             sharedRecipeView(incoming)
                         }
                     }
+                    // The saved copy's page is in here, over the tabs: its "See list" closes this
+                    // sheet on the way to Groceries, or the tab would change unseen behind it.
+                    .environment(\.seeGroceries, {
+                        shared = nil
+                        NotificationCenter.default.post(name: .showTab, object: "groceries")
+                    })
                 }
                 // Every control in the app in the theme's colours, and light or dark, as chosen
                 // on the Theme screen.
@@ -188,7 +194,8 @@ struct SharedText: Identifiable {
 }
 
 /// Signed out: the PIN flow. Signed in: the same tabs as the web, in the same order, so the
-/// two do not have to be learned separately.
+/// two do not have to be learned separately — Recipes first, as it is the home of both, and Plan
+/// and Cupboard only for a household that uses them.
 struct RootView: View {
     @Bindable var session: Session
     /// An invite or reset link the app was opened with, until it has been dealt with.
@@ -200,9 +207,9 @@ struct RootView: View {
     /// land on any tab without tapping.
     @State private var tab: String = {
         #if DEBUG
-        return UserDefaults.standard.string(forKey: "mp_debug_tab") ?? "plan"
+        return UserDefaults.standard.string(forKey: "mp_debug_tab") ?? "recipes"
         #else
-        return "plan"
+        return "recipes"
         #endif
     }()
 
@@ -214,15 +221,38 @@ struct RootView: View {
     @State private var debugSheet: String? = UserDefaults.standard.string(forKey: "mp_debug_screen")
     #endif
 
-    /// Set when the signed-in person still has no email or password: the prompt asking for them.
-    @State private var askingForCredentials: Me?
+    /**
+     What the app is asking on its own, over the tabs — one at a time, in one slot, so two can
+     never stack (or one silently fail to appear behind another). The kitchen questions come
+     first; the add-an-email prompt and "Time to restock?" wait behind them, and behind each other.
+     */
+    enum Prompt: Identifiable {
+        case kitchen(UUID)
+        case credentials(Me)
+        case restock(RestockDue)
+
+        var id: String {
+            switch self {
+            case .kitchen(let household): return "kitchen-\(household.uuidString)"
+            case .credentials: return "credentials"
+            case .restock(let due): return "restock-\(due.household.uuidString)"
+            }
+        }
+    }
+
+    @State private var prompt: Prompt?
+    /// The prompt last put up, for when it closes: `prompt` is already nil by then.
+    @State private var lastAsked: Prompt?
+    /// An invite or reset link is open over the tabs: the slot waits for it to go.
+    @State private var linkSheetUp = false
     @Environment(\.scenePhase) private var scenePhase
 
-    /// "Time to restock?", when something has come due.
-    @State private var restockDue: RestockDue?
     /// The households asked about since the app last came to the front — once each, like the
     /// web's once per session. Emptied when the app goes to the background.
     @State private var restockAsked: Set<UUID> = []
+    /// Settings is open over a tab (HouseholdSwitcher's `householdSheets` says when): a tab turned
+    /// off in it stays in the bar until it closes, because Settings hangs off that tab.
+    @State private var settingsUp = false
 
     var body: some View {
         Group {
@@ -243,10 +273,16 @@ struct RootView: View {
                 SignInView(session: session)
             }
         }
-        // A link opened while signed in: over whatever was on screen.
+        // A link opened while signed in: over whatever was on screen. Joining from it may leave
+        // kitchen questions to ask, which wait until it has gone.
         .sheet(item: Binding(get: { session.isSignedIn && !firstRun ? openedLink : nil },
-                             set: { openedLink = $0 })) { link in
+                             set: { openedLink = $0 }),
+               onDismiss: {
+                   linkSheetUp = false
+                   Task { await offerKitchenSetup() }
+               }) { link in
             NavigationStack { linkScreen(link) }
+                .onAppear { linkSheetUp = true }
         }
     }
 
@@ -259,24 +295,50 @@ struct RootView: View {
         }
     }
 
+    /**
+     Whether a tab is in the bar. Plan and Cupboard are a household's to turn off; the one you are
+     on stays while Settings is open, so turning it off from Settings — which hangs off that tab's
+     header — does not throw Settings away mid-change. Everywhere else the tab goes at once and you
+     land on Recipes (`fallBackIfHidden`): once Settings closes, when the house changes, when the
+     kitchen questions are answered, and when it was turned off on another phone or the web.
+    */
+    private func shows(_ name: String) -> Bool {
+        switch name {
+        case "plan": return session.planOn || tab == "plan"
+        case "cupboard": return session.cupboardOn || tab == "cupboard"
+        default: return true
+        }
+    }
+
+    /// The tab that is up belongs to something this house does not use: Recipes, the home tab.
+    private func fallBackIfHidden() {
+        if (tab == "plan" && !session.planOn) || (tab == "cupboard" && !session.cupboardOn) {
+            tab = "recipes"
+        }
+    }
+
     /*
      Split into steps rather than one long chain: every feature hangs something off the tabs, and
      past a point Swift gives up type-checking a single expression that long.
     */
     private var tabs: some View {
         TabView(selection: $tab) {
-            PlanView(session: session)
-                .tabItem { TabLabel("Plan", systemImage: "calendar", selected: tab == "plan") }
-                .tag("plan")
             RecipesView(session: session)
                 .tabItem { TabLabel("Recipes", systemImage: "book", selected: tab == "recipes") }
                 .tag("recipes")
             GroceriesView(session: session)
                 .tabItem { TabLabel("Groceries", systemImage: "cart", selected: tab == "groceries") }
                 .tag("groceries")
-            CupboardView(session: session)
-                .tabItem { TabLabel("Cupboard", systemImage: "cabinet", selected: tab == "cupboard") }
-                .tag("cupboard")
+            if shows("plan") {
+                PlanView(session: session)
+                    .tabItem { TabLabel("Plan", systemImage: "calendar", selected: tab == "plan") }
+                    .tag("plan")
+            }
+            if shows("cupboard") {
+                CupboardView(session: session)
+                    .tabItem { TabLabel("Cupboard", systemImage: "cabinet", selected: tab == "cupboard") }
+                    .tag("cupboard")
+            }
             ExploreView(session: session)
                 .tabItem { TabLabel("Explore", systemImage: "safari", selected: tab == "explore") }
                 .tag("explore")
@@ -296,35 +358,70 @@ struct RootView: View {
         .id(session.household?.id)
         // After every sign-in (a new token) and on every launch.
         .task(id: session.token) { await checkCredentials() }
-        // On launch, on switching house, and on coming back to the app.
-        .task(id: session.household?.id) { await checkRestock() }
+        // On launch and on switching house; coming back to the app asks again below. A new house
+        // is a new set of tabs, so no Settings sheet is left hanging off the old ones.
+        .task(id: session.household?.id) {
+            settingsUp = false
+            fallBackIfHidden()
+            await checkRestock()
+        }
+        // Somebody just made or joined a house nobody has set up: its kitchen questions.
+        .task(id: session.kitchenSetupFor) { await offerKitchenSetup() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { restockAsked = [] }
             if phase == .active { Task { await checkRestock() } }
-        }
-        .sheet(item: $restockDue) { due in
-            RestockPrompt(household: due.household, items: due.items)
         }
         // Your colours, which may have been changed on the web or another phone.
         .task(id: session.token) { await loadTheme() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await loadTheme() } }
         }
+        // The household's own settings — its tabs, its machines — may have been changed on the web
+        // or another phone. The list again; a changed house replaces the open one's copy, and a
+        // tab it turned off while this phone sat on it goes (unless Settings is open over it).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task {
+                    await session.loadHouseholds()
+                    if !settingsUp { fallBackIfHidden() }
+                }
+            }
+        }
+        // A meal plan applied from Explore: the Plan, where its meals now are — if this house has one.
+        .onReceive(NotificationCenter.default.publisher(for: .showTab)) { note in
+            if let wanted = note.object as? String, shows(wanted) { tab = wanted }
+        }
         // A household that turns us away is one we were taken out of: fetch the list again,
         // which moves on to another house — or, with none left, back to the sign-in screen.
-        // A meal plan applied from Explore: the Plan, where its meals now are.
-        .onReceive(NotificationCenter.default.publisher(for: .showTab)) { note in
-            if let wanted = note.object as? String { tab = wanted }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .householdForbidden)
             .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: false)) { _ in
             Task { await session.loadHouseholds() }
         }
     }
 
+    /**
+     ...which follow what the house uses: Plan or Cupboard turned off, from wherever, takes its tab
+     away and lands on Recipes — except while Settings is open over that tab, which would go with
+     it; closing Settings does it then.
+    */
+    private var tabsFollowingTheHouse: some View {
+        tabsAtWork
+        .onChange(of: session.planOn) { _, _ in
+            if !settingsUp { fallBackIfHidden() }
+        }
+        .onChange(of: session.cupboardOn) { _, _ in
+            if !settingsUp { fallBackIfHidden() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsOpened)) { _ in settingsUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsClosed)) { _ in
+            settingsUp = false
+            fallBackIfHidden()
+        }
+    }
+
     /// ...and what they may ask on top of them.
     private var tabsWithPrompts: some View {
-        tabsAtWork
+        tabsFollowingTheHouse
         // Taken out of a household and moved to another (7.4).
         .kitchenAlert(isPresented: Binding(
             get: { session.removedFrom != nil },
@@ -335,7 +432,7 @@ struct RootView: View {
             }
         }
         // Something to say after signing in — an invite that no longer worked, say.
-        .alert("Meal Planner", isPresented: Binding(
+        .alert("Waxwing", isPresented: Binding(
             get: { session.isSignedIn && session.notice != nil },
             set: { if !$0 { session.notice = nil } }
         )) {
@@ -343,12 +440,15 @@ struct RootView: View {
         } message: {
             Text(session.notice ?? "")
         }
-        .sheet(isPresented: Binding(
-            get: { askingForCredentials != nil },
-            set: { if !$0 { askingForCredentials = nil } }
-        )) {
-            if let me = askingForCredentials {
+        // The one prompt slot.
+        .sheet(item: $prompt, onDismiss: promptClosed) { asking in
+            switch asking {
+            case .kitchen(let household):
+                KitchenSetupSheet(session: session, household: household)
+            case .credentials(let me):
                 CredentialsPrompt(session: session, me: me)
+            case .restock(let due):
+                RestockPrompt(household: due.household, items: due.items)
             }
         }
     }
@@ -364,6 +464,11 @@ struct RootView: View {
     #if DEBUG
     private func debugSheets(_ content: some View) -> some View {
         content
+        // -mp_debug_screen kitchen: the open house's kitchen questions, through the prompt slot
+        // as a new house gets them (-mp_debug_kitchen_step 1|2 opens a later question).
+        .task {
+            if debugSheet == "kitchen", let household = session.household?.id { session.askKitchenSetup(for: household) }
+        }
         .sheet(isPresented: Binding(
             get: { debugSheet == "edit" },
             set: { if !$0 { debugSheet = nil } }
@@ -386,7 +491,7 @@ struct RootView: View {
         )) {
             DebugRecipeDetail(session: session)
         }
-        // -mp_debug_screen recipe|recipe-options|recipe-plan|recipe-delete|recipe-method|recipe-nutrition
+        // -mp_debug_screen recipe|recipe-options|recipe-plan|recipe-groceries|recipe-delete|recipe-method|recipe-nutrition
         // -mp_debug_recipe <uuid>: that recipe's page from the server, full screen as it is pushed,
         // with the named sheet or tab open.
         .fullScreenCover(isPresented: Binding(
@@ -476,6 +581,48 @@ struct RootView: View {
     }
     #endif
 
+    // MARK: - The prompt slot
+
+    private func ask(_ next: Prompt) {
+        lastAsked = next
+        prompt = next
+    }
+
+    /**
+     A prompt has gone: whatever was waiting behind it gets its turn — the kitchen questions,
+     then the add-an-email prompt (unless that was the one just closed: closing it is an answer
+     until the next launch), then "Time to restock?".
+    */
+    private func promptClosed() {
+        let closed = lastAsked
+        lastAsked = nil
+        // However the add-an-email prompt went — Not now, or swiped away — it is answered until the
+        // next launch: closing "Time to restock?" after it must not put it straight back up.
+        if case .credentials = closed { session.credentialsPromptDismissed = true }
+        Task {
+            // Closed some other way than answering: not asked again until the house is next made or joined.
+            if case .kitchen(let household) = closed, session.kitchenSetupFor == household {
+                session.kitchenSetupFor = nil
+            }
+            await offerKitchenSetup()
+            guard prompt == nil, session.kitchenSetupFor == nil else { return }
+            if case .credentials = closed {} else { await checkCredentials() }
+            guard prompt == nil else { return }
+            await checkRestock()
+        }
+    }
+
+    /// The kitchen questions for the house just made or joined, as soon as nothing else is up.
+    private func offerKitchenSetup() async {
+        guard let wanted = session.kitchenSetupFor, prompt == nil, !linkSheetUp else { return }
+        // A sheet on its way out — Settings under a house that just changed, an invite screen —
+        // has to finish going before another can come up, or the new one is never shown.
+        try? await Task.sleep(for: .milliseconds(500))
+        guard !Task.isCancelled, session.isSignedIn, !firstRun, session.kitchenSetupFor == wanted,
+              prompt == nil, !linkSheetUp else { return }
+        ask(.kitchen(wanted))
+    }
+
     /// The server's copy of your colours. Quiet on failure: the cached ones are already on.
     private func loadTheme() async {
         guard session.isSignedIn else { return }
@@ -506,23 +653,24 @@ struct RootView: View {
         // A screenshot run lands on a particular screen; the prompt would sit on top of it.
         // -mp_debug_screen credentials shows the prompt itself, from sample data if need be.
         if let debugSheet {
-            if debugSheet == "credentials" {
-                askingForCredentials = me ?? SampleData.me
+            if debugSheet == "credentials", prompt == nil {
+                ask(.credentials(me ?? SampleData.me))
             }
             return
         }
         #endif
         guard let me, me.needsCredentials else { return }
-        // One sheet at a time: if "Time to restock?" got there first, this asks next launch.
-        guard restockDue == nil else { return }
-        askingForCredentials = me
+        // One sheet at a time: behind the kitchen questions, and behind "Time to restock?" if it
+        // got there first (closing it asks this next).
+        guard prompt == nil, session.kitchenSetupFor == nil else { return }
+        ask(.credentials(me))
     }
 
     /// Asks "Time to restock?" if anything has come due, once per household each time the app
-    /// comes to the front. Quiet on failure, and it waits behind the credentials prompt.
+    /// comes to the front. Quiet on failure, and it waits behind the other prompts.
     private func checkRestock() async {
         guard session.isSignedIn, let household = session.household?.id,
-              !restockAsked.contains(household), askingForCredentials == nil, restockDue == nil
+              !restockAsked.contains(household), prompt == nil, session.kitchenSetupFor == nil
         else { return }
         #if DEBUG
         // A screenshot run lands on a particular screen; the question would sit on top of it.
@@ -535,9 +683,16 @@ struct RootView: View {
             restockAsked.remove(household)
             return
         }
-        // Still the same house, and nothing else came up while the question was on its way.
-        guard !due.isEmpty, session.household?.id == household, askingForCredentials == nil else { return }
-        restockDue = RestockDue(household: household, items: due)
+        guard !due.isEmpty, session.household?.id == household else { return }
+        // Something else got the slot while the question was on its way — the add-an-email
+        // prompt, say, at launch. Not asked after all, so it is not marked as asked: closing that
+        // prompt asks again (`promptClosed`), rather than this waiting for the next time the app
+        // comes to the front.
+        guard prompt == nil, session.kitchenSetupFor == nil else {
+            restockAsked.remove(household)
+            return
+        }
+        ask(.restock(RestockDue(household: household, items: due)))
     }
 }
 

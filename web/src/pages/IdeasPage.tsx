@@ -21,6 +21,7 @@ import {
   type PillTone,
 } from '../components/ui';
 import { useOnResume } from '../utils/useOnResume';
+import { useHomePath } from '../utils/homePath';
 
 /** The server's Idea.MAX_TITLE and MAX_DETAILS. */
 const MAX_TITLE = 80;
@@ -74,6 +75,7 @@ export default function IdeasPage() {
   // A pushed page with no tab bar under it, as the mockup draws it (7.5).
   useTablessScreen();
   const navigate = useNavigate();
+  const home = useHomePath();
   const [params, setParams] = useSearchParams();
   const view = viewFrom(params);
   const sort = view === 'new' ? 'new' : 'top';
@@ -89,7 +91,7 @@ export default function IdeasPage() {
   const back = () => {
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
     if (idx > 0) navigate(-1);
-    else navigate('/meal-plan');
+    else navigate(home);
   };
 
   const load = useCallback(async () => {

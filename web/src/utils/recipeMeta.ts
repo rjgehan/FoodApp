@@ -39,12 +39,12 @@ export interface Filing {
 export const DEFAULT_FILING: Filing = { section: 'DINNER', categories: [] };
 
 /**
- * Moving a recipe to another drawer before it is saved. Groups belong to a drawer, and the
- * server files a recipe by group name, making any it cannot find — so a ticked group left behind
- * in the old drawer would quietly become a new, empty group of the same name in this one. Those
+ * Moving a recipe to another drawer before it is saved. Tags belong to a drawer, and the server
+ * files a recipe by tag name, making any its drawer does not have — so a ticked tag left behind
+ * in the old drawer would quietly become a new, empty tag of the same name in this one. Those
  * are set aside in `parked` instead, and ticked again if the recipe moves back to a drawer that
- * has them. A name the household has no group for anywhere was typed in as a new group, and
- * goes wherever the recipe goes.
+ * has them. A name the household has no tag for anywhere was typed in as a new tag, and goes
+ * wherever the recipe goes.
  */
 export function moveToDrawer(
   filing: Filing,
@@ -52,9 +52,8 @@ export function moveToDrawer(
   known: RecipeCategory[],
   parked: string[],
 ): { filing: Filing; parked: string[] } {
-  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-  const inDrawer = (name: string) =>
-    known.some((c) => same(c.name, name) && (c.section === null || c.section === section));
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const inDrawer = (name: string) => known.some((c) => same(c.name, name) && c.section === section);
   const isKnown = (name: string) => known.some((c) => same(c.name, name));
 
   const kept = filing.categories.filter((name) => !isKnown(name) || inDrawer(name));

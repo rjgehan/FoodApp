@@ -64,7 +64,11 @@ test('sharing with a household lets them file it but not edit it', async () => {
     token: owner.token, body: { section: 'DINNER', categories: ['Main dish'] },
   });
   const filed = (await call('GET', `/api/households/${theirs.id}/recipes`, { token: owner.token })).find((x: any) => x.id === r.id);
-  expect(filed.section).toBe('DINNER');
+  expect(filed).toMatchObject({ section: 'DINNER', categories: ['Main dish'] });
+  // Their tag, made in their Dinner drawer, and only theirs.
+  const tagsOf = (id: string) => call('GET', `/api/households/${id}/recipe-categories`, { token: owner.token });
+  expect((await tagsOf(theirs.id)).find((c: any) => c.name === 'Main dish')).toMatchObject({ section: 'DINNER', recipeCount: 1 });
+  expect((await tagsOf(mine.id)).some((c: any) => c.name === 'Main dish')).toBe(false);
   // Filing in their catalog must not change how the owner filed it.
   const ownView = (await call('GET', `/api/households/${mine.id}/recipes`, { token: owner.token })).find((x: any) => x.id === r.id);
   expect(ownView.categories).toEqual([]);
@@ -190,7 +194,7 @@ test('a public link can be saved as a copy in your own household', async () => {
     ['apples', 6, false],
     ['cream', 1, true],
   ]);
-  // Its drawer comes along; the sender's groups, named for their kitchen, do not.
+  // Its drawer comes along; the sender's tags, named for their kitchen, do not.
   expect(copy.section).toBe('SNACKS');
   expect(copy.categories).toEqual([]);
   // Its own pictures, so the sender tidying theirs away cannot take them from the copy.
@@ -215,7 +219,7 @@ test('a public link can be saved as a copy in your own household', async () => {
   expect(await statusOf('POST', path, { token: cook.token, body: { householdId: b } })).toBe(404);
 });
 
-test('publishing answers with the recipe still in its drawer and groups', async () => {
+test('publishing answers with the recipe still in its drawer and tags', async () => {
   const hh = await newHousehold();
   const owner = await admin();
   const r = await newRecipe(hh.id, 'Pancakes', [{ name: 'flour', qty: 1, unit: 'cup' }], {
@@ -223,7 +227,7 @@ test('publishing answers with the recipe still in its drawer and groups', async 
     categories: ['Weekend'],
   });
   // The apps put this answer back on screen and edit from it: an empty filing here would be
-  // saved as Dinner with no groups by the next Edit.
+  // saved as Dinner with no tags by the next Edit.
   const on = await call('PUT', `/api/recipes/${r.id}/published`, { token: owner.token, body: { published: true } });
   expect(on.published).toBe(true);
   expect(on.section).toBe('BREAKFAST');

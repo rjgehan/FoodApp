@@ -44,12 +44,15 @@ struct ShareCard: View {
                     .foregroundStyle(Kitchen.accentInk)
                 Spacer()
                 HStack(spacing: 8) {
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: 12, weight: .semibold))
+                    // The app's waxwing, from this target's own asset catalog (the app's is not in it).
+                    Image("AppGlyph")
+                        .resizable()
+                        .renderingMode(.template)
+                        .frame(width: 16, height: 16)
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
                         .background(Kitchen.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Text("Meal Planner").font(.system(size: 17, weight: .semibold)).foregroundStyle(Kitchen.text)
+                    Text("Waxwing").font(.system(size: 17, weight: .semibold)).foregroundStyle(Kitchen.text)
                 }
                 Spacer()
                 Button("Save", action: onSave)
@@ -65,7 +68,7 @@ struct ShareCard: View {
                 Text(message).font(.system(size: 14)).foregroundStyle(Kitchen.muted)
             } else {
                 segmented
-                Text("You'll pick the household and drawer in Meal Planner.")
+                Text("You'll pick the household and drawer in Waxwing.")
                     .font(.system(size: 13))
                     .foregroundStyle(Kitchen.muted)
             }

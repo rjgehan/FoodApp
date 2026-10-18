@@ -91,7 +91,7 @@ test('capture every screen', async ({ page }) => {
 
   const R = async (name: string, section: string, cats: string[], servings: number, ings: any[], extra = {}) =>
     newRecipe(hh.id, name, ings, { section, categories: cats, servings, ...extra });
-  const parm = await R('Chicken Parmesan', 'DINNER', ['Main dish'], 4, [
+  const parm = await R('Chicken Parmesan', 'DINNER', ['Chicken', 'Main'], 4, [
     { name: 'chicken breast', qty: 2 }, { name: 'breadcrumbs', qty: 1, unit: 'cup' },
     { name: 'parmesan', qty: 0.5, unit: 'cup' }, { name: 'marinara sauce', qty: 1.5, unit: 'cup' },
     { name: 'mozzarella', qty: 8, unit: 'oz' }, { name: 'spaghetti', qty: 1, unit: 'lb' },
@@ -100,11 +100,11 @@ test('capture every screen', async ({ page }) => {
        prepTimeMinutes: 20, cookTimeMinutes: 30,
        description: 'Crispy, saucy, better than the restaurant.',
        instructions: 'Pound the chicken thin.\nDredge in egg, then breadcrumbs and parmesan.\nFry until golden.\nTop with sauce and mozzarella; bake 15 minutes at 425°F.\nServe over spaghetti.' });
-  const frites = await R('Steak Frites', 'DINNER', ['Main dish'], 2, [
+  const frites = await R('Steak Frites', 'DINNER', ['Beef', 'Main', 'Quick'], 2, [
     { name: 'ribeye steak', qty: 1, unit: 'lb' }, { name: 'potatoes', qty: 2, unit: 'lb' },
     { name: 'butter', qty: 2, unit: 'tbsp' }, { name: 'parsley', qty: 1, unit: 'bunch', optional: true },
   ]);
-  const tacos = await R('Steak Tacos', 'DINNER', ['Main dish'], 4, [
+  const tacos = await R('Steak Tacos', 'DINNER', ['Beef', 'Quick'], 4, [
     { name: 'flank steak', qty: 2, unit: 'lb' }, { name: 'tortillas', qty: 8 }, { name: 'onion', qty: 1 },
     { name: 'cilantro', qty: 1, unit: 'bunch' }, { name: 'lime', qty: 2 },
   ]);
@@ -162,7 +162,7 @@ test('capture every screen', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.removeItem('mp_tutorialSeen'));
     await page.goto('/');
-    await shot(page, 'Tutorial · plan the week together', 'A screenshot of Plan, light or dark with the page.');
+    await shot(page, "Tutorial · your family's recipes, together", 'Still a screenshot of Plan until one of Recipes is taken.');
     await page.getByRole('button', { name: 'Next' }).click();
     await shot(page, 'Tutorial · one list for the shop', 'A screenshot of Groceries, light or dark with the page.');
     await page.getByRole('button', { name: 'Next' }).click();
@@ -252,27 +252,47 @@ test('capture every screen', async ({ page }) => {
   });
   await step('drawer', async () => {
     await page.goto('/recipes/section/dinner');
-    await shot(page, 'Dinner drawer — groups', 'Group cards, New group, and the unfiled recipes with their likely group first.', { full: true });
-    await page.getByRole('button', { name: 'Edit groups' }).click();
-    await shot(page, 'Edit groups', 'Every group here in one list; the icon grid is for the one being edited.', { full: true });
+    const tags = page.getByRole('group', { name: 'Tags' });
+    await shot(page, 'Dinner drawer', 'Every recipe in the drawer; tag chips (tap two for both), the machines its recipes need, Select, Edit tags.', { full: true });
+    await tags.getByRole('button', { name: /^Beef\b/ }).click();
+    await shot(page, 'Drawer — a tag chosen', 'Kept in the address, so coming back from a recipe finds it as it was.', { full: true });
+    await tags.getByRole('button', { name: /^All\b/ }).click();
+    await page.getByRole('button', { name: 'New tag' }).click();
+    await page.getByLabel('New tag name').fill('Date night');
+    await shot(page, 'New tag — typing');
+    await page.getByLabel('New tag name').press('Enter');
+    await shot(page, 'New tag — pick its recipes', 'Made at once; Done tags the ones ticked.', { full: true });
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await page.getByText('Main dish', { exact: true }).first().click();
-    // A big group with nothing inside offers to split itself, once.
-    const split = page.getByRole('dialog', { name: /^Split/ });
-    if (await split.waitFor({ timeout: 4000 }).then(() => true, () => false)) {
-      await shot(page, 'Group — split suggestion');
-      await split.getByRole('button', { name: 'Close' }).click();
-      await expect(split).toHaveCount(0);
-    }
-    await shot(page, 'Group — recipes', '', { full: true });
-    await page.getByRole('button', { name: /^Options for/ }).click();
-    await shot(page, 'Group ••• menu');
-    await sheet(page).getByRole('button', { name: 'Edit group' }).click();
-    await shot(page, 'Edit group');
+  });
+  await step('select', async () => {
+    await page.goto('/recipes/section/dinner');
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Steak Frites' }).click();
+    await page.getByRole('checkbox', { name: 'Steak Tacos' }).click();
+    await shot(page, 'Select mode', 'Tick recipes, then Tag or Move them all at once.');
+    await page.getByRole('button', { name: 'Tag', exact: true }).click();
+    await shot(page, 'Tag recipes', 'A tick for on all of them, a dash for on some; Save sends one request per tag.');
+    await sheet(page).getByRole('button', { name: 'Close' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Move', exact: true }).click();
+    await sheet(page).getByRole('radio', { name: 'Lunch' }).click();
+    await shot(page, 'Move recipes', 'Says which tags the new drawer has not got, before anything moves.');
+    await sheet(page).getByRole('button', { name: 'Close' }).click();
+  });
+  await step('manage tags', async () => {
+    await page.goto('/recipes/section/dinner');
+    await page.getByRole('button', { name: 'Edit tags' }).click();
+    await shot(page, 'Manage tags', 'Rename where it stands, pick its picture, or delete it — every row has its bin. Each change saves at once.', { full: true });
+    await page.getByRole('button', { name: 'Icon for Beef' }).click();
+    await shot(page, 'Tag picture');
+    await sheet(page).getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('button', { name: 'Delete Quick' }).click();
+    await shot(page, 'Delete a tag', 'Untags its recipes; the recipes stay.');
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click();
   });
   await step('recipe', async () => {
     await page.goto(`/recipes/${parm.id}`);
-    await shot(page, 'Recipe', 'Photo hero with the name on it, then Ingredients · Method · Photos; Add to plan along the bottom.', { full: true });
+    await shot(page, 'Recipe', 'Photo hero with the name on it, then Ingredients · Method · Photos; Add to plan along the bottom, with Add to groceries as the cart beside it.', { full: true });
     await page.getByRole('tab', { name: /^Method/ }).click();
     await shot(page, 'Recipe — method');
   });
@@ -287,6 +307,12 @@ test('capture every screen', async ({ page }) => {
     await page.goto(`/recipes/${parm.id}`);
     await page.getByRole('button', { name: 'Add to plan' }).click();
     await shot(page, 'Add to plan');
+  });
+  await step('add to groceries', async () => {
+    await page.goto(`/recipes/${parm.id}`);
+    await page.getByRole('button', { name: 'Add to groceries' }).click();
+    await sheet(page).getByRole('heading', { name: 'Add to groceries' }).waitFor();
+    await shot(page, 'Add to groceries', 'Straight onto the list, no meal planned: the servings shown, and which optional extras.');
   });
   await step('organize', async () => {
     await page.goto(`/recipes/${parm.id}`);
@@ -386,7 +412,7 @@ test('capture every screen', async ({ page }) => {
     await page.getByRole('list', { name: 'People' }).getByRole('button').first().click();
     await shot(page, 'Household → someone in it (owner actions)');
   });
-  for (const row of ['Places we eat', 'Name, servings & planning', 'Store aisles']) {
+  for (const row of ['Places we eat', 'Name, servings & planning', 'Kitchen & features', 'Store aisles']) {
     await step(row, async () => {
       await page.goto('/household');
       await page.getByRole('button', { name: new RegExp(`^${row}`) }).click();
@@ -411,6 +437,49 @@ test('capture every screen', async ({ page }) => {
     await page.getByRole('button', { name: /Change/ }).first().click();
     await shot(page, 'Recipe icon picker');
   });
+
+  // A house nobody has set up: the card on Recipes, the three questions, and a house with the
+  // Plan and the Cupboard both off. Signed back into Gehan House afterwards.
+  group = 'Kitchen';
+  await step('kitchen setup', async () => {
+    const bare = await newHousehold('New Kitchen', { setUp: false });
+    await signIn(page, owner, bare.id);
+    await page.goto('/recipes');
+    await page.getByRole('region', { name: 'Set up your kitchen' }).waitFor();
+    await shot(page, 'Recipes · Set up your kitchen', 'A card, never in the way, for a house nobody has answered the questions for.');
+    await page.getByRole('region', { name: 'Set up your kitchen' }).getByRole('button', { name: 'Start' }).click();
+    await shot(page, 'Kitchen setup · machines', 'Oven and Stovetop ticked for a house with none saved.');
+    await sheet(page).getByRole('button', { name: 'Next' }).click();
+    await shot(page, 'Kitchen setup · plan meals ahead?');
+    await sheet(page).getByRole('button', { name: 'Next' }).click();
+    await shot(page, 'Kitchen setup · keep track of your cupboard?', 'Off for a new house: most people start with just the list.');
+    await sheet(page).getByRole('button', { name: 'Skip' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+  await step('features off', async () => {
+    const core = await newHousehold('Just Recipes', { plan: false, cupboard: false });
+    const dal = await newRecipe(core.id, 'Weeknight Dal', [{ name: 'red lentils', qty: 1, unit: 'cup' }]);
+    for (const n of ['milk', 'bread']) {
+      const item = await call('POST', `/api/households/${core.id}/grocery-list/items`, { token: T, body: { ingredientName: n } });
+      await call('PATCH', `/api/households/${core.id}/grocery-list/items/${item.id}`, { token: T, body: { checked: true } });
+    }
+    await signIn(page, owner, core.id);
+    await page.goto('/recipes');
+    // The tabs follow the household, so wait until it is the one on screen.
+    await page.locator('[data-household-name]').filter({ hasText: 'Just Recipes' }).first().waitFor();
+    await shot(page, 'Recipes · Plan and Cupboard off', 'Three tabs: Recipes, Groceries, Explore.');
+    await page.goto(`/recipes/${dal.id}`);
+    await page.locator('button.bg-accent', { hasText: 'Add to groceries' }).waitFor();
+    await shot(page, 'Recipe · Plan off', 'Add to groceries is the one filled button.');
+    await page.goto('/grocery-list');
+    await page.locator('[data-household-name]').filter({ hasText: 'Just Recipes' }).first().waitFor();
+    await page.getByRole('button', { name: /^Done shopping · 2 ticked/ }).click();
+    await shot(page, 'Done shopping · no cupboard', 'Nothing to put away: it clears the ticked things.');
+    await page.goto('/household/kitchen');
+    await page.getByRole('switch', { name: 'Meal planning' }).and(page.locator('[aria-checked="false"]')).waitFor();
+    await shot(page, 'Household → Kitchen & features (both off)', '', { full: true });
+  });
+  await signIn(page, owner, hh.id);
 
   // Global recipes is the whole server's: one more house publishes a recipe for it to show.
   group = 'Explore';

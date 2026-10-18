@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { MealPlanEntry, MealType, Recipe, RecipeSection, SavedLink } from '../api/types';
+import type { MealPlanEntry, MealType, Recipe, RecipeIngredient, RecipeSection, SavedLink } from '../api/types';
 import { Icon, type IconName } from './icons';
 import { planRange } from './plan/planApi';
 import { Button, CheckCircle, cx, ErrorText, NoteBox, Sheet } from './ui';
@@ -68,7 +68,6 @@ export default function PlanRecipeSheet({
   const [dayIndex, setDayIndex] = useState(0);
   const section = recipe?.section ?? savedLink?.section ?? null;
   const [meal, setMeal] = useState<MealType>(section ? MEAL_FOR_SECTION[section] : 'DINNER');
-  const optional = (recipe?.ingredients ?? []).filter((i) => i.optional);
   const [extras, setExtras] = useState<Set<string>>(new Set());
   const [planned, setPlanned] = useState<MealPlanEntry[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,36 +183,7 @@ export default function PlanRecipeSheet({
           </NoteBox>
         ) : null}
 
-        {optional.length > 0 && (
-          <div>
-            <p className="group-label pb-1">Buying the optional extras?</p>
-            <ul className="divide-y divide-line">
-              {optional.map((ing) => {
-                const on = extras.has(ing.id);
-                return (
-                  <li key={ing.id}>
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() =>
-                        setExtras((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(ing.id)) next.delete(ing.id);
-                          else next.add(ing.id);
-                          return next;
-                        })
-                      }
-                      className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
-                    >
-                      <CheckCircle checked={on} />
-                      <span>{ing.ingredientName}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        <OptionalExtras ingredients={recipe?.ingredients ?? []} chosen={extras} onChange={setExtras} />
 
         {error && <ErrorText>{error}</ErrorText>}
         <Button full size="lg" disabled={busy || already} onClick={add}>
@@ -221,5 +191,52 @@ export default function PlanRecipeSheet({
         </Button>
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * "Buying the optional extras?": the recipe's optional ingredients, each a row to tick — none to
+ * begin with, as a cook usually skips them. Shared by Add to plan and Add to groceries, which
+ * both buy for one occasion. Draws nothing for a recipe with no extras.
+ */
+export function OptionalExtras({
+  ingredients,
+  chosen,
+  onChange,
+}: {
+  ingredients: RecipeIngredient[];
+  /** The ticked ones' ingredient ids. */
+  chosen: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const optional = ingredients.filter((i) => i.optional);
+  if (optional.length === 0) return null;
+  return (
+    <div>
+      <p className="group-label pb-1">Buying the optional extras?</p>
+      <ul className="divide-y divide-line">
+        {optional.map((ing) => {
+          const on = chosen.has(ing.id);
+          return (
+            <li key={ing.id}>
+              <button
+                type="button"
+                aria-pressed={on}
+                onClick={() => {
+                  const next = new Set(chosen);
+                  if (next.has(ing.id)) next.delete(ing.id);
+                  else next.add(ing.id);
+                  onChange(next);
+                }}
+                className="flex min-h-touch w-full items-center gap-3 py-2.5 text-left"
+              >
+                <CheckCircle checked={on} />
+                <span>{ing.ingredientName}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

@@ -60,6 +60,7 @@ class RestockDatabaseTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         me = userRepository.save(User.builder().username("restock-" + tag).displayName("Me").build());
         home = householdService.create(me.getId(), new CreateHouseholdRequest("Restock")).id();
+        Kitchens.turnOnCupboard(householdService, home, me.getId());
     }
 
     @AfterEach

@@ -2,33 +2,31 @@ import { useEffect, useMemo, useState } from 'react';
 import NoHousehold from '../components/NoHousehold';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Recipe, RecipeCategory, RecipeSection, SavedLink } from '../api/types';
+import type { Recipe, RecipeSection, SavedLink } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { Card, cx, EmptyState, List, Pill, Row, SearchField, SectionLabel, Tile } from '../components/ui';
 import { Icon } from '../components/icons';
 import { isNewShare, SECTION_OPTIONS, SHARED_KEY, sectionSlug, sharedSeenAt } from '../utils/recipeMeta';
 import { DEFAULT_SECTION_ICONS } from '../components/FoodIcons';
 import { SAVED_LINKS_PATH, sourceLabel } from '../utils/savedLinks';
-import { buildTree } from '../utils/categoryTree';
+import { filingLine } from '../utils/tags';
 import { PageTitle } from '../components/PageTitle';
-import {
-  DRAWER_TONES,
-  DrawerCard,
-  filingTrail,
-  HideTopBar,
-  RecipeResultRow,
-} from '../components/catalogue/CatalogueParts';
+import { DRAWER_TONES, DrawerCard, HideTopBar, RecipeResultRow } from '../components/catalogue/CatalogueParts';
+import { useCatalogue } from '../components/catalogue/catalogueStore';
+import { KitchenSetupCard } from '../components/kitchen/KitchenSetup';
+import { needsKitchenSetup } from '../utils/features';
 
 /**
- * The front of the catalogue (the mockup's 3.1): six drawers with their counts, then Saved links
- * and Shared with you. Searching skips straight to results (3.2) — the recipes, with where each
- * is filed, and any saved links that match gathered into one row — because when you already
- * know what you want, browsing is in the way.
+ * The front of the catalogue (the mockup's 3.1), and the app's home: six drawers with their
+ * counts, then Saved links and Shared with you — under a "Set up your kitchen" card while nobody
+ * in the house has answered the kitchen questions. Searching skips straight to results (3.2) —
+ * the recipes, with where each is filed, and any saved links that match gathered into one row —
+ * because when you already know what you want, browsing is in the way.
  */
 export default function RecipesPage() {
-  const { activeHouseholdId } = useHousehold();
-  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [categories, setCategories] = useState<RecipeCategory[]>([]);
+  const { activeHouseholdId, activeHousehold, kitchenSetupFor, askKitchenSetup } = useHousehold();
+  // Kept between visits and shared with the drawers, so coming back here draws at once.
+  const { recipes } = useCatalogue(activeHouseholdId);
   const [icons, setIcons] = useState<Partial<Record<RecipeSection, string>>>({});
   // Null until loaded, and left null by an older server that has none, so no row flashes a 0.
   const [savedLinks, setSavedLinks] = useState<SavedLink[] | null>(null);
@@ -37,16 +35,9 @@ export default function RecipesPage() {
 
   useEffect(() => {
     if (!activeHouseholdId) return;
-    setRecipes(null);
     setSavedLinks(null);
     // Refused when you have just been taken out of this house: the switch to another of yours
     // loads that one's, so this one is let go rather than left as an uncaught error.
-    api<Recipe[]>('GET', `/api/households/${activeHouseholdId}/recipes`)
-      .then(setRecipes)
-      .catch(() => {});
-    api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`)
-      .then(setCategories)
-      .catch(() => setCategories([]));
     api<Partial<Record<RecipeSection, string>>>('GET', `/api/households/${activeHouseholdId}/section-icons`)
       .then(setIcons)
       .catch(() => setIcons({}));
@@ -56,7 +47,6 @@ export default function RecipesPage() {
   }, [activeHouseholdId]);
 
   const q = query.trim().toLowerCase();
-  const tree = useMemo(() => buildTree(categories), [categories]);
 
   // A search reaches the saved links too: "that pasta TikTok" is still what you are looking for.
   const linkResults = useMemo(
@@ -165,7 +155,7 @@ export default function RecipesPage() {
                 <SectionLabel>Recipes · {results.length}</SectionLabel>
                 <List label="Recipes found">
                   {results.map((r) => (
-                    <RecipeResultRow key={r.id} recipe={r} subtitle={filingTrail(r, tree)} />
+                    <RecipeResultRow key={r.id} recipe={r} subtitle={filingLine(r)} />
                   ))}
                 </List>
               </div>
@@ -185,6 +175,15 @@ export default function RecipesPage() {
         )
       ) : (
         <>
+          {/* Not while the questions are already on their way (just made or joined here). */}
+          {needsKitchenSetup(activeHousehold) && kitchenSetupFor !== activeHouseholdId && (
+            <KitchenSetupCard
+              key={activeHouseholdId}
+              householdId={activeHouseholdId}
+              onStart={() => askKitchenSetup(activeHouseholdId)}
+            />
+          )}
+
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {SECTION_OPTIONS.map((s) => (
               <li key={s.value}>

@@ -78,8 +78,47 @@ final class Session {
     /// an older server says neither, which hides the lightbulb.
     var ideasBoard = false
     var isAdmin = false
+    /**
+     The household whose kitchen questions (Welcome/KitchenSetup.swift) are waiting to be asked:
+     set by whoever just made a house or joined one nobody has answered them for, and cleared once
+     they are answered or skipped. RootView asks them as soon as nothing else is on screen, ahead
+     of the add-an-email and restock prompts. In memory only: a house left unanswered still has
+     the card on Recipes.
+     */
+    var kitchenSetupFor: UUID?
 
     var isSignedIn: Bool { token != nil && household != nil }
+
+    /// Whether the open house plans meals — the Plan tab and every way onto it.
+    var planOn: Bool { household?.plansMeals ?? true }
+    /// Whether the open house keeps a cupboard — the Cupboard tab and everything that reads it.
+    var cupboardOn: Bool { household?.tracksCupboard ?? true }
+
+    /// A house this person just made: its kitchen questions come next, always.
+    func askKitchenSetup(for household: UUID) {
+        kitchenSetupFor = household
+    }
+
+    /// A house this person just joined: asked only if nobody there has answered yet — whoever
+    /// made it usually has, and their answers are the household's, not each person's.
+    func askKitchenSetupIfNeeded(for household: UUID?) {
+        guard let household, households.first(where: { $0.id == household })?.kitchenSetUp == false else { return }
+        kitchenSetupFor = household
+    }
+
+    /**
+     A household as the server has just sent it back (its kitchen saved, say): into the list, and
+     on screen if it is the open one — which is what turns a tab on or off at once. It may be a
+     house other than the open one: Start another household does not move you into the new one.
+    */
+    func adopt(_ updated: HouseholdSummary) {
+        if let index = households.firstIndex(where: { $0.id == updated.id }) {
+            households[index] = updated
+        } else {
+            households.append(updated)
+        }
+        if household?.id == updated.id { switchTo(updated) }
+    }
 
     /// What /api/users/me says about you beyond your name.
     func learn(_ me: Me) {
@@ -121,7 +160,7 @@ final class Session {
             // the sign-in screen — which says why, and offers to scan an invite.
             await signOut()
             notice = "You're not in a household any more. Ask someone for an invite link to join one, "
-                + "or start your own on the Meal Planner website."
+                + "or start your own on the Waxwing website."
         }
     }
 
@@ -194,12 +233,14 @@ final class Session {
     func signIn(_ auth: AuthResponse, household picked: HouseholdSummary? = nil) async throws -> Bool {
         await APIClient.shared.use(token: auth.token)
         var auth = auth
+        var joinedId: UUID?
         // Signed in to say yes to an invite: say it now, before looking for a house to open —
         // it may be the only one they are in — and open that one.
         if let invite = pendingInvite {
             pendingInvite = nil
             do {
                 let joined = try await APIClient.shared.acceptInvite(token: invite.token)
+                joinedId = joined.id
                 auth = AuthResponse(token: auth.token, userId: auth.userId,
                                     displayName: auth.displayName, lastHouseholdId: joined.id)
             } catch {
@@ -235,6 +276,8 @@ final class Session {
         TokenStore.save(auth.token)
         UserDefaults.standard.set(auth.displayName, forKey: Self.nameKey)
         switchTo(opening)
+        // Joined on the way in (by email or by PIN): a house nobody has set up gets its kitchen questions.
+        askKitchenSetupIfNeeded(for: joinedId)
         return true
     }
 
@@ -247,6 +290,7 @@ final class Session {
         userId = nil
         ideasBoard = false
         isAdmin = false
+        kitchenSetupFor = nil
         TokenStore.clear()
         UserDefaults.standard.removeObject(forKey: Self.householdKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)

@@ -1,23 +1,36 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { call, newHousehold, newMember, unique } from '../../lib/api';
 import { fromMenu, sheet, signIn } from '../../lib/ui';
 
 /**
- * Filling a cupboard without typing it: the starter list a new household is offered, the same
- * list from the Cupboard's •••, and copying another of your houses' cupboards.
+ * Filling a cupboard without typing it: the starter list a new household is offered once its
+ * kitchen questions turn the cupboard on, the same list from the Cupboard's •••, and copying
+ * another of your houses' cupboards.
  */
 
 const cupboardNames = async (householdId: string, token: string) =>
   (await call('GET', `/api/households/${householdId}/cupboard`, { token })).map((i: any) => i.name.toLowerCase()).sort();
 
+/** Start another household from the Household page, and say yes to a cupboard in its kitchen questions. */
+async function newHouseWithCupboard(page: Page, name: string) {
+  await page.goto('/household');
+  await page.getByRole('button', { name: 'Start another household' }).click();
+  await sheet(page).getByPlaceholder('Gehan House').fill(name);
+  await sheet(page).getByRole('button', { name: 'Create' }).click();
+  // The kitchen questions come first; the starter list only follows a yes to the cupboard.
+  const kitchen = sheet(page);
+  await expect(kitchen.getByRole('heading', { name: "What's in your kitchen?" })).toBeVisible();
+  await kitchen.getByRole('button', { name: 'Next' }).click();
+  await kitchen.getByRole('button', { name: 'Next' }).click();
+  await kitchen.getByRole('radio', { name: /Yes, track my cupboard/ }).click();
+  await kitchen.getByRole('button', { name: 'Done' }).click();
+}
+
 test('a household made on the Household page starts by ticking what is in the house', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
-  await page.goto('/household');
-  await page.getByRole('button', { name: 'Start another household' }).click();
   const name = unique('Cabin');
-  await sheet(page).getByPlaceholder('Gehan House').fill(name);
-  await sheet(page).getByRole('button', { name: 'Create' }).click();
+  await newHouseWithCupboard(page, name);
 
   const starter = sheet(page);
   await expect(starter.getByRole('heading', { name: 'Stock your cupboard' })).toBeVisible();
@@ -44,14 +57,12 @@ test('a household made on the Household page starts by ticking what is in the ho
 test('Skip leaves a new household’s cupboard empty, and the page still scrolls', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
-  await page.goto('/household');
-  await page.getByRole('button', { name: 'Start another household' }).click();
   const name = unique('Flat');
-  await sheet(page).getByPlaceholder('Gehan House').fill(name);
-  await sheet(page).getByRole('button', { name: 'Create' }).click();
+  await newHouseWithCupboard(page, name);
+  await expect(sheet(page).getByRole('heading', { name: 'Stock your cupboard' })).toBeVisible();
   await sheet(page).getByRole('button', { name: 'Skip' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  // Two sheets swapped places; neither may leave the page locked.
+  // Three sheets swapped places; none may leave the page locked.
   expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
 
   const made = (await call('GET', '/api/households', { token: hh.owner.token })).find((h: any) => h.name === name);

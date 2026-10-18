@@ -24,9 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * A group's icon against the real database: set when it is made, changed or taken off later,
- * and left alone by an edit that does not mention it — which is every edit an app from before
- * icons makes. Rolled back after each test.
+ * A tag's icon against the real database: set when it is made, changed or taken off later, and
+ * left alone by an edit that does not mention it — which is every edit an app from before icons
+ * makes. Tags were groups when icons came in, hence the name. Rolled back after each test.
  */
 @SpringBootTest
 @Transactional
@@ -50,12 +50,14 @@ class GroupIconsDatabaseTest {
     }
 
     @Test
-    void aNewHouseholdsStartingGroupsWearTheirIcons() {
+    void aNewHouseholdsStartingTagsWearTheirIcons() {
         List<RecipeCategoryResponse> all = recipeService.listCategories(householdId, userId);
         assertThat(iconOf(all, "Full meal", RecipeSection.DINNER)).isEqualTo("full-meal");
         assertThat(iconOf(all, "Veggie", RecipeSection.DINNER)).isEqualTo("veggie");
         assertThat(iconOf(all, "Side", RecipeSection.DINNER)).isEqualTo("side");
         assertThat(iconOf(all, "Chicken", RecipeSection.DINNER)).isEqualTo("drumstick");
+        assertThat(iconOf(all, "Beef", RecipeSection.DINNER)).isEqualTo("meat");
+        assertThat(iconOf(all, "Seafood", RecipeSection.DINNER)).isEqualTo("fish");
         // Nothing obvious to draw for "Main", so it stays a plain tile.
         assertThat(iconOf(all, "Main", RecipeSection.DINNER)).isNull();
         assertThat(FoodIcons.DEFAULT_GROUP_ICONS.values()).allMatch(FoodIcons::isKnown);
@@ -69,16 +71,16 @@ class GroupIconsDatabaseTest {
 
         // A rename from an app that knows nothing of icons leaves it on.
         RecipeCategoryResponse renamed = recipeService.updateCategory(householdId, made.id(), userId,
-                new UpdateCategoryRequest("Taco night", null, null, null));
+                new UpdateCategoryRequest("Taco night", null));
         assertThat(renamed.iconKey()).isEqualTo("taco");
 
         RecipeCategoryResponse changed = recipeService.updateCategory(householdId, made.id(), userId,
-                new UpdateCategoryRequest(null, null, null, "burger"));
+                new UpdateCategoryRequest(null, "burger"));
         assertThat(changed).extracting(RecipeCategoryResponse::name, RecipeCategoryResponse::iconKey)
                 .containsExactly("Taco night", "burger");
 
         RecipeCategoryResponse cleared = recipeService.updateCategory(householdId, made.id(), userId,
-                new UpdateCategoryRequest(null, null, null, ""));
+                new UpdateCategoryRequest(null, ""));
         assertThat(cleared.iconKey()).isNull();
     }
 
@@ -93,7 +95,7 @@ class GroupIconsDatabaseTest {
                 new CreateCategoryRequest("Plain", null, RecipeSection.DINNER, null));
         assertThat(plain.iconKey()).isNull();
         assertThatThrownBy(() -> recipeService.updateCategory(householdId, plain.id(), userId,
-                new UpdateCategoryRequest(null, null, null, "unicorn")))
+                new UpdateCategoryRequest(null, "unicorn")))
                 .isInstanceOf(ResponseStatusException.class);
 
         // Drawers are checked against the same list.
@@ -113,7 +115,7 @@ class GroupIconsDatabaseTest {
         RecipeCategoryResponse lunchVeggie = recipeService.createCategory(householdId, userId,
                 new CreateCategoryRequest("veggie", null, RecipeSection.LUNCH, null));
         UUID lunchSide = idOf(recipeService.listCategories(householdId, userId), "Side", RecipeSection.LUNCH);
-        recipeService.updateCategory(householdId, lunchSide, userId, new UpdateCategoryRequest(null, null, null, "rice-bowl"));
+        recipeService.updateCategory(householdId, lunchSide, userId, new UpdateCategoryRequest(null, "rice-bowl"));
         entityManager.flush();
         jdbc.update("UPDATE recipe_categories SET name = '  ' || name || ' ' WHERE id = ?", lunchVeggie.id());
         jdbc.update("""
@@ -138,7 +140,7 @@ class GroupIconsDatabaseTest {
         // Taken off on purpose afterwards, and a Side made by hand with no picture: the next
         // start leaves both alone.
         UUID veggie = idOf(after, "Veggie", RecipeSection.DINNER);
-        recipeService.updateCategory(householdId, veggie, userId, new UpdateCategoryRequest(null, null, null, ""));
+        recipeService.updateCategory(householdId, veggie, userId, new UpdateCategoryRequest(null, ""));
         recipeService.createCategory(householdId, userId,
                 new CreateCategoryRequest("Side", null, RecipeSection.SNACKS, null));
         entityManager.flush();

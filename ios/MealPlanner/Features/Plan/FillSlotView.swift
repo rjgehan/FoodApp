@@ -15,8 +15,8 @@ struct SlotTarget: Identifiable, Hashable {
  and Cancel to back out. Eat in or eat out, two tabs rather than one list: when you have decided
  you are not cooking tonight, scrolling past forty recipes to reach "Chinese" is the wrong shape.
 
- Eat in is one search across recipes, saved links and the cupboard, or anything typed — which can
- also become a recipe right here. Eat out picks a place, or makes one from a new name, with an
+ Eat in is one search across recipes, saved links and the cupboard (in a house that keeps one), or
+ anything typed — which can also become a recipe right here. Eat out picks a place, or makes one from a new name, with an
  optional time for a booking or a pickup.
 */
 struct FillSlotView: View {
@@ -37,7 +37,7 @@ struct FillSlotView: View {
     @State private var timed: Bool
     @State private var time: Date
 
-    enum Filter: Hashable { case all, mains, sides, cupboard, links, group(String) }
+    enum Filter: Hashable { case all, mains, sides, cupboard, links, tag(String) }
 
     init(store: PlanStore, target: SlotTarget) {
         self.store = store
@@ -82,7 +82,9 @@ struct FillSlotView: View {
                 }
             }
         }
-        .task { if store.recipes.isEmpty || store.cupboard.isEmpty { await store.loadPickings() } }
+        .task {
+            if store.recipes.isEmpty || (store.session.cupboardOn && store.cupboard.isEmpty) { await store.loadPickings() }
+        }
         .sheet(item: $asking) { recipe in
             ExtrasSheet(recipe: recipe, selected: Set(target.replacing?.recipeId == recipe.id
                                                      ? target.replacing?.includedOptionalIngredientIds ?? [] : [])) { extras in
@@ -98,27 +100,21 @@ struct FillSlotView: View {
 
     // MARK: - Eat in
 
-    private var groups: [String] {
-        Set(store.recipes.flatMap(\.categories)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    /// Every tag on a recipe, by name — the same name in two drawers is one chip.
+    private var tags: [String] {
+        var seen: Set<String> = []
+        return store.recipes.flatMap(\.categories)
+            .filter { seen.insert($0.lowercased()).inserted }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
-    private func isMain(_ g: String) -> Bool { g.range(of: #"\bmain"#, options: [.regularExpression, .caseInsensitive]) != nil }
-    private func isSide(_ g: String) -> Bool { g.range(of: #"\bside"#, options: [.regularExpression, .caseInsensitive]) != nil }
-
-    /// A group's path from the top of its drawer down: Main › Chicken.
-    private func path(of name: String) -> [String] {
-        let byId = Dictionary(store.groups.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        guard var group = store.groups.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return [name] }
-        var out = [group.name]
-        var seen: Set<UUID> = [group.id]
-        while let parent = group.parentId.flatMap({ byId[$0] }), seen.insert(parent.id).inserted {
-            out.insert(parent.name, at: 0)
-            group = parent
-        }
-        return out
+    /// A main wears a "Main…" tag or a protein one (Chicken, Beef…); a side a "Side…" one. The
+    /// web's FillSlot has the same rule.
+    private func isMain(_ recipe: Recipe) -> Bool { recipe.categories.contains(where: CategoryKinds.isMainTag) }
+    private func isSide(_ recipe: Recipe) -> Bool { recipe.categories.contains(where: CategoryKinds.isSideTag) }
+    /// Tags the Mains and Sides chips already stand for, so they are not chips twice.
+    private func isMainsOrSidesTag(_ name: String) -> Bool {
+        name.range(of: #"\b(main|side)"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
-
-    /// A recipe in Chicken, inside Main, is a main: its groups and every group they sit in.
-    private func filedUnder(_ recipe: Recipe) -> [String] { recipe.categories.flatMap(path(of:)) }
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
 
     private var shownRecipes: [Recipe] {
@@ -130,9 +126,9 @@ struct FillSlotView: View {
             .filter { q.isEmpty || $0.name.lowercased().contains(q) }
             .filter {
                 switch filter {
-                case .mains: return filedUnder($0).contains(where: isMain)
-                case .sides: return filedUnder($0).contains(where: isSide)
-                case .group(let g): return $0.categories.contains(g)
+                case .mains: return isMain($0)
+                case .sides: return isSide($0)
+                case .tag(let t): return $0.categories.contains { $0.caseInsensitiveCompare(t) == .orderedSame }
                 default: return true
                 }
             }
@@ -142,9 +138,10 @@ struct FillSlotView: View {
         guard filter == .all || filter == .links else { return [] }
         return store.links.filter { q.isEmpty || $0.name.lowercased().contains(q) }
     }
-    /// The cupboard is long, and "eggs" is something you type, not scroll to.
+    /// The cupboard is long, and "eggs" is something you type, not scroll to. None at all in a
+    /// house that keeps no cupboard.
     private var shownCupboard: [CupboardItem] {
-        guard filter == .cupboard || (filter == .all && !q.isEmpty) else { return [] }
+        guard store.session.cupboardOn, filter == .cupboard || (filter == .all && !q.isEmpty) else { return [] }
         let all = store.cupboard.filter { q.isEmpty || $0.name.lowercased().contains(q) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return filter == .cupboard ? all : Array(all.prefix(5))
@@ -160,11 +157,11 @@ struct FillSlotView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     chip(.all, "All")
-                    if store.recipes.contains(where: { filedUnder($0).contains(where: isMain) }) { chip(.mains, "Mains") }
-                    if store.recipes.contains(where: { filedUnder($0).contains(where: isSide) }) { chip(.sides, "Sides") }
-                    if !store.cupboard.isEmpty { chip(.cupboard, "Cupboard") }
+                    if store.recipes.contains(where: isMain) { chip(.mains, "Mains") }
+                    if store.recipes.contains(where: isSide) { chip(.sides, "Sides") }
+                    if store.session.cupboardOn && !store.cupboard.isEmpty { chip(.cupboard, "Cupboard") }
                     if !store.links.isEmpty { chip(.links, "Links") }
-                    ForEach(groups.filter { !isMain($0) && !isSide($0) }, id: \.self) { chip(.group($0), $0) }
+                    ForEach(tags.filter { !isMainsOrSidesTag($0) }, id: \.self) { chip(.tag($0), $0) }
                 }
                 .padding(.horizontal, 20)
             }
@@ -293,19 +290,9 @@ struct FillSlotView: View {
         return Text(name[..<a]).fontWeight(.medium) + Text(name[a..<b]).fontWeight(.bold) + Text(name[b...]).fontWeight(.medium)
     }
 
-    /// "Dinner › Main › Chicken": where it is filed, as the path you would tap down in Recipes —
-    /// the deepest group's path, and any group not on it beside it ("… › Chicken · Quick").
+    /// "Dinner · Chicken, Quick": its drawer and its tags, as Recipes says it.
     private func filing(_ recipe: Recipe) -> String {
-        let drawer = recipe.section?.title
-        let paths = recipe.categories.map(path(of:)).sorted { $0.count > $1.count }
-        var groups: [String] = []
-        if let deepest = paths.first, let leaf = deepest.last {
-            let onPath = Set(deepest.map { $0.lowercased() })
-            let beside = paths.dropFirst().compactMap(\.last).filter { !onPath.contains($0.lowercased()) }
-            groups = deepest.dropLast() + [([leaf] + beside).joined(separator: " · ")]
-        }
-        let line = ([drawer].compactMap { $0 } + groups).joined(separator: " › ")
-        return line.isEmpty ? "Serves \(recipe.servings)" : line
+        recipe.filingLine ?? "Serves \(recipe.servings)"
     }
 
     /// "Have 3 · Tins & jars": how much there is, and which aisle it lives in.

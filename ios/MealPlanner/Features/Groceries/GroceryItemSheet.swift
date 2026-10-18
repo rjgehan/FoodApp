@@ -2,8 +2,8 @@ import SwiftUI
 
 /**
  One grocery item (mockup 4.2): which aisle it goes in, a restock reminder, what the cupboard
- says, and taking it off the list. Each takes effect as it is tapped — there is no Save — because
- each is one decision about one thing.
+ says (in a house that keeps one), and taking it off the list. Each takes effect as it is tapped —
+ there is no Save — because each is one decision about one thing.
 
  The aisle belongs to the ingredient, not this row, so picking one moves it for good: next week's
  chicken thighs land in Meat & fish too.
@@ -109,8 +109,10 @@ struct GroceryItemSheet: View {
                             .frame(minHeight: 46)
                         }
                     }
-                    ListRow("Cupboard", subtitle: GroceryWords.cupboardState(stock),
-                            leading: { Tile("cabinet", tone: .sky, size: 34) }) { EmptyView() }
+                    if session.cupboardOn {
+                        ListRow("Cupboard", subtitle: GroceryWords.cupboardState(stock),
+                                leading: { Tile("cabinet", tone: .sky, size: 34) }) { EmptyView() }
+                    }
                     Button {
                         onRemove()
                         dismiss()
@@ -190,6 +192,9 @@ private struct AisleChip: View {
  goes in the cupboard. All of it starts ticked because most of a shop is for the house — you
  untick the birthday card, rather than ticking everything else. The switch is for a shop that
  was not for the house at all.
+
+ A house without a cupboard has nothing to put away: the sheet just says what leaves the list,
+ and everything goes as put away, which is what restarts each thing's restock reminder.
  */
 struct DoneShoppingSheet: View {
     let items: [GroceryItem]
@@ -215,7 +220,16 @@ struct DoneShoppingSheet: View {
         _selected = State(initialValue: Set(items.map(\.id)))
     }
 
-    private var stocking: [GroceryItem] { toCupboard ? items.filter { selected.contains($0.id) } : [] }
+    private var tracksCupboard: Bool { session.cupboardOn }
+    private var stocking: [GroceryItem] { tracksCupboard && toCupboard ? items.filter { selected.contains($0.id) } : [] }
+
+    /// The button: "Clear 6 ticked" with no cupboard, "Finish · 5 to cupboard" with one. Spelled
+    /// out as a String here, so Text is not left to choose an initializer for three ternaries.
+    private var finishTitle: String {
+        if busy { return "Finishing…" }
+        if !tracksCupboard { return "Clear \(items.count) ticked" }
+        return stocking.isEmpty ? "Finish" : "Finish · \(stocking.count) to cupboard"
+    }
 
     var body: some View {
         ScrollView {
@@ -225,50 +239,26 @@ struct DoneShoppingSheet: View {
                             onClose: { dismiss() })
                 .padding(.bottom, 4)
 
-                HStack(spacing: 12) {
-                    Tile("cabinet", tone: .sky, size: 36)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Put them in the cupboard").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
-                        Text("Untick anything that isn't for the house").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                    }
-                    Spacer(minLength: 8)
-                    Toggle("Put them in the cupboard", isOn: $toCupboard.animation(.snappy(duration: 0.2)))
-                        .labelsHidden()
-                        .tint(Palette.herb)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .cardSurface()
-
-                ListGroup {
-                    ForEach(items) { item in
-                        let on = selected.contains(item.id)
-                        Button {
-                            if on { selected.remove(item.id) } else { selected.insert(item.id) }
-                        } label: {
+                if tracksCupboard {
+                    cupboardSwitch
+                    stockList
+                } else {
+                    ListGroup {
+                        ForEach(items) { item in
                             HStack(spacing: 12) {
-                                CheckBox(isOn: on && toCupboard)
-                                // The amount in bold, then the name (`<b>2 lb</b> chicken thighs`).
+                                CheckCircle(isOn: true, size: 22)
                                 (item.amount.map { Text($0 + " ").font(.system(size: 16, weight: .bold)) } ?? Text(""))
                                     + Text(item.name).font(.system(size: 16, weight: .medium))
                                 Spacer(minLength: 8)
-                                if !on && toCupboard {
-                                    Text("Not for the house").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                                }
                             }
-                            .foregroundStyle(on ? Palette.text : Palette.muted)
+                            .foregroundStyle(Palette.text)
                             .lineLimit(1)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .frame(minHeight: 46)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!toCupboard)
-                        .accessibilityAddTraits(on ? .isSelected : [])
                     }
                 }
-                .opacity(toCupboard ? 1 : 0.5)
 
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger)
@@ -277,7 +267,7 @@ struct DoneShoppingSheet: View {
                 Button {
                     Task { await finish() }
                 } label: {
-                    Text(busy ? "Finishing…" : stocking.isEmpty ? "Finish" : "Finish · \(stocking.count) to cupboard")
+                    Text(finishTitle)
                 }
                 .buttonStyle(.primary)
                 .disabled(busy)
@@ -291,11 +281,65 @@ struct DoneShoppingSheet: View {
         .kitchenSheet([.height(height)])
     }
 
+    /// "Put them in the cupboard", on or off for the whole shop.
+    private var cupboardSwitch: some View {
+        HStack(spacing: 12) {
+            Tile("cabinet", tone: .sky, size: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Put them in the cupboard").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
+                Text("Untick anything that isn't for the house").font(.system(size: 12)).foregroundStyle(Palette.muted)
+            }
+            Spacer(minLength: 8)
+            Toggle("Put them in the cupboard", isOn: $toCupboard.animation(.snappy(duration: 0.2)))
+                .labelsHidden()
+                .tint(Palette.herb)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .cardSurface()
+    }
+
+    /// What is for the house, ticked; the birthday card, unticked.
+    private var stockList: some View {
+        ListGroup {
+            ForEach(items) { item in
+                let on = selected.contains(item.id)
+                Button {
+                    if on { selected.remove(item.id) } else { selected.insert(item.id) }
+                } label: {
+                    HStack(spacing: 12) {
+                        CheckBox(isOn: on && toCupboard)
+                        // The amount in bold, then the name (`<b>2 lb</b> chicken thighs`).
+                        (item.amount.map { Text($0 + " ").font(.system(size: 16, weight: .bold)) } ?? Text(""))
+                            + Text(item.name).font(.system(size: 16, weight: .medium))
+                        Spacer(minLength: 8)
+                        if !on && toCupboard {
+                            Text("Not for the house").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        }
+                    }
+                    .foregroundStyle(on ? Palette.text : Palette.muted)
+                    .lineLimit(1)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 46)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!toCupboard)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .opacity(toCupboard ? 1 : 0.5)
+    }
+
     private func finish() async {
-        let putAway = stocking.map(\.id)
+        // No cupboard: all of it is "bought for the house" — the server stocks nothing, but each
+        // thing's restock reminder starts counting again.
+        let putAway = tracksCupboard ? stocking.map(\.id) : items.map(\.id)
         let leaveOut = items.map(\.id).filter { !putAway.contains($0) }
+        let stocked = tracksCupboard ? putAway.count : 0
         if sample {
-            onDone(putAway + leaveOut, putAway.count)
+            onDone(putAway + leaveOut, stocked)
             dismiss()
             return
         }
@@ -304,7 +348,7 @@ struct DoneShoppingSheet: View {
         defer { busy = false }
         do {
             try await APIClient.shared.putAway(household: household, putAway: putAway, leaveOut: leaveOut)
-            onDone(putAway + leaveOut, putAway.count)
+            onDone(putAway + leaveOut, stocked)
             dismiss()
         } catch {
             self.error = error.localizedDescription

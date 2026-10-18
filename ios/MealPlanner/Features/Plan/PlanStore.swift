@@ -21,8 +21,6 @@ final class PlanStore {
     var places: [Place] = []
     var links: [SavedLink] = []
     var cupboard: [CupboardItem] = []
-    /// The household's recipe groups, so a recipe's filing reads as the path it is nested in.
-    var groups: [RecipeCategory] = []
     /// The store's aisles, for "Have 3 · Tins & jars" on a cupboard row.
     var aisles: [GroceryCategory] = []
     var loaded = false
@@ -88,15 +86,20 @@ final class PlanStore {
         async let r = try? APIClient.shared.recipes(household: household)
         async let p = try? APIClient.shared.places(household: household)
         async let l = try? APIClient.shared.savedLinks(household: household)
-        async let c = try? APIClient.shared.cupboard(household: household)
-        async let g = try? APIClient.shared.recipeCategories(household: household)
+        async let c = cupboardIfKept(household)
         async let a = try? APIClient.shared.categories(household: household)
         if let found = await r { recipes = found }
         if let found = await p { places = found }
         if let found = await l { links = found }
         if let found = await c { cupboard = found }
-        if let found = await g { groups = found }
         if let found = await a { aisles = found }
+    }
+
+    /// The cupboard to pick a single food from — none at all in a house that keeps no cupboard,
+    /// which is what hides its chip and its rows on the fill screen.
+    private func cupboardIfKept(_ household: UUID) async -> [CupboardItem]? {
+        guard session.cupboardOn else { return [] }
+        return try? await APIClient.shared.cupboard(household: household)
     }
 
     // MARK: - Changes
@@ -108,7 +111,7 @@ final class PlanStore {
         await reload()
     }
 
-    /// Typing a name that is not saved yet makes the place, the way a new group works.
+    /// Typing a name that is not saved yet makes the place, the way a new tag works.
     func place(named name: String) async throws -> Place {
         guard let household else { throw CancellationError() }
         if let existing = places.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return existing }

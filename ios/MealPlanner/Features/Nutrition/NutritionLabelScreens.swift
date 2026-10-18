@@ -347,7 +347,8 @@ struct SourcePill: View {
 
 /**
  The cupboard and the grocery list (5.5's bottom bar): the two places a thing you have just
- looked up can go. Both take the name as the list would say it.
+ looked up can go — just the list, in a house that keeps no cupboard. Both take the name as the
+ list would say it.
  */
 struct KeepItBar: View {
     var session: Session
@@ -358,11 +359,13 @@ struct KeepItBar: View {
 
     var body: some View {
         NutritionBottomBar {
-            Button { Task { await add(toCupboard: true) } } label: {
-                Label("Cupboard", systemImage: "cabinet").frame(maxWidth: .infinity)
+            if session.cupboardOn {
+                Button { Task { await add(toCupboard: true) } } label: {
+                    Label("Cupboard", systemImage: "cabinet").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.kitchen(.secondary))
+                .accessibilityLabel("Add to the cupboard")
             }
-            .buttonStyle(.kitchen(.secondary))
-            .accessibilityLabel("Add to the cupboard")
             Button { Task { await add(toCupboard: false) } } label: {
                 Label("Add to list", systemImage: "cart").frame(maxWidth: .infinity)
             }

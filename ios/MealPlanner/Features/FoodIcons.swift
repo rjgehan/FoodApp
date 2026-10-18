@@ -1,7 +1,7 @@
 import SwiftUI
 
 /**
- The hand-drawn food icons a drawer or a group can wear — the same drawings, under the same
+ The hand-drawn food icons a drawer or a tag can wear — the same drawings, under the same
  keys, as the web's `FoodIcons.tsx`. The art lives in the asset catalog (Assets.xcassets/
  FoodIcons), exported from the web file by `web/scripts/export-food-icons.mjs` as template
  vectors, so it takes any tint and stays sharp drawn as big as a tile.
@@ -67,7 +67,7 @@ extension RecipeSection {
 }
 
 /// Every drawing as a tap target, the chosen one ringed. `allowNone` adds "no icon" first, for
-/// groups; a drawer always wears something. The chosen one is named under the grid, as on the
+/// tags; a drawer always wears something. The chosen one is named under the grid, as on the
 /// web: there is no hover on a phone, and a few of these are close cousins at this size.
 struct FoodIconPicker: View {
     let selected: String?
@@ -105,7 +105,9 @@ struct FoodIconPicker: View {
     ) -> some View {
         Button(action: action) {
             content()
-                .frame(maxWidth: .infinity)
+                // Both ways, or "No icon" (a symbol, not a resizable drawing) keeps its own height
+                // and comes out a flat bar in a row of squares.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .aspectRatio(1, contentMode: .fit)
                 .foregroundStyle(isOn ? Palette.accentInk : Color.secondary)
                 .background(isOn ? Palette.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: 10))
@@ -121,6 +123,36 @@ struct FoodIconPicker: View {
     }
 }
 
+/// The picker in a sheet of its own, so a Form row is not asked to hold two dozen buttons — a
+/// drawer's picture (Recipe icons) and a tag's (Manage tags).
+struct IconChooser: View {
+    let title: String
+    let selected: String?
+    var allowNone = true
+    let onPick: (String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                FoodIconPicker(selected: selected, allowNone: allowNone, onPick: onPick)
+                    .padding(16)
+            }
+            .pageBackground()
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+    }
+}
+
 #Preview("Picker") {
     FoodIconPicker(selected: "taco", allowNone: true) { _ in }.padding()
+}
+
+#Preview("Chooser") {
+    IconChooser(title: "Chicken", selected: "drumstick") { _ in }
 }

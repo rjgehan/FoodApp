@@ -28,7 +28,7 @@ test('email and password sign in, landing in the household you were last in', as
 
   await page.getByLabel('Password').fill('front-door-pw');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await expect.poll(() => headerHousehold(page)).toBe(second.name);
   // They have both already, so nothing asks for them.
   await expect(page.getByText('Add an email and password')).toHaveCount(0);
@@ -51,7 +51,7 @@ test('the name-and-PIN screens open the household you tapped, not the first you 
   await page.getByRole('button', { name: new RegExp(second.name) }).click();
   await page.getByRole('button', { name: m.displayName }).click();
   for (const d of '1357') await page.getByRole('button', { name: d, exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await expect.poll(() => headerHousehold(page)).toBe(second.name);
 });
 
@@ -172,13 +172,13 @@ test('the owner sees who has no email yet, and hands out a reset link that signs
   await phone.getByLabel('New password').fill('fresh-password');
   await phone.getByLabel('Confirm password').fill('fresh-password');
   await phone.getByRole('button', { name: 'Save and sign in' }).click();
-  await expect(phone.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(phone.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
 
   // The link is spent.
   await phone.goto(url);
   await expect(phone.getByText("This link doesn't work any more")).toBeVisible();
   // They are signed in by now, so the way on is into the app, not to a sign-in screen.
-  await expect(phone.getByRole('button', { name: 'Open Meal Planner' })).toBeVisible();
+  await expect(phone.getByRole('button', { name: 'Open Waxwing' })).toBeVisible();
   await theirs.close();
   expect((await loginWithEmail(email, 'fresh-password')).userId).toBe(m.userId);
 });

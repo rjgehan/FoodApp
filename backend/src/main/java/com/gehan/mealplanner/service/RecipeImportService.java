@@ -1026,7 +1026,7 @@ public class RecipeImportService {
      * Instagram settles it the other way round anyway: it shows a browser the login wall
      * and gives the caption to anything that says what it is.
      */
-    private static final String WHO_WE_ARE = "MealPlanner/1.0 (+https://meals.gehan.cloud)";
+    private static final String WHO_WE_ARE = "Waxwing/1.0 (+https://meals.gehan.cloud)";
 
     private String fetch(URI uri, Duration timeout) {
         HttpRequest request = HttpRequest.newBuilder(uri)

@@ -20,6 +20,19 @@ extension SampleData {
         Place(id: UUID(), name: "Golden Wok", menuUrl: "https://example.com/wok", phone: nil, notes: nil, imageId: nil),
     ]
 
+    /// A house just made: no machines yet, the Plan on, no cupboard, the kitchen questions still
+    /// to answer — what the kitchen setup and its card on Recipes start from.
+    static let newHousehold = HouseholdSummary(id: UUID(), name: "Beach crew", memberCount: 1, role: "OWNER",
+                                               cupboardEnabled: false, planEnabled: true, machines: [],
+                                               kitchenSetUp: false)
+
+    /// A house that has answered: four machines, the Plan off, the cupboard on — Kitchen & features.
+    static let kitchenHousehold = HouseholdSummary(id: UUID(), name: "Gehan House", memberCount: 3,
+                                                   defaultServings: 4, planningHorizonDays: 7, role: "OWNER",
+                                                   cupboardEnabled: true, planEnabled: false,
+                                                   machines: ["oven", "stovetop", "air-fryer", "blender"],
+                                                   kitchenSetUp: true)
+
     /// The mockup's eleven, in the order it walks the shop.
     static let storeAisles: [GroceryCategory] = [
         "Produce", "Bakery", "Meat & fish", "Dairy & eggs", "Tins & jars", "Pasta & rice", "Spices", "Frozen",

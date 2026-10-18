@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { AuthResponse, Household, InviteInfo, InviteStanding, LandingResponse, Me } from '../api/types';
-import { useAuth } from '../auth/AuthContext';
+import { askKitchenSetupLater, useAuth } from '../auth/AuthContext';
 import { PASSWORD_MAX, PASSWORD_MIN } from '../auth/password';
 import { useHousehold } from '../household/HouseholdContext';
+import { needsKitchenSetup } from '../utils/features';
+import { homePath } from '../utils/homePath';
 import { Avatar, Button, ErrorText, List, NoteBox, Row, Segmented, usernameInputProps } from '../components/ui';
 import { Icon } from '../components/icons';
 import { IconField, InviteHeader, MessageScreen, PasswordField, WelcomePage } from '../components/welcome';
 import LoginPage from './LoginPage';
+import { APP_NAME } from '../brand';
 
 /**
  * Remembers, across signing in, that the person came here to join this house. Set when they
@@ -64,8 +67,8 @@ export default function InvitePage() {
   // Retry, and a way out: somebody who cannot get through to the invite still has the rest of
   // the app — signing in, or the houses they are already in.
   const leave = (
-    <Button variant="secondary" full size="lg" onClick={() => navigate(session ? '/meal-plan' : '/', { replace: true })}>
-      {session ? 'Open Meal Planner' : 'Go to sign in'}
+    <Button variant="secondary" full size="lg" onClick={() => navigate(session ? homePath() : '/', { replace: true })}>
+      {session ? `Open ${APP_NAME}` : 'Go to sign in'}
     </Button>
   );
 
@@ -133,7 +136,7 @@ function Loading() {
  */
 function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
   const { session, logout } = useAuth();
-  const { refresh, setActiveHouseholdId } = useHousehold();
+  const { refresh, setActiveHouseholdId, askKitchenSetup } = useHousehold();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +164,7 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
   function openHouse(id: string) {
     setPendingJoin(null);
     setActiveHouseholdId(id);
-    navigate('/meal-plan', { replace: true });
+    navigate(homePath(), { replace: true });
   }
 
   async function join() {
@@ -172,8 +175,12 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
     try {
       const joined = await api<Household>('POST', `/api/invites/${encodeURIComponent(token)}/accept`);
       await refresh();
+      // A house nobody has set up yet: its kitchen questions, once the app is up. One that is
+      // set up already has its answers, and the joiner goes straight in. Through the household
+      // provider rather than storage alone: it is the same one the app's frame goes on using.
+      if (needsKitchenSetup(joined)) askKitchenSetup(joined.id);
       setActiveHouseholdId(joined.id);
-      navigate('/meal-plan', { replace: true });
+      navigate(homePath(joined), { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Cannot reach the server.');
       setBusy(false);
@@ -236,15 +243,15 @@ function SignedIn({ token, info }: { token: string; info: InviteInfo | null }) {
             />
           </List>
           <p className="px-1 text-[0.8125rem] leading-normal text-muted">
-            You'll see its plan, recipes and grocery list alongside your other households, and can
-            switch between them at the top of the screen.
+            You'll see its recipes and grocery list alongside your other households, and can switch
+            between them at the top of the screen.
           </p>
           {error && <ErrorText>{error}</ErrorText>}
           <div className="mt-auto flex flex-col gap-1 pt-6 sm:mt-2">
             <Button full size="lg" icon={busy ? undefined : 'users'} disabled={busy} onClick={join}>
               {busy ? 'Joining…' : `Join ${name}`}
             </Button>
-            <Button variant="ghost" full disabled={busy} onClick={() => navigate('/meal-plan', { replace: true })}>
+            <Button variant="ghost" full disabled={busy} onClick={() => navigate(homePath(), { replace: true })}>
               Not now
             </Button>
           </div>
@@ -311,9 +318,11 @@ function SignedOut({ token, info }: { token: string; info: InviteInfo | null }) 
         password,
       });
       setPendingJoin(null);
-      // Already in the house, and it is the one the sign-in opens.
+      // Already in the house, and it is the one the sign-in opens. Its kitchen questions are
+      // asked once the app is up — if nobody there has answered them yet (Layout checks).
+      askKitchenSetupLater(auth.lastHouseholdId);
       signInWith(auth);
-      navigate('/meal-plan', { replace: true });
+      navigate(homePath(), { replace: true });
     } catch (err) {
       setBusy(false);
       if (err instanceof ApiError && err.status === 409) {

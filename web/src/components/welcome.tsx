@@ -38,7 +38,11 @@ export function WelcomePage({
   );
 }
 
-/** The app's mark: the chef's hat on a tomato tile, lifted on a glow of its own colour. */
+/**
+ * The app's mark: the waxwing and its berry (the app icon's bird, in one colour) on an accent
+ * tile, lifted on a glow of its own colour. The tile follows the theme; the home-screen icon
+ * keeps its own aubergine.
+ */
 export function AppMark({ size = 64 }: { size?: number }) {
   return (
     <span
@@ -51,7 +55,7 @@ export function AppMark({ size = 64 }: { size?: number }) {
         boxShadow: '0 8px 20px rgb(var(--accent) / 0.35)',
       }}
     >
-      <Icon name="chef" size={Math.round(size * 0.52)} strokeWidth={1.8} />
+      <Icon name="waxwing" size={Math.round(size * 0.6)} />
     </span>
   );
 }

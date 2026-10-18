@@ -6,6 +6,7 @@ import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.repository.*;
 import com.gehan.mealplanner.dto.RecipeDtos.SourceLink;
 import com.gehan.mealplanner.service.GroceryListService;
+import com.gehan.mealplanner.service.KitchenMachines;
 import com.gehan.mealplanner.service.SourceLinks;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,11 +18,9 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -170,7 +169,8 @@ public class IntegrationService {
                 recipe.getPhotos().stream().map(this::imageUrl).toList(),
                 SourceLinks.firstSource(links), SourceLinks.firstVideo(links),
                 links.stream().map(l -> new Link(l.url(), l.label())).toList(),
-                ingredients, steps(recipe.getInstructions()));
+                ingredients, steps(recipe.getInstructions()),
+                KitchenMachines.inOrder(recipe.getAppliances()));
     }
 
     @Transactional(readOnly = true)
@@ -236,31 +236,21 @@ public class IntegrationService {
                 recipe.getId(), recipe.getName(), recipe.getDescription(),
                 filing == null ? null : filing.getSection(), categories(filing),
                 recipe.getServings(), recipe.getPrepTimeMinutes(), recipe.getCookTimeMinutes(),
-                totalMinutes(recipe), imageUrl(recipe.getCoverImage()));
+                totalMinutes(recipe), imageUrl(recipe.getCoverImage()),
+                KitchenMachines.inOrder(recipe.getAppliances()));
     }
 
     /**
-     * Filed in the named group, or in any group nested inside it. Splitting Main dish up into
-     * Beef and Chicken moves its recipes down a level, and a dashboard asking for Main dish still
-     * means all of them. `categories` in the response stays the groups the recipe is filed in
-     * directly, as it always has been.
+     * Wears a tag of that name, ignoring case. Tags are flat now; a recipe that was filed inside
+     * a nested group was given each group above it as a tag of its own when they were flattened
+     * (TagMigration), so a dashboard asking for Main dish still finds what it always found.
      */
     static boolean filedUnder(RecipeFiling filing, String category) {
         if (filing == null) {
             return false;
         }
         String wanted = category.trim();
-        for (RecipeCategory filed : filing.getCategories()) {
-            // Moving a group inside itself is refused, but a loop left in old data should end
-            // the walk rather than the request.
-            Set<UUID> seen = new HashSet<>();
-            for (RecipeCategory up = filed; up != null && seen.add(up.getId()); up = up.getParent()) {
-                if (up.getName().equalsIgnoreCase(wanted)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return filing.getCategories().stream().anyMatch(tag -> tag.getName().trim().equalsIgnoreCase(wanted));
     }
 
     private List<String> categories(RecipeFiling filing) {

@@ -177,11 +177,11 @@ struct ScanInviteScreen: View {
             Image(systemName: denied ? "camera.badge.ellipsis" : "camera")
                 .font(.system(size: 44))
                 .foregroundStyle(.white.opacity(0.8))
-            Text(denied ? "Meal Planner can't use the camera" : "No camera here")
+            Text(denied ? "Waxwing can't use the camera" : "No camera here")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
             Text(denied
-                 ? "To scan invite codes, turn on Camera for Meal Planner in Settings. Or paste the link instead."
+                 ? "To scan invite codes, turn on Camera for Waxwing in Settings. Or paste the link instead."
                  : "This device has no camera to scan with. Paste the link somebody sent you instead.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.75))
@@ -204,7 +204,7 @@ struct ScanInviteScreen: View {
         guard let link = AppLink.parse(text) else {
             problem = text.trimmingCharacters(in: .whitespaces).isEmpty
                 ? nil
-                : "That isn't a Meal Planner invite. Point at the code on somebody's Invite card."
+                : "That isn't a Waxwing invite. Point at the code on somebody's Invite card."
             again += 1
             return
         }
@@ -362,7 +362,7 @@ struct JoinHouseholdView: View {
                             .foregroundStyle(Palette.accentInk)
                         }
                     }
-                    Text("You'll see its plan, recipes and grocery list alongside your other households, and can switch between them at the top of the screen.")
+                    Text("You'll see its recipes and grocery list alongside your other households, and can switch between them at the top of the screen.")
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -524,6 +524,8 @@ struct JoinHouseholdView: View {
             let joined = try await APIClient.shared.acceptInvite(token: token)
             await session.loadHouseholds()
             session.choose(session.households.first { $0.id == joined.id } ?? joined)
+            // A house nobody has set up yet: its kitchen questions, once this screen has gone.
+            session.askKitchenSetupIfNeeded(for: joined.id)
             onDone()
         } catch {
             self.error = error.localizedDescription
@@ -544,6 +546,8 @@ struct JoinHouseholdView: View {
                 email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                 password: password)
             try await session.signIn(auth)
+            // Signing up opens the house it joined; ask its kitchen questions if nobody has.
+            session.askKitchenSetupIfNeeded(for: session.household?.id)
             onDone()
         } catch let failure as APIError where failure.status == 409 {
             // They have an account already: sign in with it, and join on the way.
@@ -564,6 +568,7 @@ struct JoinHouseholdView: View {
             let auth = try await APIClient.shared.logIn(email: typed, password: password)
             // Signing in with an invite waiting says yes to it first, and opens that house.
             session.pendingInvite = PendingInvite(token: token, householdName: household)
+            // Signing in accepts the invite, and asks the house's kitchen questions if nobody has.
             if try await session.signIn(auth) {
                 onDone()
             } else {

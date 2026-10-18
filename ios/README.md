@@ -1,4 +1,4 @@
-# Meal Planner for iOS
+# Waxwing for iOS
 
 A native client for the same backend the web app uses. No new API: it signs in with an email
 and password (or the older PIN flow), reads the plan, the groceries and the recipes, and ticks
@@ -29,8 +29,10 @@ Or open `MealPlanner.xcodeproj` in Xcode and press ⌘R.
 cd ios && ./release.sh        # archive a Release build and upload it to App Store Connect
 ```
 
-The app is "Gehan Meal Planner" in App Store Connect (bundle id cloud.gehan.mealplanner, team
-5TCCXKJ243). The build number is the commit count, so every upload is higher than the last.
+The app is still "Gehan Meal Planner" in App Store Connect until it is renamed there by hand
+to "Waxwing" (App Information → Name; see BRAND.md); on the phone it is already Waxwing. The
+bundle id stays cloud.gehan.mealplanner (team 5TCCXKJ243). The build number is the commit
+count, so every upload is higher than the last.
 The internal group "Family" has automatic distribution on: a build reaches everyone in it a few
 minutes after upload, once Apple has processed it — no review for internal testers. To add
 someone: App Store Connect → Users and Access → + (they accept the email invite), then
@@ -101,8 +103,10 @@ xcrun simctl launch <udid> cloud.gehan.mealplanner \
   -mp_debug_token "$TOKEN" \
   -mp_debug_household "<household-uuid>" \
   -mp_debug_household_name "Gehan House" \
-  -mp_debug_tab groceries          # plan | recipes | groceries | household | gallery
+  -mp_debug_tab groceries          # recipes (the default) | groceries | plan | cupboard | explore
 ```
+
+`plan` and `cupboard` only land there for a household that uses them; otherwise it is Recipes.
 
 `-mp_debug_screen edit|detail|settings|household|ideas` opens that sheet on top, and `-mp_debug_screen
 day` (with `-mp_debug_tab plan`) opens today's day sheet; add `-mp_debug_expand 1` to open the
@@ -110,7 +114,7 @@ first dish's options. On the Plan tab, `-mp_debug_plan upcoming` opens on Upcomi
 `-mp_debug_screen options|addweek|fill|fillout|create|extras` opens a planned meal's options, the
 add-the-week sheet, filling a later dinner (eat in, or the night out on eat out), a new recipe
 from a slot, or the optional-extras question. With `-mp_debug_screen edit`, `-mp_debug_scroll links` scrolls the editor
-down to its Links section.
+down to its Links section, and `-mp_debug_scroll machines` to its Machines.
 
 On the Groceries tab, `-mp_debug_screen grocery-item|done-shopping` opens an item's sheet (one with
 a restock reminder, if there is one) or Done shopping. On the Cupboard tab (`-mp_debug_tab
@@ -118,15 +122,16 @@ cupboard`), `-mp_debug_screen cupboard-edit` opens the first counted item's shee
 `cupboard-search` types `-mp_debug_query` (or "tahini") into the box, `barcode` opens the scanner,
 and `barcode-found` opens it on a sample result, since a simulator has no camera.
 
-`-mp_debug_drawer dinner` opens that drawer on the Recipes tab; with it, `-mp_debug_screen add`
-opens the new-recipe form from the drawer (add `-mp_debug_group Veggie` to start it in that
-group, and `-mp_debug_scroll filing` to scroll to the drawer and groups), and `-mp_debug_screen
-groups` its group editor (Edit groups). Without `add`, `-mp_debug_group Main/Chicken` opens that
-group, a level at a time (a big group with no groups inside offers to split itself the first
-time), and `-mp_debug_screen newgroup` opens New group there. On the Recipes tab,
-`-mp_debug_query pasta` searches, and `-mp_debug_screen savedlinks|shared|linkactions` opens Saved
-links, Shared with you, or the first saved link's actions. `-mp_debug_screen household
--mp_debug_scroll icons` opens Recipe icons, and `-mp_debug_expand 1` its picker for Dinner.
+`-mp_debug_drawer dinner` opens that drawer on the Recipes tab, and `-mp_debug_tag Chicken` opens
+it with that tag chosen. With the drawer, `-mp_debug_screen add` opens the new-recipe form from it
+(`-mp_debug_tag Veggie` ticks that tag, and `-mp_debug_scroll filing` scrolls to the drawer and
+tags), `tags` opens Manage tags (`-mp_debug_expand 1` its first tag's icon picker), `newtag` the
+"+ Tag" box, `select` select mode, `tag-sheet` and `move-sheet` the Tag and Move sheets for the
+drawer's first two recipes, and `pick` picking the recipes for `-mp_debug_tag` (or the first
+tag), as "+ Tag" does after making one. On the Recipes tab, `-mp_debug_query pasta` searches, and
+`-mp_debug_screen savedlinks|shared|linkactions` opens Saved links, Shared with you, or the first
+saved link's actions. `-mp_debug_screen household -mp_debug_scroll icons` opens Recipe icons,
+and `-mp_debug_expand 1` its picker for Dinner.
 
 `-mp_debug_tab recipes -mp_debug_screen new` opens New recipe; add `-mp_debug_new link` or
 `-mp_debug_new paste` to open it on that way in. `-mp_debug_link "<url>"` fills From a link and
@@ -137,12 +142,13 @@ warning and the rules-only reader.
 `-mp_debug_screen share -mp_debug_recipe <recipe-uuid>` opens that recipe from the server with its
 Share screen pushed (the public link, your other households, Explore). `-mp_debug_screen recipe`
 (with `-mp_debug_recipe <uuid>`) opens that recipe's page full screen as it is pushed;
-`recipe-options`, `recipe-plan`, `recipe-delete` and `recipe-method` open it with its ••• menu, Add
-to plan, the delete question or the Method tab. `-mp_debug_new link -mp_debug_link "<url>"
+`recipe-options`, `recipe-plan`, `recipe-groceries`, `recipe-delete` and `recipe-method` open it
+with its ••• menu, Add to plan, Add to groceries, the delete question or the Method tab. `-mp_debug_new link -mp_debug_link "<url>"
 -mp_debug_draft 1` shows From a link's draft card with a sample draft, without reading anything.
 
 `-mp_debug_screen household` opens the household page (the Invite card, Who's here, its setup);
-with `-mp_debug_scroll places|setup|aisles|icons|new` it opens that page on top, `qr` the invite's
+with `-mp_debug_scroll places|setup|kitchen|aisles|icons|new` it opens that page on top (`kitchen` is
+Kitchen & features), `qr` the invite's
 Scan to join sheet, and `member` the first other person's owner actions (sign in as the owner) —
 add `-mp_debug_expand 1` to make them a password-reset link there. `-mp_debug_screen settings`
 opens Settings; with any of those `-mp_debug_scroll` values it goes on into the household page.
@@ -186,7 +192,9 @@ first-run tutorial; `-mp_debug_tutorial_step 2` opens it on "Light or dark?"), a
 `…/reset/<token>`) launches as though opened with that link. Signed out, `-mp_debug_screen setup`
 shows first-time setup and `-mp_debug_locked 292` the locked sign-in with that many seconds left.
 Signed in, `-mp_debug_screen public -mp_debug_share_token <token>` opens a recipe's public link
-as though it had been shared into the app.
+as though it had been shared into the app, and `-mp_debug_screen kitchen` asks the open household's
+kitchen questions as a new house gets them (`-mp_debug_kitchen_step 1|2` opens the Plan or the
+cupboard question).
 
 Both hooks are inside `#if DEBUG`, so a release build has neither.
 
@@ -224,13 +232,47 @@ cannot be reached say different things. `mealplanner://invite/<token>` and
 ## The first-run tutorial
 
 A phone that has never opened the app gets two slides (a phone-framed picture of the app, a
-title, a line), then "Light or dark?" with Match my phone, then the sign-in screen. Somebody who
-opens the app with an invite link sees the invite first, and the tutorial once they have joined.
-Never twice (UserDefaults `mp_tutorialSeen`), and never for somebody already signed in when the
-update arrives. The light or dark answer stays with the phone across sign-outs, and goes on the
-first account signed in afterwards if it has none of its own. The pictures are placeholders in the
-asset catalog, `TutorialPlanPlaceholder` and `TutorialGroceriesPlaceholder` (light and dark): swap
-in real screenshots of the redesigned app under the same names.
+title, a line) — "Your family's recipes, together" and "One list for the shop", the web's words —
+then "Light or dark?" with Match my phone, then the sign-in screen (or "Get started" into the app).
+Somebody who opens the app with an invite link sees the invite first, and the tutorial once they
+have joined. Never twice (UserDefaults `mp_tutorialSeen`), and never for somebody already signed
+in when the update arrives. The light or dark answer stays with the phone across sign-outs, and
+goes on the first account signed in afterwards if it has none of its own.
+
+The pictures are this app's own screens, in light and dark: `TutorialRecipes` (Recipes, open at
+Dinner) and `TutorialGroceries`, taken in the iPhone 18 Pro simulator from the same household the
+web's pictures show (`web/public/tutorial`, whose README says how both sets were taken). Don't
+copy the web's files over them: those have the web's tab bar and type. Without `TutorialRecipes`
+the first slide falls back to `TutorialPlan`, which can go from the catalog now.
+
+## The kitchen, and the optional Plan and Cupboard
+
+Recipes and the grocery list are the app; the Plan and the Cupboard are each household's to use
+or not (`planEnabled`, `cupboardEnabled` on `/api/households`, nil meaning on). The tabs follow —
+Recipes, Groceries, Plan, Cupboard, Explore, the web's order — and so does everything that would
+lead to a hidden one: a recipe's Add to plan (Add to groceries becomes its one filled button, the
+cart marked "Groceries" beside Add to plan otherwise, and ••• has it in full either way), a saved
+link's Add to plan, Explore's Meal plans door and
+Nutrition's week, the Plan ahead window; and for the cupboard, the grocery list's "Cupboard says"
+lines, Done shopping's cupboard question, the fill screen's Cupboard chip, and a label's Cupboard
+button. A tab turned off goes at once and lands you on Recipes — except while Settings is open over
+it, since Settings hangs off that tab's header and would go with it; closing Settings takes the tab
+away then. Households are fetched again whenever the app comes to the front, so a tab turned off on
+the web or another phone goes the same way. Any change on Household → Kitchen & features also counts
+as answering the kitchen questions, so the Recipes card stops asking and joiners are not asked.
+
+The kitchen questions (`Features/Welcome/KitchenSetup.swift`) — which machines, Plan or not,
+cupboard or not — come straight after first-time setup and Start another household, and after
+joining a house nobody has answered them for; any time after, from the card at the top of Recipes,
+and Household → Kitchen & features changes the answers. They go through RootView's one prompt
+slot, ahead of the add-an-email prompt and "Time to restock?", so no two of them ever stack.
+
+A recipe's machines (`appliances` on the wire) are spotted in its method by the server. The
+recipe page shows them on its picture after the quick facts, and the recipe form's Machines chips
+set them by hand — sent only when somebody changed them, since a list tells the server to stop
+spotting them; a new recipe says it will spot them when it is saved. The household's own machines
+are only kept for now: nothing hides or narrows recipes by them yet, and the kitchen's words say
+no more than that (recipes show their machines, and a drawer can be filtered by machine).
 
 ## A recipe's public link, shared into the app
 
@@ -325,13 +367,43 @@ Whatever the model chose wears ✨ (your own plans remember which meals on the p
 `mp_model_picks_<id>`). Any failure leaves the server's plan, exactly as the web and a phone
 without Apple Intelligence see it. `./checks/run.sh` checks the rules with a scripted stand-in.
 
+## Drawers and tags
+
+Recipes has six drawers (Breakfast, Lunch, Dinner, Snacks, Drinks, Other), and inside a drawer
+no nesting: a recipe wears any number of flat tags ("Chicken", "Quick"), each tag belonging to
+one drawer. A drawer (`Features/Catalogue/DrawerView.swift`) is its recipes under a row of tag
+chips — All and Untagged first, then the tags, with "+ Tag" held at the row's end so it never
+scrolls away; tap two to see what wears both — then the machines its recipes need, a card
+offering the obvious tag for untagged recipes (the drawer's own spelling when it has one:
+"Veggie", not a new Vegetarian), and select mode's Tag and Move. "+ Tag" makes a tag and goes
+straight to picking its recipes, with the search still there to find them; the pen opens Manage
+tags (`EditTags.swift`). The API
+still calls tags "recipe categories", so older phones keep working against the same server.
+`CatalogueStore` loads once and then follows each change's answer — no reload after a tap.
+
+## The app icon and mark
+
+`AppIcon.appiconset/AppIcon.png` (1024, opaque RGB; Xcode makes the smaller sizes) is rendered
+from `web/scripts/brand/app-icon.svg` by `node web/scripts/brand/render-icons.mjs`, which writes
+the web's icons in the same run — don't edit the PNG by hand. The one-colour waxwing inside the
+app (`AppMark` on the sign-in screen, the share sheet's title) is `AppGlyph.imageset`, a template
+SVG copied from `web/scripts/brand/glyph.svg`. The share extension cannot see the app's asset
+catalog, so it carries its own copy in `ShareExtension/Assets.xcassets`; change both together.
+`ChefHat.imageset` stays: it is the recipe-photo placeholder, not the logo.
+
 ## Food icons
 
-The drawer and group pictures are the web's hand-drawn set (`web/src/components/FoodIcons.tsx`),
+The drawer and tag pictures are the web's hand-drawn set (`web/src/components/FoodIcons.tsx`),
 copied into `Assets.xcassets/FoodIcons` as template SVGs so they tint and scale like SF Symbols.
 Don't edit them here: change or add one on the web, run `node web/scripts/export-food-icons.mjs`
 from the repo root, add the key to `FoodIcon.all` and to the backend's `FoodIcons.KEYS`. The e2e
 suite fails if the web and the asset catalog disagree.
+
+Kitchen machines (`Features/KitchenMachines.swift`, the same keys and order as the backend's
+`KitchenMachines` and the web's `utils/machines.ts`, and the web's `short` names on chips and pills —
+"Instant Pot", not "Instant Pot / pressure cooker") are drawn the same way, from
+`Assets.xcassets/MachineIcons`; `KitchenMachine.image` is the one place that picks the drawing,
+and falls back to an SF Symbol for a machine whose drawing is not in the catalog yet.
 
 ## Where the server is
 

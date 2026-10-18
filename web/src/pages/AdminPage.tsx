@@ -580,7 +580,7 @@ function RecipesTab({ params, update }: TabProps) {
             { label: 'Household', cell: (r) => r.householdName },
             {
               label: 'Filed under',
-              cell: (r) => [r.section ? sectionLabel(r.section) : null, ...r.groups].filter(Boolean).join(' · ') || '—',
+              cell: (r) => [r.section ? sectionLabel(r.section) : null, r.groups.join(', ')].filter(Boolean).join(' · ') || '—',
             },
             { label: 'Added', cell: (r) => formatDay(r.createdAt), className: 'whitespace-nowrap' },
             { label: '', cell: (r) => <RecipeBadges recipe={r} /> },
@@ -589,7 +589,7 @@ function RecipesTab({ params, update }: TabProps) {
             <div className="space-y-1">
               <p className="truncate font-medium">{r.name}</p>
               <p className="text-sm text-muted">
-                {[r.householdName, r.section ? sectionLabel(r.section) : null, ...r.groups, formatDay(r.createdAt)]
+                {[r.householdName, r.section ? sectionLabel(r.section) : null, r.groups.join(', '), formatDay(r.createdAt)]
                   .filter(Boolean)
                   .join(' · ')}
               </p>

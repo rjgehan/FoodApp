@@ -119,9 +119,13 @@ public class SchemaTouchUps {
     /**
      * Group names used to be unique per household, which is why there could only ever be one
      * "Main". They belong to a drawer now, so Breakfast and Dinner can each have their own — the
-     * old constraint has to go, and the scoped one takes its place. COALESCE keeps drawer-less
-     * groups (the ones made before this, and any the household keeps that way) unique too, which a
-     * plain unique index would not: in SQL, NULLs never equal each other.
+     * old constraint has to go, and the scoped one takes its place. COALESCE kept drawer-less
+     * groups unique too, which a plain unique index would not (in SQL, NULLs never equal each
+     * other); TagMigration has since given every tag a drawer, and the index is left as it is
+     * rather than rebuilt for the sake of a COALESCE that no longer does anything.
+     *
+     * TagMigration runs after this and will not start without the index, so building it gets a
+     * try of its own: a constraint that would not drop is no reason to leave names unguarded.
      */
     @Bean
     @Order(0)
@@ -146,16 +150,31 @@ public class SchemaTouchUps {
                 if (merged > 0) {
                     log.info("Merged {} duplicate recipe group(s) that differed only by case.", merged);
                 }
+            } catch (Exception e) {
+                log.warn("Could not scope recipe group names to their drawer: {}", e.getMessage());
+            }
+            try {
                 jdbc.execute("""
                         CREATE UNIQUE INDEX IF NOT EXISTS uk_recipe_categories_drawer_name
                         ON recipe_categories (household_id, COALESCE(section, ''), lower(name))
                         """);
             } catch (Exception e) {
-                log.warn("Could not scope recipe group names to their drawer: {}", e.getMessage());
+                log.warn("Could not make recipe tag names unique within their drawer: {}", e.getMessage());
             }
         };
     }
 
+    /**
+     * Whether a column is there at all. Hibernate never drops one, so an older database keeps
+     * columns a fresh one never had — recipe_categories.parent_id, from when groups nested — and
+     * SQL that mentions them has to ask first.
+     */
+    static boolean hasColumn(JdbcTemplate jdbc, String table, String column) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?)
+                """, Boolean.class, table, column));
+    }
 
     /**
      * Folds groups that differ only by case into the oldest of their set: its children and the
@@ -175,9 +194,12 @@ public class SchemaTouchUps {
                 SELECT id, keeper FROM ranked WHERE rn > 1
                 """;
 
-        // Children first, so nothing is orphaned when the duplicate row goes.
-        jdbc.update("UPDATE recipe_categories c SET parent_id = d.keeper FROM (" + duplicates
-                + ") d WHERE c.parent_id = d.id");
+        // Children first, so nothing is orphaned when the duplicate row goes. Only a database
+        // from when groups nested has the column; a fresh one has no children to move.
+        if (hasColumn(jdbc, "recipe_categories", "parent_id")) {
+            jdbc.update("UPDATE recipe_categories c SET parent_id = d.keeper FROM (" + duplicates
+                    + ") d WHERE c.parent_id = d.id");
+        }
         // A recipe filed under both spellings would collide on the join table's key.
         jdbc.update("DELETE FROM recipe_filing_categories f USING (" + duplicates + ") d "
                 + "WHERE f.category_id = d.id AND EXISTS ("

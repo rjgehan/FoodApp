@@ -20,8 +20,8 @@ test('sign in from the tap-your-name screen with the keypad', async ({ page }) =
   await page.getByRole('button', { name: username }).click();
   await expect(page.getByText('Pick a 4-digit PIN')).toBeVisible();
   for (const d of '24682468') await page.getByRole('button', { name: d, exact: true }).click();
-  // Exact: the sign-in screen's own "Meal Planner" heading would otherwise match before it has gone.
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  // Exact: the sign-in screen's own "Waxwing" heading would otherwise match before it has gone.
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   // A PIN-only account is asked to move to email and password straight away.
   await expect(sheet(page).getByRole('heading', { name: 'Add an email and password' })).toBeVisible();
 });
@@ -141,15 +141,17 @@ test('a second phone sees ticks without refreshing', async ({ page, browser }) =
   await other.close();
 });
 
-test('there is no home screen: the app opens on Plan, with five tabs', async ({ page }) => {
+test('there is no home screen: the app opens on Recipes, with five tabs, Recipes first', async ({ page }) => {
   const hh = await newHousehold();
   await signIn(page, hh.owner, hh.id);
   await page.goto('/');
-  await expect(page).toHaveURL(/\/meal-plan$/);
+  await expect(page).toHaveURL(/\/recipes$/);
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await page.goto('/somewhere-that-does-not-exist');
-  await expect(page).toHaveURL(/\/meal-plan$/);
-  const tabs = page.getByRole('link').filter({ hasText: /^(Plan|Recipes|Groceries|Cupboard|Household)$/ });
-  await expect(tabs.last()).toBeVisible();
+  await expect(page).toHaveURL(/\/recipes$/);
+  // The phone's tab bar, in order: the two every household has, the two it can turn off, Explore.
+  const bar = page.getByRole('navigation', { name: 'Tabs' }).last();
+  await expect(bar.getByRole('link')).toHaveText(['Recipes', 'Groceries', 'Plan', 'Cupboard', 'Explore']);
   await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveCount(0);
 });
 
@@ -186,6 +188,10 @@ test('the recipe page has one filled button, and the rest behind •••', asy
   await signIn(page, hh.owner, hh.id);
   await page.goto(`/recipes/${r.id}`);
   await expect(page.getByRole('button', { name: 'Add to plan' })).toBeVisible();
+  // Add to groceries sits beside it as an outlined cart, so Add to plan stays the only filled one.
+  await expect(page.getByRole('button', { name: 'Add to groceries' })).toBeVisible();
+  await expect(page.locator('button.bg-accent:visible')).toHaveCount(1);
+  await expect(page.locator('button.bg-accent:visible')).toHaveAccessibleName('Add to plan');
   // Share is the round button on the photo, beside •••; everything else waits behind •••.
   await expect(page.getByRole('button', { name: 'Share', exact: true })).toBeVisible();
   for (const hidden of [/^Edit recipe/, /^Organise/, /^Index card/, /^Photos & links/, /^Delete/, /^Add photos/]) {
@@ -204,7 +210,10 @@ test('sign out lives in Settings, behind your initial, not in the header', async
   await expect(page.getByRole('button', { name: /log out|sign out/i })).toHaveCount(0);
   await page.getByRole('button', { name: 'Your account' }).click();
   await sheet(page).getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByText("Plan the week together. One list, everyone's phone.")).toBeVisible();
+  // Back on the sign-in screen: the app's name and what it is for (web/src/brand.ts).
+  await expect(page.getByRole('heading', { name: 'Waxwing', exact: true })).toBeVisible();
+  await expect(page.getByText("Your family's recipes and one shared grocery list.")).toBeVisible();
+  await expect(page).toHaveTitle('Waxwing');
 });
 
 test('the avatar opens Settings: your account, and the way into the household', async ({ page }) => {

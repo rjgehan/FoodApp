@@ -585,17 +585,22 @@ export function CheckCircle({ checked, className }: { checked: boolean; classNam
   );
 }
 
-/** The square tick for choosing things in a list ("include this"), in the accent. */
-export function CheckBox({ checked, className }: { checked: boolean; className?: string }) {
+/**
+ * The square tick for choosing things in a list ("include this"), in the accent. `mixed` is the
+ * third state, a dash: true of some of the things chosen and not the rest (a tag on two of the
+ * three recipes picked).
+ */
+export function CheckBox({ checked, mixed = false, className }: { checked: boolean; mixed?: boolean; className?: string }) {
+  const on = checked || mixed;
   return (
     <span
       className={cx(
         'flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] border-[1.6px] transition-colors duration-150',
-        checked ? 'border-accent bg-accent text-on-accent' : 'border-faint',
+        on ? 'border-accent bg-accent text-on-accent' : 'border-faint',
         className,
       )}
     >
-      {checked && <Icon name="check" size={14} strokeWidth={3} className="pop" />}
+      {on && <Icon key={checked ? 'check' : 'minus'} name={checked ? 'check' : 'minus'} size={14} strokeWidth={3} className="pop" />}
     </span>
   );
 }
@@ -852,7 +857,7 @@ export function Row({
   className?: string;
   titleClassName?: string;
   role?: string;
-  'aria-checked'?: boolean;
+  'aria-checked'?: boolean | 'mixed';
   'aria-label'?: string;
 }) {
   const body = (

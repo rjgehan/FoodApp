@@ -167,7 +167,8 @@ struct SavedLinksView: View {
         .sheet(item: $acting) { link in
             SavedLinkActions(
                 link: link,
-                plan: { after { planning = link } },
+                // Only a house that plans meals can put one on its Plan.
+                plan: session.planOn ? { after { planning = link } } : nil,
                 makeRecipe: { after { making = draft(from: link) } },
                 importAgain: { after { importing = link } },
                 move: { after { moving = link } },
@@ -470,7 +471,8 @@ struct SavedLinkTile: View {
 */
 struct SavedLinkActions: View {
     let link: SavedLink
-    let plan: () -> Void
+    /// Nil in a house that does not plan meals, which hides Add to plan.
+    let plan: (() -> Void)?
     let makeRecipe: () -> Void
     let importAgain: () -> Void
     let move: () -> Void
@@ -494,7 +496,9 @@ struct SavedLinkActions: View {
                     }
                 }
                 ListGroup {
-                    action(plan) { ListRow("Add to plan", tile: ("calendar", .accent)) }
+                    if let plan {
+                        action(plan) { ListRow("Add to plan", tile: ("calendar", .accent)) }
+                    }
                     action(makeRecipe) {
                         ListRow("Turn into a recipe", subtitle: "Moves any planned meals over to the new recipe",
                                 tile: ("book", .herb))

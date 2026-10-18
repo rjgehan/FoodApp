@@ -3,6 +3,7 @@ import { api, ApiError } from '../../api/client';
 import type { HouseholdMember } from '../../api/types';
 import { Avatar, Button, ConfirmAlert, List, NoteBox, Pill, Row, Sheet, Tile, type Tone } from '../ui';
 import { distinctUsername, LinkWell, QrCode, sendLink, signInSentence } from './HouseholdParts';
+import { APP_NAME } from '../../brand';
 
 /**
  * What the owner can do for somebody else in the house (mockup 6.4): make them a password-reset
@@ -102,7 +103,7 @@ export function MemberSheet({
               It lets {name} choose a new password{member.hasEmail === false ? ' and add their email' : ''}, then signs
               them in. It works once, for 24 hours.
             </p>
-            <Button variant="soft" size="sm" full icon="send" onClick={() => sendLink(resetUrl, 'Reset your Meal Planner password')}>
+            <Button variant="soft" size="sm" full icon="send" onClick={() => sendLink(resetUrl, `Reset your ${APP_NAME} password`)}>
               Send to {name}
             </Button>
             {showQr ? (

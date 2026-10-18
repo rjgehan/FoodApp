@@ -3,6 +3,7 @@ package com.gehan.mealplanner.service;
 import com.gehan.mealplanner.ai.StoreSectionAi;
 import com.gehan.mealplanner.domain.*;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.AddRecipeRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
 import com.gehan.mealplanner.dto.GroceryListDtos.PlannedShoppingResponse;
 import com.gehan.mealplanner.dto.GroceryListDtos.PutAwayRequest;
@@ -31,6 +32,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class GroceryListService {
@@ -42,6 +44,7 @@ public class GroceryListService {
     private final IngredientRepository ingredientRepository;
     private final CupboardItemRepository cupboardRepository;
     private final HouseholdService householdService;
+    private final RecipeService recipeService;
     private final IngredientService ingredientService;
     private final IngredientSections ingredientSections;
     private final StoreSectionAi sectionAi;
@@ -55,6 +58,7 @@ public class GroceryListService {
                                IngredientRepository ingredientRepository,
                                CupboardItemRepository cupboardRepository,
                                HouseholdService householdService,
+                               RecipeService recipeService,
                                IngredientService ingredientService,
                                IngredientSections ingredientSections,
                                StoreSectionAi sectionAi,
@@ -67,6 +71,7 @@ public class GroceryListService {
         this.ingredientRepository = ingredientRepository;
         this.cupboardRepository = cupboardRepository;
         this.householdService = householdService;
+        this.recipeService = recipeService;
         this.ingredientService = ingredientService;
         this.ingredientSections = ingredientSections;
         this.sectionAi = sectionAi;
@@ -76,20 +81,30 @@ public class GroceryListService {
 
     /**
      * What an item's response needs beyond the item: this household's category corrections, its
-     * live category list (for resolving a keyword/Gemini guess into one of them), and its
-     * cupboard. Loaded once per request instead of once per item.
+     * live category list (for resolving a keyword/Gemini guess into one of them), its cupboard,
+     * and the names of the recipes its rows are for — by planned meal, and by recipe for those
+     * added straight from their pages. Loaded once per request instead of once per item.
      */
     private record Context(Map<UUID, GroceryCategory> sections, List<GroceryCategory> categories,
-                            Map<UUID, CupboardItem> cupboard, Map<UUID, String> mealRecipes) {
+                            boolean keepsCupboard, Map<UUID, CupboardItem> cupboard,
+                            Map<UUID, String> mealRecipes, Map<UUID, String> addedRecipes) {
 
         /** "Lemon herb chicken, Green salad": the recipes a row is for, each once, A to Z. */
         List<String> recipesFor(GroceryListItem item) {
-            return item.getFromMeals().keySet().stream()
-                    .map(mealRecipes::get)
+            return Stream.concat(
+                            item.getFromMeals().keySet().stream().map(mealRecipes::get),
+                            item.getFromRecipeIds().stream().map(addedRecipes::get))
                     .filter(Objects::nonNull)
                     .distinct()
                     .sorted(String.CASE_INSENSITIVE_ORDER)
                     .toList();
+        }
+
+        /** The same, knowing the name of a recipe that is only now going onto the list. */
+        Context naming(Recipe recipe) {
+            Map<UUID, String> names = new HashMap<>(addedRecipes);
+            names.put(recipe.getId(), recipe.getName());
+            return new Context(sections, categories, keepsCupboard, cupboard, mealRecipes, names);
         }
 
         boolean isStaple(Ingredient ingredient) {
@@ -104,14 +119,32 @@ public class GroceryListService {
         }
     }
 
+    /**
+     * A household that does not keep a cupboard is read as having an empty one, whatever rows it
+     * kept from when it did. Nothing on its list says "in the cupboard", the Plan never says a
+     * meal is all at home, and nothing is left off as a staple: "we always have salt" was the
+     * cupboard's promise, and with the cupboard out of sight nobody could see why the salt never
+     * reached the list.
+     */
     private Context context(UUID householdId) {
+        boolean keepsCupboard = keepsCupboard(householdId);
         Map<UUID, CupboardItem> cupboard = new HashMap<>();
-        cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
+        if (keepsCupboard) {
+            cupboardRepository.findByHouseholdId(householdId).forEach(c -> cupboard.put(c.getIngredient().getId(), c));
+        }
         Map<UUID, String> mealRecipes = new HashMap<>();
         mealPlanEntryRepository.recipeNamesOnList(householdId)
                 .forEach(row -> mealRecipes.put((UUID) row[0], (String) row[1]));
+        Map<UUID, String> addedRecipes = new HashMap<>();
+        groceryListItemRepository.recipeNamesOnList(householdId)
+                .forEach(row -> addedRecipes.put((UUID) row[0], (String) row[1]));
         return new Context(ingredientSections.overrides(householdId), ingredientSections.categories(householdId),
-                cupboard, mealRecipes);
+                keepsCupboard, cupboard, mealRecipes, addedRecipes);
+    }
+
+    /** Usually the household this request has already locked or read, so no second query. */
+    private boolean keepsCupboard(UUID householdId) {
+        return householdRepository.findById(householdId).map(Household::isCupboardEnabled).orElse(true);
     }
 
     @Transactional(readOnly = true)
@@ -303,6 +336,9 @@ public class GroceryListService {
      * their phone a second earlier — are skipped rather than failing the whole thing. The lock
      * is what makes that true when both presses land together: the second waits for the first
      * to finish, then finds nothing left to take off, instead of both taking the same row.
+     *
+     * A household that does not keep a cupboard has nowhere to put things away, so its `putAway`
+     * ones only come off the list as bought for the house — see {@link #bought}.
      */
     @Transactional
     public void putAway(UUID householdId, UUID requesterId, PutAwayRequest request) {
@@ -316,12 +352,12 @@ public class GroceryListService {
         }
     }
 
-    private void takeOff(UUID householdId, UUID itemId, Household stockInto) {
+    private void takeOff(UUID householdId, UUID itemId, Household boughtFor) {
         groceryListItemRepository.findById(itemId)
                 .filter(item -> item.getHousehold().getId().equals(householdId))
                 .ifPresent(item -> {
-                    if (stockInto != null && item.getIngredient() != null) {
-                        stock(stockInto, item);
+                    if (boughtFor != null && item.getIngredient() != null) {
+                        bought(boughtFor, item);
                     }
                     groceryListItemRepository.delete(item);
                     eventPublisher.itemRemoved(householdId, itemId);
@@ -329,14 +365,25 @@ public class GroceryListService {
     }
 
     /**
+     * Bought for this house: into the cupboard, if the household keeps one. Either way it is the
+     * moment a restock reminder starts counting again — coffee bought is coffee bought, whether
+     * or not anybody keeps track of the jar. Only here, and not for what was left out as someone
+     * else's: that was bought, but not for this house.
+     */
+    private void bought(Household household, GroceryListItem item) {
+        if (household.isCupboardEnabled()) {
+            stock(household, item);
+        } else {
+            restockClock.bought(household.getId(), item.getIngredient().getId());
+        }
+    }
+
+    /**
      * Just bought: in the cupboard, and no longer running low if it was. Something the cupboard
      * counts goes up by what was bought, when the list said how much in the same unit — 1 lb of
      * chicken and 2 lb bought is 3 lb. Bought without an amount, or in a unit the count is not
      * kept in, the count stays as it was: a guess would be a number nobody can trust, and the
-     * cupboard's − and + are there to put it right.
-     *
-     * It is also the moment a restock reminder starts counting again. Only here, and not for
-     * what was left out as someone else's: that was bought, but not for this house.
+     * cupboard's − and + are there to put it right. Its restock reminder starts over too.
      */
     private void stock(Household household, GroceryListItem bought) {
         Ingredient ingredient = bought.getIngredient();
@@ -380,6 +427,58 @@ public class GroceryListService {
             changes.save(addTo(household, entry.getItem(), null, null, null));
         }
         return changes.publish(householdId, ctx);
+    }
+
+    /**
+     * A recipe's ingredients straight onto the list, from its page — no plan involved, for a
+     * household that shops a recipe at a time or does not plan at all. Scaled to the servings
+     * asked for (the recipe's own when none are), with only the optional extras asked for this
+     * time. Otherwise the rules of one planned meal's own button: staples the cupboard always has
+     * are left off, things it has go on flagged, and an amount of nothing — "salt, to taste" —
+     * goes on as "some" rather than "0".
+     *
+     * Each thing lands where a typed one would ({@link #addTo}): on the row already waiting for
+     * it, adding up in the same unit, and asked for, so no meal leaving the plan takes it off.
+     * There is no meal to remember what was added, so pressing it twice asks for twice as much —
+     * sometimes what somebody means (two lasagnes), more often a second tap. So a recipe whose
+     * things are still waiting on the list is refused with {@link AlreadyOnListException} unless
+     * {@code again} says it is meant, and the app asks first. What is in the cart does not count:
+     * that has been bought, and adding the recipe now is shopping for it again.
+     *
+     * The rows remember the recipe, only to say who they are for. Readable recipes only, by the
+     * rule a recipe's page has ({@link RecipeService#readable}).
+     */
+    @Transactional
+    public List<GroceryListItemResponse> addRecipeToList(UUID householdId, UUID recipeId, UUID requesterId,
+                                                           AddRecipeRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        Recipe recipe = recipeService.readable(recipeId, householdId, requesterId);
+        Household household = locked(householdId);
+
+        boolean waiting = groceryListItemRepository.findByHouseholdId(householdId).stream()
+                .anyMatch(row -> !row.isChecked() && row.getFromRecipeIds().contains(recipe.getId()));
+        if (waiting && !Boolean.TRUE.equals(request.again())) {
+            throw new AlreadyOnListException(recipe.getName());
+        }
+
+        Context ctx = context(householdId).naming(recipe);
+        int servings = request.servings() != null ? request.servings() : recipe.getServings();
+        Set<UUID> optionals = request.includedOptionalIngredientIds() == null ? Set.of()
+                : request.includedOptionalIngredientIds().stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        User by = userRepository.findById(requesterId).orElse(null);
+
+        Set<GroceryListItem> touched = new LinkedHashSet<>();
+        for (Need need : needs(recipe, servings, optionals, ctx).values()) {
+            // No amount, or an amount of nothing, is asked for as some: no number, not "0 salt".
+            BigDecimal quantity = need.quantity().signum() > 0 ? need.quantity() : null;
+            GroceryListItem row = addTo(household, need.ingredient(), quantity, need.unit(), null);
+            row.getFromRecipeIds().add(recipe.getId());
+            addedBy(row, by);
+            touched.add(groceryListItemRepository.save(row));
+        }
+        List<GroceryListItemResponse> responses = touched.stream().map(row -> toItemResponse(row, ctx)).toList();
+        responses.forEach(response -> eventPublisher.itemChanged(householdId, response));
+        return responses;
     }
 
     /**
@@ -465,10 +564,13 @@ public class GroceryListService {
         int inCupboard = (int) needs.values().stream().filter(need -> ctx.has(need.ingredient())).count();
 
         String status;
-        if (needs.isEmpty() || (!toAdd.isEmpty() && toAdd.stream().allMatch(need -> ctx.has(need.ingredient())))) {
+        if (ctx.keepsCupboard() && (needs.isEmpty()
+                || (!toAdd.isEmpty() && toAdd.stream().allMatch(need -> ctx.has(need.ingredient()))))) {
             // Every ingredient a staple, or everything still to add already in the cupboard.
             status = "IN_CUPBOARD";
         } else {
+            // Without a cupboard, a meal that needs nothing — only optional extras, none of them
+            // asked for — has nothing left to add, which is what being on the list means.
             status = toAdd.isEmpty() ? "ON_LIST" : "NOT_ON_LIST";
         }
         List<UUID> ingredients = toAdd.stream().map(need -> need.ingredient().getId()).distinct().toList();
@@ -627,7 +729,7 @@ public class GroceryListService {
      * paprika does not mean having enough. Staples you always have are left off entirely. An
      * optional ingredient only goes on if this occurrence's plan asked for it — see
      * {@link MealPlanEntry#getIncludedOptionalIngredientIds()}, decided once when the meal was
-     * planned rather than asked again here.
+     * planned rather than asked again here — or, for a recipe added from its page, if that did.
      */
     private Map<UnitKey, Need> needs(Recipe recipe, int wantedServings, Set<UUID> includedOptionalIngredientIds,
                                      Context ctx) {
@@ -731,8 +833,9 @@ public class GroceryListService {
      * Places everything nobody has placed yet, in ONE Gemini request into this household's own
      * categories. One, because the key allows twenty a day across the whole app — so this is a
      * button someone presses once the list is finished, and never something that runs by itself.
-     * The cupboard's unplaced items ride along in the same request. With nothing unplaced, no
-     * request is made at all.
+     * The cupboard's unplaced items ride along in the same request — unless the household has
+     * stopped keeping one: nobody would see them placed, and they alone should never spend a
+     * request. With nothing unplaced, no request is made at all.
      */
     @Transactional
     public SortResponse sort(UUID householdId, UUID requesterId) {
@@ -745,10 +848,12 @@ public class GroceryListService {
                 .map(GroceryListItem::getIngredient)
                 .filter(i -> i != null && !IngredientSections.isSorted(i, overrides, categories))
                 .forEach(i -> unsorted.putIfAbsent(i.getId(), i));
-        cupboardRepository.findByHouseholdId(householdId).stream()
-                .map(CupboardItem::getIngredient)
-                .filter(i -> !IngredientSections.isSorted(i, overrides, categories))
-                .forEach(i -> unsorted.putIfAbsent(i.getId(), i));
+        if (household.isCupboardEnabled()) {
+            cupboardRepository.findByHouseholdId(householdId).stream()
+                    .map(CupboardItem::getIngredient)
+                    .filter(i -> !IngredientSections.isSorted(i, overrides, categories))
+                    .forEach(i -> unsorted.putIfAbsent(i.getId(), i));
+        }
 
         if (unsorted.isEmpty()) {
             return new SortResponse(0, 0);

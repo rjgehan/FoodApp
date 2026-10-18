@@ -171,11 +171,11 @@ struct SharedRecipeView: View {
 
     /// Read as a recipe, or kept as a link. Chosen in the share sheet, changeable here.
     @State private var way: Way
-    /// Where it goes: which household, which drawer, and (a recipe only) which group.
+    /// Where it goes: which household, which drawer, and (a recipe only) which tags.
     @State private var target: UUID?
     @State private var section: RecipeSection = .dinner
-    @State private var group: String?
-    @State private var groups: [RecipeCategory] = []
+    @State private var tags: Set<String> = []
+    @State private var allTags: [RecipeCategory] = []
 
     @Environment(\.dismiss) private var dismiss
 
@@ -225,7 +225,7 @@ struct SharedRecipeView: View {
     private var status: String {
         if tidying { return "\(tidyProgress ?? "reading the video")…" }
         if busy { return "reading…" }
-        if copy != nil { return "shared from Meal Planner" }
+        if copy != nil { return "shared from Waxwing" }
         if fromPage != nil {
             if methodWasSpoken { return "spoken in the video" }
             return SharedItemCard.isVideo(linkToKeep) ? "caption found" : "recipe found"
@@ -250,7 +250,7 @@ struct SharedRecipeView: View {
     /*
      The mockup's 7.6, as the app's half of the share sheet: Cancel, the app's name and Save across
      the top; a card for what arrived; Read as recipe or Keep as saved link; and chips for where it
-     goes — the household, the drawer and, for a recipe, a group. What was read follows, to check
+     goes — the household, the drawer and, for a recipe, its tags. What was read follows, to check
      before saving, with a method rewritten on the phone shown as 7.7 does.
     */
     var body: some View {
@@ -345,7 +345,7 @@ struct SharedRecipeView: View {
         } message: {
             Text("It's already in your recipes — the same link or the same name.")
         }
-        .task(id: target) { await loadGroups() }
+        .task(id: target) { await loadTags() }
         .task {
             if sample {
                 if let structured, fromPage == nil { fromPage = structured }
@@ -420,36 +420,45 @@ struct SharedRecipeView: View {
         }
     }
 
-    /// Where it goes (7.6): each household as a chip, the drawer, and a group for a recipe.
+    /// Where it goes (7.6): each household as a chip, the drawer, and the tags for a recipe — any
+    /// number of them, from that drawer's own.
     private var filing: some View {
         let houses = session.households.isEmpty ? [session.household].compactMap { $0 } : session.households
-        let inDrawer = groups.filter { $0.section == section }
-        return ChipFlow(spacing: 8) {
-            ForEach(houses, id: \.id) { house in
-                Button { target = house.id; group = nil } label: { ChipFace(title: house.name, isOn: target == house.id) }
-                    .buttonStyle(PressFade())
-                    .accessibilityAddTraits(target == house.id ? .isSelected : [])
-            }
-            Menu {
-                Picker("Drawer", selection: $section) {
-                    ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
+        let inDrawer = allTags.filter { $0.section == section }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return VStack(alignment: .leading, spacing: 12) {
+            ChipFlow(spacing: 8) {
+                ForEach(houses, id: \.id) { house in
+                    Button { target = house.id; tags = [] } label: { ChipFace(title: house.name, isOn: target == house.id) }
+                        .buttonStyle(PressFade())
+                        .accessibilityAddTraits(target == house.id ? .isSelected : [])
                 }
-            } label: {
-                ChipFace(title: section.title, isOn: true)
-            }
-            .accessibilityLabel("Drawer: \(section.title)")
-            .onChange(of: section) { _, _ in group = nil }
-            if way == .recipe {
                 Menu {
-                    Button("No group") { group = nil }
-                    ForEach(inDrawer) { category in
-                        Button(category.name) { group = category.name }
+                    Picker("Drawer", selection: $section) {
+                        ForEach(RecipeSection.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                 } label: {
-                    ChipFace(title: group ?? "+ Group", isOn: group != nil)
+                    ChipFace(title: section.title, isOn: true)
                 }
-                .disabled(inDrawer.isEmpty && group == nil)
-                .accessibilityLabel(group.map { "Group: \($0)" } ?? "Add to a group")
+                .accessibilityLabel("Drawer: \(section.title)")
+                // Tags belong to a drawer: the ones ticked for the last drawer mean nothing in this one.
+                .onChange(of: section) { _, _ in tags = [] }
+            }
+            /*
+             The drawer's tags as chips of their own, ticked where they stand, as the recipe form's
+             are. They were a menu, and a menu closes after every tick — Chicken, Quick and Main
+             took three trips into it — and showed nothing of what was ticked until opened again.
+            */
+            if way == .recipe, !inDrawer.isEmpty {
+                ChipFlow(spacing: 8) {
+                    ForEach(inDrawer) { tag in
+                        Chip(tag.name, isOn: tags.contains(tag.name)) {
+                            if tags.contains(tag.name) { tags.remove(tag.name) } else { tags.insert(tag.name) }
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Tags in \(section.title)")
             }
         }
     }
@@ -531,10 +540,10 @@ struct SharedRecipeView: View {
         #endif
     }
 
-    /// The groups of the household it is going to, for the group chip.
-    private func loadGroups() async {
+    /// The tags of the household it is going to, for the tag chip.
+    private func loadTags() async {
         guard !sample, let target else { return }
-        groups = (try? await APIClient.shared.recipeCategories(household: target)) ?? []
+        allTags = (try? await APIClient.shared.recipeCategories(household: target)) ?? []
     }
 
     /**
@@ -548,7 +557,7 @@ struct SharedRecipeView: View {
         error = nil
         saved = nil
         defer { busy = false }
-        note = "A recipe shared from Meal Planner. Saving a copy…"
+        note = "A recipe shared from Waxwing. Saving a copy…"
         do {
             copy = try await SharedRecipeLink.save(token: token, household: household)
             note = nil
@@ -896,6 +905,10 @@ struct SharedRecipeView: View {
             await importLink(link)
             return
         }
+        if input.count > Self.limit {
+            input = String(input.prefix(Self.limit))
+            trimmed = true
+        }
 
         let started = Date()
         do {
@@ -932,7 +945,7 @@ struct SharedRecipeView: View {
             "name": recipe.name,
             "servings": max(1, recipe.servings),
             "section": section.rawValue,
-            "categories": group.map { [$0] } ?? [],
+            "categories": Array(tags),
             "instructions": recipe.steps.joined(separator: "\n"),
             "prepTimeMinutes": recipe.prep,
             "cookTimeMinutes": recipe.cook,
@@ -980,7 +993,7 @@ struct SharedRecipeView: View {
             "name": recipe.name,
             "servings": max(1, recipe.servings),
             "section": section.rawValue,
-            "categories": group.map { [$0] } ?? [],
+            "categories": Array(tags),
             "instructions": recipe.steps.joined(separator: "\n"),
             "prepTimeMinutes": recipe.prepMinutes,
             "cookTimeMinutes": recipe.cookMinutes,

@@ -54,7 +54,7 @@ export default function AdminRecipePage() {
                 recipe.prepTimeMinutes ? `Prep ${formatMinutes(recipe.prepTimeMinutes)}` : null,
                 recipe.cookTimeMinutes ? `Cook ${formatMinutes(recipe.cookTimeMinutes)}` : null,
                 recipe.section ? sectionLabel(recipe.section) : 'Not filed',
-                ...recipe.categories,
+                recipe.categories.length ? `Tags: ${recipe.categories.join(', ')}` : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}

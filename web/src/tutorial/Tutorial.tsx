@@ -5,6 +5,7 @@ import { pickTheme, useTheme } from '../theme/sync';
 import type { ThemeMode } from '../theme/theme';
 import { setDeviceMode } from '../theme/deviceMode';
 import { markTutorialSeen } from './seen';
+import { APP_NAME } from '../brand';
 
 /*
  The first-run tutorial: two slides showing the app, then "Light or dark?", then wherever the
@@ -14,22 +15,25 @@ import { markTutorialSeen } from './seen';
  Each slide is a picture of the real app in a phone's frame, a title and one line. The pictures
  are screenshots of the app itself, light and dark: public/tutorial/README.md says how they were
  taken, for when the screens change enough to want new ones.
+
+ Recipes first, then the list: the two parts every household has (the Plan and the Cupboard are
+ a household's to turn on). The iPhone's slides say the same, word for word.
 */
 
 const SLIDES = [
   {
-    title: 'Plan the week together',
-    line: 'Everyone in the house sees the same plan, and fills it in from their own phone.',
-    light: '/tutorial/plan-light.jpg',
-    dark: '/tutorial/plan-dark.jpg',
-    alt: 'The Plan screen: a month calendar with the planning week tinted, and the next meals under it.',
+    title: "Your family's recipes, together",
+    line: 'Save recipes from anywhere and share them with everyone in the house.',
+    light: '/tutorial/recipes-light.jpg',
+    dark: '/tutorial/recipes-dark.jpg',
+    alt: "The Recipes screen, open at Dinner: the household's dinners with their photos, and tags such as Beef and Chicken to narrow them down.",
   },
   {
     title: 'One list for the shop',
-    line: 'Planned meals become one grocery list, sorted by aisle and ticked off live as you shop.',
+    line: "Add a recipe's ingredients or type your own. Everyone sees one list, ticked off live as you shop.",
     light: '/tutorial/groceries-light.jpg',
     dark: '/tutorial/groceries-dark.jpg',
-    alt: 'The Groceries screen: one shared list grouped by aisle, each item saying which meal it is for.',
+    alt: 'The Groceries screen: one shared list grouped by aisle, each item saying which recipe it is for.',
   },
 ] as const;
 
@@ -131,7 +135,7 @@ export default function Tutorial({ onDone, finish }: { onDone: () => void; finis
             size="lg"
             onClick={() => (atTheme ? done(true) : go(step + 1))}
           >
-            {atTheme ? (finish === 'sign-in' ? 'Continue' : 'Start planning') : 'Next'}
+            {atTheme ? (finish === 'sign-in' ? 'Continue' : 'Get started') : 'Next'}
           </Button>
         </footer>
       </div>
@@ -169,7 +173,8 @@ function PhoneFrame({ light, dark, alt }: { light: string; dark: string; alt: st
   );
 }
 
-const PREVIEW = { LIGHT: '/tutorial/plan-light.jpg', DARK: '/tutorial/plan-dark.jpg' };
+// The first slide's pair, as the iPhone's cards use.
+const PREVIEW = { LIGHT: SLIDES[0].light, DARK: SLIDES[0].dark };
 
 /** The third step: two big cards showing the app each way, and "Match my phone". */
 function LightOrDark({ mode, onChoose }: { mode: ThemeMode; onChoose: (mode: ThemeMode) => void }) {
@@ -178,7 +183,7 @@ function LightOrDark({ mode, onChoose }: { mode: ThemeMode; onChoose: (mode: The
       <div className="pt-4 text-center">
         <h1 className="serif text-[1.75rem] leading-tight">Light or dark?</h1>
         <p className="mx-auto mt-2 max-w-[320px] text-base leading-normal text-muted">
-          Pick how Meal Planner looks. You can change it any time in Settings.
+          Pick how {APP_NAME} looks. You can change it any time in Settings.
         </p>
       </div>
       <div role="radiogroup" aria-label="Light or dark" className="mt-6 flex flex-col gap-3">

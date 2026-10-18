@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import NoHousehold from '../components/NoHousehold';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../api/client';
-import type { RecipeCategory } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
+import { useTags } from '../components/catalogue/catalogueStore';
 import { useTablessScreen } from '../components/Layout';
 import RecipeForm, { type RecipeDraft } from '../components/RecipeForm';
 import { FromALink } from '../components/RecipeFromLink';
@@ -12,6 +11,8 @@ import { Card, NavBar, NoteBox, Tile, type Tone } from '../components/ui';
 import { Icon, type IconName } from '../components/icons';
 import { SECTION_OPTIONS, sectionLabel, sectionSlug } from '../utils/recipeMeta';
 import { SAVED_LINKS_PATH } from '../utils/savedLinks';
+import { readTagNames, tagsIn } from '../utils/tags';
+import { APP_NAME } from '../brand';
 
 type Way = 'type' | 'link' | 'paste';
 
@@ -50,9 +51,10 @@ interface Checking {
  * link (a TikTok, a Reel or a recipe site), or paste one an AI wrote in the layout the app can
  * read. All three end in the same form, "Check recipe" (3.16), looked at before it is saved.
  *
- * Opened from inside a drawer or a group (`?section=DINNER&group=<id>`), every way in starts
- * filed there — the drawer picked and the group ticked, both still yours to change — and the
- * page says where.
+ * Opened from a drawer (`?section=DINNER&tags=Chicken,Quick`, the tags that were chosen there),
+ * every way in starts filed there — the drawer picked and the tags ticked, all still yours to
+ * change — and the page says where. A link from before tags (`?group=<id>`) starts with that
+ * group's name ticked.
  */
 export default function NewRecipePage() {
   const { activeHouseholdId } = useHousehold();
@@ -76,35 +78,17 @@ export default function NewRecipePage() {
   const [handedLink, setHandedLink] = useState('');
 
   const section = SECTION_OPTIONS.find((s) => s.value === params.get('section'))?.value;
+  // The tags the drawer had chosen. The household's tags are kept from the drawer, so they are
+  // known at once; they are only needed for a name with a comma in it, or an old ?group= link.
+  const known = useTags(activeHouseholdId);
   const groupId = params.get('group');
-  // The filing is read once, when the form starts, so the group's name has to be known first.
-  // Undefined while it is looked up; an empty list if the group is not there any more.
-  const [groups, setGroups] = useState<string[] | undefined>(groupId ? undefined : []);
-  /** "Main dish › Chicken": the group and the ones it sits inside, for "Will be filed in". */
-  const [groupPath, setGroupPath] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!groupId || !activeHouseholdId) return;
-    let live = true;
-    api<RecipeCategory[]>('GET', `/api/households/${activeHouseholdId}/recipe-categories`)
-      .then((all) => {
-        const path: string[] = [];
-        for (let c = all.find((g) => g.id === groupId); c; c = all.find((g) => g.id === c!.parentId)) {
-          path.unshift(c.name);
-          if (path.length > 10) break;
-        }
-        return path;
-      })
-      .catch(() => [] as string[])
-      .then((path) => {
-        if (!live) return;
-        setGroupPath(path);
-        setGroups(path.length ? [path[path.length - 1]] : []);
-      });
-    return () => {
-      live = false;
-    };
-  }, [groupId, activeHouseholdId]);
+  const tags = params.get('tags')
+    ? readTagNames(params.get('tags'), section && known ? tagsIn(known, section).map((t) => t.name) : [])
+    : groupId
+      ? (known?.filter((t) => t.id === groupId).map((t) => t.name) ?? [])
+      : [];
+  // The form reads its filing once, when it starts: a name that arrives later starts it again.
+  const tagsKey = tags.join('\n');
 
   // Each step is a page of its own: "Read into form" lands on the top of the form, with the bar
   // and its Save in view, not wherever the paste page had been scrolled to.
@@ -121,11 +105,11 @@ export default function NewRecipePage() {
   }
 
   const done = (id: string) => navigate(`/recipes/${id}`, { replace: true });
-  // Back to the drawer or group it was started from, not to the front of the catalog.
+  // Back to the drawer it was started from, with its tags still chosen — not to the front.
   const backTo = fromLink
     ? SAVED_LINKS_PATH
     : section
-      ? `/recipes/section/${sectionSlug(section)}${groupId ? `?group=${encodeURIComponent(groupId)}` : ''}`
+      ? `/recipes/section/${sectionSlug(section)}${tags.length ? `?${new URLSearchParams({ tags: tags.join(',') })}` : ''}`
       : '/recipes';
 
   const saveButton = (form: string) => (
@@ -163,7 +147,8 @@ export default function NewRecipePage() {
     setWay(next);
   }
 
-  const filedIn = section ? [sectionLabel(section), ...groupPath].join(' › ') : null;
+  // "Dinner · Chicken, Quick", as the recipe's own filing reads everywhere else.
+  const filedIn = section ? [sectionLabel(section), tags.join(', ')].filter(Boolean).join(' · ') : null;
   const titles: Record<Way, string> = { type: 'New recipe', link: 'From a link', paste: 'Paste from an AI' };
 
   return (
@@ -211,7 +196,7 @@ export default function NewRecipePage() {
             householdId={activeHouseholdId}
             draft={checking.draft}
             section={section}
-            groups={groups}
+            tags={tags}
             onSaved={(r) => done(r.id)}
           />
         </>
@@ -245,51 +230,41 @@ export default function NewRecipePage() {
           <div className="flex items-center gap-3 rounded-card bg-surface2 p-4">
             <Tile icon="share" tone="herb" size={36} />
             <p className="min-w-0 flex-1 text-[0.8125rem] text-muted">
-              On iPhone you can also share a page or TikTok straight into Meal Planner from any app.
+              On iPhone you can also share a page or TikTok straight into {APP_NAME} from any app.
             </p>
           </div>
         </div>
       )}
 
-      {groups === undefined ? (
-        way && !checking && <p className="py-8 text-center text-sm text-muted">Loading…</p>
-      ) : (
-        opened.map((w) => (
-          <div key={w} hidden={!!checking || way !== w}>
-            {w === 'link' ? (
-              <FromALink
-                householdId={activeHouseholdId}
-                link={handedLink}
-                section={section}
-                groups={groups}
-                onSaved={(r) => done(r.id)}
-                onDraft={(draft, note) => setChecking({ draft, note })}
-                onTypeInstead={() => open('type')}
-              />
-            ) : w === 'paste' ? (
-              <PasteFromAi
-                householdId={activeHouseholdId}
-                section={section}
-                groups={groups}
-                onLink={(link) => {
-                  setHandedLink(link);
-                  open('link');
-                }}
-                onSaved={(r) => done(r.id)}
-                onDraft={(draft) => setChecking({ draft })}
-              />
-            ) : (
-              <RecipeForm
-                id="type-recipe"
-                householdId={activeHouseholdId}
-                section={section}
-                groups={groups}
-                onSaved={(r) => done(r.id)}
-              />
-            )}
-          </div>
-        ))
-      )}
+      {opened.map((w) => (
+        <div key={`${w}:${tagsKey}`} hidden={!!checking || way !== w}>
+          {w === 'link' ? (
+            <FromALink
+              householdId={activeHouseholdId}
+              link={handedLink}
+              section={section}
+              tags={tags}
+              onSaved={(r) => done(r.id)}
+              onDraft={(draft, note) => setChecking({ draft, note })}
+              onTypeInstead={() => open('type')}
+            />
+          ) : w === 'paste' ? (
+            <PasteFromAi
+              householdId={activeHouseholdId}
+              section={section}
+              tags={tags}
+              onLink={(link) => {
+                setHandedLink(link);
+                open('link');
+              }}
+              onSaved={(r) => done(r.id)}
+              onDraft={(draft) => setChecking({ draft })}
+            />
+          ) : (
+            <RecipeForm id="type-recipe" householdId={activeHouseholdId} section={section} tags={tags} onSaved={(r) => done(r.id)} />
+          )}
+        </div>
+      ))}
     </div>
   );
 }

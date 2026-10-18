@@ -14,9 +14,10 @@ import {
   type SearchAnswer,
 } from '../api/nutrition';
 import { useHousehold } from '../household/HouseholdContext';
+import { useFeatures } from '../utils/features';
 import { usePushedScreen } from '../components/Layout';
 import { Icon } from '../components/icons';
-import { EmptyState, List, NavBar, Pill, Row, SearchField, SectionLabel, Tile } from '../components/ui';
+import { cx, EmptyState, List, NavBar, Pill, Row, SearchField, SectionLabel, Tile } from '../components/ui';
 import { LookupMark, NutritionScanner, SourceNote, Stat, WeekChart } from '../components/nutrition/NutritionParts';
 
 /** Typing settles for this long before the server is asked: it is a lookup, not a race. */
@@ -28,7 +29,7 @@ type Packets = { at: 'not-asked' } | { at: 'asking' } | { at: 'answered'; answer
 /**
  * Nutrition facts (the mockup's 5.4): look up any ingredient, packet or recipe of yours, or scan
  * a packet's barcode; and see how the coming week's plan adds up, a day at a time, for one
- * person. Underneath, what you looked at last.
+ * person — when the household plans meals at all. Underneath, what you looked at last.
  *
  * Ingredients and recipes are found as you type — they are the server's own data. Packets come
  * from Open Food Facts, a charity that turns away addresses that ask too often, so they are only
@@ -38,6 +39,8 @@ export default function NutritionPage() {
   usePushedScreen();
   const navigate = useNavigate();
   const { activeHouseholdId } = useHousehold();
+  // The week is the Plan's; a household that does not plan has lookups and recipes only.
+  const { plan } = useFeatures();
   const [week, setWeek] = useState<PlanNutrition | null>(null);
   const [weekFailed, setWeekFailed] = useState(false);
   const [recent, setRecent] = useState<RecentLookup[] | null>(null);
@@ -50,7 +53,7 @@ export default function NutritionPage() {
   const q = query.trim();
 
   useEffect(() => {
-    if (!activeHouseholdId) return;
+    if (!activeHouseholdId || !plan) return;
     let live = true;
     setWeekFailed(false);
     // The next seven days from today, so the chart is always a week whatever the planning window.
@@ -60,7 +63,7 @@ export default function NutritionPage() {
     return () => {
       live = false;
     };
-  }, [activeHouseholdId]);
+  }, [activeHouseholdId, plan]);
 
   // Only recipes this household can open: one looked up in another house stays there.
   useEffect(() => {
@@ -160,8 +163,8 @@ export default function NutritionPage() {
           onOpenProduct={(b) => openProduct(b)}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start md:gap-6">
-          <WeekCard week={week} failed={weekFailed} today={today} />
+        <div className={cx('grid grid-cols-1 gap-4 md:items-start md:gap-6', plan && 'md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
+          {plan && <WeekCard week={week} failed={weekFailed} today={today} />}
           <div className="flex flex-col">
             <SectionLabel>Recent lookups</SectionLabel>
             {recent == null ? null : recent.length === 0 ? (

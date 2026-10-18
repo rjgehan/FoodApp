@@ -7,6 +7,7 @@ import { absoluteUrl, api, ApiError, getToken } from '../api/client';
 import type { CupboardItem, GroceryListEvent, GroceryListItem as Item } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { useOnResume } from '../utils/useOnResume';
+import { useFeatures } from '../utils/features';
 import { useAiAvailable } from '../utils/useAiAvailable';
 import { splitAmount } from '../utils/amount';
 import { groupByCategory } from '../utils/storeSections';
@@ -34,6 +35,9 @@ const ROW_INSET = { '--row-inset': '50px' } as CSSProperties;
  */
 export default function GroceryListPage() {
   const { activeHouseholdId, groceryCategories } = useHousehold();
+  // A household without a cupboard has no "Cupboard says you have" and nothing to put away; one
+  // that does not plan is told where else a recipe's ingredients come from.
+  const features = useFeatures();
   const aiAvailable = useAiAvailable();
   const [items, setItems] = useState<Item[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -59,9 +63,13 @@ export default function GroceryListPage() {
 
   const refreshCupboard = useCallback(async () => {
     if (!activeHouseholdId) return;
+    if (!features.cupboard) {
+      setCupboard(new Map());
+      return;
+    }
     const list = await api<CupboardItem[]>('GET', `/api/households/${activeHouseholdId}/cupboard`);
     setCupboard(new Map(list.map((c) => [c.ingredientId, c])));
-  }, [activeHouseholdId]);
+  }, [activeHouseholdId, features.cupboard]);
 
   useEffect(() => {
     refreshItems();
@@ -248,13 +256,17 @@ export default function GroceryListPage() {
       </form>
 
       {!loaded ? null : items.length === 0 ? (
-        <EmptyState>
-          Nothing on the list. Add planned meals from{' '}
-          <Link to="/meal-plan" className="font-medium text-accent-ink">
-            Plan
-          </Link>
-          , or type something above.
-        </EmptyState>
+        features.plan ? (
+          <EmptyState>
+            Nothing on the list. Add planned meals from{' '}
+            <Link to="/meal-plan" className="font-medium text-accent-ink">
+              Plan
+            </Link>
+            , or type something above.
+          </EmptyState>
+        ) : (
+          <EmptyState>Nothing on the list. Add a recipe's ingredients from its page, or type an item.</EmptyState>
+        )
       ) : (
         // Two columns of aisles on a wide screen, rather than one long stretched list.
         <div className="gap-x-5 lg:columns-2">
@@ -269,6 +281,7 @@ export default function GroceryListPage() {
                     <GroceryRow
                       item={item}
                       reminder={item.ingredientId ? restock.reminders.get(item.ingredientId) : undefined}
+                      cupboard={features.cupboard}
                       stock={item.ingredientId ? cupboard.get(item.ingredientId) : undefined}
                       onToggle={() => toggleItem(item)}
                       onOpen={() => setOpenId(item.id)}
@@ -302,6 +315,7 @@ export default function GroceryListPage() {
           item={open}
           categories={groceryCategories}
           reminder={open.ingredientId ? restock.reminders.get(open.ingredientId) ?? null : null}
+          cupboard={features.cupboard}
           stock={open.ingredientId ? cupboard.get(open.ingredientId) : undefined}
           onMove={(categoryId) => moveItem(open, categoryId)}
           onReminder={(reminder) => {
@@ -354,14 +368,20 @@ export default function GroceryListPage() {
         <DoneShoppingSheet
           householdId={activeHouseholdId}
           items={ticked}
+          cupboard={features.cupboard}
           onClose={() => setSheet(null)}
           onDone={(cleared, stocked) => {
             setSheet(null);
             setItems((prev) => prev.filter((i) => !cleared.includes(i.id)));
             refreshCupboard().catch(() => {});
-            toast(stocked ? `Put ${stocked} ${stocked === 1 ? 'thing' : 'things'} in the cupboard.` : 'Cleared.', {
-              icon: 'check',
-            });
+            toast(
+              features.cupboard && stocked
+                ? `Put ${stocked} ${stocked === 1 ? 'thing' : 'things'} in the cupboard.`
+                : features.cupboard
+                  ? 'Cleared.'
+                  : `Cleared ${cleared.length} ticked ${cleared.length === 1 ? 'item' : 'items'}.`,
+              { icon: 'check' },
+            );
           }}
         />
       )}

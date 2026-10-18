@@ -15,6 +15,8 @@ test('an outsider cannot reach another household’s data', async () => {
   const entry = await plan(ours.id, isoDate(3), 'DINNER', { recipeId: recipe.id });
   const [item] = await call('POST', `/api/households/${ours.id}/grocery-list/add-meal/${entry.id}`, { token: owner.token });
   const cup = await call('POST', `/api/households/${ours.id}/cupboard`, { token: owner.token, body: { name: 'rice' } });
+  const tags = await call('GET', `/api/households/${ours.id}/recipe-categories`, { token: owner.token });
+  const tag = tags.find((t: any) => t.section === 'DINNER' && t.name === 'Main');
 
   const O = ours.id;
   const T = theirs.id;
@@ -30,6 +32,9 @@ test('an outsider cannot reach another household’s data', async () => {
     ['PATCH', `/api/households/${T}/meal-plan/entries/${entry.id}`, { notes: 'x' }],
     ['DELETE', `/api/households/${T}/meal-plan/${entry.id}`],
     ['POST', `/api/households/${T}/grocery-list/add-meal/${entry.id}`],
+    // A recipe straight onto a list: ours, or ours onto theirs (it is not shared with them).
+    ['POST', `/api/households/${O}/grocery-list/add-recipe/${recipe.id}`, { servings: 4 }],
+    ['POST', `/api/households/${T}/grocery-list/add-recipe/${recipe.id}`, { servings: 4 }],
     ['GET', `/api/households/${O}/grocery-list`],
     ['PATCH', `/api/households/${T}/grocery-list/items/${item.id}`, { checked: true }],
     ['PATCH', `/api/households/${O}/grocery-list/items/${item.id}`, { checked: true }],
@@ -44,6 +49,18 @@ test('an outsider cannot reach another household’s data', async () => {
     ['DELETE', `/api/households/${O}/invite`],
     ['PATCH', `/api/households/${O}/name`, { name: 'x' }],
     ['GET', `/api/households/${O}/places`],
+    // The kitchen: its machines and the two parts of the app it can turn off.
+    ['PATCH', `/api/households/${O}/kitchen`, { planEnabled: false, cupboardEnabled: false, machines: ['oven'] }],
+    // Tags: ours by our URL, and ours by theirs.
+    ['GET', `/api/households/${O}/recipe-categories`],
+    ['POST', `/api/households/${O}/recipe-categories`, { name: 'Sneaky', section: 'DINNER', recipeIds: [recipe.id] }],
+    ['PATCH', `/api/households/${O}/recipe-categories/${tag.id}`, { name: 'x' }],
+    ['PATCH', `/api/households/${T}/recipe-categories/${tag.id}`, { name: 'x' }],
+    ['PUT', `/api/households/${O}/recipe-categories/${tag.id}/recipes`, { add: [recipe.id] }],
+    ['PUT', `/api/households/${T}/recipe-categories/${tag.id}/recipes`, { add: [recipe.id] }],
+    ['POST', `/api/households/${O}/recipe-categories/${tag.id}/recipes`, { recipeIds: [recipe.id] }],
+    ['DELETE', `/api/households/${T}/recipe-categories/${tag.id}`],
+    ['DELETE', `/api/households/${O}/recipe-categories/${tag.id}`],
   ];
 
   const leaks: string[] = [];
@@ -56,13 +73,26 @@ test('an outsider cannot reach another household’s data', async () => {
   // Everything is still ours and untouched.
   const still = await call('GET', `/api/recipes/${recipe.id}`, { token: owner.token });
   expect(still.name).toBe('Private Stew');
+  expect(still.categories).toEqual([]);
+  const list = await call('GET', `/api/households/${O}/grocery-list`, { token: owner.token });
+  expect(list.map((i: any) => i.name)).toEqual(['beef']);
+  const house = (await call('GET', '/api/households', { token: owner.token })).find((h: any) => h.id === O);
+  expect(house).toMatchObject({ planEnabled: true, cupboardEnabled: true, machines: [] });
+  const after = await call('GET', `/api/households/${O}/recipe-categories`, { token: owner.token });
+  expect(after.find((t: any) => t.id === tag.id)).toMatchObject({ name: 'Main', recipeCount: 0 });
+  expect(after.some((t: any) => t.name === 'Sneaky')).toBe(false);
+  // Nor did their list take our recipe.
+  expect(await call('GET', `/api/households/${T}/grocery-list`, { token: owner.token })).toEqual([]);
 });
 
 test('signed-out requests are refused', async () => {
   const hh = await newHousehold();
-  for (const path of [`/api/households/${hh.id}/recipes`, `/api/households/${hh.id}/grocery-list`, '/api/users/me']) {
+  for (const path of [`/api/households/${hh.id}/recipes`, `/api/households/${hh.id}/grocery-list`, '/api/users/me', '/api/kitchen-machines']) {
     expect(await statusOf('GET', path)).toBe(401);
   }
+  const r = await newRecipe(hh.id, 'Toast', [{ name: 'bread', qty: 1 }]);
+  expect(await statusOf('POST', `/api/households/${hh.id}/grocery-list/add-recipe/${r.id}`, { body: {} })).toBe(401);
+  expect(await statusOf('PATCH', `/api/households/${hh.id}/kitchen`, { body: { planEnabled: false } })).toBe(401);
 });
 
 test('nobody can put an existing account into a household, or make one for somebody else', async () => {

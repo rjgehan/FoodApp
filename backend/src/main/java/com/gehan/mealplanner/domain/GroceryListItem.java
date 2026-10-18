@@ -11,7 +11,9 @@ import org.hibernate.annotations.BatchSize;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -61,8 +63,25 @@ public class GroceryListItem {
     private Map<UUID, BigDecimal> fromMeals = new HashMap<>();
 
     /**
-     * Somebody put this on the list themselves — typed it, pressed Buy again, or added a planned
-     * single item — rather than it being here only for planned meals. A typed "salt" and a
+     * The recipes added to the list straight from their page — no planned meal behind them — that
+     * this row is for, by recipe id. Only for saying so: "for Lasagne" beside the row, and whether
+     * a recipe's things are still waiting on the list before it is added a second time. What the
+     * row asks for is in {@link #quantity} like anything typed in, and such a row is
+     * {@link #askedFor}, so nothing is ever taken back off it on a recipe's behalf.
+     *
+     * No foreign key to the recipe: one deleted since leaves its id behind, which no name is
+     * found for.
+     */
+    @ElementCollection
+    @CollectionTable(name = "grocery_list_item_recipes", joinColumns = @JoinColumn(name = "grocery_list_item_id"))
+    @Column(name = "recipe_id", nullable = false)
+    @BatchSize(size = 100)
+    @Builder.Default
+    private Set<UUID> fromRecipeIds = new HashSet<>();
+
+    /**
+     * Somebody put this on the list themselves — typed it, pressed Buy again, added a planned
+     * single item or a recipe from its page — rather than it being here only for planned meals. A typed "salt" and a
      * meal's "salt, to taste" both have no amount, so without this a meal taken off the plan
      * would take the salt somebody asked for with it. Only the server reads it.
      *

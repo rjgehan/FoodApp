@@ -1,20 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { imageUrl } from '../../api/client';
-import type { Recipe, RecipeCategory, RecipeSection } from '../../api/types';
+import type { Recipe, RecipeSection } from '../../api/types';
 import { iconByKey } from '../FoodIcons';
 import { Icon, type IconName } from '../icons';
-import { usePushedScreen } from '../Layout';
-import { cx, Photo, TONE_SOFT, type Tone } from '../ui';
+import { useHiddenTabBar, usePushedScreen } from '../Layout';
+import { MachineIcon } from '../MachineIcons';
+import { Button, CheckBox, Chip, cx, IconButton, Photo, TONE_SOFT, type Tone } from '../ui';
 import { dishIcon } from '../plan/planModel';
 import { formatMinutes, totalMinutes } from '../../utils/recipeFormat';
-import { sectionLabel } from '../../utils/recipeMeta';
-import type { CategoryTree } from '../../utils/categoryTree';
+import type { Machine } from '../../utils/machines';
 
 /*
- The catalogue's own pieces (the mockup's 3.1–3.6): the drawer and group cards, a recipe as a
- photo card, a search result row, the trail of where you are, and the floating Add recipe. Built
- from the design system in ui.tsx; nothing here restyles it.
+ The catalogue's own pieces (the mockup's 3.1–3.6, with tags in place of nested groups): the
+ drawer cards, a drawer's tag and machine chips, the quick-tag card, a recipe as a photo card
+ (pickable in select mode), and a search result row. Built from the design system in ui.tsx;
+ nothing here restyles it.
 */
 
 /** Each drawer's colour, as the mockup paints them. */
@@ -27,33 +28,25 @@ export const DRAWER_TONES: Record<RecipeSection, Tone> = {
   OTHER: 'mustard',
 };
 
-const GROUP_TONES: Tone[] = ['accent', 'mustard', 'herb', 'sky', 'plum'];
+const TAG_TONES: Tone[] = ['accent', 'mustard', 'herb', 'sky', 'plum'];
 
-/** A group's colour: the same group, the same colour, wherever it is drawn. */
-export function groupTone(id: string): Tone {
+/** A tag's colour: the same tag, the same colour, wherever it is drawn. */
+export function tagTone(id: string): Tone {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return GROUP_TONES[hash % GROUP_TONES.length];
-}
-
-/** What is inside a group, in the order you care: the recipes, then whether it opens further. */
-export function groupDetail(recipes: number, groups: number): string {
-  return (
-    `${recipes} ${recipes === 1 ? 'recipe' : 'recipes'}` +
-    (groups > 0 ? ` · ${groups} ${groups === 1 ? 'group' : 'groups'}` : '')
-  );
+  return TAG_TONES[hash % TAG_TONES.length];
 }
 
 /**
  * The mockup's icon tile with one of the hand-drawn food icons on it. The drawings are on a
  * 48-unit grid, so they are stroked heavier than usual to come out the weight of the mockup's
- * line icons at tile size. A group with no picture wears a folder.
+ * line icons at tile size. A tag with no picture wears the tag mark.
  */
 export function FoodTile({
   iconKey,
   tone,
   size = 40,
-  fallback = 'folder',
+  fallback = 'tag',
   className,
 }: {
   iconKey?: string | null;
@@ -105,39 +98,195 @@ export function DrawerCard({
   );
 }
 
-/** A group inside a drawer: a smaller card, its tile beside the name. */
-export function GroupCard({ group, detail, onOpen }: { group: RecipeCategory; detail: string; onOpen: () => void }) {
+/** How many, after a chip's label: quiet beside it, and readable on the filled chip too. */
+function ChipCount({ n, active }: { n: number; active?: boolean }) {
+  return <span className={cx('tabular-nums', active ? 'text-bg/70' : 'text-muted')}>{n}</span>;
+}
+
+/**
+ * A tag as a filter chip: its little drawing if it has one, its name and how many recipes wear
+ * it. On, it fills with ink like every chip — tap two and you see what wears both.
+ */
+export function TagChip({
+  label,
+  count,
+  iconKey,
+  active,
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & {
+  label: string;
+  count?: number;
+  iconKey?: string | null;
+  active: boolean;
+}) {
+  const Food = iconByKey(iconKey)?.Icon;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="card press flex min-h-[3.75rem] w-full items-center gap-2.5 p-3 text-left active:bg-surface2"
-    >
-      <FoodTile iconKey={group.iconKey} tone={groupTone(group.id)} size={36} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.9375rem] font-semibold">{group.name}</span>
-        <span className="block text-xs text-muted">{detail}</span>
-      </span>
-    </button>
+    <Chip active={active} {...props}>
+      {Food && <Food aria-hidden="true" strokeWidth={3.6} className="-my-0.5 -ml-0.5 h-[18px] w-[18px] shrink-0" />}
+      {label}
+      {count !== undefined && <ChipCount n={count} active={active} />}
+    </Chip>
   );
 }
 
-/** The dashed tile at the end of the groups: make another one here. */
-export function NewGroupTile({ onClick }: { onClick: () => void }) {
+/** The dashed "+ Tag" at the end of the chips: make one here, without leaving the drawer. */
+export function AddTagChip({ onClick, label = 'Tag' }: { onClick: () => void; label?: string }) {
   return (
     <button
       type="button"
+      aria-label="New tag"
       onClick={onClick}
-      className="dash press flex min-h-[3.75rem] w-full items-center justify-center gap-2 p-3 text-sm font-semibold text-accent-ink active:bg-surface2"
+      className="press inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border-[1.5px] border-dashed border-faint px-3 py-[6.5px] text-[0.8125rem] font-semibold text-accent-ink active:bg-surface2"
     >
-      <Icon name="plus" size={16} />
-      New group
+      <Icon name="plus" size={14} strokeWidth={2.4} />
+      {label}
     </button>
   );
 }
 
-/** Two across on a phone, three once there is room, four on a computer. */
-export const CARD_GRID = 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4';
+/**
+ * "+ Tag" once tapped: a chip you type in. Return makes the tag; Escape, the ×, or leaving it
+ * empty puts the chip back. In a form, where nothing is made until Save, leaving it with a name
+ * typed (`submitOnBlur`) keeps the name rather than dropping it unseen.
+ */
+export function NewTagField({
+  onSubmit,
+  onCancel,
+  placeholder = 'New tag',
+  submitOnBlur = false,
+}: {
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+  placeholder?: string;
+  submitOnBlur?: boolean;
+}) {
+  const [name, setName] = useState('');
+  function submit() {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (!clean) return onCancel();
+    onSubmit(clean);
+    setName('');
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border-[1.5px] border-accent bg-surface py-[2.5px] pl-3 pr-[3px] shadow-focus">
+      <input
+        autoFocus
+        value={name}
+        maxLength={100}
+        enterKeyHint="done"
+        aria-label="New tag name"
+        placeholder={placeholder}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          // In a form (the recipe form) Return would otherwise submit the whole recipe.
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+          }
+        }}
+        onBlur={() => {
+          if (!name.trim()) onCancel();
+          else if (submitOnBlur) submit();
+        }}
+        className="w-28 min-w-0 bg-transparent text-[0.8125rem] font-medium text-ink outline-none placeholder:text-faint"
+      />
+      <button
+        type="button"
+        aria-label="Cancel the new tag"
+        // Keeps the field focused until the tap lands, so leaving it empty is not taken as Cancel twice.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onCancel}
+        className="press flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted"
+      >
+        <Icon name="x" size={13} strokeWidth={2.4} />
+      </button>
+    </span>
+  );
+}
+
+/** A machine as a filter chip: its drawing, its short name and how many recipes need it. */
+export function MachineChip({
+  machine,
+  count,
+  active,
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { machine: Machine; count: number; active: boolean }) {
+  return (
+    <Chip active={active} title={machine.label} {...props}>
+      <MachineIcon machine={machine.key} size={16} className="-ml-0.5 shrink-0" />
+      {machine.short}
+      <ChipCount n={count} active={active} />
+    </Chip>
+  );
+}
+
+/**
+ * A row of chips that scrolls sideways on a phone — five rows of wrapped tags would push the
+ * recipes off the screen — and wraps once there is room for them. On a phone its right edge
+ * fades, so a row that runs off the screen looks like one, rather than looking complete.
+ *
+ * `end` (the drawer's "+ Tag") comes last but is held at the right edge while the rest scrolls
+ * under it, so it is always in reach; it brings its own fade, the chips going under it.
+ */
+export function ChipRow({ label, children, end }: { label: string; children: ReactNode; end?: ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className={cx(
+        '-mx-5 flex gap-2 overflow-x-auto py-px pl-5 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden',
+        end ? 'pr-0' : 'pr-5 max-md:[mask-image:linear-gradient(to_left,transparent,black_1.5rem)]',
+      )}
+    >
+      {children}
+      {end && (
+        <span className="sticky right-0 -ml-2 flex shrink-0 bg-[linear-gradient(to_right,rgb(var(--bg)/0),rgb(var(--bg))_1.125rem)] pl-5 pr-5 md:static md:ml-0 md:bg-none md:p-0">
+          {end}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "4 untagged recipes look like Chicken", and one button that tags them all. Only ever a card in
+ * the page — it never opens anything by itself — and × is "not now", remembered on this device.
+ */
+export function QuickTagCard({
+  name,
+  count,
+  busy,
+  onTag,
+  onDismiss,
+}: {
+  name: string;
+  count: number;
+  busy: boolean;
+  onTag: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <section
+      aria-label="Tag suggestion"
+      className="flex items-center gap-2.5 rounded-[18px] border border-mustard bg-mustard-soft py-2.5 pl-3.5 pr-1.5 shadow-card"
+    >
+      <Icon name="sparkles" size={17} className="shrink-0 text-mustard" />
+      <p className="min-w-0 flex-1 text-sm leading-snug">
+        {count} untagged recipes look like <b className="font-semibold">{name}</b>
+      </p>
+      <Button size="sm" variant="dark" disabled={busy} onClick={onTag}>
+        {busy ? 'Tagging…' : 'Tag them'}
+      </Button>
+      <IconButton label="Not now" onClick={onDismiss} className="!h-9 !w-9 text-mustard">
+        <Icon name="x" size={16} strokeWidth={2.4} />
+      </IconButton>
+    </section>
+  );
+}
 
 /**
  * A recipe's picture: its cover if it has one, otherwise the mockup's food-coloured gradient with
@@ -172,13 +321,28 @@ export function RecipePicture({ recipe, className, style }: { recipe: Recipe; cl
 
 /**
  * A recipe as a photo card (3.4): the picture, the name under it, and how long it takes. One
- * that came from another household says so, since it cannot be changed from here.
+ * that came from another household says so, since it cannot be changed from here. Given
+ * `onPick` it is a tick-box instead of a link — select mode — with the tick on the picture.
  */
-export function RecipePhotoCard({ recipe }: { recipe: Recipe }) {
+export function RecipePhotoCard({ recipe, picked, onPick }: { recipe: Recipe; picked?: boolean; onPick?: () => void }) {
   const total = totalMinutes(recipe);
-  return (
-    <Link to={`/recipes/${recipe.id}`} className="press flex flex-col gap-2">
-      <RecipePicture recipe={recipe} className="aspect-[171/124] w-full rounded-2xl" />
+  const body = (
+    <>
+      <span className="relative block">
+        <RecipePicture
+          recipe={recipe}
+          className={cx(
+            'aspect-[171/124] w-full rounded-2xl transition-shadow',
+            picked && 'shadow-[0_0_0_3px_rgb(var(--bg)),0_0_0_5.5px_rgb(var(--accent))]',
+          )}
+        />
+        {onPick && (
+          <CheckBox
+            checked={!!picked}
+            className={cx('absolute right-2 top-2', !picked && '!border-white bg-black/20 shadow-[0_1px_3px_rgba(0,0,0,0.25)]')}
+          />
+        )}
+      </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-[0.9375rem] font-semibold">{recipe.name}</span>
         <span className="flex items-center gap-1 text-xs text-muted">
@@ -195,36 +359,49 @@ export function RecipePhotoCard({ recipe }: { recipe: Recipe }) {
           <span className="truncate text-xs text-faint">from {recipe.ownerName}</span>
         )}
       </span>
+    </>
+  );
+  if (onPick) {
+    return (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={!!picked}
+        aria-label={recipe.name}
+        onClick={onPick}
+        className="press flex w-full flex-col gap-2 text-left"
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <Link to={`/recipes/${recipe.id}`} className="press flex flex-col gap-2">
+      {body}
     </Link>
   );
 }
 
-export function RecipePhotoGrid({ recipes }: { recipes: Recipe[] }) {
+/** Two across on a phone, three once there is room, four on a computer. */
+export function RecipePhotoGrid({
+  recipes,
+  picked,
+  onPick,
+}: {
+  recipes: Recipe[];
+  /** Select mode: which are ticked, and what a tap does. */
+  picked?: Set<string>;
+  onPick?: (recipe: Recipe) => void;
+}) {
   return (
     <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
       {recipes.map((r) => (
         <li key={r.id}>
-          <RecipePhotoCard recipe={r} />
+          <RecipePhotoCard recipe={r} picked={picked?.has(r.id)} onPick={onPick && (() => onPick(r))} />
         </li>
       ))}
     </ul>
   );
-}
-
-/**
- * Where a recipe is filed, as a trail: "Dinner › Main dish › Chicken". Recipes carry their
- * groups by name, so the deepest of them in this household's tree is the one worth naming.
- */
-export function filingTrail(recipe: Recipe, tree: CategoryTree): string {
-  if (!recipe.section) return recipe.ownerName ? `Shared by ${recipe.ownerName}` : 'Shared with you';
-  let deepest: RecipeCategory[] = [];
-  for (const name of recipe.categories) {
-    const group = tree.byName.get(name.toLowerCase());
-    if (!group || (group.section !== null && group.section !== recipe.section)) continue;
-    const path = tree.path(group.id);
-    if (path.length > deepest.length) deepest = path;
-  }
-  return [sectionLabel(recipe.section), ...deepest.map((g) => g.name)].join(' › ');
 }
 
 /** One search result: the picture small, the name, and where it is filed. */
@@ -242,53 +419,17 @@ export function RecipeResultRow({ recipe, subtitle }: { recipe: Recipe; subtitle
   );
 }
 
-/** "Dinner › Main dish › Chicken" under the bar, each step but the last a way back to it. */
-export function Breadcrumbs({ steps }: { steps: { label: string; onClick?: () => void }[] }) {
-  return (
-    <nav aria-label="Where you are" className="flex min-w-0 flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted">
-      {steps.map((step, i) => (
-        <span key={i} className="flex min-w-0 items-center gap-1.5">
-          {i > 0 && <Icon name="chevR" size={12} className="shrink-0" />}
-          {step.onClick ? (
-            <button type="button" onClick={step.onClick} className="press truncate">
-              {step.label}
-            </button>
-          ) : (
-            <b className="truncate font-semibold text-ink" aria-current="page">
-              {step.label}
-            </b>
-          )}
-        </span>
-      ))}
-    </nav>
-  );
-}
-
-/**
- * The floating "+ Add recipe" over a group's recipes, above the tab bar on a phone and in the
- * corner of the page on a computer — lined up with the page's own right edge.
- */
-export function FloatingAddRecipe({ to }: { to: string }) {
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-10 md:bottom-8">
-      <div className="mx-auto flex w-full max-w-3xl justify-end px-5 md:px-8 lg:max-w-5xl">
-        <Link
-          to={to}
-          className="press pointer-events-auto flex h-[3.25rem] items-center gap-2 rounded-full bg-accent px-5 text-[1.0625rem] font-semibold text-on-accent shadow-lift active:brightness-95"
-        >
-          <Icon name="plus" size={19} />
-          Add recipe
-        </Link>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Hides the phone's top bar while it is drawn — for the catalogue's search, which takes the
  * whole top of the screen the way iOS search does.
  */
 export function HideTopBar() {
   usePushedScreen();
+  return null;
+}
+
+/** Hides the phone's tab bar while it is drawn — select mode has its own bar down there. */
+export function HideTabBar() {
+  useHiddenTabBar();
   return null;
 }

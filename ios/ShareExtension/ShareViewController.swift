@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /*
- Share a recipe from anywhere — Safari, Messages, Notes — into Meal Planner.
+ Share a recipe from anywhere — Safari, Messages, Notes — into Waxwing.
 
  The extension itself stays deliberately thin: it pulls the text (or the URL) out of whatever
  was shared and hands it to the app through a custom URL. The parsing and the saving happen in
@@ -368,7 +368,7 @@ final class ShareViewController: UIViewController {
         if openThroughApplication(url) { return }
         extensionContext?.open(url) { [weak self] opened in
             DispatchQueue.main.async {
-                opened ? self?.done() : self?.finish(with: "Could not open Meal Planner.")
+                opened ? self?.done() : self?.finish(with: "Could not open Waxwing.")
             }
         }
     }
@@ -387,7 +387,7 @@ final class ShareViewController: UIViewController {
                 let call = unsafeBitCast(current.method(for: selector), to: Open.self)
                 let completion: @convention(block) (Bool) -> Void = { [weak self] opened in
                     DispatchQueue.main.async {
-                        opened ? self?.done() : self?.finish(with: "Could not open Meal Planner.")
+                        opened ? self?.done() : self?.finish(with: "Could not open Waxwing.")
                     }
                 }
                 call(current, selector, url as NSURL, NSDictionary(), completion)

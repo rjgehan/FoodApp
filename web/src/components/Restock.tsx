@@ -209,13 +209,16 @@ function rememberAsked(householdId: string) {
  * household changes, and only when something's time has come. Everything starts ticked, since
  * the question is usually "yes"; untick what you still have. Anything not added — unticked, or
  * the whole sheet waved away — is not asked about again for three days.
+ *
+ * The last of the prompts in Layout's single slot: `held` while another is up or on its way, and
+ * it only asks the server once its turn has come.
  */
-export function RestockPrompt() {
+export function RestockPrompt({ held = false }: { held?: boolean }) {
   const { activeHouseholdId } = useHousehold();
   const [due, setDue] = useState<{ householdId: string; items: RestockReminder[] } | null>(null);
 
   useEffect(() => {
-    if (!activeHouseholdId || askedAlready(activeHouseholdId)) return;
+    if (held || !activeHouseholdId || askedAlready(activeHouseholdId)) return;
     let cancelled = false;
     api<RestockReminder[]>('GET', `/api/households/${activeHouseholdId}/restock/due`)
       .then((items) => {
@@ -229,9 +232,9 @@ export function RestockPrompt() {
     return () => {
       cancelled = true;
     };
-  }, [activeHouseholdId]);
+  }, [activeHouseholdId, held]);
 
-  if (!due || due.householdId !== activeHouseholdId) return null;
+  if (held || !due || due.householdId !== activeHouseholdId) return null;
   return <RestockPromptSheet householdId={due.householdId} items={due.items} onDone={() => setDue(null)} />;
 }
 

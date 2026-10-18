@@ -42,7 +42,7 @@ for (const entry of planned.filter((e) => e.recipeId === hero.id)) {
 }
 
 const browser = await chromium.launch({
-  channel: 'chrome',
+  channel: process.env.PW_CHANNEL ?? 'chrome',
   // A phone has no hover and a coarse pointer; without this the app shows desktop affordances.
   args: ['--blink-settings=primaryHoverType=1,availableHoverTypes=1,primaryPointerType=2,availablePointerTypes=2'],
 });

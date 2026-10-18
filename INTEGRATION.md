@@ -1,4 +1,4 @@
-# Meal Planner integration API
+# Waxwing integration API
 
 An HTTP API for other services on the home network — a dashboard, a wall display, a script.
 
@@ -10,11 +10,11 @@ Everything is JSON, `UTF-8`, no pagination (a family's recipe box is small).
 
 ## Turning it on
 
-Set one environment variable on the Meal Planner server. Unset means the endpoints answer
+Set one environment variable on the Waxwing server. Unset means the endpoints answer
 `503` — off is the default, because this app is reachable from the public internet.
 
 ```yaml
-# docker-compose.override.yml on the Meal Planner host
+# docker-compose.override.yml on the Waxwing host
 services:
   backend:
     environment:
@@ -152,7 +152,7 @@ Browsable list, sorted by name.
 |---|---|
 | `q` | Case-insensitive substring of name or description |
 | `section` | `BREAKFAST` `LUNCH` `DINNER` `SNACKS` `DRINKS` `OTHER` |
-| `category` | A group name, e.g. `Main dish`, `Side`, `Veggie`. Case-insensitive. Also matches recipes filed in any group nested inside it, so `Main dish` still finds a recipe after it has been moved into `Main dish › Beef` |
+| `category` | A tag name, e.g. `Main dish`, `Side`, `Veggie`. Case-insensitive. A plain match: the recipe wears a tag of that name (in any drawer — add `section` to narrow it) |
 
 ```json
 [
@@ -166,7 +166,8 @@ Browsable list, sorted by name.
     "prepTimeMinutes": 10,
     "cookTimeMinutes": 45,
     "totalTimeMinutes": 55,
-    "imageUrl": "/api/images/834a83b9-…"
+    "imageUrl": "/api/images/834a83b9-…",
+    "appliances": ["oven"]
   }
 ]
 ```
@@ -174,13 +175,32 @@ Browsable list, sorted by name.
 `section` and `categories` are **per household** — how *that* household filed the recipe. A
 recipe shared from another household has `"section": null` until it is filed.
 
-`categories` lists only the groups the recipe is filed in directly (`["Beef"]`, not
-`["Beef", "Main dish"]`), even when it was found through a parent group.
+`appliances` are the kitchen machines the recipe needs — the same wherever it is filed, since
+they come from the recipe itself. The app reads them from the method when the recipe is saved,
+and a household can correct them by hand. The keys, in the order they always come back in:
+`oven`, `stovetop`, `microwave`, `air-fryer`, `slow-cooker`, `pressure-cooker` (an Instant Pot),
+`grill` (a barbecue, never the oven's grill), `blender`, `food-processor`, `mixer`,
+`rice-cooker`. The method alone never gives `stovetop` — nearly everything uses one — but a
+household can pick it. Empty when it needs none of them. Treat a key you don't know as
+something new rather than an error.
+
+`categories` are the recipe's **tags** in that household, by name, sorted — every one it wears.
+The app calls them tags; the API keeps the old name. Each tag belongs to one drawer (`section`),
+so Breakfast and Dinner can each have a `Main`, and a recipe only ever wears tags from its own
+drawer.
+
+Tags used to be groups that could sit inside one another (`Main dish › Beef`), and `category`
+then also matched recipes in groups nested inside the one asked for. Tags are flat now. When
+they were flattened, each recipe that was inside a nested group was given every group above it
+as a tag of its own, so `category=Main dish` still finds what it always found — but such a
+recipe's `categories` now lists those too (`["Beef", "Main dish"]`, where it used to say just
+`["Beef"]`). The home dashboard only shows `categories` as they come and never sends
+`category`, so nothing there needed to change.
 
 ### `GET /api/integration/recipes/{recipeId}`
 
-Full detail. Optional `?householdId=` fills in `section` and `categories` as that household
-files it; without it both come back empty.
+Full detail. Optional `?householdId=` fills in `section` and `categories` (its tags) as that
+household files it; without it both come back empty.
 
 ```json
 {
@@ -201,7 +221,8 @@ files it; without it both come back empty.
   "steps": [
     "Preheat the oven to 350°F and line a small baking dish with parchment paper.",
     "Crush the graham crackers into fine crumbs, mix with the melted butter…"
-  ]
+  ],
+  "appliances": ["oven"]
 }
 ```
 

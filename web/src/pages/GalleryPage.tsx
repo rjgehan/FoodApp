@@ -32,6 +32,18 @@ import {
   Tile,
 } from '../components/ui';
 import { PageTitle } from '../components/PageTitle';
+import {
+  AddTagChip,
+  ChipRow,
+  FoodTile,
+  MachineChip,
+  NewTagField,
+  QuickTagCard,
+  TagChip,
+} from '../components/catalogue/CatalogueParts';
+import { MACHINE_ICONS } from '../components/MachineIcons';
+import { MACHINES } from '../utils/machines';
+import { KitchenSetupCard, MachineGrid } from '../components/kitchen/KitchenSetup';
 
 /**
  * Every building block in one place, in the theme you are in — for building screens and for
@@ -43,6 +55,10 @@ export default function GalleryPage() {
   const [sheet, setSheet] = useState(false);
   const [alert, setAlert] = useState(false);
   const [chip, setChip] = useState('Top');
+  const [tags, setTags] = useState<string[]>(['Chicken']);
+  const [machine, setMachine] = useState<string | null>('air-fryer');
+  const [naming, setNaming] = useState(false);
+  const [kitchen, setKitchen] = useState<Set<string>>(() => new Set(['oven', 'stovetop', 'blender']));
 
   return (
     <div className="space-y-6 pb-10">
@@ -54,7 +70,7 @@ export default function GalleryPage() {
           label="More"
           shape="round"
           items={[
-            { label: 'Organise', icon: 'folder', iconTone: 'mustard', detail: 'Drawer and groups', onSelect: () => undefined },
+            { label: 'Organise', icon: 'folder', iconTone: 'mustard', detail: 'Drawer and tags', onSelect: () => undefined },
             { label: 'Share', icon: 'share', iconTone: 'herb', onSelect: () => undefined },
             { label: 'Delete', icon: 'trash', tone: 'danger', detail: 'Asks first', onSelect: () => undefined },
           ]}
@@ -176,10 +192,72 @@ export default function GalleryPage() {
         <Tile icon="cookie" tone="plum" />
         <Tile icon="cup" tone="sky" />
       </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <CheckBox checked={false} mixed />
+        <span className="text-sm text-muted">On some of them</span>
+      </div>
       <NoteBox tone="mustard" icon="alert">
         Tue dinner already has Lemon herb chicken planned. This will be added as a side.
       </NoteBox>
+
+      <SectionHead title="Tags and machines" />
+      <ChipRow label="Tags">
+        <TagChip label="All" count={12} active={tags.length === 0} onClick={() => setTags([])} />
+        {[
+          { name: 'Beef', icon: 'meat', count: 2 },
+          { name: 'Chicken', icon: 'drumstick', count: 4 },
+          { name: 'Quick', icon: null, count: 5 },
+          { name: 'Veggie', icon: 'veggie', count: 3 },
+        ].map((t) => (
+          <TagChip
+            key={t.name}
+            label={t.name}
+            iconKey={t.icon}
+            count={t.count}
+            active={tags.includes(t.name)}
+            onClick={() => setTags((on) => (on.includes(t.name) ? on.filter((n) => n !== t.name) : [...on, t.name]))}
+          />
+        ))}
+        <TagChip label="Untagged" count={3} active={false} />
+        {naming ? <NewTagField onSubmit={() => setNaming(false)} onCancel={() => setNaming(false)} /> : <AddTagChip onClick={() => setNaming(true)} />}
+      </ChipRow>
+      <ChipRow label="Machines">
+        {MACHINES.filter((m) => ['oven', 'air-fryer', 'slow-cooker', 'pressure-cooker', 'blender'].includes(m.key)).map((m, i) => (
+          <MachineChip key={m.key} machine={m} count={i + 1} active={machine === m.key} onClick={() => setMachine(machine === m.key ? null : m.key)} />
+        ))}
+      </ChipRow>
+      <QuickTagCard name="Chicken" count={4} busy={false} onTag={() => undefined} onDismiss={() => undefined} />
+      <div className="flex flex-wrap items-center gap-2">
+        <FoodTile iconKey="drumstick" tone="mustard" size={36} />
+        <FoodTile tone="sky" size={36} />
+        <FoodTile iconKey="veggie" tone="herb" size={36} />
+      </div>
+      <div className="grid grid-cols-4 gap-3 text-muted sm:grid-cols-6">
+        {MACHINE_ICONS.map(({ key, label, Icon: Drawing }) => (
+          <span key={key} title={key} className="flex flex-col items-center gap-1.5 text-center text-[0.625rem] leading-tight">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-surface2 text-ink">
+              <Drawing width={26} height={26} />
+            </span>
+            {label}
+          </span>
+        ))}
+      </div>
       <NoteBox tone="sky">Cupboard says you have 1.</NoteBox>
+
+      <SectionHead title="Kitchen" />
+      <KitchenSetupCard householdId="gallery" onStart={() => toast('The kitchen questions would open.')} />
+      <MachineGrid
+        selected={kitchen}
+        roomy
+        onToggle={(key) =>
+          setKitchen((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          })
+        }
+      />
 
       <SectionHead title="Photos" />
       <div className="flex flex-wrap gap-2.5">

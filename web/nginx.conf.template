@@ -19,6 +19,11 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Older nginx images map .webmanifest to application/octet-stream.
+    location = /manifest.webmanifest {
+        types { application/manifest+json webmanifest; }
+    }
+
     # Docker's embedded DNS, read from the container's own resolv.conf by the nginx image's
     # 15-local-resolvers.envsh. Hard-coding 127.0.0.11 breaks on any network that lacks it.
     resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;

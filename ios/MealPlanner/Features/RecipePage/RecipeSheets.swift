@@ -3,17 +3,18 @@ import SwiftUI
 
 /*
  What the recipe page's ••• opens (the mockup's 3.11), and the sheets behind its rows: the
- drawer and groups (Organise, and Move into my recipes), and the photos and links.
+ drawer and tags (Organise, and Move into my recipes), and the photos and links.
  */
 
 enum RecipeOption: Hashable {
-    case organise, media, share, edit, delete, move
+    case groceries, organise, media, share, edit, delete, move
 }
 
 /**
  The recipe's options as grouped rows. Changing a recipe — editing, deleting, its photos,
  sharing it on — is for the household that owns it; one shared with you can be filed in your own
- drawers ("Move into my recipes"), and organised once it is.
+ drawers ("Move into my recipes"), and organised once it is. Add to groceries heads the list for
+ every recipe, in full: beside Add to plan the bottom bar only has room for a cart and one word.
  */
 struct RecipeOptionsSheet: View {
     let recipe: Recipe
@@ -22,7 +23,8 @@ struct RecipeOptionsSheet: View {
     var onPick: (RecipeOption) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    /// As tall as its rows: one row for a recipe shared with you, five for your own (the mockup's 3.11).
+    /// As tall as its rows: two for a recipe shared with you, six for your own (the mockup's 3.11,
+    /// with Add to groceries on top).
     @State private var height: CGFloat = 420
 
     private var mine: Bool { !recipe.shared }
@@ -51,8 +53,9 @@ struct RecipeOptionsSheet: View {
         ScrollView {
             VStack(spacing: 14) {
                 ListGroup {
+                    row("Add to groceries", "Its ingredients, onto the list", "cart", .plum, chevron: true, .groceries)
                     if !moving {
-                        row("Organise", "Drawer and groups", "folder", .mustard, chevron: true, .organise)
+                        row("Organise", "Drawer and tags", "tag", .mustard, chevron: true, .organise)
                     }
                     if mine {
                         row("Photos & links", mediaLine, "photo", .sky, chevron: true, .media)
@@ -102,45 +105,30 @@ struct RecipeOptionsSheet: View {
 
 // MARK: - Filing
 
-/// The drawer chips, then the drawer's groups as chips, then a way to make a new group: where a
-/// recipe is kept, shared by Organise and the recipe form.
+/// The drawer chips, then that drawer's tags as chips, then a way to make a new tag: where a
+/// recipe is kept, shared by Organise, Move into my recipes and the recipe form.
 struct FilingPicker: View {
     @Binding var section: RecipeSection
-    @Binding var groups: Set<String>
-    var allGroups: [RecipeCategory]
-    /// Heads the drawers "Drawer" and the groups "Groups" in section labels, for a sheet whose other
+    @Binding var tags: Set<String>
+    var allTags: [RecipeCategory]
+    /// Heads the drawers "Drawer" and the tags "Tags" in section labels, for a sheet whose other
     /// parts are headed that way (Move into my recipes' "Which household"); otherwise they run on.
     var labelled = false
-    var onAddGroup: (String) async -> Void
+    var onAddTag: (String) async -> Void
 
     @State private var adding = false
-    @State private var newGroup = ""
+    @State private var newTag = ""
     @FocusState private var typing: Bool
 
-    /// The groups that belong in the chosen drawer, plus the ones that belong everywhere.
+    /// The chosen drawer's own tags, alphabetical: a tag belongs to one drawer.
     private var here: [RecipeCategory] {
-        allGroups
-            .filter { $0.section == nil || $0.section == section }
+        allTags
+            .filter { $0.section == section }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    /// The top groups here: no parent, or a parent that lives in another drawer.
-    private var roots: [RecipeCategory] {
-        let ids = Set(here.map(\.id))
-        return here.filter { $0.parentId.map { !ids.contains($0) } ?? true }
-    }
-
-    /// A top group and everything inside it, depth first, with how deep each one sits.
-    private func family(_ root: RecipeCategory) -> [(group: RecipeCategory, depth: Int)] {
-        var out: [(group: RecipeCategory, depth: Int)] = []
-        func walk(_ group: RecipeCategory, _ depth: Int) {
-            out.append((group, depth))
-            // A loop in bad data must not hang the form.
-            guard depth < 8 else { return }
-            for child in here where child.parentId == group.id { walk(child, depth + 1) }
-        }
-        walk(root, 0)
-        return out
+    private func isOn(_ name: String) -> Bool {
+        tags.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     var body: some View {
@@ -155,29 +143,26 @@ struct FilingPicker: View {
             }
             .id("filing")
             VStack(alignment: .leading, spacing: 10) {
-                if labelled { SectionLabel("Groups").padding(.bottom, -2) }
-                groupChips
+                if labelled { SectionLabel("Tags").padding(.bottom, -2) }
+                tagChips
             }
         }
     }
 
-    @ViewBuilder private var groupChips: some View {
-        // Laid out as they nest, as on the web: each top group starts its own line, with the
-        // groups inside it after it — "Main", "› Beef", "› Chicken".
-        ForEach(roots) { root in
-            ChipFlow {
-                ForEach(family(root), id: \.group.id) { item in
-                    let group = item.group
-                    Chip(item.depth > 0 ? "\(String(repeating: "›", count: item.depth)) \(group.name)" : group.name,
-                         isOn: groups.contains(group.name)) {
-                        if groups.contains(group.name) { groups.remove(group.name) } else { groups.insert(group.name) }
+    @ViewBuilder private var tagChips: some View {
+        // One flat row of chips that wraps, as on the web: a recipe can wear any number of them.
+        ChipFlow {
+            ForEach(here) { tag in
+                Chip(tag.name, isOn: isOn(tag.name)) {
+                    if isOn(tag.name) {
+                        tags = tags.filter { $0.caseInsensitiveCompare(tag.name) != .orderedSame }
+                    } else {
+                        tags.insert(tag.name)
                     }
                 }
             }
-        }
-        ChipFlow {
             if !adding {
-                Chip("+ New group", isOn: false) {
+                Chip("+ New tag", isOn: false) {
                     adding = true
                     typing = true
                 }
@@ -185,7 +170,7 @@ struct FilingPicker: View {
         }
         if adding {
             HStack(spacing: 8) {
-                TextField("A new group in \(section.title)", text: $newGroup)
+                TextField("A new tag in \(section.title)", text: $newTag)
                     .focused($typing)
                     .submitLabel(.done)
                     .onSubmit { Task { await add() } }
@@ -194,46 +179,54 @@ struct FilingPicker: View {
                     .fieldSurface(focused: typing)
                 Button("Add") { Task { await add() } }
                     .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
-                    .disabled(newGroup.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         if here.isEmpty && !adding {
-            Text("Groups are the shelves inside a drawer — \"Chicken\", \"Quick\". There are none in \(section.title) yet.")
+            Text("Tags are words a recipe wears — \"Chicken\", \"Quick\" — and it can wear several. There are none in \(section.title) yet.")
                 .font(.system(size: 13)).foregroundStyle(Palette.muted)
         }
     }
 
     private func add() async {
-        let wanted = newGroup.trimmingCharacters(in: .whitespaces)
+        let wanted = newTag.trimmingCharacters(in: .whitespaces)
         guard !wanted.isEmpty else { return }
-        await onAddGroup(wanted)
-        newGroup = ""
+        // A name the drawer has already is just ticked, rather than refused as a duplicate.
+        if let existing = here.first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }) {
+            if !isOn(existing.name) { tags.insert(existing.name) }
+        } else {
+            await onAddTag(wanted)
+        }
+        newTag = ""
         adding = false
     }
 }
 
 /**
- Groups belong to a drawer, and the server files a recipe by group name, making any it cannot
- find. So a group ticked in the old drawer is set aside when the drawer changes, and ticked again
- if the recipe moves back to a drawer that has it — the same as the web's form.
- */
-func moveGroups(_ groups: inout Set<String>, parked: inout Set<String>, to next: RecipeSection, all: [RecipeCategory]) {
+ Tags belong to a drawer, and the server files a recipe by tag name within its own drawer, making
+ any it cannot find. So a tag ticked in the old drawer — Veggie, when the recipe was started in
+ Dinner and then moved to Lunch — is set aside when the drawer changes, rather than coming back as
+ a new, empty Veggie in Lunch, and ticked again if the recipe moves back to a drawer that has it:
+ the same as the web's form. A name the household has no tag for in any drawer was typed in as
+ new, and goes wherever the recipe goes.
+*/
+func moveTags(_ tags: inout Set<String>, parked: inout Set<String>, to next: RecipeSection, all: [RecipeCategory]) {
     func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
-    func inDrawer(_ name: String) -> Bool { all.contains { same($0.name, name) && ($0.section == nil || $0.section == next) } }
+    func inDrawer(_ name: String) -> Bool { all.contains { same($0.name, name) && $0.section == next } }
     func isKnown(_ name: String) -> Bool { all.contains { same($0.name, name) } }
-    let setAside = groups.filter { isKnown($0) && !inDrawer($0) }
-    let back = parked.filter { name in inDrawer(name) && !groups.contains { same($0, name) } }
-    groups.subtract(setAside)
-    groups.formUnion(back)
+    let setAside = tags.filter { isKnown($0) && !inDrawer($0) }
+    let back = parked.filter { name in inDrawer(name) && !tags.contains { same($0, name) } }
+    tags.subtract(setAside)
+    tags.formUnion(back)
     parked.subtract(back)
     parked.formUnion(setAside)
 }
 
 /**
- Organise: the drawer and groups this household keeps the recipe in. For a recipe shared with
- you and not filed yet, it is "Move into my recipes": once it has a drawer it is one of yours to
- find, though still the other household's to change.
- */
+ Organise: the drawer and tags this household keeps the recipe in. For a recipe shared with you
+ and not filed yet, it is "Move into my recipes": once it has a drawer it is one of yours to find,
+ though still the other household's to change.
+*/
 struct OrganiseSheet: View {
     let recipe: Recipe
     var session: Session?
@@ -241,9 +234,9 @@ struct OrganiseSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var section: RecipeSection
-    @State private var groups: Set<String>
+    @State private var tags: Set<String>
     @State private var parked: Set<String> = []
-    @State private var allGroups: [RecipeCategory] = []
+    @State private var allTags: [RecipeCategory] = []
     @State private var busy = false
     @State private var error: String?
 
@@ -253,7 +246,7 @@ struct OrganiseSheet: View {
         self.onSaved = onSaved
         // An unfiled shared recipe has no drawer yet; Dinner is the least surprising place to start.
         _section = State(initialValue: recipe.section ?? .dinner)
-        _groups = State(initialValue: Set(recipe.categories))
+        _tags = State(initialValue: Set(recipe.categories))
     }
 
     private var moving: Bool { recipe.shared && recipe.section == nil }
@@ -265,7 +258,7 @@ struct OrganiseSheet: View {
                             subtitle: moving ? "Shared by \(recipe.ownerName ?? "another household"). Only they can change it." : recipe.name,
                             onClose: { dismiss() })
                 SectionLabel("Filing")
-                FilingPicker(section: $section, groups: $groups, allGroups: allGroups) { name in await addGroup(name) }
+                FilingPicker(section: $section, tags: $tags, allTags: allTags) { name in await addTag(name) }
                 if let error {
                     Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
                 }
@@ -285,17 +278,23 @@ struct OrganiseSheet: View {
         .kitchenSheet([.medium, .large])
         .task {
             guard let household = session?.household?.id else { return }
-            allGroups = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
+            // Previews and the Gallery show the sample tags rather than none.
+            guard session?.token != "preview" else {
+                allTags = SampleData.recipeCategories
+                return
+            }
+            allTags = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
         }
-        .onChange(of: section) { _, next in moveGroups(&groups, parked: &parked, to: next, all: allGroups) }
+        .onChange(of: section) { _, next in moveTags(&tags, parked: &parked, to: next, all: allTags) }
     }
 
-    private func addGroup(_ name: String) async {
+    /// Made in the drawer on screen straight away, and ticked.
+    private func addTag(_ name: String) async {
         guard let household = session?.household?.id else { return }
         do {
-            let made = try await APIClient.shared.createRecipeCategory(household: household, name: name, section: section)
-            allGroups.append(made)
-            groups.insert(made.name)
+            let made = try await APIClient.shared.createTag(household: household, name: name, section: section)
+            allTags.append(made)
+            tags.insert(made.name)
         } catch {
             self.error = error.localizedDescription
         }
@@ -307,8 +306,9 @@ struct OrganiseSheet: View {
         defer { busy = false }
         do {
             let saved = try await APIClient.shared.fileRecipe(household: household, recipe: recipe.id,
-                                                               section: section, categories: Array(groups))
-            NotificationCenter.default.post(name: .recipesChanged, object: nil)
+                                                               section: section, categories: Array(tags))
+            // With the recipe, so Recipes puts just this one right rather than fetching them all.
+            NotificationCenter.default.post(name: .recipesChanged, object: saved)
             onSaved(saved)
             dismiss()
         } catch {

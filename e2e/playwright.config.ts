@@ -6,7 +6,7 @@ import { TUTORIAL_SEEN, WEB_URL } from './lib/device';
  * households and accounts, and some tests deliberately trip the PIN lockout.
  *
  * The browser is the Chrome already installed on this Mac (`channel: 'chrome'`), so there is no
- * Playwright browser download. The iPhone project also tells Chrome it has no hover and a coarse
+ * Playwright browser download (PW_CHANNEL=msedge uses Edge, on a machine without Chrome). The iPhone project also tells Chrome it has no hover and a coarse
  * pointer — without that, anything the app hides behind `@media (hover: hover)` shows up in
  * screenshots even though a real phone never draws it.
  */
@@ -16,7 +16,7 @@ const iphone = {
   baseURL: WEB_URL,
   // A device that has had the first-run tutorial, so every test starts where it used to.
   storageState: TUTORIAL_SEEN,
-  channel: 'chrome',
+  channel: process.env.PW_CHANNEL ?? 'chrome',
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 3,
   isMobile: true,

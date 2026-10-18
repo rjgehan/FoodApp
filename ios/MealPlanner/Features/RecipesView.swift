@@ -1,18 +1,19 @@
 import SwiftUI
 
-/// Where the catalogue can push: a level of a drawer, Saved links (with a search already in it),
-/// or what other households shared.
+/// Where the catalogue can push: a drawer (with one of its tags already chosen, or none), Saved
+/// links (with a search already in it), or what other households shared.
 enum CatalogueRoute: Hashable {
-    case drawer(RecipeSection, group: UUID?)
+    case drawer(RecipeSection, tag: UUID?)
     case savedLinks(query: String)
     case shared
 }
 
 /**
- The front of the catalogue (the mockup's 3.1): six drawers with their counts, then Saved links
- and Shared with you. Searching skips straight to results (3.2) — the recipes with where each is
+ The front of the catalogue (the mockup's 3.1), and the app's home tab: six drawers with their
+ counts, then Saved links and Shared with you — under a "Set up your kitchen" card while nobody in
+ the house has answered the kitchen questions. Searching skips straight to results (3.2) — the recipes with where each is
  filed, and any saved links that match gathered into one row — because when you already know
- what you want, browsing is in the way. The same drawers and groups as the web.
+ what you want, browsing is in the way. The same drawers and tags as the web.
 */
 struct RecipesView: View {
     var session: Session
@@ -24,6 +25,8 @@ struct RecipesView: View {
     @State private var showingAccount = false
     @State private var showingIdeas = false
     @State private var addingOne = false
+    /// Houses whose "Set up your kitchen" card was put away while this screen was up.
+    @State private var kitchenCardClosed: Set<UUID> = []
 
     init(session: Session, sample: [Recipe]? = nil, sampleCategories: [RecipeCategory]? = nil) {
         self.session = session
@@ -48,6 +51,15 @@ struct RecipesView: View {
     }
 
     private var shared: [Recipe] { store.recipes.filter { $0.section == nil } }
+
+    /// A house nobody has answered the kitchen questions for, whose card nobody here put away —
+    /// and whose questions are not already on their way.
+    private var kitchenCardFor: UUID? {
+        guard !store.isSample, let house = session.household, house.kitchenSetUp == false,
+              session.kitchenSetupFor != house.id, !kitchenCardClosed.contains(house.id),
+              !KitchenSetupCard.isClosed(for: house.id) else { return nil }
+        return house.id
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -91,9 +103,14 @@ struct RecipesView: View {
                 await store.load()
                 await store.loadSavedLinks()
             }
-            // A recipe deleted from its own page, however deep in a drawer that was.
-            .onReceive(NotificationCenter.default.publisher(for: .recipesChanged)) { _ in
-                Task { await store.load() }
+            // A recipe deleted from its own page, however deep in a drawer that was. One that says
+            // which recipe it was (Organise on its page) is just put right, not fetched again.
+            .onReceive(NotificationCenter.default.publisher(for: .recipesChanged)) { note in
+                if let recipe = note.object as? Recipe {
+                    store.saved(recipe)
+                } else {
+                    Task { await store.load() }
+                }
             }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
             // Household › Recipe icons lives in that sheet, over this tab, so closing it is when a
@@ -103,8 +120,8 @@ struct RecipesView: View {
             }
             .navigationDestination(for: CatalogueRoute.self) { route in
                 switch route {
-                case .drawer(let section, let group):
-                    DrawerView(store: store, section: section, parentId: group)
+                case .drawer(let section, let tag):
+                    DrawerView(store: store, section: section, tag: tag)
                 case .savedLinks(let query):
                     SavedLinksView(session: session, sample: store.isSample ? SampleData.savedLinks : nil,
                                    initialQuery: query) {
@@ -116,7 +133,7 @@ struct RecipesView: View {
             }
             .sheet(isPresented: $addingOne) {
                 // The web's three ways in: type it out, from a link, or paste one.
-                NewRecipeView(session: session) { _ in Task { await store.load() } }
+                NewRecipeView(session: session) { saved in store.saved(saved) }
             }
         }
         .task {
@@ -148,9 +165,18 @@ struct RecipesView: View {
 
     private var catalogue: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Never in the way: the questions only come up when Start is pressed.
+            if let house = kitchenCardFor {
+                KitchenSetupCard {
+                    session.askKitchenSetup(for: house)
+                } onClose: {
+                    KitchenSetupCard.close(for: house)
+                    kitchenCardClosed.insert(house)
+                }
+            }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 ForEach(RecipeSection.allCases, id: \.self) { section in
-                    NavigationLink(value: CatalogueRoute.drawer(section, group: nil)) {
+                    NavigationLink(value: CatalogueRoute.drawer(section, tag: nil)) {
                         DrawerCard(section: section,
                                    count: store.recipes.filter { $0.section == section }.count,
                                    iconKey: store.sectionIcons[section] ?? section.defaultIcon)
@@ -210,7 +236,7 @@ struct RecipesView: View {
                         NavigationLink {
                             RecipeDetailView(recipe: recipe, session: session)
                         } label: {
-                            RecipeResultRow(recipe: recipe, subtitle: store.trail(recipe))
+                            RecipeResultRow(recipe: recipe, subtitle: store.filingLine(recipe))
                         }
                         .buttonStyle(PressFade())
                     }
@@ -254,8 +280,8 @@ struct RecipesView: View {
 
     #if DEBUG
     /**
-     For screenshot runs: `-mp_debug_drawer dinner` opens that drawer, and `-mp_debug_group Main`
-     (a name, or "Main/Beef") a group in it. `-mp_debug_screen savedlinks|shared` opens those,
+     For screenshot runs: `-mp_debug_drawer dinner` opens that drawer, with `-mp_debug_tag Chicken`
+     chosen (DrawerView.debugOpen has the rest). `-mp_debug_screen savedlinks|shared` opens those,
      `new` the new-recipe form, and `-mp_debug_query pasta` searches.
     */
     private func debugOpen() {
@@ -269,296 +295,12 @@ struct RecipesView: View {
         }
         guard let section = defaults.string(forKey: "mp_debug_drawer").flatMap({ RecipeSection(rawValue: $0.uppercased()) })
         else { return }
-        var routes: [CatalogueRoute] = [.drawer(section, group: nil)]
-        var parent: UUID?
-        for name in (defaults.string(forKey: "mp_debug_group") ?? "").split(separator: "/") where defaults.string(forKey: "mp_debug_screen") != "add" {
-            guard let group = store.children(of: parent, in: section).first(where: { $0.name == String(name) }) else { break }
-            routes.append(.drawer(section, group: group.id))
-            parent = group.id
-        }
-        path = routes
+        // A form started from the drawer gets the tag ticked instead of the drawer filtered by it.
+        let tag = defaults.string(forKey: "mp_debug_screen") == "add" ? nil
+            : defaults.string(forKey: "mp_debug_tag").flatMap { store.tag(named: $0, in: section)?.id }
+        path = [.drawer(section, tag: tag)]
     }
     #endif
-}
-
-/**
- One level of a drawer (the mockup's 3.3 and 3.4). A drawer or a group shows the groups directly
- inside it as cards; once there is nothing smaller to open, its recipes as photo cards. Recipes at
- a level that are in none of the groups below get a card of one-tap suggestions for where they go,
- likely group first. Back goes up a level.
-*/
-struct DrawerView: View {
-    var store: CatalogueStore
-    let section: RecipeSection
-    /// Nil at the top of the drawer; a group when you have stepped into one.
-    let parentId: UUID?
-
-    @State private var query = ""
-    @State private var editingGroups: UUID??
-    @State private var addingGroup = false
-    @State private var addingRecipe = false
-    @State private var splitting = false
-
-    /// Sample data only, for the Gallery: the drawer on its own.
-    init(section: RecipeSection, parent: RecipeCategory?, recipes: [Recipe], categories: [RecipeCategory]) {
-        store = CatalogueStore(session: nil, sample: recipes, sampleCategories: categories)
-        self.section = section
-        parentId = parent?.id
-    }
-
-    init(store: CatalogueStore, section: RecipeSection, parentId: UUID?) {
-        self.store = store
-        self.section = section
-        self.parentId = parentId
-    }
-
-    private var parent: RecipeCategory? { parentId.flatMap { id in store.categories.first { $0.id == id } } }
-    private var place: String { parent?.name ?? section.title }
-
-    /// Where Back goes: up a level — the group above, the drawer, or Recipes from a drawer.
-    private var backLabel: String {
-        guard let parent else { return "Recipes" }
-        return parent.parentId.flatMap { id in store.categories.first { $0.id == id }?.name } ?? section.title
-    }
-
-    private var inSection: [Recipe] {
-        store.recipes.filter { $0.section == section }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var here: [Recipe] {
-        guard let parent else { return inSection }
-        return inSection.filter { store.isIn($0, parent, in: section) }
-    }
-
-    private var children: [RecipeCategory] { store.children(of: parentId, in: section) }
-
-    /// Here, but in none of the groups below: filed on this group itself, or on nothing at all.
-    private var loose: [Recipe] {
-        let kids = children
-        return here.filter { recipe in !kids.contains { store.isIn(recipe, $0, in: section) } }
-    }
-
-    private var splits: [(name: String, recipeIds: [UUID])] {
-        guard let parent, children.isEmpty, here.count >= 3 else { return [] }
-        let taken = Set(store.path(to: parent).map { $0.name.lowercased() })
-        return CategoryKinds.suggestSplit(here, skip: taken)
-    }
-
-    /// A recipe started in here starts filed in here — or, in a debug run, in -mp_debug_group.
-    private var addGroups: [String] {
-        if let parent { return [parent.name] }
-        #if DEBUG
-        return UserDefaults.standard.string(forKey: "mp_debug_group").map { [$0] } ?? []
-        #else
-        return []
-        #endif
-    }
-
-    var body: some View {
-        let recipesLevel = children.isEmpty
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let parent {
-                    Breadcrumbs(steps: [section.title] + store.path(to: parent).map(\.name))
-                }
-                if !recipesLevel && !here.isEmpty {
-                    SearchBox(text: $query, prompt: "Search \(place)")
-                }
-                if !q.isEmpty {
-                    found(q)
-                } else if here.isEmpty && recipesLevel {
-                    empty
-                } else if recipesLevel {
-                    RecipePhotoGrid(recipes: here, session: store.session)
-                } else {
-                    groupsGrid
-                    if here.isEmpty {
-                        Text("Nothing filed in \(place) yet. Add a recipe, or open a group.")
-                            .font(.system(size: 15)).foregroundStyle(Palette.muted)
-                    }
-                    if !loose.isEmpty {
-                        UnfiledCard(store: store, section: section, recipes: loose, groups: children, from: parent)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, parent == nil ? 24 : 96)
-        }
-        .scrollDismissesKeyboard(.immediately)
-        .pageBackground()
-        .overlay(alignment: .bottomTrailing) {
-            if parent != nil { FloatingAddRecipe { addingRecipe = true } }
-        }
-        .centeredTitle(place)
-        .textBackButton(backLabel)
-        .toolbar { toolbar }
-        .refreshable { await store.load() }
-        .sheet(item: Binding(get: { editingGroups.map { EditingTarget(selected: $0) } },
-                             set: { editingGroups = $0.map(\.selected) })) { target in
-            EditGroupsView(store: store, section: section, parent: parent, groups: children, selected: target.selected)
-        }
-        .sheet(isPresented: $addingGroup) {
-            NewGroupSheet(store: store, section: section, parent: parent).kitchenSheet([.medium, .large])
-        }
-        .sheet(isPresented: $addingRecipe) {
-            // All three ways in, each with the drawer picked and the group ticked, both still
-            // changeable in the editor.
-            NewRecipeView(session: store.session, initialSection: section, initialGroups: addGroups) { _ in
-                Task { await store.load() }
-            }
-        }
-        .sheet(isPresented: $splitting, onDismiss: rememberSplit) {
-            if let parent {
-                // It sizes itself to what it says, with the group showing behind.
-                SplitSheet(store: store, group: parent, total: here.count, suggestions: splits, examples: here)
-            }
-        }
-        .task(id: store.loaded) { offerSplit() }
-        #if DEBUG
-        .task {
-            switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
-            case "add" where parent == nil:
-                addingRecipe = true
-            case "groups" where !children.isEmpty && isDebugLeaf:
-                editingGroups = .some(nil)
-            case "newgroup" where isDebugLeaf:
-                addingGroup = true
-            default: break
-            }
-        }
-        #endif
-    }
-
-    #if DEBUG
-    /// The level a debug run asked for — the deepest one pushed.
-    private var isDebugLeaf: Bool {
-        let wanted = UserDefaults.standard.string(forKey: "mp_debug_group")?.split(separator: "/").last.map(String.init)
-        return wanted == parent?.name || (wanted == nil && parent == nil)
-    }
-    #endif
-
-    private struct EditingTarget: Identifiable {
-        let selected: UUID?
-        var id: String { selected?.uuidString ?? "first" }
-    }
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        if let parent {
-            BareToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    if !children.isEmpty {
-                        Button("Edit groups inside \(parent.name)", systemImage: "pencil") { editingGroups = .some(nil) }
-                    }
-                    Button("Add a group inside \(parent.name)", systemImage: "plus") { addingGroup = true }
-                    if !splits.isEmpty {
-                        Button("Split \(parent.name) into groups", systemImage: "sparkles") { splitting = true }
-                    }
-                    Button("Edit \(parent.name)", systemImage: "folder") { editingParentLevel = true }
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Palette.accentInk).frame(width: 36, height: 36)
-                }
-                .accessibilityLabel("Options for \(parent.name)")
-                .sheet(isPresented: $editingParentLevel) {
-                    // The group's own name, icon and delete live in its level's Edit groups.
-                    EditGroupsView(store: store, section: section,
-                                   parent: parent.parentId.flatMap { id in store.categories.first { $0.id == id } },
-                                   groups: store.children(of: parent.parentId, in: section), selected: parent.id)
-                }
-            }
-        } else {
-            BareToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button { editingGroups = .some(nil) } label: {
-                        Image(systemName: "pencil.line").font(.system(size: 19, weight: .medium))
-                    }
-                    .accessibilityLabel("Edit groups")
-                    Button { addingRecipe = true } label: {
-                        Image(systemName: "plus").font(.system(size: 20, weight: .medium))
-                    }
-                    .accessibilityLabel("Add recipe")
-                }
-                .foregroundStyle(Palette.accentInk)
-            }
-        }
-    }
-
-    @State private var editingParentLevel = false
-
-    private var groupsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(children) { group in
-                NavigationLink(value: CatalogueRoute.drawer(section, group: group.id)) {
-                    GroupCard(group: group, detail: groupDetail(
-                        recipes: here.filter { store.isIn($0, group, in: section) }.count,
-                        groups: store.children(of: group.id, in: section).count))
-                }
-                .buttonStyle(PressFade())
-            }
-            NewGroupTile { addingGroup = true }
-        }
-    }
-
-    private var empty: some View {
-        VStack(spacing: 14) {
-            Text(parent.map { "Nothing from \(section.title) in \($0.name) yet." } ?? "Nothing filed here yet.")
-                .font(.system(size: 15)).foregroundStyle(Palette.muted)
-            Button { addingRecipe = true } label: { Label("Add a recipe", systemImage: "plus") }
-                .buttonStyle(.kitchen(.soft, size: .small))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-    }
-
-    @ViewBuilder
-    private func found(_ q: String) -> some View {
-        let found = here.filter {
-            $0.name.lowercased().contains(q)
-                || $0.categories.contains { $0.lowercased().contains(q) }
-                || $0.ingredients.contains { $0.ingredientName.lowercased().contains(q) }
-        }
-        if found.isEmpty {
-            Text("Nothing in \(place) matches that.").font(.system(size: 15)).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity).padding(.vertical, 24)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel("Recipes · \(found.count)")
-                ListGroup {
-                    ForEach(found) { recipe in
-                        NavigationLink {
-                            RecipeDetailView(recipe: recipe, session: store.session)
-                        } label: {
-                            RecipeResultRow(recipe: recipe, subtitle: store.trail(recipe))
-                        }
-                        .buttonStyle(PressFade())
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Split, offered once
-
-    private static let dismissedKey = "mp_dismissedSplits"
-
-    /// Offered by itself the first time a group is opened — when it would really split, into two
-    /// groups or more. After that (or for a single group) it is in the •••.
-    private func offerSplit() {
-        guard store.loaded, let parent, splits.count > 1 else { return }
-        let dismissed = UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? []
-        if !dismissed.contains(parent.id.uuidString) { splitting = true }
-    }
-
-    private func rememberSplit() {
-        guard let parent else { return }
-        var dismissed = UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? []
-        if !dismissed.contains(parent.id.uuidString) { dismissed.append(parent.id.uuidString) }
-        UserDefaults.standard.set(Array(dismissed.suffix(200)), forKey: Self.dismissedKey)
-    }
 }
 
 /// The published recipes themselves, shown both from inside Recipes and from the Explore tab.
@@ -636,8 +378,7 @@ struct RecipeTile: View {
     RecipesView(session: .preview, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
 }
 
-#Preview("Dinner drawer") {
-    NavigationStack {
-        DrawerView(section: .dinner, parent: nil, recipes: SampleData.recipes, categories: SampleData.recipeCategories)
-    }
+#Preview("Recipes — dark") {
+    RecipesView(session: .preview, sample: SampleData.recipes, sampleCategories: SampleData.recipeCategories)
+        .preferredColorScheme(.dark)
 }

@@ -14,6 +14,7 @@ import com.gehan.mealplanner.dto.HouseholdDtos.HouseholdResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.CreateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.FilingRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.MoveRecipesRequest;
+import com.gehan.mealplanner.dto.RecipeDtos.TagRecipesRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.UpdateCategoryRequest;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeCategoryResponse;
 import com.gehan.mealplanner.dto.RecipeDtos.RecipeIngredientResponse;
@@ -34,6 +35,7 @@ import com.gehan.mealplanner.repository.RecipeLinkRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
 import com.gehan.mealplanner.repository.RecipeShareRepository;
 import com.gehan.mealplanner.repository.StoredImageRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,29 +58,25 @@ import java.util.stream.Collectors;
 @Service
 public class RecipeService {
 
-    /** A starting group, and the groups inside it. */
-    public record DefaultGroup(String name, List<String> children) {
-        DefaultGroup(String name) {
-            this(name, List.of());
-        }
-    }
+    /**
+     * The tags a brand new household starts with, so no drawer opens onto nothing. Each drawer has
+     * its own: Breakfast's "Main" is porridge, Dinner's is a roast, and they are separate rows.
+     * A household renames, deletes and adds to these — they are a starting point, not a fixed list.
+     * Dinner's meats used to sit inside its Main; tags are flat, so they are tags beside it.
+     */
+    public static final Map<RecipeSection, List<String>> DEFAULT_GROUPS = Map.of(
+            RecipeSection.BREAKFAST, List.of("Main", "Morning drinks", "Fruit"),
+            RecipeSection.LUNCH, List.of("Main", "Sandwiches", "Side"),
+            RecipeSection.DINNER, List.of("Main", "Beef", "Chicken", "Pork", "Seafood", "Full meal", "Side", "Veggie"),
+            RecipeSection.SNACKS, List.of("Sweet", "Savoury"),
+            RecipeSection.DRINKS, List.of("Cold", "Hot"),
+            RecipeSection.OTHER, List.of("Sauces & dips", "Baking"));
 
     /**
-     * What a brand new household starts with, so no drawer opens onto nothing. Each drawer has its
-     * own groups: Breakfast's "Main" is porridge, Dinner's is a roast, and they are separate rows.
-     * A household renames, deletes and adds to these — they are a starting point, not a fixed list.
+     * The index in SchemaTouchUps that keeps tag names unique within a drawer, named so a lost
+     * race for a name can be told apart from any other failure.
      */
-    public static final Map<RecipeSection, List<DefaultGroup>> DEFAULT_GROUPS = Map.of(
-            RecipeSection.BREAKFAST, List.of(new DefaultGroup("Main"), new DefaultGroup("Morning drinks"), new DefaultGroup("Fruit")),
-            RecipeSection.LUNCH, List.of(new DefaultGroup("Main"), new DefaultGroup("Sandwiches"), new DefaultGroup("Side")),
-            RecipeSection.DINNER, List.of(
-                    new DefaultGroup("Main", List.of("Beef", "Chicken", "Pork", "Seafood")),
-                    new DefaultGroup("Full meal"),
-                    new DefaultGroup("Side"),
-                    new DefaultGroup("Veggie")),
-            RecipeSection.SNACKS, List.of(new DefaultGroup("Sweet"), new DefaultGroup("Savoury")),
-            RecipeSection.DRINKS, List.of(new DefaultGroup("Cold"), new DefaultGroup("Hot")),
-            RecipeSection.OTHER, List.of(new DefaultGroup("Sauces & dips"), new DefaultGroup("Baking")));
+    public static final String TAG_NAME_INDEX = "uk_recipe_categories_drawer_name";
 
     private final RecipeRepository recipeRepository;
     private final RecipeCategoryRepository categoryRepository;
@@ -154,6 +152,7 @@ public class RecipeService {
 
         applyLinks(recipe, request);
         applyImages(recipe, householdId, request.coverImageId(), request.photoIds());
+        applyAppliances(recipe, request.appliances(), true);
 
         request.ingredients().forEach(i -> recipe.getIngredients().add(
                 RecipeIngredient.builder()
@@ -200,6 +199,7 @@ public class RecipeService {
         recipe.setCookTimeMinutes(request.cookTimeMinutes());
         recipe.setServings(request.servings());
         applyLinks(recipe, request);
+        applyAppliances(recipe, request.appliances(), false);
 
         recipe.setCoverImage(request.coverImageId() == null ? null
                 : requireOwnImage(request.coverImageId(), ownerId));
@@ -368,6 +368,48 @@ public class RecipeService {
                 ? SourceLinks.clean(request.links())
                 : SourceLinks.withLegacy(SourceLinks.of(recipe), request.sourceUrl(), request.videoUrl());
         SourceLinks.replace(recipe, links);
+    }
+
+    /**
+     * The machines a recipe needs, after its words have been set. `picked` is what the person
+     * chose, or null for "not touched" — which is also what every client from before machines
+     * sends.
+     *
+     * Picked on an edit, it is the answer: exactly those, and the detector never second-guesses
+     * them again. Picked on a new recipe, it is a head start — the form says it will spot the
+     * rest from the method, so what the method mentions is added. Not picked, the detector reads
+     * the recipe afresh, unless somebody corrected it by hand before: their answer stands.
+     */
+    private static void applyAppliances(Recipe recipe, List<String> picked, boolean isNew) {
+        if (picked != null) {
+            Set<String> chosen = new LinkedHashSet<>(KitchenMachines.requireKnown(picked));
+            if (!isNew) {
+                replaceAppliances(recipe, chosen);
+                recipe.setAppliancesEdited(true);
+                return;
+            }
+            if (!chosen.isEmpty()) {
+                chosen.addAll(detectAppliances(recipe));
+                replaceAppliances(recipe, chosen);
+                recipe.setAppliancesEdited(true);
+                recipe.setAppliancesVersion(ApplianceDetector.VERSION);
+                return;
+            }
+        }
+        if (!recipe.isAppliancesEdited()) {
+            replaceAppliances(recipe, detectAppliances(recipe));
+            recipe.setAppliancesVersion(ApplianceDetector.VERSION);
+        }
+    }
+
+    private static Set<String> detectAppliances(Recipe recipe) {
+        return ApplianceDetector.detect(recipe.getName(), recipe.getDescription(), recipe.getInstructions());
+    }
+
+    /** In place, so Hibernate writes only the machines that changed. */
+    private static void replaceAppliances(Recipe recipe, Set<String> appliances) {
+        recipe.getAppliances().retainAll(appliances);
+        recipe.getAppliances().addAll(appliances);
     }
 
     /**
@@ -607,7 +649,12 @@ public class RecipeService {
                 .prepTimeMinutes(source.getPrepTimeMinutes())
                 .cookTimeMinutes(source.getCookTimeMinutes())
                 .servings(source.getServings())
+                // The same machines, however they were found: a hand-corrected list is still right
+                // for the same method, and the detector would only find again what it found there.
+                .appliancesVersion(source.getAppliancesVersion())
+                .appliancesEdited(source.isAppliancesEdited())
                 .build();
+        copy.getAppliances().addAll(source.getAppliances());
         SourceLinks.replace(copy, SourceLinks.of(source));
 
         Map<UUID, StoredImage> copied = new HashMap<>();
@@ -633,8 +680,8 @@ public class RecipeService {
                 .build()));
 
         Recipe saved = recipeRepository.save(copy);
-        // In the same drawer the sender keeps it in — Dinner stays Dinner — but in none of their
-        // groups, which are named for a kitchen the saver has never seen. The drawer says what
+        // In the same drawer the sender keeps it in — Dinner stays Dinner — but wearing none of
+        // their tags, which are named for a kitchen the saver has never seen. The drawer says what
         // kind of meal it is, not anything about the sender's house, so it is the one piece of
         // filing a copy carries (the public page itself still shows none of it).
         RecipeSection section = filingRepository
@@ -690,7 +737,7 @@ public class RecipeService {
         recipe.setPublishedAt(published ? Instant.now() : null);
         Recipe saved = recipeRepository.save(recipe);
         // With the owner's filing, as every other answer about its own recipe is: an app that
-        // puts this straight back on screen would otherwise show it in no drawer and no group,
+        // puts this straight back on screen would otherwise show it in no drawer with no tags,
         // and the next edit would save it that way.
         UUID ownerId = recipe.getHousehold().getId();
         return toResponse(saved, filingRepository.findByHouseholdIdAndRecipeId(ownerId, recipeId).orElse(null), ownerId);
@@ -767,32 +814,56 @@ public class RecipeService {
         return ours.stream().filter(r -> r.getName() != null && r.getName().trim().equalsIgnoreCase(trimmed)).findFirst();
     }
 
+    /** Every tag in every drawer, with how many recipes wear each — counted in one query. */
     @Transactional(readOnly = true)
     public List<RecipeCategoryResponse> listCategories(UUID householdId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
-        List<RecipeFiling> filings = filingRepository.findByHouseholdId(householdId);
+        Map<UUID, Integer> counts = new HashMap<>();
+        for (Object[] row : filingRepository.countTagged(householdId)) {
+            counts.put((UUID) row[0], ((Number) row[1]).intValue());
+        }
         return categoryRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
-                .map(c -> toCategoryResponse(c,
-                        (int) filings.stream().filter(f -> f.getCategories().contains(c)).count()))
+                .map(c -> toCategoryResponse(c, counts.getOrDefault(c.getId(), 0)))
                 .toList();
     }
 
-    /** A new group from inside a drawer. Filing a recipe under a new name makes one too. */
+    /**
+     * A new tag in one drawer — and, given `recipeIds`, on those recipes in the same save, so
+     * "these four look like Chicken" is one tap and a tag is never left half applied. Filing a
+     * recipe under a name its drawer does not have makes one too.
+     */
     @Transactional
     public RecipeCategoryResponse createCategory(UUID householdId, UUID requesterId, CreateCategoryRequest request) {
         householdService.assertMember(householdId, requesterId);
-        Household household = householdRepository.findById(householdId)
+        // Under the household's lock from the start, as tagging recipes is (see retag). Taken only
+        // once the new row existed, it could wait on a recipe save that is itself waiting on that
+        // row — a new recipe holds the same lock while it makes the tags typed into it.
+        Household household = householdRepository.lockById(householdId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
-        RecipeCategory parent = request.parentId() == null ? null : requireCategory(householdId, request.parentId());
-        // A group inside another belongs to the same drawer as the one it sits in.
-        RecipeSection section = parent != null ? parent.getSection() : request.section();
+        // A phone from before tags splits a group up by naming only the group it came out of,
+        // and a group made inside another always went in that one's drawer.
+        RecipeSection section = request.section() != null ? request.section()
+                : request.parentId() != null ? requireCategory(householdId, request.parentId()).getSection()
+                : null;
+        if (section == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pick a drawer for this tag.");
+        }
         String name = requireFreeName(householdId, request.name(), null, section);
         String iconKey = FoodIcons.requireKnownOrBlank(request.iconKey());
-        return toCategoryResponse(categoryRepository.save(RecipeCategory.builder()
-                .household(household).name(name).section(section).parent(parent).iconKey(iconKey).build()), 0);
+        RecipeCategory tag = saveTag(RecipeCategory.builder()
+                .household(household).name(name).section(section).iconKey(iconKey).build());
+        if (request.recipeIds() == null || request.recipeIds().isEmpty()) {
+            return toCategoryResponse(tag, 0);
+        }
+        retag(householdId, tag, request.recipeIds(), List.of());
+        return toCategoryResponse(tag, countTagged(householdId, tag));
     }
 
-    /** Rename a group, change its icon, or move it inside another — never inside itself. */
+    /**
+     * Rename a tag, change its icon, or both. A rename is checked against its own drawer only, so
+     * Lunch's Main can become "Light lunch" while Dinner's stays Main. Tags do not nest, so a
+     * phone from before them asking to move one inside another changes nothing.
+     */
     @Transactional
     public RecipeCategoryResponse updateCategory(UUID householdId, UUID categoryId, UUID requesterId,
                                                  UpdateCategoryRequest request) {
@@ -806,118 +877,153 @@ public class RecipeService {
         if (request.iconKey() != null) {
             category.setIconKey(FoodIcons.requireKnownOrBlank(request.iconKey()));
         }
-        if (Boolean.TRUE.equals(request.toTop())) {
-            category.setParent(null);
-        } else if (request.parentId() != null) {
-            RecipeCategory parent = requireCategory(householdId, request.parentId());
-            // Inside itself, or inside one of its own groups, would make a loop with no top.
-            for (RecipeCategory up = parent; up != null; up = up.getParent()) {
-                if (up.getId().equals(categoryId)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A group can't go inside itself.");
-                }
-            }
-            category.setParent(parent);
-            // Moved into another drawer's group: it and everything inside it move with it.
-            if (parent.getSection() != category.getSection()) {
-                moveToSection(householdId, category, parent.getSection());
-            }
-        }
 
-        RecipeCategory saved = categoryRepository.save(category);
-        int count = (int) filingRepository.findByHouseholdId(householdId).stream()
-                .filter(f -> f.getCategories().contains(saved)).count();
-        return toCategoryResponse(saved, count);
+        RecipeCategory saved = saveTag(category);
+        return toCategoryResponse(saved, countTagged(householdId, saved));
     }
 
     /**
-     * Files recipes into one group, in one go — how a drawer gets sorted: "these five are
-     * Chicken". Taken out of `from` at the same time, so splitting Main dish up leaves them in
-     * Chicken rather than in both. Recipes this household has not filed are skipped.
+     * Tags and untags a batch of recipes in one go — a selection in a drawer, or the recipes
+     * picked for a tag just made. Only this household's filings in the tag's own drawer are
+     * touched; any other id is skipped rather than refused, so a selection that raced somebody
+     * moving one recipe elsewhere still saves the rest. Answers with the tag as it now is.
+     */
+    @Transactional
+    public RecipeCategoryResponse tagRecipes(UUID householdId, UUID categoryId, UUID requesterId,
+                                             TagRecipesRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        RecipeCategory tag = requireCategory(householdId, categoryId);
+        retag(householdId, tag, request.add(), request.remove());
+        return toCategoryResponse(tag, countTagged(householdId, tag));
+    }
+
+    /**
+     * Tags these recipes — what a phone from before tags calls moving them into a group. It only
+     * ever adds: the group they came out of keeps them (see MoveRecipesRequest).
      */
     @Transactional
     public void moveRecipes(UUID householdId, UUID categoryId, UUID requesterId, MoveRecipesRequest request) {
         householdService.assertMember(householdId, requesterId);
-        RecipeCategory target = requireCategory(householdId, categoryId);
-        RecipeCategory from = request.fromCategoryId() == null ? null
-                : requireCategory(householdId, request.fromCategoryId());
-
-        for (UUID recipeId : request.recipeIds()) {
-            filingRepository.findByHouseholdIdAndRecipeId(householdId, recipeId).ifPresent(filing -> {
-                if (from != null) {
-                    filing.getCategories().remove(from);
-                }
-                filing.getCategories().add(target);
-                filingRepository.save(filing);
-            });
-        }
+        retag(householdId, requireCategory(householdId, categoryId), request.recipeIds(), List.of());
     }
 
     /**
-     * Deletes a group without losing anything filed in it. Its own groups move up a level, and
-     * its recipes move up to the group it was in — deleting Chicken leaves those recipes in Main
-     * dish, not loose in the drawer.
+     * Puts the tag on `add` and takes it off `remove`, among this household's filings in the
+     * tag's drawer — a Dinner tag never ends up on a recipe in Lunch. A recipe in both lists ends
+     * up tagged. Under the household's lock, so two phones tagging the same recipe at the same
+     * moment queue up rather than both writing the same link and one of them failing on it.
      */
+    private void retag(UUID householdId, RecipeCategory tag, List<UUID> add, List<UUID> remove) {
+        Set<UUID> adding = add == null ? Set.of() : add.stream().filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<UUID> removing = remove == null ? Set.of() : remove.stream().filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<UUID> touched = new LinkedHashSet<>(adding);
+        touched.addAll(removing);
+        if (touched.isEmpty()) {
+            return;
+        }
+        householdRepository.lockById(householdId);
+        for (RecipeFiling filing : filingRepository.findWithTags(householdId, touched)) {
+            if (filing.getSection() != tag.getSection()) {
+                continue;
+            }
+            if (adding.contains(filing.getRecipe().getId())) {
+                filing.getCategories().add(tag);
+            } else {
+                filing.getCategories().remove(tag);
+            }
+        }
+    }
+
+    /** Deletes a tag. The recipes that wore it stay just where they are, without it. */
     @Transactional
     public void deleteCategory(UUID householdId, UUID categoryId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
         RecipeCategory category = requireCategory(householdId, categoryId);
-        RecipeCategory parent = category.getParent();
-
-        categoryRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
-                .filter(c -> c.getParent() != null && c.getParent().getId().equals(categoryId))
-                .forEach(c -> c.setParent(parent));
-        filingRepository.findByHouseholdId(householdId).forEach(f -> {
-            if (f.getCategories().remove(category) && parent != null) {
-                f.getCategories().add(parent);
-            }
-        });
+        // Hibernate takes the links off before it deletes the row, whatever order they are asked in.
+        filingRepository.findTaggedWith(categoryId).forEach(f -> f.getCategories().remove(category));
         categoryRepository.delete(category);
     }
 
     private RecipeCategory requireCategory(UUID householdId, UUID categoryId) {
         RecipeCategory category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tag not found"));
         if (!category.getHousehold().getId().equals(householdId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tag not found");
         }
         return category;
     }
 
     /**
-     * Names stay unique in a household, because a recipe is filed by name — two groups called
-     * Chicken would be one group as far as filing could tell. `self` is the group being renamed.
+     * The name, tidied, once it is known to be free in its drawer. A recipe is filed by name, so
+     * two Chickens in one drawer would be one tag as far as filing could tell. Only that drawer
+     * counts: Breakfast can have a Main even though Dinner has one. `self` is the tag being renamed.
      */
-    /** A drawer's own group and everything nested in it belong to that drawer. */
-    private void moveToSection(UUID householdId, RecipeCategory category, RecipeSection section) {
-        category.setSection(section);
-        for (RecipeCategory child : categoryRepository.findByHouseholdIdOrderByNameAsc(householdId)) {
-            if (child.getParent() != null && child.getParent().getId().equals(category.getId())) {
-                moveToSection(householdId, child, section);
-                categoryRepository.save(child);
-            }
-        }
-    }
-
     private String requireFreeName(UUID householdId, String raw, UUID self, RecipeSection section) {
         String name = normalizeCategoryName(raw);
         if (name.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A group needs a name.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A tag needs a name.");
         }
-        // Only within the same drawer: Breakfast can have a Main even though Dinner has one.
-        categoryRepository.findByHouseholdIdAndSectionAndNameIgnoreCase(householdId, section, name)
-                .or(() -> categoryRepository.findByHouseholdIdAndSectionIsNullAndNameIgnoreCase(householdId, name))
-                .filter(existing -> !existing.getId().equals(self))
-                .ifPresent(existing -> {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT,
-                            "There's already a group called " + existing.getName() + ".");
+        Optional<RecipeCategory> existing =
+                categoryRepository.findByHouseholdIdAndSectionAndNameIgnoreCase(householdId, section, name);
+        existing.filter(other -> !other.getId().equals(self))
+                .ifPresent(other -> {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, alreadyCalled(other.getName(), section));
                 });
+        // Only its own name can still be there, which it may keep however long it is.
+        return existing.isPresent() ? name : requireShortName(name);
+    }
+
+    /** A new tag's name, refused here rather than by the column when it is too long to save. */
+    private static String requireShortName(String name) {
+        if (name.length() > RecipeCategory.MAX_NAME) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Keep a tag's name to " + RecipeCategory.MAX_NAME + " characters.");
+        }
         return name;
     }
 
+    /**
+     * Saves now rather than at commit, so that losing a race for a name — two phones making the
+     * same tag at once, where neither check could see the other's row yet — is the same 409 as the
+     * check gives, not a 500. The unique index is what actually holds.
+     */
+    private RecipeCategory saveTag(RecipeCategory tag) {
+        try {
+            return categoryRepository.saveAndFlush(tag);
+        } catch (DataIntegrityViolationException e) {
+            if (isTagNameTaken(e)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, alreadyCalled(tag.getName(), tag.getSection()));
+            }
+            throw e;
+        }
+    }
+
+    static boolean isTagNameTaken(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains(TAG_NAME_INDEX)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** "There's already a tag called Chicken in Dinner." */
+    private static String alreadyCalled(String name, RecipeSection section) {
+        return "There's already a tag called " + name + (section == null ? "" : " in " + section.label()) + ".";
+    }
+
+    /** Counted after a flush, so it includes what this request has just changed. */
+    private int countTagged(UUID householdId, RecipeCategory tag) {
+        filingRepository.flush();
+        return (int) filingRepository.countTaggedWith(householdId, tag.getId());
+    }
+
     private static RecipeCategoryResponse toCategoryResponse(RecipeCategory category, int recipeCount) {
-        return new RecipeCategoryResponse(category.getId(), category.getName(), recipeCount,
-                category.getParent() == null ? null : category.getParent().getId(), category.getSection(),
-                category.getIconKey());
+        // Never a parent: tags are flat. Phones from before them still read the field.
+        return new RecipeCategoryResponse(category.getId(), category.getName(), recipeCount, null,
+                category.getSection(), category.getIconKey());
     }
 
     @Transactional(readOnly = true)
@@ -931,7 +1037,7 @@ public class RecipeService {
 
     /**
      * A blank key clears the choice and the drawer falls back to its built-in default. Checked
-     * against the same list as a group's icon, so a drawer can never be given one no app can draw.
+     * against the same list as a tag's icon, so a drawer can never be given one no app can draw.
      */
     @Transactional
     public Map<RecipeSection, String> setSectionIcon(UUID householdId, UUID requesterId,
@@ -960,7 +1066,7 @@ public class RecipeService {
         return sectionIcons(householdId, requesterId);
     }
 
-    /** Gives a new household the starting groups so no drawer opens onto nothing. */
+    /** Gives a new household the starting tags so no drawer opens onto nothing. */
     @Transactional
     public void seedDefaultCategories(Household household) {
         seedDefaultGroups(household, categoryRepository);
@@ -968,20 +1074,19 @@ public class RecipeService {
 
     /** Also called from HouseholdService, which makes households without going through here. */
     public static void seedDefaultGroups(Household household, RecipeCategoryRepository categories) {
-        DEFAULT_GROUPS.forEach((section, groups) -> {
-            for (DefaultGroup group : groups) {
-                RecipeCategory parent = categories.save(RecipeCategory.builder()
-                        .household(household).name(group.name()).section(section)
-                        .iconKey(FoodIcons.DEFAULT_GROUP_ICONS.get(group.name())).build());
-                for (String child : group.children()) {
-                    categories.save(RecipeCategory.builder()
-                            .household(household).name(child).section(section).parent(parent)
-                            .iconKey(FoodIcons.DEFAULT_GROUP_ICONS.get(child)).build());
-                }
+        DEFAULT_GROUPS.forEach((section, names) -> {
+            for (String name : names) {
+                categories.save(RecipeCategory.builder()
+                        .household(household).name(name).section(section)
+                        .iconKey(FoodIcons.DEFAULT_GROUP_ICONS.get(name)).build());
             }
         });
     }
 
+    /**
+     * Files the recipe in one drawer, wearing exactly these tags by name in place of whatever it
+     * wore before. No drawer is Other: a filed recipe is always in one.
+     */
     private RecipeFiling upsertFiling(Household household, Recipe recipe,
                                        RecipeSection section, List<String> categoryNames) {
         RecipeFiling filing = filingRepository
@@ -1005,14 +1110,14 @@ public class RecipeService {
     }
 
     /**
-     * The group of that name in this recipe's drawer, or the drawer-less one of that name, or a
-     * new one in this drawer. Case-insensitive, so "Freezer" and "freezer" stay one group.
+     * The tag of that name in this recipe's drawer, or a new one there — never another drawer's,
+     * so filing a recipe in Lunch cannot reach into Dinner, and a recipe moved to a new drawer
+     * finds its tags by name in that one. Case-insensitive, so "Freezer" and "freezer" stay one.
      */
     private RecipeCategory findOrCreateCategory(Household household, String name, RecipeSection section) {
         return categoryRepository.findByHouseholdIdAndSectionAndNameIgnoreCase(household.getId(), section, name)
-                .or(() -> categoryRepository.findByHouseholdIdAndSectionIsNullAndNameIgnoreCase(household.getId(), name))
-                .orElseGet(() -> categoryRepository.save(
-                        RecipeCategory.builder().household(household).name(name).section(section).build()));
+                .orElseGet(() -> saveTag(RecipeCategory.builder()
+                        .household(household).name(requireShortName(name)).section(section).build()));
     }
 
     private static String normalizeCategoryName(String raw) {
@@ -1063,6 +1168,7 @@ public class RecipeService {
                 recipe.getPhotos().stream().map(StoredImage::getId).toList(),
                 ingredients,
                 ownerSection,
-                sharedAt);
+                sharedAt,
+                KitchenMachines.inOrder(recipe.getAppliances()));
     }
 }

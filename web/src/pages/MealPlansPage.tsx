@@ -8,6 +8,7 @@ import { usePushedScreen } from '../components/Layout';
 import { Icon } from '../components/icons';
 import { EmptyState, NavBar, SectionHead, SectionLabel } from '../components/ui';
 import { CupboardCard, FilterChips, LoadFailed, MinePlanRow, PlanCard } from '../components/mealplans/MealPlanParts';
+import { useFeatures } from '../utils/features';
 
 /**
  * Meal plans (the mockup's 5.7). On top, the tomato card that builds the next few days from what
@@ -20,6 +21,7 @@ export default function MealPlansPage() {
   usePushedScreen();
   const { session } = useAuth();
   const { activeHouseholdId } = useHousehold();
+  const { cupboard } = useFeatures();
   const [home, setHome] = useState<MealPlansHome | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState('all');
@@ -64,7 +66,8 @@ export default function MealPlansPage() {
         <LoadFailed message="Could not load meal plans." onRetry={load} />
       ) : (
         <>
-          <CupboardCard cupboard={home?.cupboard ?? null} />
+          {/* Cooking from the cupboard needs one: a house without it has the health plans only. */}
+          {cupboard && <CupboardCard cupboard={home?.cupboard ?? null} />}
           <SectionHead title="Plans for health targets" action="Create" to={create} className="mt-1" />
           {home && <FilterChips filters={home.filters} value={filter} onChange={setFilter} />}
           {!home ? (

@@ -58,7 +58,9 @@ public class IntegrationDtos {
             Integer prepTimeMinutes,
             Integer cookTimeMinutes,
             Integer totalTimeMinutes,
-            String imageUrl) {
+            String imageUrl,
+            /** The kitchen machines it needs ("oven", "air-fryer"…), in the app's own order. */
+            List<String> appliances) {
     }
 
     public record RecipeDetail(
@@ -81,7 +83,9 @@ public class IntegrationDtos {
             List<Link> links,
             List<IngredientLine> ingredients,
             /** Instructions split one step per line, numbering already stripped. */
-            List<String> steps) {
+            List<String> steps,
+            /** The kitchen machines it needs, as in RecipeSummary. */
+            List<String> appliances) {
     }
 
     /** `label` is what the household called it, or null — name it after the site. */

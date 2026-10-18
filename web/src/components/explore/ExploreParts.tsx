@@ -14,7 +14,7 @@ import { averageWords, gramsText, kcalText, type PlanNutrition } from '../../api
 import { MEAL_PLANS, planIcon, planPath, type MealPlansHome } from '../../api/mealPlans';
 import { Stat } from '../nutrition/NutritionParts';
 import { toast } from '../toast';
-import { Avatar, Button, CheckCircle, ErrorText, List, Photo, Pill, Row, SectionLabel, Sheet, Tile, type Tone } from '../ui';
+import { Avatar, Button, CheckCircle, cx, ErrorText, List, Photo, Pill, Row, SectionLabel, Sheet, Tile, type Tone } from '../ui';
 
 /*
  Explore's own pieces (the mockup's 5.1–5.3): the three doors on Explore's front page, a published
@@ -27,14 +27,19 @@ import { Avatar, Button, CheckCircle, ErrorText, List, Photo, Pill, Row, Section
 
 /**
  * Global recipes' door (5.1): a big green picture with how many there are on it, set first and
- * largest because it is the one of the three that is open.
+ * largest because it is the one of the three that is open. On a wide screen it stands as tall as
+ * the two doors beside it — or, with only Nutrition beside it (a household that does not plan),
+ * as tall as that one door.
  */
-export function GlobalRecipesDoor({ count }: { count: number | null }) {
+export function GlobalRecipesDoor({ count, besideTwo = true }: { count: number | null; besideTwo?: boolean }) {
   return (
     <Link
       to="/explore/recipes"
       aria-label={`Global recipes${count != null ? `, ${count} published` : ''}`}
-      className="press relative block h-[12.25rem] overflow-hidden rounded-[24px] md:row-span-2 md:h-auto md:min-h-[19rem]"
+      className={cx(
+        'press relative block h-[12.25rem] overflow-hidden rounded-[24px] md:h-auto',
+        besideTwo ? 'md:row-span-2 md:min-h-[19rem]' : 'md:min-h-[12.25rem]',
+      )}
     >
       <Photo hue="green" icon="globe" large className="absolute inset-0 h-full w-full" />
       <span className="absolute inset-0 flex flex-col p-[18px] text-white md:p-6">
@@ -58,15 +63,16 @@ export function GlobalRecipesDoor({ count }: { count: number | null }) {
  * a day's calories, protein and fibre on average, for one person, and which days that is of
  * (the ones with two or more meals planned, or "partly planned" ones), so a week of dinners is
  * not read as a day's eating. Until something on the plan can be counted it says how to get
- * some numbers, rather than showing noughts.
+ * some numbers, rather than showing noughts. A household that does not plan meals just gets
+ * the door: the numbers are the Plan's.
  */
-export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
+export function NutritionDoor({ week, showsWeek = true }: { week: PlanNutrition | null; showsWeek?: boolean }) {
   const avg = week != null && week.daysCounted > 0 ? week.average : null;
   return (
     <Link
       to="/explore/nutrition"
       aria-label="Nutrition facts"
-      className="card press flex flex-col gap-3 p-4 active:bg-surface2"
+      className={cx('card press flex flex-col gap-3 p-4 active:bg-surface2', !showsWeek && 'justify-center')}
     >
       <span className="flex items-center gap-3">
         <Tile icon="leaf" tone="herb" size={44} />
@@ -76,14 +82,18 @@ export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
         </span>
         <Icon name="chevR" size={18} className="shrink-0 text-faint" />
       </span>
-      <span className="flex gap-2">
-        <Stat value={avg ? kcalText(avg.kcal) : '–'} label="kcal / day" />
-        <Stat value={avg ? gramsText(avg.protein) : '–'} label="Protein" tone="herb" />
-        <Stat value={avg ? gramsText(avg.fibre) : '–'} label="Fibre" tone="mustard" />
-      </span>
-      <span className="text-xs text-muted">
-        {week == null ? '\u00a0' : avg ? averageWords(week, true) : 'Plan some meals and see what your week adds up to'}
-      </span>
+      {showsWeek && (
+        <>
+          <span className="flex gap-2">
+            <Stat value={avg ? kcalText(avg.kcal) : '–'} label="kcal / day" />
+            <Stat value={avg ? gramsText(avg.protein) : '–'} label="Protein" tone="herb" />
+            <Stat value={avg ? gramsText(avg.fibre) : '–'} label="Fibre" tone="mustard" />
+          </span>
+          <span className="text-xs text-muted">
+            {week == null ? '\u00a0' : avg ? averageWords(week, true) : 'Plan some meals and see what your week adds up to'}
+          </span>
+        </>
+      )}
     </Link>
   );
 }
@@ -91,9 +101,10 @@ export function NutritionDoor({ week }: { week: PlanNutrition | null }) {
 /**
  * Meal plans' door (5.1): its tile, name and line, then chips straight into cooking from the
  * cupboard and into a couple of plans (your own first, else ready-made ones), and a line on what
- * the cupboard holds. The chips are links of their own, laid over the door's.
+ * the cupboard holds. The chips are links of their own, laid over the door's. Without a cupboard
+ * it is the plans alone.
  */
-export function MealPlansDoor({ home }: { home: MealPlansHome | null }) {
+export function MealPlansDoor({ home, cupboard: keepsCupboard = true }: { home: MealPlansHome | null; cupboard?: boolean }) {
   const plans = home?.plans.slice(0, 2) ?? [];
   const cupboard = home?.cupboard;
   const chip =
@@ -108,15 +119,19 @@ export function MealPlansDoor({ home }: { home: MealPlansHome | null }) {
         <Tile icon="target" tone="plum" size={44} />
         <span className="min-w-0 flex-1">
           <span className="title-section block">Meal plans</span>
-          <span className="block text-[0.8125rem] leading-snug text-muted">From your cupboard, or built for a goal</span>
+          <span className="block text-[0.8125rem] leading-snug text-muted">
+            {keepsCupboard ? 'From your cupboard, or built for a goal' : 'Built for a health goal'}
+          </span>
         </span>
         <Icon name="chevR" size={18} className="shrink-0 text-faint" />
       </Link>
       <span className="flex flex-wrap gap-2">
-        <Link to={`${MEAL_PLANS}/cupboard`} className={chip}>
-          <Icon name="cupboard" size={14} />
-          Cook from cupboard
-        </Link>
+        {keepsCupboard && (
+          <Link to={`${MEAL_PLANS}/cupboard`} className={chip}>
+            <Icon name="cupboard" size={14} />
+            Cook from cupboard
+          </Link>
+        )}
         {plans.map((p) => (
           <Link key={p.id ?? p.preset} to={planPath(p)} className={chip}>
             <Icon name={planIcon(p.icon)} size={14} />
@@ -124,15 +139,17 @@ export function MealPlansDoor({ home }: { home: MealPlansHome | null }) {
           </Link>
         ))}
       </span>
-      <span className="text-xs text-muted">
-        {cupboard == null
-          ? '\u00a0'
-          : cupboard.items === 0
-            ? 'Cook from your cupboard once it has a few things in'
-            : `Cook from your cupboard: ${cupboard.items} ${cupboard.items === 1 ? 'thing' : 'things'}${
-                cupboard.useSoon > 0 ? `, ${cupboard.useSoon} ${cupboard.useSoon === 1 ? 'needs' : 'need'} using soon` : ''
-              }`}
-      </span>
+      {keepsCupboard && (
+        <span className="text-xs text-muted">
+          {cupboard == null
+            ? '\u00a0'
+            : cupboard.items === 0
+              ? 'Cook from your cupboard once it has a few things in'
+              : `Cook from your cupboard: ${cupboard.items} ${cupboard.items === 1 ? 'thing' : 'things'}${
+                  cupboard.useSoon > 0 ? `, ${cupboard.useSoon} ${cupboard.useSoon === 1 ? 'needs' : 'need'} using soon` : ''
+                }`}
+        </span>
+      )}
     </div>
   );
 }
@@ -309,8 +326,8 @@ const houseTone = (index: number) => HOUSE_TONES[Math.max(index, 0) % HOUSE_TONE
 
 /**
  * "Move into my recipes" for a published recipe: which of your households (only asked when you
- * are in more than one, the one you are looking at ticked first), then the drawer and groups it
- * goes in there. It files the recipe rather than copying it, the same as a recipe shared with
+ * are in more than one, the one you are looking at ticked first), then the drawer it goes in
+ * there and the tags it wears. It files the recipe rather than copying it, the same as a recipe shared with
  * you: it stays the publisher's to change, and is yours to find and plan.
  */
 export function MoveIntoMineSheet({
@@ -344,7 +361,7 @@ export function MoveIntoMineSheet({
   function pickHousehold(id: string) {
     if (id === householdId) return;
     setPicked(id);
-    // Groups belong to a household: the ones ticked for the last one mean nothing in this one.
+    // Tags belong to a household: the ones ticked for the last one mean nothing in this one.
     setDraft((d) => ({ ...d, categories: [] }));
   }
 

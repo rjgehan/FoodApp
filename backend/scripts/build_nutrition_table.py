@@ -91,7 +91,7 @@ def fetch(url, cache_dir):
     target = os.path.join(cache_dir, url.rsplit("/", 1)[1])
     if not os.path.exists(target):
         print(f"downloading {url}", file=sys.stderr)
-        request = urllib.request.Request(url, headers={"User-Agent": "MealPlanner/1.0 (rgehan27@gmail.com)"})
+        request = urllib.request.Request(url, headers={"User-Agent": "Waxwing/1.0 (rgehan27@gmail.com)"})
         with urllib.request.urlopen(request) as response, open(target, "wb") as out:
             out.write(response.read())
     return target

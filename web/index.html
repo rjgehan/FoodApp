@@ -8,11 +8,17 @@
     <meta name="theme-color" content="#17120F" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Meals" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Meal Planner</title>
+    <meta name="apple-mobile-web-app-title" content="Waxwing" />
+    <!--
+      The icons come from web/scripts/brand (node web/scripts/brand/render-icons.mjs). public/ is
+      copied without hashing and nginx sends no cache headers, so bump ?v= whenever the art changes.
+    -->
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg?v=2" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=2" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png?v=2" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
+    <link rel="manifest" href="/manifest.webmanifest?v=2" />
+    <title>Waxwing</title>
     <!-- The UI font and the title font, served from here (public/fonts) rather than a font CDN. -->
     <link rel="preload" href="/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Fraunces-Variable.woff2" as="font" type="font/woff2" crossorigin />

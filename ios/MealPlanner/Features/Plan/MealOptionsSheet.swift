@@ -117,11 +117,7 @@ struct MealOptionsSheet: View {
                     }
                     if let item = entry.itemName {
                         rowButton { add(entry) } label: {
-                            ListRow("Add \(item) to groceries",
-                                    subtitle: shopping?.status == .onList ? "Already on the list"
-                                        : entry.runningLow == true ? "Running low"
-                                        : entry.inCupboard == true ? "In the cupboard" : "Not in the cupboard",
-                                    tile: ("cart", .accent))
+                            ListRow("Add \(item) to groceries", subtitle: itemLine(entry, shopping), tile: ("cart", .accent))
                         }
                         .disabled(shopping?.status == .onList)
                     }
@@ -165,12 +161,21 @@ struct MealOptionsSheet: View {
         Button(action: action, label: label).buttonStyle(PressFade())
     }
 
-    /// "11 items, 3 already in cupboard"
+    /// "11 items, 3 already in cupboard" — the cupboard only in a house that keeps one.
     private func groceriesLine(_ s: PlannedShopping) -> String {
-        if s.needs == 0 { return "Nothing to buy — all staples" }
+        let cupboard = store.session.cupboardOn
+        if s.needs == 0 { return cupboard ? "Nothing to buy — all staples" : "Nothing to buy" }
         let items = "\(s.needs) \(s.needs == 1 ? "item" : "items")"
         if s.status == .onList { return "\(items), already on the list" }
-        return s.inCupboard > 0 ? "\(items), \(s.inCupboard) already in cupboard" : items
+        return cupboard && s.inCupboard > 0 ? "\(items), \(s.inCupboard) already in cupboard" : items
+    }
+
+    /// A single food's line: on the list already, or what the cupboard says (when there is one).
+    private func itemLine(_ entry: MealPlanEntry, _ shopping: PlannedShopping?) -> String? {
+        if shopping?.status == .onList { return "Already on the list" }
+        guard store.session.cupboardOn else { return nil }
+        if entry.runningLow == true { return "Running low" }
+        return entry.inCupboard == true ? "In the cupboard" : "Not in the cupboard"
     }
 
     private func add(_ entry: MealPlanEntry) {

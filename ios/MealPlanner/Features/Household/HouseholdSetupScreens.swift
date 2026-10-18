@@ -4,8 +4,8 @@ import SwiftUI
 
 /**
  Name, servings & planning (mockup 6.6): what the house is called (the owner's to change), how
- many a recipe is planned for unless you say otherwise, and how many days ahead the Plan runs.
- One Save for all three, in the bar.
+ many a recipe is planned for unless you say otherwise, and how many days ahead the Plan runs —
+ that last only while the house plans meals at all. One Save for all three, in the bar.
  */
 struct HouseholdBasicsScreen: View {
     var session: Session
@@ -40,41 +40,16 @@ struct HouseholdBasicsScreen: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Default servings").font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(Palette.text)
-                            Text("Used when you plan a recipe").font(.system(size: 13)).foregroundStyle(Palette.muted)
+                            Text(session.planOn ? "Used when you plan a recipe" : "How many you usually cook for")
+                                .font(.system(size: 13)).foregroundStyle(Palette.muted)
                         }
                         Spacer(minLength: 8)
                         ServingsStepper(value: $servings)
                     }
-                    Rectangle().fill(Palette.border).frame(height: 1)
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("Plan ahead").font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(Palette.text)
-                                Text("The planning window on Plan").font(.system(size: 13)).foregroundStyle(Palette.muted)
-                            }
-                            Spacer(minLength: 8)
-                            Text("\(days) \(days == 1 ? "day" : "days")")
-                                .font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text)
-                        }
-                        HStack(spacing: 6) {
-                            ForEach(windows, id: \.self) { n in
-                                Button {
-                                    days = n
-                                } label: {
-                                    Text("\(n)")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .monospacedDigit()
-                                        .foregroundStyle(n == days ? Palette.bg : Palette.muted)
-                                        .frame(maxWidth: .infinity, minHeight: 36)
-                                        .background(n == days ? Palette.text : Palette.surface2,
-                                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                                }
-                                .buttonStyle(PressFade())
-                                .accessibilityLabel("\(n) days")
-                                .accessibilityAddTraits(n == days ? .isSelected : [])
-                            }
-                        }
+                    // The planning window is the Plan's; a house without one has nothing to set.
+                    if session.planOn {
+                        Rectangle().fill(Palette.border).frame(height: 1)
+                        planAhead
                     }
                 }
 
@@ -97,6 +72,40 @@ struct HouseholdBasicsScreen: View {
             }
         }
         .task { await load() }
+    }
+
+    /// "Plan ahead": how many days the Plan's window runs, as the mockup's row of five.
+    private var planAhead: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Plan ahead").font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Palette.text)
+                    Text("The planning window on Plan").font(.system(size: 13)).foregroundStyle(Palette.muted)
+                }
+                Spacer(minLength: 8)
+                Text("\(days) \(days == 1 ? "day" : "days")")
+                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.text)
+            }
+            HStack(spacing: 6) {
+                ForEach(windows, id: \.self) { n in
+                    Button {
+                        days = n
+                    } label: {
+                        Text("\(n)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(n == days ? Palette.bg : Palette.muted)
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .background(n == days ? Palette.text : Palette.surface2,
+                                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel("\(n) days")
+                    .accessibilityAddTraits(n == days ? .isSelected : [])
+                }
+            }
+        }
     }
 
     private func load() async {
@@ -404,6 +413,11 @@ extension RecipeSection: Identifiable {
 
 // MARK: - Another house
 
+/**
+ Start another household: a name, then the new house's kitchen questions (Welcome/KitchenSetup.swift)
+ before going back — which offer its starter cupboard if it is to have one. You stay in the house
+ you were in, so the questions are given the new house's id rather than reading the open one.
+ */
 struct NewHouseholdScreen: View {
     var session: Session
 
@@ -411,7 +425,7 @@ struct NewHouseholdScreen: View {
     @State private var name = ""
     @State private var busy = false
     @State private var error: String?
-    /// The house just made, whose empty cupboard is offered the starter list before going back.
+    /// The house just made, whose kitchen questions come before going back.
     @State private var made: HouseholdSummary?
 
     var body: some View {
@@ -434,7 +448,7 @@ struct NewHouseholdScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .textBackButton("Household")
         .sheet(item: $made, onDismiss: { dismiss() }) { household in
-            StartCupboardSheet(household: household.id, first: true)
+            KitchenSetupSheet(session: session, household: household.id)
         }
     }
 
@@ -445,8 +459,10 @@ struct NewHouseholdScreen: View {
         defer { busy = false }
         do {
             let household = try await APIClient.shared.createHousehold(name: wanted)
+            // The switcher's list, with the new house in it — and the kitchen setup reads its
+            // answers (none yet) from there.
             await session.loadHouseholds()
-            // A new house has an empty cupboard, and most of what goes in it is the same everywhere.
+            if !session.households.contains(where: { $0.id == household.id }) { session.adopt(household) }
             made = household
         } catch {
             self.error = error.localizedDescription

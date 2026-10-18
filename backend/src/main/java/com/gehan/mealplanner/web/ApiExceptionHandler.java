@@ -30,6 +30,14 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    /** The usual body, plus `alreadyOnList`, which the app answers by asking whether to add it again. */
+    @ExceptionHandler(com.gehan.mealplanner.service.AlreadyOnListException.class)
+    public ResponseEntity<Map<String, Object>> handleAlreadyOnList(com.gehan.mealplanner.service.AlreadyOnListException ex) {
+        Map<String, Object> body = body(HttpStatus.CONFLICT.value(), ex.getReason());
+        body.put("alreadyOnList", true);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     /**
      * The usual body, plus exactly how long the lockout has left, so the sign-in screen can count
      * down. Retry-After says the same for anything that reads headers.

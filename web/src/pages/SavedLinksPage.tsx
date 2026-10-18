@@ -31,6 +31,7 @@ import { Icon } from '../components/icons';
 import { usePushedScreen } from '../components/Layout';
 import { SECTION_OPTIONS, sectionLabel } from '../utils/recipeMeta';
 import { isSafeLink } from '../utils/videoLink';
+import { planOn } from '../utils/features';
 import { isVideo, linkKind, saveLink, sourceLabel, timeAgo, type LinkKind } from '../utils/savedLinks';
 
 type Action = 'menu' | 'rename' | 'move' | 'delete' | 'plan' | 'import';
@@ -308,7 +309,8 @@ export default function SavedLinksPage() {
         >
           <LinkActions
             link={open.link}
-            onPlan={() => setOpen({ action: 'plan', link: open.link })}
+            // Only a house that plans meals can put one on its Plan.
+            onPlan={planOn(activeHousehold) ? () => setOpen({ action: 'plan', link: open.link }) : undefined}
             onMakeRecipe={() => makeRecipe(open.link)}
             onImport={() => setOpen({ action: 'import', link: open.link })}
             onMove={() => setOpen({ action: 'move', link: open.link })}
@@ -418,7 +420,8 @@ function LinkActions({
   onDelete,
 }: {
   link: SavedLink;
-  onPlan: () => void;
+  /** Left out in a house that does not plan meals, which hides Add to plan. */
+  onPlan?: () => void;
   onMakeRecipe: () => void;
   onImport: () => void;
   onMove: () => void;
@@ -428,7 +431,7 @@ function LinkActions({
 }) {
   return (
     <List label="Saved link actions">
-      <Row lead={<Tile icon="calendar" tone="accent" size={34} />} title="Add to plan" onClick={onPlan} />
+      {onPlan && <Row lead={<Tile icon="calendar" tone="accent" size={34} />} title="Add to plan" onClick={onPlan} />}
       <Row
         lead={<Tile icon="book" tone="herb" size={34} />}
         title="Turn into a recipe"

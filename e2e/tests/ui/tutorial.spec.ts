@@ -23,8 +23,8 @@ test('a new phone gets two slides and "Light or dark?" before signing in, and th
   await page.emulateMedia({ colorScheme: 'light' });
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Plan the week together' })).toBeVisible();
-  await expect(page.getByRole('img', { name: /The Plan screen/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "Your family's recipes, together" })).toBeVisible();
+  await expect(page.getByRole('img', { name: /The Recipes screen/ })).toBeVisible();
   // Nothing to sign in to yet: the tutorial comes first.
   await expect(page.getByLabel('Email')).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath('tutorial-1.png') });
@@ -58,7 +58,7 @@ test('a new phone gets two slides and "Light or dark?" before signing in, and th
   await page.getByLabel('Email').fill(cook.email);
   await page.getByLabel('Password').fill(cook.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await expect.poll(async () => (await call('GET', '/api/users/me', { token: cook.token })).theme.mode).toBe('DARK');
   expect(await mode(page)).toBe('dark');
 });
@@ -78,14 +78,14 @@ test('an account that already chose keeps its own light or dark', async ({ page 
   await page.getByLabel('Email').fill(cook.email);
   await page.getByLabel('Password').fill(cook.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await expect.poll(() => mode(page)).toBe('light');
   expect((await call('GET', '/api/users/me', { token: cook.token })).theme.mode).toBe('LIGHT');
 });
 
 test('Skip goes straight to signing in, and the tutorial does not come back', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Plan the week together' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "Your family's recipes, together" })).toBeVisible();
   await page.getByRole('button', { name: 'Skip' }).click();
   await expect(page.getByLabel('Email')).toBeVisible();
   // Skipping says nothing about light or dark: nothing is kept to put on an account.
@@ -93,7 +93,7 @@ test('Skip goes straight to signing in, and the tutorial does not come back', as
 
   await page.goto('/');
   await expect(page.getByLabel('Email')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan the week together' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: "Your family's recipes, together" })).toHaveCount(0);
 });
 
 test('somebody invited sees the invite first, and the tutorial once they have joined', async ({ page }) => {
@@ -114,22 +114,22 @@ test('somebody invited sees the invite first, and the tutorial once they have jo
   await page.getByRole('button', { name: 'Create account & join' }).click();
 
   // Joined: now the tutorial, ending in the app rather than at a sign-in screen.
-  await expect(page.getByRole('heading', { name: 'Plan the week together' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "Your family's recipes, together" })).toBeVisible();
   const members = await call('GET', `/api/households/${hh.id}/members`, { token: hh.owner.token });
   expect(members.map((m: { displayName: string }) => m.displayName)).toContain('Invited Ivy');
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('radio', { name: /Dark/ }).click();
-  await page.getByRole('button', { name: 'Start planning' }).click();
+  await page.getByRole('button', { name: 'Get started' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   expect(await mode(page)).toBe('dark');
   const auth = await call('POST', '/api/auth/login/email', { body: { email, password: 'invited-password' } });
   await expect.poll(async () => (await call('GET', '/api/users/me', { token: auth.token })).theme.mode).toBe('DARK');
 
   // And once is enough.
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recipes', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Skip' })).toHaveCount(0);
 });
 
@@ -146,5 +146,5 @@ test('somebody already signed in when the tutorial arrives never sees it, even a
   await page.getByRole('button', { name: 'Your account' }).click();
   await sheet(page).getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByLabel('Email')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Plan the week together' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: "Your family's recipes, together" })).toHaveCount(0);
 });

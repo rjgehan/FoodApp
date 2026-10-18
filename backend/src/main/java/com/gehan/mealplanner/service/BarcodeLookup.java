@@ -41,7 +41,7 @@ public class BarcodeLookup {
     public record Product(String barcode, String name, String brand, String size) {
     }
 
-    private static final String WHO_WE_ARE = "MealPlanner/1.0 (+https://meals.gehan.cloud)";
+    private static final String WHO_WE_ARE = "Waxwing/1.0 (+https://meals.gehan.cloud)";
     private static final Duration KEEP_FOR = Duration.ofDays(30);
     private static final String MISSING = "";
 

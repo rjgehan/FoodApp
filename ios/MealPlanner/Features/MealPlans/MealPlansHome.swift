@@ -28,10 +28,13 @@ struct MealPlansScreen: View {
                 if failed && home == nil {
                     MealPlansLoadFailed(message: "Could not load meal plans.") { Task { await load() } }
                 } else {
-                    NavigationLink(value: MealPlansRoute.cupboard) {
-                        CupboardCard(cupboard: home?.cupboard)
+                    // Cooking from the cupboard needs one: a house without it has the health plans only.
+                    if session.cupboardOn {
+                        NavigationLink(value: MealPlansRoute.cupboard) {
+                            CupboardCard(cupboard: home?.cupboard)
+                        }
+                        .buttonStyle(PressFade())
                     }
-                    .buttonStyle(PressFade())
 
                     SectionHead("Plans for health targets") {
                         NavigationLink(value: MealPlansRoute.newPlan) {
@@ -220,6 +223,8 @@ struct PlanCardView: View {
  */
 struct MealPlansDoor: View {
     let home: MealPlansHome?
+    /// The house keeps a cupboard: the chip into cooking from it, and the line on what it holds.
+    var cupboard = true
     /// Opens one of the chips; the door itself opens Meal plans.
     var open: (MealPlansRoute) -> Void = { _ in }
 
@@ -231,7 +236,8 @@ struct MealPlansDoor: View {
                     Tile("target", tone: .plum, size: 44)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Meal plans").titleFont(20).foregroundStyle(Palette.text)
-                        Text("From your cupboard, or built for a goal").font(.system(size: 13))
+                        Text(cupboard ? "From your cupboard, or built for a goal" : "Built for a health goal")
+                            .font(.system(size: 13))
                             .foregroundStyle(Palette.muted).multilineTextAlignment(.leading)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -242,15 +248,19 @@ struct MealPlansDoor: View {
             .buttonStyle(PressFade())
             .accessibilityLabel("Meal plans")
             ChipFlow(spacing: 8) {
-                doorChip("Cook from cupboard", "cabinet") { open(.cupboard) }
+                if cupboard {
+                    doorChip("Cook from cupboard", "cabinet") { open(.cupboard) }
+                }
                 ForEach(plans, id: \.key) { p in
                     doorChip(p.name, MealPlanLook.symbol(p.icon)) {
                         if let id = p.id { open(.plan(id)) } else if let key = p.preset { open(.preset(key)) }
                     }
                 }
             }
-            Text(home.map { MealPlanText.doorLine($0.cupboard) } ?? " ")
-                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+            if cupboard {
+                Text(home.map { MealPlanText.doorLine($0.cupboard) } ?? " ")
+                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
+            }
         }
     }
 

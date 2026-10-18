@@ -8,6 +8,9 @@ import { usePushedScreen } from '../components/Layout';
 import { DEFAULT_SECTION_ICONS, iconByKey } from '../components/FoodIcons';
 import IconPicker from '../components/IconPicker';
 import { SECTION_OPTIONS } from '../utils/recipeMeta';
+import { planOn } from '../utils/features';
+import { useHomePath } from '../utils/homePath';
+import { orderedMachines } from '../utils/machines';
 import {
   Avatar,
   Button,
@@ -30,16 +33,18 @@ type Open = 'qr' | 'icons' | 'join' | 'new' | 'leave' | null;
 
 /**
  * The household (mockup 6.2): the way to invite somebody, who is here and how each of them signs
- * in, and the house's own setup — places, name and servings, aisles. Reached from Settings, which
- * is where its back button goes. The owner can tap anybody else for their actions.
+ * in, and the house's own setup — places, name and servings, its kitchen and which of Plan and
+ * Cupboard it uses, aisles. Reached from Settings, which is where its back button goes. The owner
+ * can tap anybody else for their actions.
  */
 export default function HouseholdPage() {
   usePushedScreen();
   const { households, activeHousehold } = useHousehold();
   const navigate = useNavigate();
   const location = useLocation();
+  const home = useHomePath();
   const from = (location.state as HouseholdScreenState | null)?.from;
-  const back = () => navigate(from ?? '/meal-plan', { state: { openSettings: true } });
+  const back = () => navigate(from ?? home, { state: { openSettings: true } });
 
   return (
     <div className="mx-auto max-w-2xl pb-6 lg:max-w-5xl">
@@ -104,6 +109,8 @@ function HouseholdHome() {
   const go = (path: string) => navigate(path, { state: location.state });
   const toneOf = (m: HouseholdMember) => personTone(Math.max(0, (members ?? []).indexOf(m)));
   const alone = household.memberCount <= 1;
+  const plans = planOn(household);
+  const machineCount = orderedMachines(household.machines ?? []).length;
 
   return (
     <>
@@ -151,8 +158,20 @@ function HouseholdHome() {
               <Row
                 onClick={() => go('/household/setup')}
                 lead={<Tile icon="home" tone="herb" size={34} />}
-                title="Name, servings & planning"
-                detail={`${household.defaultServings} · ${household.planningHorizonDays} ${household.planningHorizonDays === 1 ? 'day' : 'days'}`}
+                // The planning window is the Plan's: a house that does not plan has only the rest.
+                title={plans ? 'Name, servings & planning' : 'Name & servings'}
+                detail={
+                  plans
+                    ? `${household.defaultServings} · ${household.planningHorizonDays} ${household.planningHorizonDays === 1 ? 'day' : 'days'}`
+                    : String(household.defaultServings)
+                }
+                chevron
+              />
+              <Row
+                onClick={() => go('/household/kitchen')}
+                lead={<Tile icon="chef" tone="accent" size={34} />}
+                title="Kitchen & features"
+                detail={machineCount ? `${machineCount} ${machineCount === 1 ? 'machine' : 'machines'}` : undefined}
                 chevron
               />
               <Row

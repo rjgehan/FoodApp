@@ -2,6 +2,7 @@ import type { MealPlanEntry, Place, Recipe } from '../../api/types';
 import { entryLabel } from '../../utils/planEntry';
 import { sourceLabel } from '../../utils/savedLinks';
 import { isSafeLink } from '../../utils/videoLink';
+import { useFeatures } from '../../utils/features';
 import { List, NoteBox, Row, Sheet, Tile } from '../ui';
 import MealPicture from './MealPicture';
 import { fromIso, mealTitle, slotTime, type PlannedShopping } from './planModel';
@@ -49,6 +50,7 @@ export default function MealOptionsSheet({
   onRemove: () => void;
   onClose: () => void;
 }) {
+  const { cupboard } = useFeatures();
   const when = fromIso(entry.date);
   const day = `${when.toLocaleDateString(undefined, { weekday: 'long' })} ${when.getDate()}`;
   const [servings, setServings] = useDraftServings(entry.servings ?? defaultServings, onServings);
@@ -106,7 +108,7 @@ export default function MealOptionsSheet({
             <Row
               lead={<Tile icon="cart" tone="accent" size={34} />}
               title="Add to groceries"
-              subtitle={shopping ? groceriesLine(shopping) : undefined}
+              subtitle={shopping ? groceriesLine(shopping, cupboard) : undefined}
               onClick={onAddToGroceries}
               disabled={busy}
             />
@@ -118,11 +120,13 @@ export default function MealOptionsSheet({
               subtitle={
                 shopping?.status === 'ON_LIST'
                   ? 'Already on the list'
-                  : entry.runningLow
-                    ? 'Running low'
-                    : entry.inCupboard
-                      ? 'In the cupboard'
-                      : 'Not in the cupboard'
+                  : !cupboard
+                    ? undefined
+                    : entry.runningLow
+                      ? 'Running low'
+                      : entry.inCupboard
+                        ? 'In the cupboard'
+                        : 'Not in the cupboard'
               }
               onClick={onAddToGroceries}
               disabled={busy || shopping?.status === 'ON_LIST'}
@@ -160,12 +164,12 @@ export default function MealOptionsSheet({
   );
 }
 
-/** "11 items, 3 already in cupboard" */
-function groceriesLine(s: PlannedShopping): string | undefined {
-  if (s.needs === 0) return 'Nothing to buy — all staples';
+/** "11 items, 3 already in cupboard" — the cupboard only in a house that keeps one. */
+function groceriesLine(s: PlannedShopping, cupboard: boolean): string | undefined {
+  if (s.needs === 0) return cupboard ? 'Nothing to buy — all staples' : 'Nothing to buy';
   const items = `${s.needs} ${s.needs === 1 ? 'item' : 'items'}`;
   if (s.status === 'ON_LIST') return `${items}, already on the list`;
-  return s.inCupboard > 0 ? `${items}, ${s.inCupboard} already in cupboard` : items;
+  return cupboard && s.inCupboard > 0 ? `${items}, ${s.inCupboard} already in cupboard` : items;
 }
 
 function ExternalRow({ href, title, icon = 'link' }: { href: string; title: string; icon?: 'link' | 'phone' }) {

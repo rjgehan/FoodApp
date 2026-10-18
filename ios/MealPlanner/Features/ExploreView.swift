@@ -14,6 +14,9 @@ import SwiftUI
  door that leads nowhere. Meal plans shows what the cupboard holds and a couple of plans, once
  the server has said it has meal plans; a server from before them keeps the old "coming soon"
  door instead. The same three doors as the web, in the same order and colours.
+
+ A household that does not plan meals has no Meal plans door (every plan is put on the Plan) and
+ no week on Nutrition's; one without a cupboard has no cupboard on the Meal plans door.
 */
 struct ExploreView: View {
     var session: Session
@@ -50,12 +53,15 @@ struct ExploreView: View {
                         .buttonStyle(PressFade())
                         if sampleWeek != nil || nutrition.available == true {
                             NavigationLink(value: ExploreRoute.nutrition) {
-                                NutritionDoor(week: week)
+                                NutritionDoor(week: week, showsWeek: session.planOn)
                             }
                             .buttonStyle(PressFade())
                         }
-                        if sampleMealPlans != nil || mealPlans.available == true {
-                            MealPlansDoor(home: plansHome) { route in openMealPlans(route) }
+                        // Every meal plan is put on the Plan, so a house without one has no door to them.
+                        if !session.planOn {
+                            EmptyView()
+                        } else if sampleMealPlans != nil || mealPlans.available == true {
+                            MealPlansDoor(home: plansHome, cupboard: session.cupboardOn) { route in openMealPlans(route) }
                         } else if mealPlans.available == nil {
                             // Not heard from the server yet (or it didn't answer): neither open nor
                             // "coming soon", which would be wrong the moment it does answer.
@@ -149,6 +155,7 @@ struct ExploreView: View {
     /// The same answer the Meal plans page opens with, so the door and the page agree.
     private func loadMealPlans() async {
         if let sampleMealPlans { plansHome = sampleMealPlans; return }
+        guard session.planOn else { return }
         await mealPlans.check()
         // No answer (a first launch can ask before the network is up): ask again a few times
         // rather than leave the door saying "Checking…".
@@ -165,7 +172,7 @@ struct ExploreView: View {
     private func loadWeek() async {
         if let sampleWeek { week = sampleWeek; return }
         await nutrition.check()
-        guard nutrition.available == true, let household = session.household?.id else { return }
+        guard nutrition.available == true, session.planOn, let household = session.household?.id else { return }
         week = try? await APIClient.shared.planNutrition(household: household, start: NutritionText.day(0),
                                                          end: NutritionText.day(6))
     }
@@ -311,6 +318,8 @@ struct GlobalRecipesDoor: View {
  */
 struct NutritionDoor: View {
     let week: PlanNutrition?
+    /// The week's numbers come from the Plan: a house without one just has the door.
+    var showsWeek = true
 
     var body: some View {
         let average = (week?.daysCounted ?? 0) > 0 ? week?.average : nil
@@ -325,14 +334,16 @@ struct NutritionDoor: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.faint)
             }
-            HStack(spacing: 8) {
-                NutritionStat(value: average.map { NutritionText.kcal($0.kcal) } ?? "–", label: "kcal / day")
-                NutritionStat(value: average.map { NutritionText.grams($0.protein) } ?? "–", label: "Protein", tone: .herb)
-                NutritionStat(value: average.map { NutritionText.grams($0.fibre) } ?? "–", label: "Fibre", tone: .mustard)
+            if showsWeek {
+                HStack(spacing: 8) {
+                    NutritionStat(value: average.map { NutritionText.kcal($0.kcal) } ?? "–", label: "kcal / day")
+                    NutritionStat(value: average.map { NutritionText.grams($0.protein) } ?? "–", label: "Protein", tone: .herb)
+                    NutritionStat(value: average.map { NutritionText.grams($0.fibre) } ?? "–", label: "Fibre", tone: .mustard)
+                }
+                Text(week == nil ? " " : average != nil ? (week?.averageWords(short: true) ?? "")
+                     : "Plan some meals and see what your week adds up to")
+                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
             }
-            Text(week == nil ? " " : average != nil ? (week?.averageWords(short: true) ?? "")
-                 : "Plan some meals and see what your week adds up to")
-                .font(.system(size: 12)).foregroundStyle(Palette.muted)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Nutrition facts" + (average.map { ", \(NutritionText.kcal($0.kcal)) kcal a day on average this week" } ?? ""))

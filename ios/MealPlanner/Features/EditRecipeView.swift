@@ -37,10 +37,14 @@ struct EditRecipeView: View {
     @State private var coverImageId: UUID?
     @State private var cover = CoverPhotoFlow()
     @State private var section: RecipeSection
-    @State private var groups: Set<String>
-    /// Ticked groups set aside when the drawer changed — see `moveToDrawer`.
+    @State private var tags: Set<String>
+    /// Ticked tags set aside when the drawer changed — see `moveTags`.
     @State private var parked: Set<String> = []
-    @State private var allGroups: [RecipeCategory] = []
+    @State private var allTags: [RecipeCategory] = []
+    /// The kitchen machines it needs, as `KitchenMachine` keys — see `machinesToSend`.
+    @State private var machines: Set<String>
+    /// The machines as the form opened: an existing recipe's own, none for a new one.
+    private let startingMachines: Set<String>
     @State private var choosingPhoto = false
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var confirmingDelete = false
@@ -72,10 +76,10 @@ struct EditRecipeView: View {
         var notes: String? = nil
     }
 
-    /// `initialSection` and `initialGroups` file a new recipe where it was started from — the
-    /// drawer, and the group you were in — the way the web's `?section=&group=` does.
+    /// `initialSection` and `initialTags` file a new recipe where it was started from — the
+    /// drawer, and the tags you were looking at — the way the web's `?section=&tags=` does.
     init(recipe: Recipe?, session: Session?, draft: RecipeDraft? = nil, embedded: Bool = false,
-         showsSave: Bool = true, initialSection: RecipeSection? = nil, initialGroups: [String] = [],
+         showsSave: Bool = true, initialSection: RecipeSection? = nil, initialTags: [String] = [],
          onDeleted: (() -> Void)? = nil, onSaved: @escaping (Recipe) -> Void) {
         self.recipe = recipe
         self.session = session
@@ -89,7 +93,12 @@ struct EditRecipeView: View {
         savedLinkId = draft?.savedLinkId
         // Dinner is what the web defaults a new recipe to.
         _section = State(initialValue: recipe?.section ?? initialSection ?? .dinner)
-        _groups = State(initialValue: Set(recipe?.categories ?? initialGroups))
+        _tags = State(initialValue: Set(recipe?.categories ?? initialTags))
+        // An existing recipe's machines as the server has them (spotted in its method, or set by
+        // hand); a new one starts on none, and the server spots them when it is saved.
+        let appliances = Set(recipe?.appliances ?? [])
+        startingMachines = appliances
+        _machines = State(initialValue: appliances)
         _name = State(initialValue: recipe?.name ?? draft?.name ?? "")
         _summary = State(initialValue: recipe?.description ?? draft?.description ?? "")
         _servings = State(initialValue: recipe?.servings ?? draft.map { min(max($0.servings, 1), 40) } ?? 4)
@@ -132,7 +141,8 @@ struct EditRecipeView: View {
     /*
      Laid out as the mockup's "Check recipe" (3.16): the picture beside the name, the times and
      servings in a row, each ingredient as one line — amount and unit as small chips, the name,
-     a leaf that makes it optional — then the method, the links and the filing as chips.
+     a leaf that makes it optional — then the method, the links, and the filing and the machines
+     as chips.
     */
     private var editor: some View {
         ScrollViewReader { scroller in
@@ -206,9 +216,12 @@ struct EditRecipeView: View {
                     linksEditor
 
                     SectionLabel("Filing").padding(.top, 4)
-                    FilingPicker(section: $section, groups: $groups, allGroups: allGroups) { name in
-                        await addGroup(named: name)
+                    FilingPicker(section: $section, tags: $tags, allTags: allTags) { name in
+                        await addTag(named: name)
                     }
+
+                    SectionLabel("Machines").padding(.top, 4)
+                    machinesPicker
 
                     if let error {
                         Text(error).font(.system(size: 14)).foregroundStyle(Palette.danger)
@@ -227,15 +240,15 @@ struct EditRecipeView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             #if DEBUG
-            // -mp_debug_scroll links (with -mp_debug_screen edit) scrolls down to the links, and
-            // "filing" to the drawer and groups, so a screenshot run can see them without a
-            // finger to scroll with.
+            // -mp_debug_scroll links (with -mp_debug_screen edit) scrolls down to the links,
+            // "filing" to the drawer and tags and "machines" to the machines, so a screenshot run
+            // can see them without a finger to scroll with.
             .task {
-                let target = UserDefaults.standard.string(forKey: "mp_debug_scroll")
-                guard target == "links" || target == "filing" else { return }
+                guard let target = UserDefaults.standard.string(forKey: "mp_debug_scroll"),
+                      ["links", "filing", "machines"].contains(target) else { return }
                 try? await Task.sleep(for: .milliseconds(900))
                 withAnimation {
-                    scroller.scrollTo(target == "links" ? LinksSection.anchor : "filing", anchor: .top)
+                    scroller.scrollTo(target == "links" ? LinksSection.anchor : target, anchor: .top)
                 }
             }
             #endif
@@ -254,8 +267,8 @@ struct EditRecipeView: View {
                 await upload(image, into: $coverImageId, session: session, flow: cover)
             }
         }
-        .task { await loadGroups() }
-        .onChange(of: section) { _, next in moveToDrawer(next) }
+        .task { await loadTags() }
+        .onChange(of: section) { _, next in moveTags(&tags, parked: &parked, to: next, all: allTags) }
         .confirmationDialog(
             "You already have “\(duplicate?.name ?? "")”",
             isPresented: Binding(get: { duplicate != nil }, set: { if !$0 { duplicate = nil } }),
@@ -493,41 +506,66 @@ struct EditRecipeView: View {
         }
     }
 
-    /**
-     Groups belong to a drawer, and the server files a recipe by group name, making any it cannot
-     find. So a group ticked in the old drawer — Veggie, when the recipe was started from inside
-     Dinner › Veggie and then moved to Lunch — would drop out of sight here and come back as a
-     new, empty Veggie in Lunch. It is set aside instead, and ticked again if the recipe moves
-     back to a drawer that has it: the same as the web's form. A name the household has no group
-     for anywhere goes wherever the recipe goes.
-    */
-    private func moveToDrawer(_ next: RecipeSection) {
-        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
-        func inDrawer(_ name: String) -> Bool {
-            allGroups.contains { same($0.name, name) && ($0.section == nil || $0.section == next) }
+    /// Every machine as a chip to tick — what it takes to cook it — the same chips the drawer
+    /// filters by. A new recipe says the server will spot them from the method; ticking one is
+    /// only for what the method does not say.
+    private var machinesPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ChipFlow {
+                ForEach(KitchenMachine.all) { machine in
+                    let on = machines.contains(machine.key)
+                    Button {
+                        if on { machines.remove(machine.key) } else { machines.insert(machine.key) }
+                    } label: {
+                        MachinePill(machine: machine, isOn: on)
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(machine.label)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            if recipe == nil {
+                Text("We'll spot machines from the method when you save.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.muted)
+            }
         }
-        func isKnown(_ name: String) -> Bool { allGroups.contains { same($0.name, name) } }
-
-        let setAside = groups.filter { isKnown($0) && !inDrawer($0) }
-        let back = parked.filter { name in inDrawer(name) && !groups.contains { same($0, name) } }
-        groups.subtract(setAside)
-        groups.formUnion(back)
-        parked.subtract(back)
-        parked.formUnion(setAside)
+        .id("machines")
     }
 
-    private func loadGroups() async {
+    /**
+     The machines to send, or nil to leave them to the server. A list tells the server they were
+     set by hand, and from then on it stops spotting them in the method — so the list only goes
+     when somebody changed them: for a recipe being edited, a set that is not the one it opened
+     with (ticking one and unticking it again is no change); for a new recipe, anything ticked,
+     which the server adds to what it spots.
+     */
+    private var machinesToSend: [String]? {
+        let changed = recipe == nil ? !machines.isEmpty : machines != startingMachines
+        guard changed else { return nil }
+        // In the catalogue's order, then any key this build does not know (a newer server's),
+        // sent back as it came rather than dropped.
+        let known = KitchenMachine.all.map(\.key).filter { machines.contains($0) }
+        return known + machines.filter { KitchenMachine.named($0) == nil }.sorted()
+    }
+
+    private func loadTags() async {
         guard let household = session?.household?.id else { return }
-        allGroups = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
+        // Previews and the Gallery show the sample tags rather than none.
+        guard session?.token != "preview" else {
+            allTags = SampleData.recipeCategories
+            return
+        }
+        allTags = (try? await APIClient.shared.recipeCategories(household: household)) ?? []
     }
 
-    private func addGroup(named wanted: String) async {
+    /// Made in the drawer the form is on straight away, and ticked. Changing the drawer after
+    /// sets it aside like any other tag (`moveTags`).
+    private func addTag(named wanted: String) async {
         guard !wanted.isEmpty, let household = session?.household?.id else { return }
         do {
-            let made = try await APIClient.shared.createRecipeCategory(
-                household: household, name: wanted, section: section)
-            allGroups.append(made)
-            groups.insert(made.name)
+            let made = try await APIClient.shared.createTag(household: household, name: wanted, section: section)
+            allTags.append(made)
+            tags.insert(made.name)
         } catch {
             self.error = error.localizedDescription
         }
@@ -538,7 +576,7 @@ struct EditRecipeView: View {
         defer { busy = false }
 
         // The backend takes the whole recipe back, so anything not on this screen is sent as
-        // it came: the section and groups this household filed it under, and its photos.
+        // it came: its photos, and the drawer and tags as the Filing chips have them.
         let rows: [[String: Any]] = ingredients
             .filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }
             .map { row in
@@ -561,7 +599,7 @@ struct EditRecipeView: View {
         var body: [String: Any] = [
             "name": name.trimmingCharacters(in: .whitespaces),
             "servings": servings,
-            "categories": Array(groups),
+            "categories": Array(tags),
             "ingredients": rows,
         ]
         body["section"] = section.rawValue
@@ -585,6 +623,9 @@ struct EditRecipeView: View {
         body["sourceUrl"] = legacy.sourceUrl ?? NSNull()
         body["videoUrl"] = legacy.videoUrl ?? NSNull()
         if recipe == nil, let savedLinkId { body["savedLinkId"] = savedLinkId.uuidString }
+        // Left out unless somebody changed them, so the server goes on spotting them in the
+        // method (`machinesToSend`). A server from before machines ignores the field.
+        if let picked = machinesToSend { body["appliances"] = picked }
 
         do {
             let saved: Recipe
@@ -648,6 +689,6 @@ private struct IngredientChip: ViewModifier {
     EditRecipeView(recipe: nil, session: .preview) { _ in }
 }
 
-#Preview("New, from a group") {
-    EditRecipeView(recipe: nil, session: .preview, initialSection: .dinner, initialGroups: ["Veggie"]) { _ in }
+#Preview("New, from a drawer with a tag chosen") {
+    EditRecipeView(recipe: nil, session: .preview, initialSection: .dinner, initialTags: ["Veggie"]) { _ in }
 }

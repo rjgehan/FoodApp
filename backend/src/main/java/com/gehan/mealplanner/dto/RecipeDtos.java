@@ -75,7 +75,25 @@ public class RecipeDtos {
              * On a new recipe: the saved link it was made from. That link has done its job and
              * is deleted, and meals planned with it get this recipe instead. Ignored on an edit.
              */
-            UUID savedLinkId) {
+            UUID savedLinkId,
+            /**
+             * The kitchen machines it needs, as KitchenMachines keys, when the person picked them.
+             * Null — every client from before machines, and a form nobody touched them on — leaves
+             * them to ApplianceDetector, which reads them from the method on each save. A list is
+             * the person's say: on an edit it is exactly what the recipe needs from then on, and
+             * the detector leaves it alone; on a new recipe the detector adds what the method
+             * mentions to what they picked.
+             */
+            List<String> appliances) {
+
+        /** A recipe whose machines are left to the detector. */
+        public RecipeRequest(String name, String description, String instructions, Integer prepTimeMinutes,
+                Integer cookTimeMinutes, Integer servings, String sourceUrl, String videoUrl,
+                List<SourceLink> links, RecipeSection section, List<String> categories, UUID coverImageId,
+                List<UUID> photoIds, List<RecipeIngredientRequest> ingredients, UUID savedLinkId) {
+            this(name, description, instructions, prepTimeMinutes, cookTimeMinutes, servings, sourceUrl, videoUrl,
+                    links, section, categories, coverImageId, photoIds, ingredients, savedLinkId, null);
+        }
 
         /** A recipe that did not come from a saved link — which is every recipe from before them. */
         public RecipeRequest(String name, String description, String instructions, Integer prepTimeMinutes,
@@ -83,7 +101,7 @@ public class RecipeDtos {
                 List<SourceLink> links, RecipeSection section, List<String> categories, UUID coverImageId,
                 List<UUID> photoIds, List<RecipeIngredientRequest> ingredients) {
             this(name, description, instructions, prepTimeMinutes, cookTimeMinutes, servings, sourceUrl, videoUrl,
-                    links, section, categories, coverImageId, photoIds, ingredients, null);
+                    links, section, categories, coverImageId, photoIds, ingredients, null, null);
         }
     }
 
@@ -105,8 +123,9 @@ public class RecipeDtos {
 
     /**
      * Files a recipe into one household's catalog. Works for a recipe another household shared
-     * with you — that is how it moves out of "Shared". Category names that do not exist yet are
-     * created in the household on the spot, which is how new categories come into being at all.
+     * with you — that is how it moves out of "Shared". `categories` are tag names, looked up in
+     * that drawer only; one the drawer does not have yet is made there on the spot, which is how
+     * a tag typed into the recipe form comes into being.
      */
     public record FilingRequest(
             RecipeSection section,
@@ -126,7 +145,9 @@ public class RecipeDtos {
             List<SourceLink> links,
             UUID coverImageId,
             List<UUID> photoIds,
-            List<PublicIngredientResponse> ingredients) {
+            List<PublicIngredientResponse> ingredients,
+            /** The kitchen machines it needs, as KitchenMachines keys, in the catalogue's order. */
+            List<String> appliances) {
     }
 
     public record PublicIngredientResponse(
@@ -157,6 +178,7 @@ public class RecipeDtos {
             List<SourceLink> links,
             /** Where this household filed it. Null means unfiled, which the UI shows as "Shared". */
             RecipeSection section,
+            /** The names of the tags this household gave it, all from that drawer, sorted. */
             List<String> categories,
             /** True when another household owns it — you can file it, but not edit it. */
             boolean shared,
@@ -172,33 +194,69 @@ public class RecipeDtos {
             /** On a recipe another household shared with you: the drawer it is in over there. */
             RecipeSection ownerSection,
             /** On a recipe another household shared with you: when they shared it, if known. */
-            Instant sharedAt) {
+            Instant sharedAt,
+            /**
+             * The kitchen machines it needs, as KitchenMachines keys, in the catalogue's order —
+             * read from the method, or picked by hand. The method alone never gives the stovetop,
+             * which nearly everything uses; somebody can still pick it.
+             */
+            List<String> appliances) {
     }
 
-    /** `parentId` is the group this one sits inside; null at the top of a drawer. */
-    /** `section` is the drawer the group belongs to; null means it shows in every drawer. */
-    /** `iconKey` is the food drawing its tile wears (FoodIcons); null for a plain tile. */
+    /**
+     * A tag. `recipeCount` is how many of the household's recipes wear it. `parentId` is always
+     * null now that tags are flat — kept because every phone already installed reads it. `section`
+     * is the drawer it belongs to, never null. `iconKey` is the food drawing its chip wears
+     * (FoodIcons); null for a plain one.
+     */
     public record RecipeCategoryResponse(UUID id, String name, int recipeCount, UUID parentId, RecipeSection section,
                                          String iconKey) {
     }
 
-    /** A new group, optionally inside another. Names are unique within a household. */
-    /** `section` is ignored when `parentId` is given — a nested group joins its parent's drawer. */
-    /** `iconKey` is optional; a key that is not one of FoodIcons is refused. */
-    public record CreateCategoryRequest(@NotBlank String name, UUID parentId, RecipeSection section, String iconKey) {
+    /**
+     * A new tag in one drawer. Names are unique within a drawer, ignoring case.
+     *
+     * `section` is the drawer. A phone from before tags sends none when it splits a group up —
+     * only `parentId`, the group it came out of — so that group's drawer is the one meant; with
+     * neither, there is nowhere to put it. `parentId` means nothing else any more.
+     *
+     * `iconKey` is optional; a key that is not one of FoodIcons is refused. `recipeIds` tags those
+     * recipes in the same request — "these four look like Chicken" is one tap — skipping any this
+     * household has not filed in that drawer.
+     */
+    public record CreateCategoryRequest(@NotBlank String name, UUID parentId, RecipeSection section, String iconKey,
+                                        List<UUID> recipeIds) {
+
+        /** A tag made on its own, which is how every app made one before `recipeIds`. */
+        public CreateCategoryRequest(String name, UUID parentId, RecipeSection section, String iconKey) {
+            this(name, parentId, section, iconKey, null);
+        }
     }
 
     /**
-     * Rename, move, re-icon, or any of them. A null parentId leaves it where it is — JSON cannot
-     * tell "no change" from "no parent" — so moving a group out to the top level is `toTop: true`.
-     * The icon follows the same rule: null leaves it, which is what an app from before icons
-     * sends, and an empty string takes it off.
+     * Rename, re-icon, or both. Null leaves either as it is; an empty icon takes it off, and a
+     * null one is what an app from before icons sends. A phone from before tags may also send
+     * `parentId` or `toTop` to move a group inside another — tags do not nest, so those are not
+     * read at all.
      */
-    public record UpdateCategoryRequest(String name, UUID parentId, Boolean toTop, String iconKey) {
+    public record UpdateCategoryRequest(String name, String iconKey) {
     }
 
-    /** Files these recipes into a group, taking them out of `fromCategoryId` if they were in it. */
-    public record MoveRecipesRequest(@NotNull List<UUID> recipeIds, UUID fromCategoryId) {
+    /**
+     * Tags these recipes, from a phone from before tags — its "move into this group". That also
+     * sent `fromCategoryId`, the group they came out of, to untag them there; it is not read, so
+     * an old phone splitting Main up adds the new tag and leaves Main on, as it now is for every
+     * recipe that was ever inside it.
+     */
+    public record MoveRecipesRequest(@NotNull List<UUID> recipeIds) {
+    }
+
+    /**
+     * Tags and untags recipes in one go — a selection in a drawer, or the recipes picked for a
+     * new tag. Either list may be left out. Recipes this household has not filed in the tag's
+     * drawer are skipped, not refused.
+     */
+    public record TagRecipesRequest(List<UUID> add, List<UUID> remove) {
     }
 
     public record PublishRequest(boolean published) {

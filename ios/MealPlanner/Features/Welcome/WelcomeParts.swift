@@ -7,15 +7,17 @@ import SwiftUI
  modes come for free.
  */
 
-/// The app's mark (`logo`): the chef's hat on a tomato tile, on a glow of its own colour.
+/// The app's mark (`logo`): the waxwing and its berry (the app icon's bird, in one colour) on an
+/// accent tile, on a glow of its own colour. The tile follows the theme; the home-screen icon keeps
+/// its own aubergine.
 struct AppMark: View {
     var size: CGFloat = 64
 
     var body: some View {
-        Image("ChefHat")
+        Image("AppGlyph")
             .resizable()
             .renderingMode(.template)
-            .frame(width: size * 0.52, height: size * 0.52)
+            .frame(width: size * 0.6, height: size * 0.6)
             .foregroundStyle(Palette.onAccent)
             .frame(width: size, height: size)
             .background(Palette.accent, in: RoundedRectangle(cornerRadius: size * 0.32, style: .continuous))
@@ -30,14 +32,13 @@ struct WelcomeBrand: View {
         VStack(alignment: .leading, spacing: 14) {
             AppMark()
             VStack(alignment: .leading, spacing: 6) {
-                Text("Meal Planner").titleFont(32).foregroundStyle(Palette.text)
+                Text("Waxwing").titleFont(32).foregroundStyle(Palette.text)
                     .accessibilityAddTraits(.isHeader)
-                Text("Plan the week together. One list, everyone's phone.")
+                // The web's tagline, word for word: recipes and the list are the app; the Plan
+                // and the Cupboard are a household's to turn on.
+                Text("Your family's recipes and one shared grocery list.")
                     .font(.system(size: 16))
                     .foregroundStyle(Palette.muted)
-                    // It has the whole width. iOS still breaks after "One list," rather than leave
-                    // "phone." alone on the second line (the system's line breaking avoids a lone
-                    // last word, and SwiftUI's Text has no switch for it); the web breaks later.
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

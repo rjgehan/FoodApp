@@ -6,14 +6,18 @@ import { fileURLToPath } from 'node:url';
  * Straight into the local dev Postgres, for the few things the API rightly will not do: wind a
  * link's clock back, or make an account the way accounts were made before invite links. Only
  * ever the docker-compose.dev.yml database on this machine (DB_NAME picks another database in
- * it, for testing a patched copy side by side).
+ * it, for testing a patched copy side by side). PSQL — the path to a psql — is for a machine
+ * without docker that runs Postgres itself (a Windows box with the portable binaries): the same
+ * statements go straight to localhost instead of through the container.
  */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const DB_NAME = process.env.DB_NAME ?? 'mealplanner';
+const PSQL = process.env.PSQL;
 
 let container: string | null | undefined;
 
 function postgres(): string | null {
+  if (PSQL) return 'local';
   if (container === undefined) {
     try {
       container =
@@ -31,11 +35,12 @@ function postgres(): string | null {
 export function sqlQuery(statement: string): string | null {
   const pg = postgres();
   if (!pg) return null;
+  const args = ['-qtA', '-v', 'ON_ERROR_STOP=1', '-U', 'mealplanner', '-d', DB_NAME, '-c', statement];
   try {
     // stderr dropped: psql's NOTICEs ("already exists, skipping") are not worth a line in the report.
     return execFileSync(
-      'docker',
-      ['exec', pg, 'psql', '-qtA', '-v', 'ON_ERROR_STOP=1', '-U', 'mealplanner', '-d', DB_NAME, '-c', statement],
+      PSQL ?? 'docker',
+      PSQL ? ['-h', 'localhost', ...args] : ['exec', pg, 'psql', ...args],
       { stdio: ['ignore', 'pipe', 'ignore'] },
     )
       .toString()
