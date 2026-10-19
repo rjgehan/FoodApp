@@ -249,6 +249,33 @@ public class SchemaTouchUps {
     }
 
     /**
+     * The receipts' indexes that Hibernate cannot make. A household's shops are one per name
+     * whatever the case, as tags are — "Kings Food Markets" and "KINGS FOOD MARKETS" are one shop.
+     * A receipt's barcode is unique in its household only where there is one: it is there to catch
+     * the same receipt saved twice, and most saves have none. The newest price per ingredient is
+     * what every grocery list read asks for, so it gets an index in that order. Each gets a try of
+     * its own, so one that will not build does not leave the others unmade.
+     */
+    @Bean
+    public ApplicationRunner receiptIndexes(JdbcTemplate jdbc) {
+        return args -> {
+            List<String> indexes = List.of(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uk_stores_household_name ON stores (household_id, lower(name))",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uk_receipts_household_barcode ON receipts (household_id, barcode)"
+                            + " WHERE barcode IS NOT NULL",
+                    "CREATE INDEX IF NOT EXISTS idx_price_observations_newest"
+                            + " ON price_observations (household_id, ingredient_id, observed_on DESC)");
+            for (String index : indexes) {
+                try {
+                    jdbc.execute(index);
+                } catch (Exception e) {
+                    log.warn("Could not make a receipts index ({}): {}", index, e.getMessage());
+                }
+            }
+        };
+    }
+
+    /**
      * The unit box used to send "" for no unit, and planned items send nothing at all — so the
      * same "eggs" could sit on the list twice, once per spelling of empty. Empty is null now.
      */
