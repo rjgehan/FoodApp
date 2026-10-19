@@ -35,10 +35,12 @@ struct ReceiptLine: Codable, Hashable {
     var onSale: Bool
     var ingredientId: UUID?
     var ingredientName: String?
+    /// Who made it ("Twinings"). What it counts as stays the thing itself: english breakfast tea.
+    var brand: String?
 
     init(text: String, kind: ReceiptLineKind = .item, quantity: Double? = nil, unit: String? = nil,
          unitPrice: Double? = nil, price: Double, onSale: Bool = false, ingredientId: UUID? = nil,
-         ingredientName: String? = nil) {
+         ingredientName: String? = nil, brand: String? = nil) {
         self.text = text
         self.kind = kind
         self.quantity = quantity
@@ -48,6 +50,7 @@ struct ReceiptLine: Codable, Hashable {
         self.onSale = onSale
         self.ingredientId = ingredientId
         self.ingredientName = ingredientName
+        self.brand = brand
     }
 
     /// Forgiving: a line missing its kind, its sale flag or even its price still shows, to be
@@ -63,6 +66,7 @@ struct ReceiptLine: Codable, Hashable {
         onSale = try c.decodeIfPresent(Bool.self, forKey: .onSale) ?? false
         ingredientId = try c.decodeIfPresent(UUID.self, forKey: .ingredientId)
         ingredientName = try c.decodeIfPresent(String.self, forKey: .ingredientName)
+        brand = try c.decodeIfPresent(String.self, forKey: .brand)
     }
 
     /// The name the price will be kept under, if it will be kept: a food line with an ingredient.
@@ -80,9 +84,16 @@ struct ReceiptLine: Codable, Hashable {
         return "\(amount) @ \(Money.text(unitPrice))\(per)"
     }
 
+    /// "Twinings · 20 bags", "1.32 lb @ $0.69/lb" — under the line's words, or nil.
+    var detail: String? {
+        let brand = brand?.trimmingCharacters(in: .whitespaces)
+        let parts = [brand?.isEmpty == false ? brand : nil, weighed].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /**
-     As `POST /receipts` wants it. Held to the server's limits (text and name 200, unit 20, a
-     quantity above zero, nothing below zero), since none of those can be put right on the review
+     As `POST /receipts` wants it. Held to the server's limits (text and name 200, unit 20, brand
+     60, a quantity above zero, nothing below zero), since none of those can be put right on the review
      screen and one bad line would refuse the whole receipt. The unit price keeps its third place
      ("3 for $1" is 0.333 each); the price itself is to the cent.
      */
@@ -99,6 +110,9 @@ struct ReceiptLine: Codable, Hashable {
         if kind == .item {
             if let ingredientId { out["ingredientId"] = ingredientId.uuidString }
             if let name = countsAs { out["ingredientName"] = String(name.prefix(200)) }
+            if let brand = brand?.trimmingCharacters(in: .whitespaces), !brand.isEmpty {
+                out["brand"] = String(brand.prefix(60))
+            }
         }
         return out
     }
@@ -221,16 +235,18 @@ extension APIClient {
     }
 
     /**
-     A price typed in by hand for a grocery row's ingredient, as of today. The row comes back with
-     its new `lastPrice`. A row with no ingredient behind it cannot have one (400).
+     A price typed in by hand for a grocery row's ingredient, as of today: for how much of it and
+     whose make, when somebody said. The row comes back with its new `lastPrice`. A row with no
+     ingredient behind it cannot have one (400).
      */
     @discardableResult
     func setPrice(household: UUID, item: UUID, price: Double, quantity: Double? = nil, unit: String? = nil,
-                  storeName: String? = nil) async throws -> GroceryItem {
+                  storeName: String? = nil, brand: String? = nil) async throws -> GroceryItem {
         var body: [String: Any] = ["price": Money.json(price)]
         if let quantity, quantity > 0 { body["quantity"] = Money.decimal(quantity) }
-        if let unit, !unit.isEmpty { body["unit"] = unit }
+        if let unit, !unit.isEmpty { body["unit"] = String(unit.prefix(20)) }
         if let storeName, !storeName.isEmpty { body["storeName"] = storeName }
+        if let brand, !brand.isEmpty { body["brand"] = String(brand.prefix(60)) }
         return try await send("PUT", "/api/households/\(household.uuidString)/grocery-list/items/\(item.uuidString)/price",
                               body: body)
     }

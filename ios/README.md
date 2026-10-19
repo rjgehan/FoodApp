@@ -402,6 +402,16 @@ scanned before (Open / Save anyway, which saves without the barcode), and keeps 
 read folded at the bottom. Save (`POST …/receipts`) gives every food line with a name a price for
 that day. ••• → Receipts lists them, opens one read-only, and swipe deletes one with its prices.
 
+A line's sheet keeps what it *is* apart from whose and how much: Counts as is the thing itself
+("english breakfast tea", as the grocery list says it), Brand is who made it ("Twinings"), and How
+much is what the price was for ("20 bags", "5 oz", "1/2 lb" — `ReceiptWords.amount(from:)`; empty is
+one of it). The server reads a size off the line's name when nothing was weighed or counted ("5OZ"
+is 5 oz, an OCR'd "50Z" too, "20CT" 20 ct), and remembers what was said about the same line before
+— the brand, the size, what it counts as — from this household's receipts first, then anybody's
+(another household's "counts as" only where this one's list has nothing that fits). A weight or
+count the till printed is never overwritten. The item sheet's typed price has the same Size and
+Brand boxes, and every price shows them: "Last paid $4.99 for Twinings, 20 bags at Kings".
+
 A grocery row shows what it last cost (`lastPrice`, "≈ $3.49"), the list's title "≈ $86 · 3 not
 priced" for what is still to buy, and an item's sheet "Last paid $3.49 at Kings Food Markets ·
 Oct 18 (on sale)" with Add / Change to type one in (`PUT …/items/{id}/price`, today's price).

@@ -6,9 +6,9 @@ import MapKit
 /// for previews and the Gallery.
 enum StoreMapSamples {
     private static func price(_ name: String, _ price: Double, quantity: Double? = nil, unit: String? = nil,
-                              on day: String, sale: Bool = false, yours: Bool = true) -> StoreItemPrice {
+                              brand: String? = nil, on day: String, sale: Bool = false, yours: Bool = true) -> StoreItemPrice {
         StoreItemPrice(ingredientId: UUID(), ingredientName: name, price: price, quantity: quantity, unit: unit,
-                       observedOn: day, onSale: sale, source: "RECEIPT", yours: yours)
+                       observedOn: day, onSale: sale, source: "RECEIPT", brand: brand, yours: yours)
     }
 
     static let shops: [StorePrices] = [
@@ -16,12 +16,13 @@ enum StoreMapSamples {
             id: UUID(uuidString: "0D5A0000-0000-4000-8000-000000000201")!, name: "Kings Food Markets",
             lastPricedOn: "2026-10-18",
             prices: [
-                price("baby spinach", 3.99, on: "2026-10-18"),
+                price("baby spinach", 3.99, quantity: 5, unit: "oz", on: "2026-10-18"),
                 price("bananas", 0.91, quantity: 1.32, unit: "lb", on: "2026-10-18"),
                 price("chicken thighs", 12.86, quantity: 1.84, unit: "lb", on: "2026-10-18"),
                 price("ground beef", 7.49, on: "2026-10-18", sale: true),
                 price("lemons", 1.98, quantity: 2, on: "2026-10-18"),
-                price("oat milk", 5.49, on: "2026-10-18"),
+                price("english breakfast tea", 4.99, quantity: 20, unit: "bags", brand: "Twinings", on: "2026-10-18"),
+                price("oat milk", 5.49, brand: "Oatly", on: "2026-10-18"),
                 price("salmon", 13.99, on: "2026-10-17", yours: false),
                 price("sourdough", 6.99, on: "2026-10-11", yours: false),
             ],

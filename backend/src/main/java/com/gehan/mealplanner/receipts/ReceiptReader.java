@@ -45,6 +45,9 @@ import java.util.stream.Collectors;
  *       three are kept, to check the lines add up.</li>
  *   <li>Bags, bottle deposits and gift cards are paid for but are not food: NOT_FOOD, which the
  *       person can flip.</li>
+ *   <li>A pack size in an item's name — "BABY SPINACH 5OZ", "TEA 20CT", "WATER 24PK" — is how
+ *       much the price was for, when nothing was weighed or counted: 5 oz, 20 ct, 24 pack. An
+ *       OCR'd "50Z" is 5 oz: the O read as a nought.</li>
  * </ul>
  *
  * Nothing is dropped quietly. A line between the first thing bought and the total that none of
@@ -82,6 +85,13 @@ public final class ReceiptReader {
             "^(?:NET\\s+)?(?:WT\\.?\\s*)?(?<qty>\\d{1,4}(?:\\.\\d{1,3})?)\\s*(?<unit>LBS?|KG|OZ)?\\.?\\s*@\\s*"
                     + "(?:(?<deal>\\d{1,2})\\s*(?:/|FOR)\\s*)?\\$?\\s?(?<each>\\d{1,4}(?:\\.\\d{1,3})?)"
                     + "\\s*(?:/\\s*(?<per>LBS?|KG|OZ|EA))?(?<rest>\\s.*)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    // A pack size in a name, the last one in it: "5OZ", "5 OZ", "16.9 FL OZ", "20CT", "24 PK", "1GAL", "500G".
+    // "0Z" is an O read as a nought, so "50Z" is 5 OZ.
+    private static final Pattern PACK_SIZE = Pattern.compile(
+            "(?<![\\w.])(?<qty>\\d{1,4}(?:\\.\\d{1,3})?)\\s?"
+                    + "(?<unit>FL\\.?\\s?OZ|OZ|0Z|LBS?|CT|PK|PACK|GAL|QT|PT|ML|LTR|L|KG|GR|G)\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern SUBTOTAL = Pattern.compile("\\bSUB[\\s-]?TOTAL\\b");
@@ -141,10 +151,17 @@ public final class ReceiptReader {
                 .map(item -> {
                     Optional<KnownIngredient> guess = ReceiptLine.ITEM.equals(item.kind)
                             ? guessIngredient(item.text, ingredients) : Optional.empty();
+                    // Nothing weighed or counted: a size in the name is what the price was for.
+                    if (ReceiptLine.ITEM.equals(item.kind) && item.quantity == null && item.unitPrice == null) {
+                        packSize(item.text).ifPresent(size -> {
+                            item.quantity = size.quantity();
+                            item.unit = size.unit();
+                        });
+                    }
                     return new DraftLine(item.text, item.kind, item.quantity, item.unit, item.unitPrice,
                             item.price.setScale(2, RoundingMode.HALF_UP), item.onSale,
                             guess.map(KnownIngredient::id).orElse(null),
-                            guess.map(KnownIngredient::name).orElse(null));
+                            guess.map(KnownIngredient::name).orElse(null), null);
                 })
                 .toList();
 
@@ -155,6 +172,47 @@ public final class ReceiptReader {
         }
         return new ReceiptDraft(storeName, storeId, reading.date, reading.subtotal, reading.tax, reading.total,
                 sumMatches, null, drafted, List.copyOf(reading.unread));
+    }
+
+    /** How much one of something is, by the size printed in its name. */
+    record PackSize(BigDecimal quantity, String unit) {
+    }
+
+    /**
+     * The pack size in a line's name, its unit as the app writes units: "5OZ" is 5 oz. A count
+     * beats a size ("COLA 12PK 12OZ" is a 12 pack, which is what the price was for); otherwise the
+     * last size in the name.
+     */
+    static Optional<PackSize> packSize(String text) {
+        if (text == null) {
+            return Optional.empty();
+        }
+        Matcher m = PACK_SIZE.matcher(text);
+        PackSize last = null;
+        PackSize count = null;
+        while (m.find()) {
+            BigDecimal quantity = new BigDecimal(m.group("qty"));
+            if (quantity.signum() <= 0) {
+                continue;
+            }
+            String unit = m.group("unit").toUpperCase(Locale.ROOT).replaceAll("[\\s.]", "");
+            // 20, not 2E+1: stripping a whole number's zeros leaves it in powers of ten.
+            BigDecimal plain = quantity.stripTrailingZeros();
+            last = new PackSize(plain.scale() < 0 ? plain.setScale(0) : plain, switch (unit) {
+                case "FLOZ" -> "fl oz";
+                case "OZ", "0Z" -> "oz";
+                case "LB", "LBS" -> "lb";
+                case "CT" -> "ct";
+                case "PK", "PACK" -> "pack";
+                case "LTR", "L" -> "l";
+                case "GR", "G" -> "g";
+                default -> unit.toLowerCase(Locale.ROOT);
+            });
+            if (count == null && ("ct".equals(last.unit()) || "pack".equals(last.unit()))) {
+                count = last;
+            }
+        }
+        return Optional.ofNullable(count != null ? count : last);
     }
 
     /** Tabs and runs of spaces are one space; nothing is null. */

@@ -84,16 +84,55 @@ enum ReceiptWords {
         guard let quantity, quantity != 1 || hasUnit else { return nil }
         return [GroceryWords.number(quantity), hasUnit ? unit : nil].compactMap { $0 }.joined(separator: " ")
     }
+
+    /// "Twinings, 20 bags", "Twinings", "20 bags" — whose and how much a price was for, or nil.
+    static func what(brand: String?, quantity: Double?, unit: String?) -> String? {
+        let brand = brand?.trimmingCharacters(in: .whitespaces)
+        let parts = [brand?.isEmpty == false ? brand : nil, amount(quantity: quantity, unit: unit)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    private static let typedAmount = try? NSRegularExpression(
+        pattern: #"^(\d+\s+\d+/\d+|\d+/\d+|\d*[.,]?\d+)\s*(.*)$"#)
+
+    /**
+     How much somebody typed — "20 bags", "5oz", "1.32 lb", "1/2 lb", "1 1/2 cups", "2" — as a
+     quantity and its unit (nil for each), the unit as typed but lower case. An empty box is
+     (nil, nil): one of something. Nil for what does not start with a number, or a number that
+     is no amount (nought, or more than the server keeps).
+     */
+    static func amount(from typed: String) -> (quantity: Double?, unit: String?)? {
+        let text = typed.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return (nil, nil) }
+        let whole = NSRange(text.startIndex..., in: text)
+        guard let match = typedAmount?.firstMatch(in: text, range: whole),
+              let numberRange = Range(match.range(at: 1), in: text),
+              let unitRange = Range(match.range(at: 2), in: text) else { return nil }
+        var quantity = 0.0
+        for part in text[numberRange].split(separator: " ") {
+            let pieces = part.split(separator: "/")
+            if pieces.count == 2, let top = Double(pieces[0]), let bottom = Double(pieces[1]), bottom > 0 {
+                quantity += top / bottom
+            } else if let value = Double(part.replacingOccurrences(of: ",", with: ".")) {
+                quantity += value
+            } else {
+                return nil
+            }
+        }
+        guard quantity > 0, quantity < 99_999 else { return nil }
+        let unit = text[unitRange].trimmingCharacters(in: .whitespaces).lowercased()
+        return ((quantity * 1000).rounded() / 1000, unit.isEmpty ? nil : String(unit.prefix(20)))
+    }
 }
 
 extension LastPrice {
     /**
      The item sheet's Price row: "Last paid $3.49 at Kings Food Markets · Oct 18 (on sale)",
-     with "for 1.32 lb" after the price when it was weighed.
+     with "for Twinings, 20 bags" after the price when somebody said whose or how much.
      */
     var line: String {
         var paid = "Last paid \(Money.text(price))"
-        if let amount = ReceiptWords.amount(quantity: quantity, unit: unit) { paid += " for \(amount)" }
+        if let what = ReceiptWords.what(brand: brand, quantity: quantity, unit: unit) { paid += " for \(what)" }
         if let store = storeName?.trimmingCharacters(in: .whitespaces), !store.isEmpty { paid += " at \(store)" }
         if let day = ReceiptWords.day(observedOn) { paid += " · \(day)" }
         if onSale == true { paid += " (on sale)" }

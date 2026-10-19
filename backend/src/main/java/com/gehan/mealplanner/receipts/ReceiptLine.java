@@ -60,6 +60,10 @@ public class ReceiptLine {
     @Column(length = 20)
     private String unit;
 
+    /** Who made it, when somebody said: "Twinings". What it counts as stays the ingredient's name. */
+    @Column(length = 60)
+    private String brand;
+
     /** The price per {@link #unit}, or each, when the receipt printed one. */
     @Column(precision = 10, scale = 3)
     private BigDecimal unitPrice;

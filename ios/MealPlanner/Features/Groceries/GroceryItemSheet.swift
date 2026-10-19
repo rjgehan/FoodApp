@@ -33,6 +33,8 @@ struct GroceryItemSheet: View {
     @State private var pricing = false
     @State private var priceText = ""
     @State private var shopText = ""
+    @State private var brandText = ""
+    @State private var sizeText = ""
     @State private var savingPrice = false
     @FocusState private var priceFocused: Bool
     /// What it last cost at each shop it has been bought from, newest first. Fetched when the
@@ -164,6 +166,8 @@ struct GroceryItemSheet: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
+        // A drag puts the keyboard away: the price's decimal pad has no key that does.
+        .scrollDismissesKeyboard(.interactively)
         .tint(Palette.herb)
         .kitchenSheet([.height(height)])
         .task { await loadByShop() }
@@ -211,10 +215,10 @@ struct GroceryItemSheet: View {
         return name.isEmpty ? "No shop given" : name
     }
 
-    /// "for 1.32 lb · Oct 18 · on sale"
+    /// "Twinings, 20 bags · Oct 18 · on sale"
     private func shopDetail(_ price: LastPrice) -> String {
         let parts: [String?] = [
-            ReceiptWords.amount(quantity: price.quantity, unit: price.unit).map { "for \($0)" },
+            ReceiptWords.what(brand: price.brand, quantity: price.quantity, unit: price.unit),
             ReceiptWords.day(price.observedOn),
             price.onSale == true ? "on sale" : nil,
         ]
@@ -259,10 +263,40 @@ struct GroceryItemSheet: View {
      today's price for the ingredient, the same as a receipt line would be.
      */
     private var priceEditor: some View {
-        // Save sits beside the price, not under it: the decimal pad has no return key, and the
-        // sheet scrolls the field being typed in to just above the keyboard, which covers
-        // anything below it.
-        VStack(alignment: .leading, spacing: 10) {
+        // The price and its Save go last, side by side: the price's decimal pad has no return key,
+        // and the sheet scrolls the box being typed in to just above the keyboard — so everything
+        // to fill in sits above it, where the keyboard never covers it.
+        let sizeIsAmount = ReceiptWords.amount(from: sizeText) != nil
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(sizeIsAmount ? "Kept as today's price" : "Start the size with a number — 20 bags, 5 oz.")
+                .font(.system(size: 12))
+                .foregroundStyle(sizeIsAmount ? Palette.muted : Palette.danger)
+            HStack(spacing: 8) {
+                TextField("", text: $sizeText, prompt: Text("Size — 20 bags").foregroundStyle(Palette.faint))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Palette.text)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .fieldSurface(radius: 12)
+                    .accessibilityLabel("How much it was for")
+                TextField("", text: $brandText, prompt: Text("Brand").foregroundStyle(Palette.faint))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Palette.text)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .fieldSurface(radius: 12)
+                    .accessibilityLabel("Brand")
+            }
+            TextField("", text: $shopText, prompt: Text("Shop (optional)").foregroundStyle(Palette.faint))
+                .font(.system(size: 15))
+                .foregroundStyle(Palette.text)
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .fieldSurface(radius: 12)
+                .accessibilityLabel("Shop")
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Text(Money.symbol).foregroundStyle(Palette.muted)
@@ -282,16 +316,8 @@ struct GroceryItemSheet: View {
                     Task { await savePrice() }
                 }
                 .buttonStyle(.kitchen(.primary, size: .small, fill: false))
-                .disabled(Money.parse(priceText) == nil || savingPrice)
+                .disabled(Money.parse(priceText) == nil || !sizeIsAmount || savingPrice)
             }
-            TextField("", text: $shopText, prompt: Text("Shop (optional)").foregroundStyle(Palette.faint))
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.text)
-                .padding(.horizontal, 12)
-                .frame(height: 44)
-                .fieldSurface(radius: 12)
-                .accessibilityLabel("Shop")
-            Text("Kept as today's price").font(.system(size: 12)).foregroundStyle(Palette.muted)
         }
         .padding(.leading, 62)
         .padding(.trailing, 16)
@@ -309,6 +335,8 @@ struct GroceryItemSheet: View {
         error = nil
         priceText = item.lastPrice.map { Money.field($0.price) } ?? ""
         shopText = item.lastPrice?.storeName ?? ""
+        brandText = item.lastPrice?.brand ?? ""
+        sizeText = item.lastPrice.flatMap { ReceiptWords.amount(quantity: $0.quantity, unit: $0.unit) } ?? ""
         // A beat after the field appears, or the focus is dropped on the way in.
         Task {
             try? await Task.sleep(for: .milliseconds(250))
@@ -317,13 +345,15 @@ struct GroceryItemSheet: View {
     }
 
     private func savePrice() async {
-        guard let price = Money.parse(priceText) else { return }
+        guard let price = Money.parse(priceText), let size = ReceiptWords.amount(from: sizeText) else { return }
         let shop = shopText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let brand = brandText.trimmingCharacters(in: .whitespacesAndNewlines)
         error = nil
         if sample {
             var priced = item
-            priced.lastPrice = LastPrice(price: price, storeName: shop.isEmpty ? nil : shop,
-                                         observedOn: Day.iso(.now), onSale: false, source: "MANUAL")
+            priced.lastPrice = LastPrice(price: price, quantity: size.quantity, unit: size.unit,
+                                         storeName: shop.isEmpty ? nil : shop, observedOn: Day.iso(.now), onSale: false,
+                                         source: "MANUAL", brand: brand.isEmpty ? nil : brand)
             onPriced(priced)
             withAnimation(.snappy(duration: 0.2)) { pricing = false }
             return
@@ -333,7 +363,9 @@ struct GroceryItemSheet: View {
         defer { savingPrice = false }
         do {
             let saved = try await APIClient.shared.setPrice(household: household, item: item.id, price: price,
-                                                            storeName: shop.isEmpty ? nil : shop)
+                                                            quantity: size.quantity, unit: size.unit,
+                                                            storeName: shop.isEmpty ? nil : shop,
+                                                            brand: brand.isEmpty ? nil : brand)
             onPriced(saved)
             priceFocused = false
             withAnimation(.snappy(duration: 0.2)) { pricing = false }

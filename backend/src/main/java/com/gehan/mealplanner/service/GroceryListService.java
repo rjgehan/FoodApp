@@ -354,6 +354,7 @@ public class GroceryListService {
                 .price(request.price())
                 .quantity(request.quantity())
                 .unit(blankToNull(request.unit()))
+                .brand(blankToNull(request.brand()))
                 .observedOn(LocalDate.now())
                 .source(PriceObservation.MANUAL)
                 .createdBy(userRepository.findById(requesterId).orElse(null))

@@ -42,7 +42,7 @@ public class Prices {
         jdbc.query("""
                 SELECT DISTINCT ON (o.ingredient_id)
                        o.ingredient_id, o.price, o.quantity, o.unit, s.name AS store_name,
-                       o.observed_on, o.on_sale, o.source
+                       o.observed_on, o.on_sale, o.source, o.brand
                 FROM price_observations o
                 LEFT JOIN stores s ON s.id = o.store_id
                 WHERE o.household_id = ?
@@ -62,7 +62,7 @@ public class Prices {
         List<LastPrice> prices = jdbc.query("""
                 SELECT DISTINCT ON (o.store_id)
                        o.price, o.quantity, o.unit, s.name AS store_name,
-                       o.observed_on, o.on_sale, o.source, o.created_at
+                       o.observed_on, o.on_sale, o.source, o.brand, o.created_at
                 FROM price_observations o
                 LEFT JOIN stores s ON s.id = o.store_id
                 WHERE o.household_id = ? AND o.ingredient_id = ?
@@ -85,7 +85,7 @@ public class Prices {
                 SELECT * FROM (
                     SELECT DISTINCT ON (o.store_id, o.ingredient_id)
                            o.store_id, o.household_id, o.ingredient_id, i.name AS ingredient_name, o.price,
-                           o.quantity, o.unit, o.observed_on, o.on_sale, o.source, o.created_at
+                           o.quantity, o.unit, o.observed_on, o.on_sale, o.source, o.brand, o.created_at
                     FROM price_observations o
                     JOIN ingredients i ON i.id = o.ingredient_id
                     WHERE o.store_id IS NOT NULL
@@ -104,7 +104,8 @@ public class Prices {
                     rs.getString("unit"),
                     observedOn != null ? observedOn.toLocalDate() : null,
                     rs.getBoolean("on_sale"),
-                    rs.getString("source"));
+                    rs.getString("source"),
+                    rs.getString("brand"));
         });
     }
 
@@ -119,11 +120,12 @@ public class Prices {
             String unit,
             LocalDate observedOn,
             boolean onSale,
-            String source) {
+            String source,
+            String brand) {
 
         StoreItemPrice forAsker(UUID askerHousehold) {
             return new StoreItemPrice(ingredientId, ingredientName, price, quantity, unit, observedOn, onSale, source,
-                    householdId.equals(askerHousehold));
+                    brand, householdId.equals(askerHousehold));
         }
     }
 
@@ -136,6 +138,7 @@ public class Prices {
                 rs.getString("store_name"),
                 observedOn != null ? observedOn.toLocalDate() : null,
                 rs.getBoolean("on_sale"),
-                rs.getString("source"));
+                rs.getString("source"),
+                rs.getString("brand"));
     }
 }

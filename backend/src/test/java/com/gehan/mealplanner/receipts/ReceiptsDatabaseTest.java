@@ -9,6 +9,7 @@ import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
 import com.gehan.mealplanner.dto.GroceryListDtos.SetPriceRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.realtime.GroceryListEventPublisher;
+import com.gehan.mealplanner.receipts.ReceiptDtos.DraftLine;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReadReceiptRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptLineResponse;
@@ -234,6 +235,89 @@ class ReceiptsDatabaseTest {
         assertThat(receiptService.list(home, me.getId())).hasSize(1);
     }
 
+    @Test
+    void aLinesBrandAndSizeAreKeptWithItsPriceAndShownWhereverItIs() {
+        GroceryListItemResponse tea = add("english breakfast tea-" + tag);
+        String shop = "Teashop" + tag;
+
+        ReceiptResponse saved = save(receipt(shop, MID_OCTOBER, null, line("TWININGS ENG BRKFST 20CT", "4.99", r -> {
+            r.ingredientId = tea.ingredientId();
+            r.brand = "  Twinings ";
+            r.quantity = "20";
+            r.unit = "bags";
+        })));
+
+        assertThat(saved.lines().get(0).brand()).isEqualTo("Twinings");
+        assertThat(lastPrice(tea)).isEqualTo(new LastPrice(new BigDecimal("4.99"), new BigDecimal("20.000"), "bags",
+                shop, MID_OCTOBER, false, "RECEIPT", "Twinings"));
+        assertThat(receiptService.pricesByStore(home, tea.ingredientId(), me.getId()))
+                .extracting(LastPrice::brand).containsExactly("Twinings");
+        StoreItemPrice onTheMap = receiptService.storePrices(home, me.getId()).stream()
+                .filter(c -> c.name().equals(shop)).findFirst().orElseThrow().prices().get(0);
+        assertThat(onTheMap.brand()).isEqualTo("Twinings");
+        assertThat(onTheMap.quantity()).isEqualByComparingTo("20");
+        assertThat(onTheMap.unit()).isEqualTo("bags");
+
+        // Typed in on the row: its brand goes with it, and a blank one is no brand.
+        groceryListService.setPrice(home, tea.id(), me.getId(),
+                new SetPriceRequest(new BigDecimal("3.49"), new BigDecimal("25"), "bags", shop, "Tetley"));
+        assertThat(lastPrice(tea).brand()).isEqualTo("Tetley");
+    }
+
+    @Test
+    void readingRemembersWhatWasSaidAboutTheSameLineLastTime() {
+        GroceryListItemResponse tea = add("english breakfast tea-" + tag);
+        GroceryListItemResponse bananas = add("bananas-" + tag);
+        String teaLine = "TWNGS" + tag.toUpperCase() + " ENG BRKFST 20CT";
+        String bananaLine = "BANANAS" + tag.toUpperCase();
+        save(receipt("Kings Food Markets", EARLY_OCTOBER, null,
+                line(teaLine, "4.99", r -> {
+                    r.ingredientId = tea.ingredientId();
+                    r.brand = "Twinings";
+                    r.quantity = "20";
+                    r.unit = "bags";
+                }),
+                line(bananaLine, "0.91", r -> {
+                    r.ingredientId = bananas.ingredientId();
+                    r.brand = "Dole";
+                    r.quantity = "1.32";
+                    r.unit = "lb";
+                    r.unitPrice = "0.69";
+                })));
+
+        ReceiptDraft draft = receiptService.read(home, me.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", teaLine.toLowerCase() + " 5.29 F", bananaLine, "2.10 lb @ 0.69 /lb 1.45 F",
+                "SUBTOTAL 6.74", "TOTAL 6.74"), null));
+
+        // Said once, remembered: the brand, the size somebody gave (not the name's 20 ct), what it is.
+        DraftLine again = draft.lines().get(0);
+        assertThat(again.brand()).isEqualTo("Twinings");
+        assertThat(again.quantity()).isEqualByComparingTo("20");
+        assertThat(again.unit()).isEqualTo("bags");
+        assertThat(again.ingredientId()).isEqualTo(tea.ingredientId());
+        // A weight the receipt printed is this shop's, today: the brand is remembered, the weight is not.
+        DraftLine weighed = draft.lines().get(1);
+        assertThat(weighed.brand()).isEqualTo("Dole");
+        assertThat(weighed.quantity()).isEqualByComparingTo("2.10");
+        assertThat(weighed.ingredientId()).isEqualTo(bananas.ingredientId());
+
+        // Another household reads the same line: their brand and size from ours, but what it counts
+        // as is theirs to say when their own list has it.
+        User them = userRepository.save(User.builder().username("theirs-" + tag).displayName("T").build());
+        UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Theirs")).id();
+        GroceryListItemResponse theirTea = groceryListService.addManualItem(theirs, them.getId(),
+                new AddItemRequest("tea " + teaLine.toLowerCase().split(" ")[0], null, null));
+        DraftLine elsewhere = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", teaLine + " 5.29 F", "TOTAL 5.29"), null)).lines().get(0);
+        assertThat(elsewhere.brand()).isEqualTo("Twinings");
+        assertThat(elsewhere.unit()).isEqualTo("bags");
+        assertThat(elsewhere.ingredientId()).isEqualTo(theirTea.ingredientId());
+        // With nothing of their own that fits, ours fills the gap.
+        DraftLine filled = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", bananaLine, "2.10 lb @ 0.69 /lb 1.45 F", "TOTAL 1.45"), null)).lines().get(0);
+        assertThat(filled.ingredientId()).isEqualTo(bananas.ingredientId());
+    }
+
     // --- Listing and deleting ---
 
     @Test
@@ -298,15 +382,15 @@ class ReceiptsDatabaseTest {
 
         LastPrice price = lastPrice(spinach);
         assertThat(price).isEqualTo(new LastPrice(new BigDecimal("2.99"), null, null, "Kings Food Markets", MID_OCTOBER,
-                true, "RECEIPT"));
+                true, "RECEIPT", null));
         assertThat(lastPrice(never)).isNull();
         assertThat(find(untyped.id()).lastPrice()).isNull();
 
         // Typed in today beats them both.
         groceryListService.setPrice(home, spinach.id(), me.getId(),
-                new SetPriceRequest(new BigDecimal("3.29"), new BigDecimal("1"), "bag", "Whole Foods"));
+                new SetPriceRequest(new BigDecimal("3.29"), new BigDecimal("1"), "bag", "Whole Foods", "Organic Girl"));
         assertThat(lastPrice(spinach)).isEqualTo(new LastPrice(new BigDecimal("3.29"), new BigDecimal("1.000"), "bag",
-                "Whole Foods", LocalDate.now(), false, "MANUAL"));
+                "Whole Foods", LocalDate.now(), false, "MANUAL", "Organic Girl"));
     }
 
     @Test
@@ -321,7 +405,7 @@ class ReceiptsDatabaseTest {
             r.onSale = true;
         })));
         // Typed in with no shop: one more "shop" of its own, not hidden.
-        groceryListService.setPrice(home, milk.id(), me.getId(), new SetPriceRequest(new BigDecimal("4.19"), null, null, null));
+        groceryListService.setPrice(home, milk.id(), me.getId(), new SetPriceRequest(new BigDecimal("4.19"), null, null, null, null));
 
         assertThat(receiptService.pricesByStore(home, milk.ingredientId(), me.getId()))
                 .extracting(LastPrice::storeName, LastPrice::price, LastPrice::observedOn, LastPrice::onSale)
@@ -363,7 +447,7 @@ class ReceiptsDatabaseTest {
                 }),
                 line("BUTTER", "3.79", r -> r.ingredientId = butter.ingredientId())));
         // Typed in with no shop: no chain's price.
-        groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("3.00"), null, null, null));
+        groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("3.00"), null, null, null, null));
         // Bought already: no longer to buy, at any chain.
         groceryListService.setChecked(home, butter.id(), me.getId(), true);
 
@@ -405,16 +489,16 @@ class ReceiptsDatabaseTest {
         clearInvocations(eventPublisher);
 
         GroceryListItemResponse priced = groceryListService.setPrice(home, coffee.id(), me.getId(),
-                new SetPriceRequest(new BigDecimal("11.99"), null, " ", null));
+                new SetPriceRequest(new BigDecimal("11.99"), null, " ", null, " "));
 
         assertThat(priced.lastPrice()).isEqualTo(new LastPrice(new BigDecimal("11.99"), null, null, null, LocalDate.now(),
-                false, "MANUAL"));
+                false, "MANUAL", null));
         verify(eventPublisher).itemChanged(home, priced);
         assertThat(receiptService.stores(home, me.getId())).isEmpty();
 
         GroceryListItemResponse nameless = groceryListService.addManualItem(home, me.getId(), new AddItemRequest(null, null, null));
         assertThatThrownBy(() -> groceryListService.setPrice(home, nameless.id(), me.getId(),
-                new SetPriceRequest(new BigDecimal("1.00"), null, null, null)))
+                new SetPriceRequest(new BigDecimal("1.00"), null, null, null, null)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
     }
@@ -452,7 +536,7 @@ class ReceiptsDatabaseTest {
                 () -> receiptService.get(home, ours.id(), them),
                 () -> receiptService.delete(home, ours.id(), them),
                 () -> receiptService.stores(home, them),
-                () -> groceryListService.setPrice(home, eggs.id(), them, new SetPriceRequest(BigDecimal.ONE, null, null, null)));
+                () -> groceryListService.setPrice(home, eggs.id(), them, new SetPriceRequest(BigDecimal.ONE, null, null, null, null)));
         for (Runnable attempt : attempts) {
             assertThatThrownBy(attempt::run).isInstanceOfSatisfying(ResponseStatusException.class,
                     e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
@@ -465,7 +549,7 @@ class ReceiptsDatabaseTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
         assertThatThrownBy(() -> groceryListService.setPrice(theirs, eggs.id(), them,
-                new SetPriceRequest(BigDecimal.ONE, null, null, null)))
+                new SetPriceRequest(BigDecimal.ONE, null, null, null, null)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
 
@@ -481,7 +565,7 @@ class ReceiptsDatabaseTest {
         ReceiptResponse saved = save(receipt("Kings Food Markets", MID_OCTOBER, "bc-" + tag,
                 line("EGGS", "4.99", r -> r.ingredientId = eggs.ingredientId()),
                 line("SOMETHING", "1.00", r -> { })));
-        groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("5.10"), null, null, "Corner"));
+        groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("5.10"), null, null, "Corner", null));
         entityManager.flush();
 
         householdService.delete(home, me.getId());
@@ -506,7 +590,7 @@ class ReceiptsDatabaseTest {
         GroceryListItemResponse eggs = add("eggs-" + tag);
         receiptService.save(home, member.getId(), receipt("Kings Food Markets", MID_OCTOBER, null,
                 line("EGGS", "4.99", r -> r.ingredientId = eggs.ingredientId())));
-        groceryListService.setPrice(home, eggs.id(), member.getId(), new SetPriceRequest(new BigDecimal("5.10"), null, null, null));
+        groceryListService.setPrice(home, eggs.id(), member.getId(), new SetPriceRequest(new BigDecimal("5.10"), null, null, null, null));
         entityManager.flush();
 
         householdService.deleteAccount(member.getId());
@@ -531,6 +615,8 @@ class ReceiptsDatabaseTest {
         boolean onSale;
         UUID ingredientId;
         String ingredientName;
+        String unit;
+        String brand;
     }
 
     private static SaveLine line(String text, String price, Consumer<LineBuilder> details) {
@@ -538,9 +624,9 @@ class ReceiptsDatabaseTest {
         b.text = text;
         b.price = price;
         details.accept(b);
-        return new SaveLine(b.text, b.kind, b.quantity == null ? null : new BigDecimal(b.quantity), null,
+        return new SaveLine(b.text, b.kind, b.quantity == null ? null : new BigDecimal(b.quantity), b.unit,
                 b.unitPrice == null ? null : new BigDecimal(b.unitPrice), new BigDecimal(b.price), b.onSale,
-                b.ingredientId, b.ingredientName);
+                b.ingredientId, b.ingredientName, b.brand);
     }
 
     private static SaveReceiptRequest receipt(String store, LocalDate on, String barcode, SaveLine... lines) {

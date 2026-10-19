@@ -394,13 +394,15 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   for (const key of ['storeName', 'storeId', 'purchasedOn', 'subtotal', 'tax', 'total', 'sumMatches', 'duplicateOf', 'lines', 'unreadLines']) {
     expect(draft).toHaveProperty(key);
   }
-  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName']) {
+  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName', 'brand']) {
     expect(draft.lines[0]).toHaveProperty(key);
   }
   // The line nobody could read is why the rest do not add up to the subtotal.
   expect(draft).toMatchObject({ purchasedOn: '2026-10-18', sumMatches: false, duplicateOf: null });
   expect(draft.unreadLines).toEqual(['MYSTERY 0.89 ??']);
   expect(draft.lines[0]).toMatchObject({ kind: 'ITEM', price: 3.99, ingredientId: spinach.ingredientId });
+  // The size in its name is how much the price was for.
+  expect(draft.lines[0]).toMatchObject({ quantity: 5, unit: 'oz' });
 
   // ReceiptReviewView's Save: nil fields left out, the date as yyyy-MM-dd, one line flipped to food
   // with a typed name, Decimals as JSON numbers.
@@ -410,7 +412,8 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
       storeName: 'Kings Food Markets', purchasedOn: '2026-10-18', subtotal: 4.98, total: 4.98, barcode: '0412553100018',
       rawText: lines.join('\n'),
       lines: [
-        { text: 'KNGS BABY SPINACH 5OZ', kind: 'ITEM', price: 3.99, onSale: false, ingredientId: spinach.ingredientId, ingredientName: 'baby spinach' },
+        { text: 'KNGS BABY SPINACH 5OZ', kind: 'ITEM', quantity: 5, unit: 'oz', price: 3.99, onSale: false,
+          ingredientId: spinach.ingredientId, ingredientName: 'baby spinach', brand: 'Kings' },
         { text: 'MYSTERY', kind: 'ITEM', price: 0.89, onSale: false },
         { text: 'PAPER BAG', kind: 'NOT_FOOD', price: 0.1, onSale: false },
       ],
@@ -419,10 +422,11 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   for (const key of ['id', 'storeName', 'purchasedOn', 'total', 'itemCount', 'pricedCount', 'lines', 'createdAt']) {
     expect(saved).toHaveProperty(key);
   }
-  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName']) {
+  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName', 'brand']) {
     expect(saved.lines[0]).toHaveProperty(key);
   }
   expect(saved).toMatchObject({ itemCount: 2, pricedCount: 1, total: 4.98 });
+  expect(saved.lines[0]).toMatchObject({ brand: 'Kings', quantity: 5, unit: 'oz' });
 
   // Scanned again: the draft says which, and Save is a 409 whose body says which too.
   const again = await call('POST', `${base}/receipts/read`, { token, body: { lines, barcode: '0412553100018' } });
@@ -438,12 +442,18 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
 
   // The grocery row and its LastPrice.
   const row = find(await call('GET', `${base}/grocery-list`, { token }), 'baby spinach');
-  expect(Object.keys(row.lastPrice).sort()).toEqual(['observedOn', 'onSale', 'price', 'quantity', 'source', 'storeName', 'unit']);
-  expect(row.lastPrice).toMatchObject({ price: 3.99, storeName: 'Kings Food Markets', observedOn: '2026-10-18', source: 'RECEIPT' });
+  expect(Object.keys(row.lastPrice).sort())
+    .toEqual(['brand', 'observedOn', 'onSale', 'price', 'quantity', 'source', 'storeName', 'unit']);
+  expect(row.lastPrice).toMatchObject({ price: 3.99, quantity: 5, unit: 'oz', brand: 'Kings', storeName: 'Kings Food Markets',
+    observedOn: '2026-10-18', source: 'RECEIPT' });
 
-  // The item sheet's price editor: {price, quantity?, unit?, storeName?}, nil ones left out.
-  const priced = await call('PUT', `${base}/grocery-list/items/${row.id}/price`, { token, body: { price: 3.49, storeName: 'Kings Food Markets' } });
-  expect(priced.lastPrice).toMatchObject({ price: 3.49, quantity: null, unit: null, storeName: 'Kings Food Markets', observedOn: isoDate(0), source: 'MANUAL' });
+  // The item sheet's price editor: {price, quantity?, unit?, storeName?, brand?}, nil ones left out.
+  const priced = await call('PUT', `${base}/grocery-list/items/${row.id}/price`, {
+    token, body: { price: 3.49, quantity: 6, unit: 'oz', storeName: 'Kings Food Markets', brand: 'Organic Girl' } });
+  expect(priced.lastPrice).toMatchObject({ price: 3.49, quantity: 6, unit: 'oz', brand: 'Organic Girl', storeName: 'Kings Food Markets',
+    observedOn: isoDate(0), source: 'MANUAL' });
+  const plain = await call('PUT', `${base}/grocery-list/items/${row.id}/price`, { token, body: { price: 3.49, storeName: 'Kings Food Markets' } });
+  expect(plain.lastPrice).toMatchObject({ price: 3.49, quantity: null, unit: null, brand: null, observedOn: isoDate(0), source: 'MANUAL' });
 
   // The store map: every household's shops, by chain — other tests' Kings receipts are in it too.
   const chains = await call('GET', `${base}/stores/prices`, { token });
@@ -453,7 +463,7 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   expect(kings).toMatchObject({ yours: true, lastPricedOn: isoDate(0) });
   expect(kings.households).toBeGreaterThanOrEqual(1);
   expect(Object.keys(kings.prices[0]).sort())
-    .toEqual(['ingredientId', 'ingredientName', 'observedOn', 'onSale', 'price', 'quantity', 'source', 'unit', 'yours']);
+    .toEqual(['brand', 'ingredientId', 'ingredientName', 'observedOn', 'onSale', 'price', 'quantity', 'source', 'unit', 'yours']);
   expect(kings.prices.find((p: any) => p.ingredientId === row.ingredientId))
     .toMatchObject({ price: 3.49, source: 'MANUAL', observedOn: isoDate(0), yours: true });
   expect(kings.listPriced).toBeGreaterThanOrEqual(1);

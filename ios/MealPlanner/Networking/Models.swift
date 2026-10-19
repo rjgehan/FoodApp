@@ -380,6 +380,8 @@ struct LastPrice: Codable, Hashable {
     var observedOn: String? = nil
     var onSale: Bool? = nil
     var source: String? = nil
+    /// Who made it ("Twinings"), when somebody said.
+    var brand: String? = nil
 }
 
 /**

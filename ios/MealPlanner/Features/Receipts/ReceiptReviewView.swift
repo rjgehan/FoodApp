@@ -378,8 +378,8 @@ struct ReceiptLineRow: View {
                 match
                 if line.onSale { Pill("Sale", tone: .herb) }
             }
-            if let weighed = line.weighed {
-                Text(weighed).font(.system(size: 12).monospacedDigit()).foregroundStyle(Palette.muted)
+            if let detail = line.detail {
+                Text(detail).font(.system(size: 12).monospacedDigit()).foregroundStyle(Palette.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -428,8 +428,11 @@ private struct KindButton: View {
 
 /**
  What a receipt line is: food or not, the ingredient it counts as — typed, or picked from the
- grocery list's names — the price paid, and whether it was on sale. Nothing is sent from here;
- Done hands the line back to the review screen.
+ grocery list's names — whose make it is and how much it was for, the price paid, and whether it
+ was on sale. Nothing is sent from here; Done hands the line back to the review screen.
+
+ The brand and the size have boxes of their own so "Counts as" can be the thing itself — english
+ breakfast tea, not "TWININGS english breakfast tea 20 bags" — and the list's tea finds its price.
  */
 struct ReceiptLineSheet: View {
     let line: ReceiptLine
@@ -441,6 +444,10 @@ struct ReceiptLineSheet: View {
     @State private var priceText: String
     @State private var kind: ReceiptLineKind
     @State private var onSale: Bool
+    @State private var brand: String
+    @State private var amountText: String
+    /// What the size box said when the sheet opened, so a weight the till printed is kept unless changed.
+    private let originalAmount: String
 
     init(line: ReceiptLine, choices: [IngredientChoice], onDone: @escaping (ReceiptLine) -> Void) {
         self.line = line
@@ -450,10 +457,16 @@ struct ReceiptLineSheet: View {
         _priceText = State(initialValue: Money.field(line.price))
         _kind = State(initialValue: line.kind)
         _onSale = State(initialValue: line.onSale)
+        _brand = State(initialValue: line.brand ?? "")
+        let amount = ReceiptWords.amount(quantity: line.quantity, unit: line.unit) ?? ""
+        _amountText = State(initialValue: amount)
+        originalAmount = amount
     }
 
     private var typed: String { name.trimmingCharacters(in: .whitespaces) }
     private var price: Double? { Money.parse(priceText) }
+    /// The size box read as an amount; nil while it says something that is not one.
+    private var amount: (quantity: Double?, unit: String?)? { ReceiptWords.amount(from: amountText) }
 
     /// Names that fit what is typed (all of them before anything is), a dozen at most.
     private var suggestions: [IngredientChoice] {
@@ -475,8 +488,8 @@ struct ReceiptLineSheet: View {
 
                 if kind == .item {
                     VStack(alignment: .leading, spacing: 10) {
-                        FieldBox("Counts as", text: $name, prompt: "lemons", systemImage: "leaf",
-                                 hint: "Its price is kept under this name, for the grocery list.")
+                        FieldBox("Counts as", text: $name, prompt: "english breakfast tea", systemImage: "leaf",
+                                 hint: "The thing itself, as the grocery list says it. Its price is kept under this name.")
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                         if !suggestions.isEmpty {
@@ -487,6 +500,16 @@ struct ReceiptLineSheet: View {
                             }
                         }
                     }
+                    FieldBox("Brand", text: $brand, prompt: "Twinings", systemImage: "tag",
+                             hint: "Who made it, if it matters. Optional.")
+                        .autocorrectionDisabled()
+                    FieldBox("How much", text: $amountText, prompt: "20 bags, 5 oz, 1.32 lb", systemImage: "scalemass",
+                             hint: amount == nil ? "Start with a number — 20 bags, 5 oz, 1/2 lb."
+                                 : line.unitPrice != nil && amountText == originalAmount
+                                     ? "Weighed or counted at the till."
+                                     : "What the price was for. Empty is one of it.")
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                 } else {
                     Text("Bags, deposits and gift cards keep no price.")
                         .font(.system(size: 13)).foregroundStyle(Palette.muted)
@@ -503,7 +526,7 @@ struct ReceiptLineSheet: View {
 
                 Button("Done", action: apply)
                     .buttonStyle(.primary)
-                    .disabled(price == nil)
+                    .disabled(price == nil || (kind == .item && amount == nil))
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -524,6 +547,14 @@ struct ReceiptLineSheet: View {
         edited.kind = kind
         edited.onSale = onSale
         if let price { edited.price = price }
+        let made = brand.trimmingCharacters(in: .whitespaces)
+        edited.brand = made.isEmpty ? nil : made
+        // A changed size is the person's, not the till's: its price each no longer applies.
+        if amountText.trimmingCharacters(in: .whitespaces) != originalAmount, let amount {
+            edited.quantity = amount.quantity
+            edited.unit = amount.unit
+            edited.unitPrice = nil
+        }
         if typed.isEmpty {
             edited.ingredientName = nil
             edited.ingredientId = nil
