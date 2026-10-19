@@ -11,6 +11,10 @@ import UIKit
  scrolling a shop list — and the rest of the row opens its sheet (aisle, reminder, cupboard,
  remove). Ticked things stay in their aisle, struck through at the bottom of it, until Done
  shopping takes them off: nothing jumps out from under a thumb mid-shop.
+
+ Prices come from scanned receipts (••• → Scan a receipt, or the toast after Done shopping): a
+ row shows what it last cost ("≈ $3.49"), and under the title "≈ $86 · 3 not priced" adds up
+ what is still to buy, one of each.
  */
 struct GroceriesView: View {
     var session: Session
@@ -35,6 +39,19 @@ struct GroceriesView: View {
     @State private var showingIdeas = false
     @State private var sorting = false
     @State private var debugOpened = false
+    /// The toast's text carries a Scan button: "Got the receipt?" after Done shopping.
+    @State private var toastOffersScan = false
+    /// Scanning a receipt, or the receipts already scanned — one cover, so the two never stack.
+    @State private var receiptScreen: ReceiptScreen?
+    /// `-mp_debug_screen receipts | receipt-review`: the receipt screens on sample data.
+    @State private var receiptSample = false
+    /// What Done shopping just took off the list, still offered as names for the receipt's lines.
+    @State private var justBought: [IngredientChoice] = []
+
+    enum ReceiptScreen: String, Identifiable {
+        case scan, list
+        var id: String { rawValue }
+    }
 
     /// Things nobody — no keyword list, no model — has put in an aisle yet.
     private var unplaced: Int {
@@ -58,12 +75,43 @@ struct GroceriesView: View {
         return out
     }
 
+    /**
+     "≈ $86 · 3 not priced": what is still to buy, at what each thing last cost — one of each, a
+     rough guide rather than a bill. Nothing at all until something on the list has a price.
+     */
+    private var priceSummary: String? {
+        let toBuy = items.filter { !$0.checked }
+        let prices = toBuy.compactMap { $0.lastPrice?.price }
+        guard !prices.isEmpty else { return nil }
+        let total = "≈ " + Money.whole(prices.reduce(0, +))
+        let missing = toBuy.count - prices.count
+        return missing > 0 ? "\(total) · \(missing) not priced" : total
+    }
+
+    /// What a receipt line can count as: the list's names, ticked rows and the shop just
+    /// finished included, each name once.
+    private var ingredientChoices: [IngredientChoice] {
+        var seen = Set<String>()
+        let fromList = items.map { IngredientChoice(name: $0.name, ingredientId: $0.ingredientId) }
+        return (fromList + justBought).filter { seen.insert($0.name.lowercased()).inserted }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 VStack(alignment: .leading, spacing: 0) {
                     TopBar(session: session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
                     LargeTitle("Groceries") { optionsMenu }
+                    if let priceSummary {
+                        Text(priceSummary)
+                            .font(.system(size: 14, weight: .medium).monospacedDigit())
+                            .foregroundStyle(Palette.muted)
+                            .padding(.horizontal, 20)
+                            .padding(.top, -6)
+                            .padding(.bottom, 12)
+                            .accessibilityLabel("About " + priceSummary.replacingOccurrences(of: "≈ ", with: "")
+                                                + " for what is left to buy")
+                    }
                 }
                 .pageRow(horizontal: 0)
 
@@ -135,7 +183,13 @@ struct GroceriesView: View {
             .refreshable { await load() }
             .overlay(alignment: .bottom) {
                 if let toast {
-                    RecipeToast(text: toast)
+                    RecipeToast(text: toast, actionTitle: toastOffersScan ? "Scan" : nil) {
+                        withAnimation(.snappy) {
+                            self.toast = nil
+                            toastOffersScan = false
+                        }
+                        receiptScreen = .scan
+                    }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -154,15 +208,25 @@ struct GroceriesView: View {
                     onReminder: { saved in
                         if let ingredient = item.ingredientId { reminders[ingredient] = saved }
                     },
-                    onRemove: { Task { await remove(item) } }
+                    onRemove: { Task { await remove(item) } },
+                    onPriced: { saved in
+                        if let index = items.firstIndex(where: { $0.id == saved.id }) { items[index] = saved }
+                    }
                 )
             }
             .sheet(isPresented: $finishing) {
                 DoneShoppingSheet(items: ticked, session: session, sample: sample != nil) { cleared, stocked in
+                    justBought = items.filter { cleared.contains($0.id) }
+                        .map { IngredientChoice(name: $0.name, ingredientId: $0.ingredientId) }
                     items.removeAll { cleared.contains($0.id) }
-                    say(stocked > 0 ? "Put \(stocked) \(stocked == 1 ? "thing" : "things") in the cupboard" : "Cleared")
+                    offerReceiptScan(after: stocked > 0
+                                     ? "Put \(stocked) \(stocked == 1 ? "thing" : "things") in the cupboard"
+                                     : "Cleared")
                     Task { await load() }
                 }
+            }
+            .fullScreenCover(item: $receiptScreen) { screen in
+                receiptCover(screen)
             }
             .sheet(isPresented: $sorting) {
                 SortIntoAislesSheet(session: session, items: items, aisles: categories) { _ in
@@ -211,10 +275,50 @@ struct GroceriesView: View {
                 }
             }
             .disabled(ticked.isEmpty)
+            Section {
+                Button {
+                    receiptScreen = .scan
+                } label: {
+                    Label {
+                        Text("Scan a receipt")
+                        Text("What you paid, read on this phone")
+                    } icon: {
+                        Image(systemName: "doc.text.viewfinder")
+                    }
+                }
+                Button {
+                    receiptScreen = .list
+                } label: {
+                    Label {
+                        Text("Receipts")
+                        Text("The ones you've scanned")
+                    } icon: {
+                        Image(systemName: "receipt")
+                    }
+                }
+            }
         } label: {
             IconButtonFace(systemImage: "ellipsis", size: 36)
         }
         .accessibilityLabel("List options")
+    }
+
+    /// The receipt screens, over the whole list. Scan from Receipts swaps one for the other.
+    @ViewBuilder private func receiptCover(_ screen: ReceiptScreen) -> some View {
+        let sampled = sample != nil || receiptSample
+        switch screen {
+        case .scan:
+            ReceiptScanFlow(session: session, choices: ingredientChoices,
+                            sample: sampled ? SampleData.receiptDraft : nil,
+                            onSaved: { saved in receiptSaved(saved) })
+        case .list:
+            NavigationStack {
+                ReceiptsView(session: session,
+                             sample: sampled ? SampleData.receipts : nil,
+                             sampleDetail: sampled ? SampleData.receiptDetail : nil,
+                             onScan: { receiptScreen = .scan })
+            }
+        }
     }
 
     // MARK: - Behaviour
@@ -257,7 +361,8 @@ struct GroceriesView: View {
                 id: item.id, ingredientId: item.ingredientId, sorted: item.sorted,
                 name: item.name, quantity: item.quantity, unit: item.unit,
                 checked: wanted, checkedByName: session.displayName, categoryId: item.categoryId,
-                inCupboard: item.inCupboard, fromRecipes: item.fromRecipes, addedByName: item.addedByName
+                inCupboard: item.inCupboard, fromRecipes: item.fromRecipes, addedByName: item.addedByName,
+                lastPrice: item.lastPrice
             )
         }
         guard sample == nil, let household = session.household?.id else { return }
@@ -312,7 +417,7 @@ struct GroceriesView: View {
                     id: row.id, ingredientId: row.ingredientId, sorted: true, name: row.name,
                     quantity: row.quantity, unit: row.unit, checked: row.checked, checkedByName: row.checkedByName,
                     categoryId: category, inCupboard: row.inCupboard, fromRecipes: row.fromRecipes,
-                    addedByName: row.addedByName
+                    addedByName: row.addedByName, lastPrice: row.lastPrice
                 )
             }
         }
@@ -337,16 +442,56 @@ struct GroceriesView: View {
     }
 
     private func say(_ message: String) {
-        withAnimation(.snappy) { toast = message }
+        withAnimation(.snappy) {
+            toast = message
+            toastOffersScan = false
+        }
         Task {
             try? await Task.sleep(for: .seconds(3.5))
             withAnimation(.snappy) { if toast == message { toast = nil } }
         }
     }
 
+    private static let scanOffer = "Got the receipt? Scan it for prices"
+
+    /**
+     After Done shopping: what happened, then — unless something else has been said meanwhile —
+     a gentle offer to scan the receipt, with a Scan button. A toast, not a sheet: it asks
+     nothing, blocks nothing, and goes on its own.
+     */
+    private func offerReceiptScan(after message: String) {
+        say(message)
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard toast == message else { return }
+            withAnimation(.snappy) {
+                toast = Self.scanOffer
+                toastOffersScan = true
+            }
+            try? await Task.sleep(for: .seconds(6))
+            withAnimation(.snappy) {
+                if toast == Self.scanOffer {
+                    toast = nil
+                    toastOffersScan = false
+                }
+            }
+        }
+    }
+
+    /// A receipt saved: say what it priced, and fetch the list again for its new prices.
+    private func receiptSaved(_ saved: ReceiptResponse) {
+        let shop = saved.storeName ?? "the shop"
+        let priced = saved.pricedCount ?? 0
+        say(priced > 0
+            ? "Saved prices for \(priced) \(priced == 1 ? "thing" : "things") at \(shop)"
+            : "Saved the receipt from \(shop)")
+        Task { await load() }
+    }
+
     #if DEBUG
     /// Screenshot runs: -mp_debug_screen grocery-item | done-shopping opens that sheet on the
-    /// first suitable row once the list is in.
+    /// first suitable row once the list is in; receipts | receipt-review open Receipts or the
+    /// review screen on sample data (no camera, nothing sent).
     private func debugOpen() {
         guard !debugOpened else { return }
         debugOpened = true
@@ -355,6 +500,12 @@ struct GroceriesView: View {
             open = items.first { $0.ingredientId.flatMap { reminders[$0] } != nil } ?? items.first
         case "done-shopping":
             if !ticked.isEmpty { finishing = true }
+        case "receipts":
+            receiptSample = true
+            receiptScreen = .list
+        case "receipt-review":
+            receiptSample = true
+            receiptScreen = .scan
         default:
             break
         }
@@ -403,6 +554,15 @@ struct GroceryRow: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    if let price = item.lastPrice?.price {
+                        // What it cost last time — a guide to today's, hence the ≈.
+                        Text(Money.about(price))
+                            .font(.system(size: 13, weight: .medium).monospacedDigit())
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .accessibilityLabel("Last paid \(Money.text(price))")
+                    }
                     if let reminder {
                         Image(systemName: "bell")
                             .font(.system(size: 15, weight: .medium))
@@ -447,4 +607,9 @@ struct WarningLabel: LabelStyle {
     GroceriesView(session: .preview, sample: SampleData.groceriesMockup, sampleCategories: SampleData.aisles,
                   sampleReminders: SampleData.groceryReminders, sampleCupboard: SampleData.cupboardMockup)
         .preferredColorScheme(.dark)
+}
+
+#Preview("Groceries — last paid") {
+    GroceriesView(session: .preview, sample: SampleData.groceriesPriced, sampleCategories: SampleData.aisles,
+                  sampleReminders: SampleData.groceryReminders, sampleCupboard: SampleData.cupboardMockup)
 }

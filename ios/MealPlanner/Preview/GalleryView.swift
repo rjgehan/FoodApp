@@ -126,6 +126,43 @@ struct GalleryView: View {
                                           sample: true) { _, _ in }
                             .pageBackground()
                     }
+                    entry("Groceries — last paid", "dollarsign") {
+                        GroceriesView(
+                            session: session,
+                            sample: SampleData.groceriesPriced,
+                            sampleCategories: SampleData.aisles,
+                            sampleReminders: SampleData.groceryReminders,
+                            sampleCupboard: SampleData.cupboardMockup
+                        )
+                    }
+                    entry("Grocery item — price", "tag") {
+                        GroceryItemSheet(item: SampleData.groceriesPriced[4], categories: SampleData.aisles,
+                                         reminder: nil, stock: nil, session: session,
+                                         sample: true, onMove: { _ in }, onReminder: { _ in }, onRemove: {})
+                            .pageBackground()
+                    }
+                    entry("Check a receipt", "doc.text.viewfinder") {
+                        NavigationStack {
+                            ReceiptReviewView(session: session, draft: SampleData.receiptDraft,
+                                              scan: ReceiptScanText(lines: SampleData.receiptText, barcode: nil),
+                                              choices: SampleData.receiptChoices, sample: true,
+                                              onCancel: {}, onSaved: { _ in })
+                        }
+                    }
+                    entry("Check a receipt — doesn't add up", "exclamationmark.triangle") {
+                        NavigationStack {
+                            ReceiptReviewView(session: session, draft: SampleData.receiptDraftMismatch,
+                                              scan: ReceiptScanText(lines: SampleData.receiptText, barcode: nil),
+                                              choices: SampleData.receiptChoices, sample: true,
+                                              onCancel: {}, onSaved: { _ in })
+                        }
+                    }
+                    entry("Receipts", "receipt") {
+                        NavigationStack {
+                            ReceiptsView(session: session, sample: SampleData.receipts,
+                                         sampleDetail: SampleData.receiptDetail, onScan: {})
+                        }
+                    }
                     entry("Groceries — all bought", "cart.badge.checkmark") {
                         GroceriesView(session: session, sample: [], sampleCategories: SampleData.categories)
                     }

@@ -1,9 +1,10 @@
 import SwiftUI
 
 /**
- One grocery item (mockup 4.2): which aisle it goes in, a restock reminder, what the cupboard
- says (in a house that keeps one), and taking it off the list. Each takes effect as it is tapped —
- there is no Save — because each is one decision about one thing.
+ One grocery item (mockup 4.2): which aisle it goes in, a restock reminder, what it last cost,
+ what the cupboard says (in a house that keeps one), and taking it off the list. Each takes effect
+ as it is tapped — there is no Save — because each is one decision about one thing. A price typed
+ in by hand is the one exception: it opens under its row with its own Save.
 
  The aisle belongs to the ingredient, not this row, so picking one moves it for good: next week's
  chicken thighs land in Meat & fish too.
@@ -19,6 +20,8 @@ struct GroceryItemSheet: View {
     var onMove: (UUID) -> Void
     var onReminder: (RestockReminder?) -> Void
     var onRemove: () -> Void
+    /// A price typed in: the row as the server now has it, with its new `lastPrice`.
+    var onPriced: (GroceryItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var aisle: UUID?
@@ -26,10 +29,20 @@ struct GroceryItemSheet: View {
     @State private var error: String?
     /// The content's own height: the sheet hugs "Remove from list", edge to edge, as the mockup's does.
     @State private var height: CGFloat = 540
+    /// The Price row is open for a price to be typed in.
+    @State private var pricing = false
+    @State private var priceText = ""
+    @State private var shopText = ""
+    @State private var savingPrice = false
+    @FocusState private var priceFocused: Bool
+    /// What it last cost at each shop it has been bought from, newest first. Fetched when the
+    /// sheet opens: the list itself only carries the newest price of all.
+    @State private var byShop: [LastPrice] = []
 
     init(item: GroceryItem, categories: [GroceryCategory], reminder: RestockReminder?, stock: CupboardItem?,
          session: Session, sample: Bool = false, onMove: @escaping (UUID) -> Void,
-         onReminder: @escaping (RestockReminder?) -> Void, onRemove: @escaping () -> Void) {
+         onReminder: @escaping (RestockReminder?) -> Void, onRemove: @escaping () -> Void,
+         onPriced: @escaping (GroceryItem) -> Void = { _ in }) {
         self.item = item
         self.categories = categories
         self.reminder = reminder
@@ -39,6 +52,7 @@ struct GroceryItemSheet: View {
         self.onMove = onMove
         self.onReminder = onReminder
         self.onRemove = onRemove
+        self.onPriced = onPriced
         _aisle = State(initialValue: item.categoryId)
         _current = State(initialValue: reminder)
     }
@@ -109,6 +123,23 @@ struct GroceryItemSheet: View {
                             .frame(minHeight: 46)
                         }
                     }
+                    if item.ingredientId != nil {
+                        Button(action: togglePricing) {
+                            ListRow("Price", subtitle: item.lastPrice?.line ?? "No price yet", wrapSubtitle: true,
+                                    leading: { Tile("dollarsign", tone: .herb, size: 34) }) {
+                                Text(priceAction)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(Palette.accentInk)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        if pricing {
+                            priceEditor
+                        }
+                        if !byShop.isEmpty {
+                            shopPrices
+                        }
+                    }
                     if session.cupboardOn {
                         ListRow("Cupboard", subtitle: GroceryWords.cupboardState(stock),
                                 leading: { Tile("cabinet", tone: .sky, size: 34) }) { EmptyView() }
@@ -135,6 +166,180 @@ struct GroceryItemSheet: View {
         .scrollBounceBehavior(.basedOnSize)
         .tint(Palette.herb)
         .kitchenSheet([.height(height)])
+        .task { await loadByShop() }
+    }
+
+    /**
+     "Last paid at each shop": one line per shop, the newest price there, what size it was, the day
+     and whether it was on sale. When every shop's price is for the same kind of amount, the
+     cheapest (per unit, if the sizes differ) is marked — a carton against a pound is not a fair
+     fight, so then nothing is.
+     */
+    private var shopPrices: some View {
+        let cheapest = cheapestShopIndex
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Last paid at each shop").font(.label).foregroundStyle(Palette.muted)
+            ForEach(Array(byShop.enumerated()), id: \.offset) { index, price in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(shopName(price))
+                        .font(.system(size: 15))
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                    if index == cheapest {
+                        Pill("Cheapest", tone: .herb)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(Money.text(price.price))
+                            .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Palette.text)
+                        Text(shopDetail(price))
+                            .font(.system(size: 12))
+                            .foregroundStyle(price.onSale == true ? Palette.herb : Palette.muted)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.leading, 62)
+        .padding(.trailing, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func shopName(_ price: LastPrice) -> String {
+        let name = price.storeName?.trimmingCharacters(in: .whitespaces) ?? ""
+        return name.isEmpty ? "No shop given" : name
+    }
+
+    /// "for 1.32 lb · Oct 18 · on sale"
+    private func shopDetail(_ price: LastPrice) -> String {
+        let parts: [String?] = [
+            ReceiptWords.amount(quantity: price.quantity, unit: price.unit).map { "for \($0)" },
+            ReceiptWords.day(price.observedOn),
+            price.onSale == true ? "on sale" : nil,
+        ]
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The cheapest shop's place in `byShop`, or nil when there is only one shop or their prices are
+    /// for different kinds of amount (a carton and a pound).
+    private var cheapestShopIndex: Int? {
+        guard byShop.count > 1 else { return nil }
+        let units = Set(byShop.map { ($0.unit ?? "").lowercased() })
+        guard units.count == 1 else { return nil }
+        let perUnit: [Double] = byShop.map { price in
+            if let quantity = price.quantity, quantity > 0 { return price.price / quantity }
+            return price.price
+        }
+        guard let lowest = perUnit.min(), perUnit.filter({ $0 == lowest }).count == 1 else { return nil }
+        return perUnit.firstIndex(of: lowest)
+    }
+
+    private func loadByShop() async {
+        guard let ingredient = item.ingredientId else { return }
+        if sample {
+            byShop = SampleData.pricesByShop
+            return
+        }
+        guard let household = session.household?.id else { return }
+        if let prices = try? await APIClient.shared.pricesByShop(household: household, ingredient: ingredient) {
+            withAnimation(.snappy(duration: 0.2)) { byShop = prices }
+        }
+    }
+
+    /// The Price row's own button. Spelled out as a String, so Text is not left to choose an
+    /// initializer for two ternaries.
+    private var priceAction: String {
+        if pricing { return "Cancel" }
+        return item.lastPrice == nil ? "Add" : "Change"
+    }
+
+    /**
+     A price typed in by hand: what it cost, and where (the last shop, to start with). Saved as
+     today's price for the ingredient, the same as a receipt line would be.
+     */
+    private var priceEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Text(Money.symbol).foregroundStyle(Palette.muted)
+                    TextField("", text: $priceText, prompt: Text("0.00").foregroundStyle(Palette.faint))
+                        .keyboardType(.decimalPad)
+                        .focused($priceFocused)
+                        .foregroundStyle(Palette.text)
+                        .accessibilityLabel("Price")
+                }
+                .font(.system(size: 16).monospacedDigit())
+                .padding(.horizontal, 12)
+                .frame(width: 112, height: 44)
+                .fieldSurface(focused: priceFocused, radius: 12)
+                TextField("", text: $shopText, prompt: Text("Shop (optional)").foregroundStyle(Palette.faint))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Palette.text)
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .fieldSurface(radius: 12)
+                    .accessibilityLabel("Shop")
+            }
+            HStack(spacing: 8) {
+                let saveTitle: String = savingPrice ? "Saving…" : "Save"
+                Text("Kept as today's price").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                Spacer(minLength: 8)
+                Button(saveTitle) {
+                    Task { await savePrice() }
+                }
+                .buttonStyle(.kitchen(.primary, size: .small, fill: false))
+                .disabled(Money.parse(priceText) == nil || savingPrice)
+            }
+        }
+        .padding(.leading, 62)
+        .padding(.trailing, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func togglePricing() {
+        withAnimation(.snappy(duration: 0.2)) {
+            pricing.toggle()
+        }
+        guard pricing else {
+            priceFocused = false
+            return
+        }
+        error = nil
+        priceText = item.lastPrice.map { Money.field($0.price) } ?? ""
+        shopText = item.lastPrice?.storeName ?? ""
+        // A beat after the field appears, or the focus is dropped on the way in.
+        Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            if pricing { priceFocused = true }
+        }
+    }
+
+    private func savePrice() async {
+        guard let price = Money.parse(priceText) else { return }
+        let shop = shopText.trimmingCharacters(in: .whitespacesAndNewlines)
+        error = nil
+        if sample {
+            var priced = item
+            priced.lastPrice = LastPrice(price: price, storeName: shop.isEmpty ? nil : shop,
+                                         observedOn: Day.iso(.now), onSale: false, source: "MANUAL")
+            onPriced(priced)
+            withAnimation(.snappy(duration: 0.2)) { pricing = false }
+            return
+        }
+        guard let household = session.household?.id else { return }
+        savingPrice = true
+        defer { savingPrice = false }
+        do {
+            let saved = try await APIClient.shared.setPrice(household: household, item: item.id, price: price,
+                                                            storeName: shop.isEmpty ? nil : shop)
+            onPriced(saved)
+            priceFocused = false
+            withAnimation(.snappy(duration: 0.2)) { pricing = false }
+            await loadByShop()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private var aisleNote: String {
@@ -361,6 +566,14 @@ struct DoneShoppingSheet: View {
         GroceryItemSheet(item: SampleData.groceriesMockup[4], categories: SampleData.aisles,
                          reminder: SampleData.groceryReminders.first, stock: nil, session: .preview, sample: true,
                          onMove: { _ in }, onReminder: { _ in }, onRemove: {})
+    }
+}
+
+#Preview("Grocery item — last paid") {
+    Color.clear.sheet(isPresented: .constant(true)) {
+        GroceryItemSheet(item: SampleData.groceriesPriced[4], categories: SampleData.aisles,
+                         reminder: nil, stock: nil, session: .preview, sample: true,
+                         onMove: { _ in }, onReminder: { _ in }, onRemove: {}, onPriced: { _ in })
     }
 }
 
