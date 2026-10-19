@@ -372,7 +372,7 @@ private struct TextBackButton: ViewModifier {
 
 /// Hiding the system back button also turns off swiping in from the left edge to go back; this
 /// keeps the swipe for every pushed screen, which is what anyone on an iPhone expects.
-extension UINavigationController: UIGestureRecognizerDelegate {
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
     override open func viewDidLoad() {
         super.viewDidLoad()
         interactivePopGestureRecognizer?.delegate = self

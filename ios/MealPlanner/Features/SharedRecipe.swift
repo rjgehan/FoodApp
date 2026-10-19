@@ -905,6 +905,10 @@ struct SharedRecipeView: View {
             await importLink(link)
             return
         }
+        if input.count > Self.limit {
+            input = String(input.prefix(Self.limit))
+            trimmed = true
+        }
 
         let started = Date()
         do {

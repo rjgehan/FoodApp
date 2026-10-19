@@ -224,46 +224,46 @@ struct MoveRecipesSheet: View {
 
     var body: some View {
         let n = recipes.count
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SheetHeader("Move \(n) \(n == 1 ? "recipe" : "recipes")", subtitle: "From \(section.title) to…",
-                            onClose: { dismiss() })
-                ListGroup {
-                    ForEach(RecipeSection.allCases.filter { $0 != section }, id: \.self) { drawer in
-                        let count = store.recipes.filter { $0.section == drawer }.count
-                        Button { target = drawer } label: {
-                            ListRow(drawer.title, subtitle: "\(count) \(count == 1 ? "recipe" : "recipes")", leading: {
-                                FoodTile(iconKey: store.sectionIcons[drawer] ?? drawer.defaultIcon, tone: drawer.tone, size: 36)
-                            }) {
-                                CheckCircle(isOn: target == drawer)
-                            }
+        VStack(alignment: .leading, spacing: 16) {
+            SheetHeader("Move \(n) \(n == 1 ? "recipe" : "recipes")", subtitle: "From \(section.title) to…",
+                        onClose: { dismiss() })
+            ListGroup {
+                ForEach(RecipeSection.allCases.filter { $0 != section }, id: \.self) { drawer in
+                    let count = store.recipes.filter { $0.section == drawer }.count
+                    Button { target = drawer } label: {
+                        ListRow(drawer.title, subtitle: "\(count) \(count == 1 ? "recipe" : "recipes")", leading: {
+                            FoodTile(iconKey: store.sectionIcons[drawer] ?? drawer.defaultIcon, tone: drawer.tone, size: 36)
+                        }) {
+                            CheckCircle(isOn: target == drawer)
                         }
-                        .buttonStyle(PressFade())
-                        .accessibilityAddTraits(target == drawer ? .isSelected : [])
                     }
+                    .buttonStyle(PressFade())
+                    .accessibilityAddTraits(target == drawer ? .isSelected : [])
                 }
-                if let target {
-                    let off = dropped(in: target)
-                    if !off.isEmpty {
-                        NoteBox("\(ListFormatter.localizedString(byJoining: off)) \(off.count == 1 ? "isn't a tag" : "aren't tags") in \(target.title), so \(off.count == 1 ? "it comes" : "they come") off.",
-                                tone: .mustard, systemImage: "tag")
-                    }
-                }
-                if let error {
-                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
-                }
-                Button(moveTitle) {
-                    Task { await move() }
-                }
-                .buttonStyle(.primary)
-                .disabled(busy || target == nil)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 24)
+            if let target {
+                let off = dropped(in: target)
+                if !off.isEmpty {
+                    NoteBox("\(ListFormatter.localizedString(byJoining: off)) \(off.count == 1 ? "isn't a tag" : "aren't tags") in \(target.title), so \(off.count == 1 ? "it comes" : "they come") off.",
+                            tone: .mustard, systemImage: "tag")
+                }
+            }
+            if let error {
+                Text(error).font(.footnote).foregroundStyle(Palette.danger)
+            }
+            Button(moveTitle) {
+                Task { await move() }
+            }
+            .buttonStyle(.primary)
+            .disabled(busy || target == nil)
         }
-        .pageBackground()
-        .kitchenSheet([.medium, .large])
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        // The sheet adds the home indicator's inset below this on its own.
+        .padding(.bottom, 4)
+        // As tall as the drawers, the note and Move: at a fixed half height the note pushed Move
+        // off the bottom, with nothing to say it was there.
+        .fittedSheet()
     }
 
     private func move() async {

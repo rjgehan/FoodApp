@@ -23,7 +23,7 @@ import {
 } from '../components/AdminParts';
 import { PageTitle } from '../components/PageTitle';
 import { Badge, Button, cx, ErrorText, SearchField, Select, Sheet, Tile, type Tone } from '../components/ui';
-import type { IconName } from '../components/icons';
+import { Icon, type IconName } from '../components/icons';
 import { useAuth } from '../auth/AuthContext';
 import { sectionLabel } from '../utils/recipeMeta';
 import AdminThemes, { ThemeDot } from '../components/AdminThemes';
@@ -96,6 +96,7 @@ function AdminHome() {
   const [params, setParams] = useSearchParams();
   const tab: Tab = TABS.some((t) => t.value === params.get('tab')) ? (params.get('tab') as Tab) : 'households';
   const { data: overview } = useAdminData<AdminOverview>('/api/admin/overview');
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   /** Changes some of the address's settings; anything set to null or '' is dropped. */
   function update(changes: Record<string, string | null>) {
@@ -109,12 +110,27 @@ function AdminHome() {
 
   return (
     <div className="space-y-5">
-      <PageTitle title="Admin" subtitle="Everything on this server. Read-only — nothing here changes anything." />
+      <PageTitle
+        title="Admin"
+        subtitle="Everything on this server. Tap a number to see its list; an account is deleted from People."
+      />
 
-      <Overview overview={overview} />
+      <Overview
+        overview={overview}
+        onOpen={(t) => {
+          setParams(t === 'households' ? {} : { tab: t }, { replace: true });
+          // On a phone the numbers fill the first screen, so the list they open is out of sight below.
+          tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+      />
 
       {/* The segmented control's look, as tabs: each shows a different list below. */}
-      <div className="flex rounded-[11px] bg-surface2 p-[3px] md:max-w-lg" role="tablist" aria-label="What to look at">
+      <div
+        ref={tabsRef}
+        className="flex scroll-mt-20 rounded-[11px] bg-surface2 p-[3px] md:max-w-lg"
+        role="tablist"
+        aria-label="What to look at"
+      >
         {TABS.map((t) => (
           <button
             key={t.value}
@@ -143,12 +159,17 @@ function AdminHome() {
   );
 }
 
-function Overview({ overview: o }: { overview: AdminOverview | null }) {
-  const tiles: { label: string; value: number | undefined; detail?: ReactNode; icon: IconName; tone: Tone }[] = [
+/**
+ * The server's numbers. Those with a list behind them open it: the cards look like something to
+ * press, and on a phone they are all of the first screen, so they are the way in.
+ */
+function Overview({ overview: o, onOpen }: { overview: AdminOverview | null; onOpen: (tab: Tab) => void }) {
+  const tiles: { label: string; value: number | undefined; detail?: ReactNode; icon: IconName; tone: Tone; tab?: Tab }[] = [
     {
       icon: 'users',
       tone: 'sky',
       label: 'People',
+      tab: 'people',
       value: o?.users,
       detail: o && `${o.usersWithEmail} with an email · ${o.usersWithPin} with a PIN`,
     },
@@ -157,26 +178,46 @@ function Overview({ overview: o }: { overview: AdminOverview | null }) {
       icon: 'key',
       tone: 'mustard',
       label: 'Without a password',
+      tab: 'people',
       value: o ? o.users - o.usersWithPassword : undefined,
       detail: o && (o.users === o.usersWithPassword ? 'Everyone has one' : `${o.usersWithPassword} of ${o.users} have one`),
     },
-    { icon: 'home', tone: 'herb', label: 'Households', value: o?.households, detail: o && `${o.liveInvites} with a live invite link` },
-    { icon: 'book', tone: 'accent', label: 'Recipes', value: o?.recipes, detail: o && `${o.publishedRecipes} in Explore` },
+    { icon: 'home', tone: 'herb', label: 'Households', tab: 'households', value: o?.households, detail: o && `${o.liveInvites} with a live invite link` },
+    { icon: 'book', tone: 'accent', label: 'Recipes', tab: 'recipes', value: o?.recipes, detail: o && `${o.publishedRecipes} in Explore` },
     { icon: 'share', tone: 'plum', label: 'Shared', value: o?.shares, detail: o && `${o.publicLinks} public links` },
   ];
 
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Overview">
-      {tiles.map((t) => (
-        <li key={t.label} className="card px-4 pb-3.5 pt-3">
-          <div className="flex items-center gap-2">
-            <Tile icon={t.icon} tone={t.tone} size={26} radius={8} />
-            <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-muted">{t.label}</p>
-          </div>
-          <p className="serif mt-1.5 text-[2rem] leading-tight tabular-nums">{t.value ?? '–'}</p>
-          {t.detail && <p className="mt-0.5 text-[0.8125rem] leading-snug text-muted">{t.detail}</p>}
-        </li>
-      ))}
+      {tiles.map((t) => {
+        const body = (
+          <>
+            <div className="flex items-center gap-2">
+              <Tile icon={t.icon} tone={t.tone} size={26} radius={8} />
+              <p className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold text-muted">{t.label}</p>
+              {t.tab && <Icon name="chevR" size={16} className="shrink-0 text-faint" aria-hidden />}
+            </div>
+            <p className="serif mt-1.5 text-[2rem] leading-tight tabular-nums">{t.value ?? '–'}</p>
+            {t.detail && <p className="mt-0.5 text-[0.8125rem] leading-snug text-muted">{t.detail}</p>}
+          </>
+        );
+        const tab = t.tab;
+        return (
+          <li key={t.label} className="card overflow-hidden">
+            {tab ? (
+              <button
+                type="button"
+                onClick={() => onOpen(tab)}
+                className="block h-full w-full px-4 pb-3.5 pt-3 text-left transition-colors hover:bg-surface2 active:bg-surface2"
+              >
+                {body}
+              </button>
+            ) : (
+              <div className="px-4 pb-3.5 pt-3">{body}</div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

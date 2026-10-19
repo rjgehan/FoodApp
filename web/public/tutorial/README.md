@@ -41,14 +41,17 @@ Plan, Explore.
 
 ## On the iPhone
 
-The iPhone app has the same pictures in its asset catalog: `TutorialRecipes` and
-`TutorialGroceries` (each with a dark appearance). **For now these are the web captures above,
-standing in until the iPhone app is captured on a Mac** — so the iPhone's first run shows the web's
-tab bar and type. Native captures should replace them before the iPhone build ships: the same
-household and screens in the iPhone 18 Pro simulator, status bar at 9:41, launched with
-`-mp_debug_token … -mp_debug_household …` and `-mp_debug_drawer dinner` (Recipes) or
-`-mp_debug_tab groceries`, in light and dark, then scaled and saved as above, into the two
-imagesets (not over the web's files here). Don't restore the old native Groceries capture from git
-history instead: it shows the old tab bar, with Plan first and a Cupboard tab. `TutorialPlan` (the
-old first picture, from the Plan screen) is still in the catalog: `Tutorial.swift` falls back to it
-if `TutorialRecipes` is missing, and it can be deleted once the native captures are in.
+The iPhone app has its own captures of the same household and screens in its asset catalog:
+`TutorialRecipes` and `TutorialGroceries` (each with a dark appearance), so its first run shows its
+own tab bar and type. They are not these files; don't copy these over them.
+
+They were taken in October 2026 in the iPhone 18 Pro simulator (iOS 27), on the same seed and
+extras as above, the status bar set with `xcrun simctl status_bar <udid> override --time 9:41
+--batteryState discharging --batteryLevel 100 --cellularBars 4 --wifiBars 3` and the look with
+`xcrun simctl ui <udid> appearance light` (or `dark`), launched as Ryan with `-mp_debug_token …
+-mp_debug_household … -mp_debug_name Ryan -mp_tutorialSeen 1` and `-mp_debug_drawer dinner`
+(Recipes) or `-mp_debug_tab groceries`. Each 1206 × 2622 `xcrun simctl io <udid> screenshot` was
+scaled to 660 wide and saved at quality 80, as above. The list is in the app's own order, so it
+reads a little differently from the web's. `TutorialPlan` (the old first picture, from the Plan
+screen) is still in the catalog: `Tutorial.swift` falls back to it if `TutorialRecipes` is
+missing, and it can be deleted.

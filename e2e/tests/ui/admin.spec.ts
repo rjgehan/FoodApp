@@ -118,6 +118,18 @@ test('the admin signed in with their PIN is sent home like anybody else', async 
   await expect(sheet(page).getByRole('link', { name: /^Admin/ })).toHaveCount(0);
 });
 
+test('the numbers open their lists: People is one tap from its Delete buttons', async ({ page }) => {
+  const hh = await newHousehold();
+  await newMember(hh.id);
+  await signIn(page, await adminByPassword(), hh.id);
+  await page.goto('/admin');
+
+  await page.getByRole('list', { name: 'Overview', exact: true }).getByRole('button', { name: /^People/ }).click();
+  await expect(page).toHaveURL(/tab=people/);
+  await expect(page.getByRole('tab', { name: 'People' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: /^Delete / }).first()).toBeInViewport();
+});
+
 test('the admin deletes an account from People, after being told what happens', async ({ page }) => {
   const hh = await newHousehold();
   const person = await newMember(hh.id);

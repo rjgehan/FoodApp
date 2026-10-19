@@ -240,14 +240,11 @@ have joined. Never twice (UserDefaults `mp_tutorialSeen`), and never for somebod
 in when the update arrives. The light or dark answer stays with the phone across sign-outs, and
 goes on the first account signed in afterwards if it has none of its own.
 
-The pictures are screenshots shared with the web (`web/public/tutorial`, whose README says
-how they were taken): `TutorialRecipes` (Recipes, open at Dinner) and `TutorialGroceries`. For
-now both are captures of the web app at iPhone size — the web's tab bar and type, not this app's —
-standing in until native ones are taken on a Mac. **Replace them with iPhone captures before this
-build ships**: the same household and screens in the iPhone 18 Pro simulator, light and dark, as that
-README describes. Don't put back the old native Groceries capture from git history: it shows the
-old tab bar, Plan first and a Cupboard tab. Without `TutorialRecipes` the first slide falls back
-to `TutorialPlan`, which can go from the catalog once the native captures are in.
+The pictures are this app's own screens, in light and dark: `TutorialRecipes` (Recipes, open at
+Dinner) and `TutorialGroceries`, taken in the iPhone 18 Pro simulator from the same household the
+web's pictures show (`web/public/tutorial`, whose README says how both sets were taken). Don't
+copy the web's files over them: those have the web's tab bar and type. Without `TutorialRecipes`
+the first slide falls back to `TutorialPlan`, which can go from the catalog now.
 
 ## The kitchen, and the optional Plan and Cupboard
 
