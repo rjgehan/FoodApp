@@ -157,7 +157,8 @@ opens Settings; with any of those `-mp_debug_scroll` values it goes on into the 
 On the Explore tab (`-mp_debug_tab explore`), `-mp_debug_screen explore-recipes` opens Global
 recipes, `explore-recipe` its first published recipe from another household, `explore-move` that
 recipe's Move into my recipes, and `explore-meal-plans` Meal plans (or, against a server from before
-them, the door's coming-soon page), and `explore-nutrition` Nutrition facts (below).
+them, the door's coming-soon page), `explore-nutrition` Nutrition facts (below), and `explore-stores`
+Grocery stores (the store map, below).
 `meal-plans-cupboard` opens Cook from your cupboard's setup, `meal-plans-result` generates its
 plan straight away, `meal-plans-new` the create form (`-mp_debug_fill 1` fills it in as the
 mockup has it), `meal-plans-preset -mp_debug_ref <key>` a ready-made plan (`build-muscle`,
@@ -409,6 +410,31 @@ each step replacing the last, so nothing stacks on the prompt slot. In the Simul
 document camera, a debug build offers "Read a sample receipt": the sample's words sent to the real
 server, the whole flow minus the camera. Not yet: tidying abbreviations with Apple Intelligence,
 per-shop aliases, matching receipt lines to the ticks of Done shopping, recipe costs, price history.
+A saved receipt's prices are everybody's on the server: they go on Explore's store map (below),
+without a name, and the check screen says so before Save.
+
+## Grocery stores (Explore)
+
+Explore's last door, Grocery stores (`Features/Explore/StoreMap.swift`), is a map of the grocery
+stores around you — Apple Maps' own places (`MKLocalPointsOfInterestRequest`, food markets, with
+liquor and tobacco shops left out), so there is no key or account — with every chain anybody on
+the server has prices from pinned by what *your* list would come to there ("≈ $38.94"). Other
+stores are small dots, named once tapped. Tap any store for its address, how far it is and
+Directions (Apple Maps); one with prices also has Prices here: every thing's newest price there,
+A to Z, searchable, "yours" on your own where others have priced there too. "Shops with prices"
+along the bottom lists every chain, "You shop here" on yours.
+
+The prices come from `GET /api/households/{id}/stores/prices`: every household's receipts and typed
+prices, pooled by chain — "KINGS FOOD MARKETS" and "Kings" are one chain, "ShopRite of Hoboken" every
+ShopRite (`StoreChains` on the server and `StoreMatch` here say names the same way; change both) —
+the newest price for each thing, how many households have priced there, and nothing about whose.
+The map matches chains to Apple's places by the same rule, and searches for each priced chain by
+name as well, so a branch Apple files under something other than a grocer still shows. It asks for
+location while open (`NSLocationWhenInUseUsageDescription`), searches where it settles while it is
+following you, then only when asked ("Search this area"); with Location refused it opens on the
+wider area and says how to turn it on. In the Simulator, `xcrun simctl location <udid> set
+40.7440,-74.0324` puts it in Hoboken. A server from before the store map answers 404, and the
+map shows the stores with no prices.
 
 ## The app icon and mark
 

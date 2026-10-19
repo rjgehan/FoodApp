@@ -37,6 +37,8 @@
 	<string>To take a photo of a dish, scan a barcode into the cupboard, scan a shop receipt for its prices, or scan a household invite code.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>To use one of your photos as a recipe's picture.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>To show the grocery stores near you on the map, and how far each one is. Your location is not saved or sent anywhere.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Waxwing talks to the kitchen server on your home network.</string>
 	<!--

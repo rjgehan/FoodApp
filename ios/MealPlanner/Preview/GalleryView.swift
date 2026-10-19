@@ -301,7 +301,20 @@ struct GalleryView: View {
 
                 KitchenSection("Explore") {
                     entry("Explore", "safari") {
-                        ExploreView(session: session, sample: SampleData.published, sampleWeek: NutritionSamples.week)
+                        ExploreView(session: session, sample: SampleData.published, sampleWeek: NutritionSamples.week,
+                                    sampleStores: StoreMapSamples.map)
+                    }
+                    entry("Grocery stores — the map", "map") {
+                        NavigationStack { StoreMapScreen(session: session, sample: StoreMapSamples.map) }
+                    }
+                    entry("Grocery stores — a shop tapped", "mappin.and.ellipse") {
+                        NavigationStack { StoreMapScreen(session: session, sample: StoreMapSamples.tapped) }
+                    }
+                    entry("Grocery stores — no prices yet", "map.circle") {
+                        NavigationStack { StoreMapScreen(session: session, sample: StoreMapSamples.noPrices) }
+                    }
+                    entry("Prices at a shop", "list.bullet.rectangle") {
+                        StorePricesSheet(shop: StoreMapSamples.shops[0], place: StoreMapSamples.places[0], distance: "0.3 mi")
                     }
                     entry("Global recipes", "globe") {
                         NavigationStack { GlobalRecipesScreen(session: session, sample: SampleData.published) }

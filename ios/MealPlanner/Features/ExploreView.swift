@@ -17,6 +17,10 @@ import SwiftUI
 
  A household that does not plan meals has no Meal plans door (every plan is put on the Plan) and
  no week on Nutrition's; one without a cupboard has no cupboard on the Meal plans door.
+
+ Grocery stores, last, is the map of the shops around you with what things cost at each, from
+ everybody's receipts on the server (`Explore/StoreMap.swift`). Its door is always there — the map
+ works without a single price — and shows the chains priced most lately once the server has said.
 */
 struct ExploreView: View {
     var session: Session
@@ -26,6 +30,8 @@ struct ExploreView: View {
     var sampleWeek: PlanNutrition?
     /// Meal plans' door without a server (previews and the Gallery).
     var sampleMealPlans: MealPlansHome?
+    /// Grocery stores' door, and the map behind it, without a server (previews and the Gallery).
+    var sampleStores: StoreMapSample?
 
     @State private var path = NavigationPath()
     @State private var count: Int?
@@ -33,6 +39,7 @@ struct ExploreView: View {
     @State private var nutrition = NutritionAvailability.shared
     @State private var mealPlans = MealPlansAvailability.shared
     @State private var plansHome: MealPlansHome?
+    @State private var stores: [StorePrices]?
     @State private var switchingHousehold = false
     @State private var showingAccount = false
     @State private var showingIdeas = false
@@ -74,6 +81,10 @@ struct ExploreView: View {
                                 .buttonStyle(PressFade())
                             }
                         }
+                        NavigationLink(value: ExploreRoute.stores) {
+                            GroceryStoresDoor(shops: stores)
+                        }
+                        .buttonStyle(PressFade())
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
@@ -87,6 +98,7 @@ struct ExploreView: View {
                 await loadCount()
                 await loadWeek()
                 await loadMealPlans()
+                await loadStores()
             }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)
             .navigationDestination(for: ExploreRoute.self) { route in
@@ -103,6 +115,8 @@ struct ExploreView: View {
                     if let destination = SoonDestination.all.first(where: { $0.kind == kind }) {
                         SoonScreen(destination: destination)
                     }
+                case .stores:
+                    StoreMapScreen(session: session, sample: sampleStores)
                 }
             }
             .navigationDestination(for: MealPlansRoute.self) { route in
@@ -126,6 +140,7 @@ struct ExploreView: View {
         .task(id: session.household?.id) {
             await loadWeek()
             await loadMealPlans()
+            await loadStores()
         }
         // A first launch can ask before the network is up; coming back to the tab asks again
         // (the checks remember an answer, so this costs nothing once they have one).
@@ -141,6 +156,7 @@ struct ExploreView: View {
                 Task {
                     await loadWeek()
                     await loadMealPlans()
+                    await loadStores()
                 }
             }
         }
@@ -177,6 +193,13 @@ struct ExploreView: View {
                                                          end: NutritionText.day(6))
     }
 
+    /// The shops on Grocery stores' door. A server from before the store map leaves it without them.
+    private func loadStores() async {
+        if let sampleStores { stores = sampleStores.shops; return }
+        guard let household = session.household?.id else { return }
+        if let shops = try? await APIClient.shared.storePrices(household: household) { stores = shops }
+    }
+
     private func loadCount() async {
         if let sample { count = sample.count; return }
         guard let household = session.household?.id else { return }
@@ -191,7 +214,8 @@ struct ExploreView: View {
     /// by -mp_debug_ref <key>, meal-plans-plan one of yours by -mp_debug_ref <uuid>). explore-nutrition opens Nutrition facts
     /// (nutrition-search and nutrition-scan with it); nutrition-food | nutrition-product |
     /// nutrition-recipe go on to an ingredient's label (-mp_debug_ref <fdcId>), a packet's
-    /// (-mp_debug_ref <barcode>) or a recipe's nutrition (-mp_debug_recipe <uuid>).
+    /// (-mp_debug_ref <barcode>) or a recipe's nutrition (-mp_debug_recipe <uuid>). explore-stores
+    /// opens Grocery stores.
     private func debugOpen() {
         guard !debugOpened else { return }
         debugOpened = true
@@ -199,6 +223,7 @@ struct ExploreView: View {
         switch UserDefaults.standard.string(forKey: "mp_debug_screen") {
         case "explore-recipes", "explore-recipe", "explore-move": path.append(ExploreRoute.globalRecipes)
         case "explore-nutrition", "nutrition-search", "nutrition-scan": path.append(ExploreRoute.nutrition)
+        case "explore-stores": path.append(ExploreRoute.stores)
         case "nutrition-food":
             path.append(ExploreRoute.nutrition)
             path.append(NutritionRoute.food(Int(ref) ?? 171477))
@@ -229,6 +254,7 @@ enum ExploreRoute: Hashable {
     case globalRecipes
     case nutrition
     case soon(SoonDestination.Kind)
+    case stores
 }
 
 // MARK: - The doors
@@ -435,12 +461,12 @@ struct SoonScreen: View {
 
 #Preview("Explore") {
     ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week,
-                sampleMealPlans: MealPlanSamples.home)
+                sampleMealPlans: MealPlanSamples.home, sampleStores: StoreMapSamples.map)
 }
 
 #Preview("Explore — dark") {
     ExploreView(session: .preview, sample: SampleData.published, sampleWeek: NutritionSamples.week,
-                sampleMealPlans: MealPlanSamples.home)
+                sampleMealPlans: MealPlanSamples.home, sampleStores: StoreMapSamples.map)
         .preferredColorScheme(.dark)
 }
 
