@@ -378,3 +378,74 @@ test('Add to groceries from a recipe, the 409 the phone asks about, and Done sho
   expect(await call('GET', `/api/households/${hh.id}/grocery-list`, { token })).toEqual([]);
   expect(await call('GET', `/api/households/${hh.id}/cupboard`, { token })).toEqual([]);
 });
+
+test('receipt prices: read, review, save, the list, a typed price, and the fields the phone decodes', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const base = `/api/households/${hh.id}`;
+  const spinach = await call('POST', `${base}/grocery-list/items`, { token, body: { ingredientName: 'baby spinach' } });
+  // GroceryItem.lastPrice is optional on the phone: present, and null until something is priced.
+  expect(spinach).toHaveProperty('lastPrice', null);
+
+  // ReceiptScanner: the rows it read, in order, and the first barcode — or no barcode key at all.
+  const lines = ['KINGS FOOD MARKETS', 'KNGS BABY SPINACH 5OZ 3.99 F', 'MYSTERY 0.89 ??', 'PAPER BAG 0.10', 'SUBTOTAL 4.98',
+    'TOTAL 4.98', '10/18/26 5:42 PM'];
+  const draft = await call('POST', `${base}/receipts/read`, { token, body: { lines } });
+  for (const key of ['storeName', 'storeId', 'purchasedOn', 'subtotal', 'tax', 'total', 'sumMatches', 'duplicateOf', 'lines', 'unreadLines']) {
+    expect(draft).toHaveProperty(key);
+  }
+  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName']) {
+    expect(draft.lines[0]).toHaveProperty(key);
+  }
+  // The line nobody could read is why the rest do not add up to the subtotal.
+  expect(draft).toMatchObject({ purchasedOn: '2026-10-18', sumMatches: false, duplicateOf: null });
+  expect(draft.unreadLines).toEqual(['MYSTERY 0.89 ??']);
+  expect(draft.lines[0]).toMatchObject({ kind: 'ITEM', price: 3.99, ingredientId: spinach.ingredientId });
+
+  // ReceiptReviewView's Save: nil fields left out, the date as yyyy-MM-dd, one line flipped to food
+  // with a typed name, Decimals as JSON numbers.
+  const saved = await call('POST', `${base}/receipts`, {
+    token,
+    body: {
+      storeName: 'Kings Food Markets', purchasedOn: '2026-10-18', subtotal: 4.98, total: 4.98, barcode: '0412553100018',
+      rawText: lines.join('\n'),
+      lines: [
+        { text: 'KNGS BABY SPINACH 5OZ', kind: 'ITEM', price: 3.99, onSale: false, ingredientId: spinach.ingredientId, ingredientName: 'baby spinach' },
+        { text: 'MYSTERY', kind: 'ITEM', price: 0.89, onSale: false },
+        { text: 'PAPER BAG', kind: 'NOT_FOOD', price: 0.1, onSale: false },
+      ],
+    },
+  });
+  for (const key of ['id', 'storeName', 'purchasedOn', 'total', 'itemCount', 'pricedCount', 'lines', 'createdAt']) {
+    expect(saved).toHaveProperty(key);
+  }
+  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName']) {
+    expect(saved.lines[0]).toHaveProperty(key);
+  }
+  expect(saved).toMatchObject({ itemCount: 2, pricedCount: 1, total: 4.98 });
+
+  // Scanned again: the draft says which, and Save is a 409 whose body says which too.
+  const again = await call('POST', `${base}/receipts/read`, { token, body: { lines, barcode: '0412553100018' } });
+  expect(again.duplicateOf).toBe(saved.id);
+
+  // ReceiptsView: the rows, and one opened.
+  const list = await call('GET', `${base}/receipts`, { token });
+  for (const key of ['id', 'storeName', 'purchasedOn', 'total', 'itemCount', 'pricedCount', 'createdAt']) {
+    expect(list[0]).toHaveProperty(key);
+  }
+  expect((await call('GET', `${base}/receipts/${saved.id}`, { token })).lines).toHaveLength(3);
+  expect(await call('GET', `${base}/stores`, { token })).toEqual([{ id: expect.any(String), name: 'Kings Food Markets' }]);
+
+  // The grocery row and its LastPrice.
+  const row = find(await call('GET', `${base}/grocery-list`, { token }), 'baby spinach');
+  expect(Object.keys(row.lastPrice).sort()).toEqual(['observedOn', 'onSale', 'price', 'quantity', 'source', 'storeName', 'unit']);
+  expect(row.lastPrice).toMatchObject({ price: 3.99, storeName: 'Kings Food Markets', observedOn: '2026-10-18', source: 'RECEIPT' });
+
+  // The item sheet's price editor: {price, quantity?, unit?, storeName?}, nil ones left out.
+  const priced = await call('PUT', `${base}/grocery-list/items/${row.id}/price`, { token, body: { price: 3.49, storeName: 'Kings Food Markets' } });
+  expect(priced.lastPrice).toMatchObject({ price: 3.49, quantity: null, unit: null, storeName: 'Kings Food Markets', observedOn: isoDate(0), source: 'MANUAL' });
+
+  // Swipe to delete.
+  await call('DELETE', `${base}/receipts/${saved.id}`, { token });
+  expect(await call('GET', `${base}/receipts`, { token })).toEqual([]);
+});

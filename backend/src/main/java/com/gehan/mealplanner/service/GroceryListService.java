@@ -5,10 +5,16 @@ import com.gehan.mealplanner.domain.*;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddItemRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.AddRecipeRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.GroceryListItemResponse;
+import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
 import com.gehan.mealplanner.dto.GroceryListDtos.PlannedShoppingResponse;
 import com.gehan.mealplanner.dto.GroceryListDtos.PutAwayRequest;
+import com.gehan.mealplanner.dto.GroceryListDtos.SetPriceRequest;
 import com.gehan.mealplanner.dto.GroceryListDtos.SortResponse;
 import com.gehan.mealplanner.realtime.GroceryListEventPublisher;
+import com.gehan.mealplanner.receipts.PriceObservation;
+import com.gehan.mealplanner.receipts.PriceObservationRepository;
+import com.gehan.mealplanner.receipts.Prices;
+import com.gehan.mealplanner.receipts.Stores;
 import com.gehan.mealplanner.repository.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -50,6 +56,9 @@ public class GroceryListService {
     private final StoreSectionAi sectionAi;
     private final GroceryListEventPublisher eventPublisher;
     private final RestockClock restockClock;
+    private final Prices prices;
+    private final Stores stores;
+    private final PriceObservationRepository priceObservationRepository;
 
     public GroceryListService(GroceryListItemRepository groceryListItemRepository,
                                MealPlanEntryRepository mealPlanEntryRepository,
@@ -63,7 +72,10 @@ public class GroceryListService {
                                IngredientSections ingredientSections,
                                StoreSectionAi sectionAi,
                                GroceryListEventPublisher eventPublisher,
-                               RestockClock restockClock) {
+                               RestockClock restockClock,
+                               Prices prices,
+                               Stores stores,
+                               PriceObservationRepository priceObservationRepository) {
         this.groceryListItemRepository = groceryListItemRepository;
         this.mealPlanEntryRepository = mealPlanEntryRepository;
         this.householdRepository = householdRepository;
@@ -77,17 +89,22 @@ public class GroceryListService {
         this.sectionAi = sectionAi;
         this.eventPublisher = eventPublisher;
         this.restockClock = restockClock;
+        this.prices = prices;
+        this.stores = stores;
+        this.priceObservationRepository = priceObservationRepository;
     }
 
     /**
      * What an item's response needs beyond the item: this household's category corrections, its
      * live category list (for resolving a keyword/Gemini guess into one of them), its cupboard,
      * and the names of the recipes its rows are for — by planned meal, and by recipe for those
-     * added straight from their pages. Loaded once per request instead of once per item.
+     * added straight from their pages — and the newest price it has for each thing. Loaded once
+     * per request instead of once per item.
      */
     private record Context(Map<UUID, GroceryCategory> sections, List<GroceryCategory> categories,
                             boolean keepsCupboard, Map<UUID, CupboardItem> cupboard,
-                            Map<UUID, String> mealRecipes, Map<UUID, String> addedRecipes) {
+                            Map<UUID, String> mealRecipes, Map<UUID, String> addedRecipes,
+                            Map<UUID, LastPrice> lastPrices) {
 
         /** "Lemon herb chicken, Green salad": the recipes a row is for, each once, A to Z. */
         List<String> recipesFor(GroceryListItem item) {
@@ -104,7 +121,7 @@ public class GroceryListService {
         Context naming(Recipe recipe) {
             Map<UUID, String> names = new HashMap<>(addedRecipes);
             names.put(recipe.getId(), recipe.getName());
-            return new Context(sections, categories, keepsCupboard, cupboard, mealRecipes, names);
+            return new Context(sections, categories, keepsCupboard, cupboard, mealRecipes, names, lastPrices);
         }
 
         boolean isStaple(Ingredient ingredient) {
@@ -139,7 +156,7 @@ public class GroceryListService {
         groceryListItemRepository.recipeNamesOnList(householdId)
                 .forEach(row -> addedRecipes.put((UUID) row[0], (String) row[1]));
         return new Context(ingredientSections.overrides(householdId), ingredientSections.categories(householdId),
-                keepsCupboard, cupboard, mealRecipes, addedRecipes);
+                keepsCupboard, cupboard, mealRecipes, addedRecipes, prices.latest(householdId));
     }
 
     /** Usually the household this request has already locked or read, so no second query. */
@@ -313,6 +330,50 @@ public class GroceryListService {
         GroceryListItemResponse response = toItemResponse(item, context(householdId));
         eventPublisher.itemChanged(householdId, response);
         return response;
+    }
+
+    /**
+     * "We paid $3.49 for this": a price typed in on a row, kept for the row's ingredient as one
+     * paid today. A row with no ingredient — typed with no name — has nothing to keep it against.
+     * The row goes out to the other phones again, so they say the new price too.
+     */
+    @Transactional
+    public GroceryListItemResponse setPrice(UUID householdId, UUID itemId, UUID requesterId, SetPriceRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        Household household = locked(householdId);
+        GroceryListItem item = findItem(householdId, itemId);
+        if (item.getIngredient() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Give this row a name first — a price is kept for the thing, not the row.");
+        }
+        // Flushed, because the price the response shows is read back with SQL.
+        priceObservationRepository.saveAndFlush(PriceObservation.builder()
+                .household(household)
+                .store(stores.findOrCreate(household, request.storeName()))
+                .ingredient(item.getIngredient())
+                .price(request.price())
+                .quantity(request.quantity())
+                .unit(blankToNull(request.unit()))
+                .observedOn(LocalDate.now())
+                .source(PriceObservation.MANUAL)
+                .createdBy(userRepository.findById(requesterId).orElse(null))
+                .build());
+
+        GroceryListItemResponse response = toItemResponse(item, context(householdId));
+        eventPublisher.itemChanged(householdId, response);
+        return response;
+    }
+
+    /**
+     * New prices for these things — a receipt saved or deleted — so every open phone shows the
+     * rows for them with the price that is now the newest. Prices are read with SQL: whoever
+     * changed them flushes first.
+     */
+    @Transactional
+    public void pricesChanged(UUID householdId, Collection<UUID> ingredientIds) {
+        if (!ingredientIds.isEmpty()) {
+            broadcast(householdId, ingredientIds);
+        }
     }
 
     @Transactional
@@ -947,6 +1008,7 @@ public class GroceryListService {
                 ingredient == null || category != null,
                 ingredient != null && ctx.has(ingredient),
                 ctx.recipesFor(item),
-                item.getAddedBy() != null ? item.getAddedBy().getDisplayName() : null);
+                item.getAddedBy() != null ? item.getAddedBy().getDisplayName() : null,
+                ingredient != null ? ctx.lastPrices().get(ingredient.getId()) : null);
     }
 }

@@ -38,6 +38,14 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    /** The usual body, plus `duplicateOf`: the receipt already saved, which the phone offers to open. */
+    @ExceptionHandler(com.gehan.mealplanner.receipts.DuplicateReceiptException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateReceipt(com.gehan.mealplanner.receipts.DuplicateReceiptException ex) {
+        Map<String, Object> body = body(HttpStatus.CONFLICT.value(), ex.getReason());
+        body.put("duplicateOf", ex.getDuplicateOf());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     /**
      * The usual body, plus exactly how long the lockout has left, so the sign-in screen can count
      * down. Retry-After says the same for anything that reads headers.

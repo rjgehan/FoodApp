@@ -117,7 +117,8 @@ from a slot, or the optional-extras question. With `-mp_debug_screen edit`, `-mp
 down to its Links section, and `-mp_debug_scroll machines` to its Machines.
 
 On the Groceries tab, `-mp_debug_screen grocery-item|done-shopping` opens an item's sheet (one with
-a restock reminder, if there is one) or Done shopping. On the Cupboard tab (`-mp_debug_tab
+a restock reminder, if there is one) or Done shopping; `receipts` opens Receipts and
+`receipt-review` the check-the-receipt screen, both on sample data (no camera, nothing sent). On the Cupboard tab (`-mp_debug_tab
 cupboard`), `-mp_debug_screen cupboard-edit` opens the first counted item's sheet,
 `cupboard-search` types `-mp_debug_query` (or "tahini") into the box, `barcode` opens the scanner,
 and `barcode-found` opens it on a sample result, since a simulator has no camera.
@@ -380,6 +381,34 @@ straight to picking its recipes, with the search still there to find them; the p
 tags (`EditTags.swift`). The API
 still calls tags "recipe categories", so older phones keep working against the same server.
 `CatalogueStore` loads once and then follows each change's answer — no reload after a tap.
+
+## Receipts and prices
+
+Prices come from the household's own receipts — there is no shop to ask. Groceries ••• → Scan a
+receipt (or Scan on the "Got the receipt?" toast after Done shopping, which never opens anything
+by itself) opens VisionKit's document camera: it finds the paper, flattens it and takes as many
+pages as a long receipt needs. Vision reads the words on the phone
+(`Features/Receipts/ReceiptText.swift`: accurate, no language correction, then the pieces put back
+into rows by how much they overlap up and down, each row left to right), and the first barcode on
+it is kept only to spot a receipt scanned twice. No model and nothing but the words leave the phone.
+
+The words go to `POST …/receipts/read`, and the server's rules (`ReceiptReader`, unit-tested in
+Java) make the draft: shop, date, subtotal/tax/total, each line's price after its discounts, how
+it was weighed, Not food for bags and deposits, and the ingredient each line probably is. The
+check screen (`ReceiptReviewView`) shows it to be put right — the shop name, the date, a line's
+name, price, sale or kind — warns when the lines do not add up to the subtotal or the receipt was
+scanned before (Open / Save anyway, which saves without the barcode), and keeps what it could not
+read folded at the bottom. Save (`POST …/receipts`) gives every food line with a name a price for
+that day. ••• → Receipts lists them, opens one read-only, and swipe deletes one with its prices.
+
+A grocery row shows what it last cost (`lastPrice`, "≈ $3.49"), the list's title "≈ $86 · 3 not
+priced" for what is still to buy, and an item's sheet "Last paid $3.49 at Kings Food Markets ·
+Oct 18 (on sale)" with Add / Change to type one in (`PUT …/items/{id}/price`, today's price).
+Money is written in the phone's own currency (`Money`). The whole flow is one full-screen cover,
+each step replacing the last, so nothing stacks on the prompt slot. In the Simulator, which has no
+document camera, a debug build offers "Read a sample receipt": the sample's words sent to the real
+server, the whole flow minus the camera. Not yet: tidying abbreviations with Apple Intelligence,
+per-shop aliases, matching receipt lines to the ticks of Done shopping, recipe costs, price history.
 
 ## The app icon and mark
 

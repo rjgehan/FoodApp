@@ -47,6 +47,15 @@ public class GroceryListController {
         return groceryListService.setChecked(householdId, itemId, userId, checked);
     }
 
+    /** A price typed in on a row, kept as paid today; answers with the row saying it. */
+    @PutMapping("/grocery-list/items/{itemId}/price")
+    public GroceryListItemResponse setPrice(@AuthenticationPrincipal UUID userId,
+                                            @PathVariable UUID householdId,
+                                            @PathVariable UUID itemId,
+                                            @Valid @RequestBody SetPriceRequest request) {
+        return groceryListService.setPrice(householdId, itemId, userId, request);
+    }
+
     @DeleteMapping("/grocery-list/items/{itemId}")
     public ResponseEntity<Void> removeItem(@AuthenticationPrincipal UUID userId,
                                             @PathVariable UUID householdId,

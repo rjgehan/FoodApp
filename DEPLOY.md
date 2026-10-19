@@ -389,6 +389,27 @@ DELETE FROM household_machines m WHERE NOT EXISTS (SELECT 1 FROM households h WH
 DELETE FROM grocery_list_item_recipes g WHERE NOT EXISTS (SELECT 1 FROM grocery_list_items i WHERE i.id = g.grocery_list_item_id);"
 ```
 
+## Receipt prices
+
+Four new tables — `stores`, `receipts`, `receipt_lines`, `price_observations` — which Hibernate
+makes on the first start, and three indexes `SchemaTouchUps` makes alongside (one shop per name
+per household, one receipt per barcode per household, and the newest price per ingredient).
+Nothing to do by hand. Grocery rows gain an optional `lastPrice`, which older iPhone builds ignore.
+
+Rolling back has the same catch as the kitchen release: the new tables point at households,
+users and ingredients, so the old backend cannot delete a household or an account that has
+scanned a receipt or typed a price. Drop their foreign keys before starting the old images (the
+rows stay; going forward again puts the keys back):
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U mealplanner -d mealplanner -c "
+DO \$\$ DECLARE c record; BEGIN
+  FOR c IN SELECT conrelid::regclass AS t, conname FROM pg_constraint WHERE contype = 'f'
+             AND conrelid::regclass::text IN ('stores', 'receipts', 'receipt_lines', 'price_observations')
+  LOOP EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', c.t, c.conname); END LOOP;
+END \$\$;"
+```
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

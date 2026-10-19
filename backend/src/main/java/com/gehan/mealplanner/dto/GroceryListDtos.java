@@ -1,13 +1,17 @@
 package com.gehan.mealplanner.dto;
 
+import com.gehan.mealplanner.receipts.ReceiptDtos;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,6 +48,20 @@ public class GroceryListDtos {
             Boolean again) {
     }
 
+    /**
+     * A price typed in on a grocery row: what was paid, for how much of it (one, each, when left
+     * out), and at which shop (found or made by name; blank for nowhere in particular). Dated today.
+     */
+    public record SetPriceRequest(
+            @NotNull(message = "Say what it cost.")
+            @PositiveOrZero(message = "A price can't be below zero.")
+            @DecimalMax(value = ReceiptDtos.MAX_MONEY, message = ReceiptDtos.TOO_BIG) BigDecimal price,
+            @Positive(message = "A quantity has to be more than zero.")
+            @DecimalMax(value = ReceiptDtos.MAX_QUANTITY, message = ReceiptDtos.TOO_MUCH) BigDecimal quantity,
+            @Size(max = 20, message = "Keep the unit to 20 characters.") String unit,
+            @Size(max = 80, message = "Keep the store's name to 80 characters.") String storeName) {
+    }
+
     /** `left` is what Gemini could not place either — rare, and those can be moved by hand. */
     public record SortResponse(int sorted, int left) {
     }
@@ -74,7 +92,29 @@ public class GroceryListDtos {
              */
             List<String> fromRecipes,
             /** Who typed it in or pressed Buy again. Null when only meals put it here. */
-            String addedByName) implements Serializable {
+            String addedByName,
+            /**
+             * The newest price this household has for the thing — from a scanned receipt or typed
+             * in — so the row can say "≈ $3.49". Null when it has none, and for a row with no
+             * ingredient. Last, so a phone that predates it simply never reads it.
+             */
+            LastPrice lastPrice) implements Serializable {
+    }
+
+    /**
+     * What was paid for something last time: `price` for `quantity` `unit` of it (one, each, when
+     * those are null), at `storeName` (null when nobody said where), on `observedOn`, and whether
+     * it was on sale. `source` is RECEIPT or MANUAL. Serializable, because it rides along on the
+     * live list updates.
+     */
+    public record LastPrice(
+            BigDecimal price,
+            BigDecimal quantity,
+            String unit,
+            String storeName,
+            LocalDate observedOn,
+            boolean onSale,
+            String source) implements Serializable {
     }
 
     /**

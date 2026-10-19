@@ -332,14 +332,19 @@ struct GroceryItem: Codable, Identifiable, Hashable {
     var fromRecipes: [String]? = nil
     /// Who typed it in or pressed Buy again. Nil when only meals put it here.
     var addedByName: String? = nil
+    /// What the household last paid for this thing, from a scanned receipt or a price typed in
+    /// by hand. Nil when nobody has, and from a server from before prices.
+    var lastPrice: LastPrice? = nil
 
     /// The newer fields carry defaults so the sample data, and anywhere else building one of
     /// these by hand, does not have to care about them.
     init(id: UUID, ingredientId: UUID? = nil, sorted: Bool? = nil, name: String,
          quantity: Double?, unit: String?, checked: Bool, checkedByName: String?,
-         categoryId: UUID?, inCupboard: Bool, fromRecipes: [String]? = nil, addedByName: String? = nil) {
+         categoryId: UUID?, inCupboard: Bool, fromRecipes: [String]? = nil, addedByName: String? = nil,
+         lastPrice: LastPrice? = nil) {
         self.fromRecipes = fromRecipes
         self.addedByName = addedByName
+        self.lastPrice = lastPrice
         self.id = id
         self.ingredientId = ingredientId
         self.sorted = sorted
@@ -358,6 +363,23 @@ struct GroceryItem: Codable, Identifiable, Hashable {
         let parts = [number, CountUnits.unit(unit, for: quantity)].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
+}
+
+/**
+ The newest price the household has for an ingredient (`lastPrice` on a grocery row): what was
+ paid for the line — after its discounts — and for how much of it ("1.32 lb"; nil is one each),
+ where and when. `source` is "RECEIPT" or "MANUAL". Everything but the price is optional, so an
+ observation with less to say still decodes.
+ */
+struct LastPrice: Codable, Hashable {
+    let price: Double
+    var quantity: Double? = nil
+    var unit: String? = nil
+    var storeName: String? = nil
+    /// `YYYY-MM-DD`, as the server sends it.
+    var observedOn: String? = nil
+    var onSale: Bool? = nil
+    var source: String? = nil
 }
 
 /**

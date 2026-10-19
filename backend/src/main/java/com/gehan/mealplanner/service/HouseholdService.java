@@ -287,6 +287,9 @@ public class HouseholdService {
         jdbc.update("UPDATE grocery_list_items SET checked_by_user_id = NULL WHERE checked_by_user_id = ?", userId);
         // What they put on the list of a house they only leave stays on it, just no longer saying who asked.
         jdbc.update("UPDATE grocery_list_items SET added_by_user_id = NULL WHERE added_by_user_id = ?", userId);
+        // The receipts they scanned and the prices they typed belong to the house, like its list.
+        jdbc.update("UPDATE receipts SET created_by_user_id = NULL WHERE created_by_user_id = ?", userId);
+        jdbc.update("UPDATE price_observations SET created_by_user_id = NULL WHERE created_by_user_id = ?", userId);
         jdbc.update("DELETE FROM password_resets WHERE user_id = ? OR created_by = ?", userId, userId);
         forgetSavedLinks(userId);
         jdbc.update("DELETE FROM idea_votes WHERE user_id = ?", userId);
@@ -474,6 +477,14 @@ public class HouseholdService {
         jdbc.update("DELETE FROM grocery_categories WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM section_icons WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM blacklisted_ingredients WHERE household_id = ?", householdId);
+
+        // Prices and the receipts they came from: each price before the receipt line it points
+        // at, the lines before their receipt, and the receipts before the shops they name.
+        jdbc.update("DELETE FROM price_observations WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM receipt_lines WHERE receipt_id IN ("
+                + "SELECT id FROM receipts WHERE household_id = ?)", householdId);
+        jdbc.update("DELETE FROM receipts WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM stores WHERE household_id = ?", householdId);
 
         // Places and saved links hold a picture, so they go before the pictures do. Saved links
         // are only ever planned by their own household, whose plan went above.
