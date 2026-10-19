@@ -318,6 +318,9 @@ struct GroceriesView: View {
                              sampleDetail: sampled ? SampleData.receiptDetail : nil,
                              onScan: { receiptScreen = .scan })
             }
+            // A receipt deleted in there takes its prices with it, and nothing tells this phone:
+            // the list is fetched again on the way out, or it goes on showing them.
+            .onDisappear { Task { await load() } }
         }
     }
 

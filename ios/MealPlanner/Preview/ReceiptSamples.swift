@@ -19,7 +19,9 @@ extension SampleData {
         "10/18/26 5:42 PM",
         "BANANAS",
         "1.32 lb @ 0.69 /lb 0.91 F",
-        "ORGANIC LEMONS 2 @ 0.99 1.98 F",
+        // A count, like a weight, is printed on its own line under the item.
+        "ORGANIC LEMONS",
+        "2 @ 0.99 1.98 F",
         "KNGS BABY SPINACH 5OZ 3.99 F",
         "BELL&EVANS THIGHS",
         "1.84 lb @ 6.99 /lb 12.86 F",
@@ -28,6 +30,7 @@ extension SampleData {
         "OATLY OAT MILK 5.49 F",
         "SOURDOUGH BOULE 6.99 F",
         "BAG FEE 0.10 T",
+        "KINGS REWARDS #4417",
         "SUBTOTAL 39.81",
         "TAX 0.01",
         "TOTAL 39.82",
@@ -54,7 +57,8 @@ extension SampleData {
         storeName: "Kings Food Markets", storeId: kings, purchasedOn: "2026-10-18",
         subtotal: 39.81, tax: 0.01, total: 39.82, sumMatches: true, duplicateOf: nil,
         lines: receiptLines,
-        unreadLines: ["THANK YOU FOR SHOPPING KINGS"]
+        // The sign-off is dropped as the shop talking; the rewards line is one it cannot explain.
+        unreadLines: ["KINGS REWARDS #4417"]
     )
 
     /// The same shop with the thighs misread as $18.86, so the lines no longer add up.

@@ -259,6 +259,9 @@ struct GroceryItemSheet: View {
      today's price for the ingredient, the same as a receipt line would be.
      */
     private var priceEditor: some View {
+        // Save sits beside the price, not under it: the decimal pad has no return key, and the
+        // sheet scrolls the field being typed in to just above the keyboard, which covers
+        // anything below it.
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
@@ -273,24 +276,22 @@ struct GroceryItemSheet: View {
                 .padding(.horizontal, 12)
                 .frame(width: 112, height: 44)
                 .fieldSurface(focused: priceFocused, radius: 12)
-                TextField("", text: $shopText, prompt: Text("Shop (optional)").foregroundStyle(Palette.faint))
-                    .font(.system(size: 15))
-                    .foregroundStyle(Palette.text)
-                    .padding(.horizontal, 12)
-                    .frame(height: 44)
-                    .fieldSurface(radius: 12)
-                    .accessibilityLabel("Shop")
-            }
-            HStack(spacing: 8) {
-                let saveTitle: String = savingPrice ? "Saving…" : "Save"
-                Text("Kept as today's price").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 Spacer(minLength: 8)
+                let saveTitle: String = savingPrice ? "Saving…" : "Save"
                 Button(saveTitle) {
                     Task { await savePrice() }
                 }
                 .buttonStyle(.kitchen(.primary, size: .small, fill: false))
                 .disabled(Money.parse(priceText) == nil || savingPrice)
             }
+            TextField("", text: $shopText, prompt: Text("Shop (optional)").foregroundStyle(Palette.faint))
+                .font(.system(size: 15))
+                .foregroundStyle(Palette.text)
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .fieldSurface(radius: 12)
+                .accessibilityLabel("Shop")
+            Text("Kept as today's price").font(.system(size: 12)).foregroundStyle(Palette.muted)
         }
         .padding(.leading, 62)
         .padding(.trailing, 16)

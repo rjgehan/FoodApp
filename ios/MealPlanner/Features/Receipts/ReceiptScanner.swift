@@ -204,7 +204,15 @@ struct ReceiptCamera: UIViewControllerRepresentable {
     var onCancel: () -> Void
     var onFail: (Error) -> Void
 
-    static var isSupported: Bool { VNDocumentCameraViewController.isSupported }
+    /// VisionKit's own answer, except in the Simulator: from iOS 27 it says yes there too, then
+    /// opens on a black screen that says "Unable to capture media".
+    static var isSupported: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return VNDocumentCameraViewController.isSupported
+        #endif
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
