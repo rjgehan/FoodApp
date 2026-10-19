@@ -17,6 +17,10 @@ test('an outsider cannot reach another household’s data', async () => {
   const cup = await call('POST', `/api/households/${ours.id}/cupboard`, { token: owner.token, body: { name: 'rice' } });
   const tags = await call('GET', `/api/households/${ours.id}/recipe-categories`, { token: owner.token });
   const tag = tags.find((t: any) => t.section === 'DINNER' && t.name === 'Main');
+  const receipt = await call('POST', `/api/households/${ours.id}/receipts`, {
+    token: owner.token,
+    body: { storeName: 'Kings Food Markets', lines: [{ text: 'BEEF', kind: 'ITEM', price: 9.99, onSale: false, ingredientId: item.ingredientId }] },
+  });
 
   const O = ours.id;
   const T = theirs.id;
@@ -61,6 +65,18 @@ test('an outsider cannot reach another household’s data', async () => {
     ['POST', `/api/households/${O}/recipe-categories/${tag.id}/recipes`, { recipeIds: [recipe.id] }],
     ['DELETE', `/api/households/${T}/recipe-categories/${tag.id}`],
     ['DELETE', `/api/households/${O}/recipe-categories/${tag.id}`],
+    // Receipts and prices: ours by our URL, and ours by theirs.
+    ['POST', `/api/households/${O}/receipts/read`, { lines: ['BEEF 9.99'] }],
+    ['POST', `/api/households/${O}/receipts`, { storeName: 'Sneaky', lines: [{ text: 'x', kind: 'ITEM', price: 1, onSale: false }] }],
+    ['GET', `/api/households/${O}/receipts`],
+    ['GET', `/api/households/${O}/receipts/${receipt.id}`],
+    ['GET', `/api/households/${T}/receipts/${receipt.id}`],
+    ['DELETE', `/api/households/${O}/receipts/${receipt.id}`],
+    ['DELETE', `/api/households/${T}/receipts/${receipt.id}`],
+    ['GET', `/api/households/${O}/stores`],
+    ['GET', `/api/households/${O}/ingredients/${item.ingredientId}/prices`],
+    ['PUT', `/api/households/${O}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
+    ['PUT', `/api/households/${T}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
   ];
 
   const leaks: string[] = [];
@@ -76,6 +92,11 @@ test('an outsider cannot reach another household’s data', async () => {
   expect(still.categories).toEqual([]);
   const list = await call('GET', `/api/households/${O}/grocery-list`, { token: owner.token });
   expect(list.map((i: any) => i.name)).toEqual(['beef']);
+  expect(list[0].lastPrice).toMatchObject({ price: 9.99, storeName: 'Kings Food Markets', source: 'RECEIPT' });
+  const receipts = await call('GET', `/api/households/${O}/receipts`, { token: owner.token });
+  expect(receipts.map((r: any) => r.id)).toEqual([receipt.id]);
+  expect((await call('GET', `/api/households/${O}/stores`, { token: owner.token })).map((s: any) => s.name)).toEqual(['Kings Food Markets']);
+  expect(await call('GET', `/api/households/${T}/stores`, { token: owner.token })).toEqual([]);
   const house = (await call('GET', '/api/households', { token: owner.token })).find((h: any) => h.id === O);
   expect(house).toMatchObject({ planEnabled: true, cupboardEnabled: true, machines: [] });
   const after = await call('GET', `/api/households/${O}/recipe-categories`, { token: owner.token });
@@ -87,7 +108,8 @@ test('an outsider cannot reach another household’s data', async () => {
 
 test('signed-out requests are refused', async () => {
   const hh = await newHousehold();
-  for (const path of [`/api/households/${hh.id}/recipes`, `/api/households/${hh.id}/grocery-list`, '/api/users/me', '/api/kitchen-machines']) {
+  for (const path of [`/api/households/${hh.id}/recipes`, `/api/households/${hh.id}/grocery-list`, '/api/users/me', '/api/kitchen-machines',
+    `/api/households/${hh.id}/receipts`, `/api/households/${hh.id}/stores`]) {
     expect(await statusOf('GET', path)).toBe(401);
   }
   const r = await newRecipe(hh.id, 'Toast', [{ name: 'bread', qty: 1 }]);
