@@ -396,6 +396,9 @@ makes on the first start, and three indexes `SchemaTouchUps` makes alongside (on
 per household, one receipt per barcode per household, and the newest price per ingredient).
 Nothing to do by hand. Grocery rows gain an optional `lastPrice`, which older iPhone builds ignore.
 
+A later release adds a `brand` column to `receipt_lines` and `price_observations` (nullable, made by
+Hibernate on start). Older iPhone builds neither send nor read it, and rolling back leaves it unread.
+
 Rolling back has the same catch as the kitchen release: the new tables point at households,
 users and ingredients, so the old backend cannot delete a household or an account that has
 scanned a receipt or typed a price. Drop their foreign keys before starting the old images (the

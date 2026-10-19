@@ -64,6 +64,10 @@ public class PriceObservation {
     @Column(length = 20)
     private String unit;
 
+    /** Who made what was priced ("Twinings"), when somebody said. */
+    @Column(length = 60)
+    private String brand;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean onSale = false;

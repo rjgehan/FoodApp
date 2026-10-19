@@ -4,6 +4,7 @@ import com.gehan.mealplanner.domain.Household;
 import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
+import com.gehan.mealplanner.receipts.ReceiptDtos.DraftLine;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReadReceiptRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptLineResponse;
@@ -32,11 +33,14 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -107,7 +111,7 @@ public class ReceiptService {
         List<KnownStore> known = storeRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
                 .map(s -> new KnownStore(s.getId(), s.getName()))
                 .toList();
-        ReceiptDraft draft = ReceiptReader.read(request.lines(), knownIngredients(householdId), known);
+        ReceiptDraft draft = remembered(householdId, ReceiptReader.read(request.lines(), knownIngredients(householdId), known));
         String barcode = blankToNull(request.barcode());
         if (barcode == null) {
             return draft;
@@ -115,6 +119,81 @@ public class ReceiptService {
         return receiptRepository.findFirstByHouseholdIdAndBarcode(householdId, barcode)
                 .map(saved -> draft.withDuplicateOf(saved.getId()))
                 .orElse(draft);
+    }
+
+    /**
+     * What somebody said about the same line on an earlier receipt — its brand, its size, what it
+     * counts as — put on this one, so "TWININGS ENG BRKFST 20CT" is Twinings english breakfast
+     * tea, 20 bags, the second time without anybody saying so again. Matched on the line's words
+     * as printed, whatever their case: this household's own receipts first, then anybody's on the
+     * server, since one shop's receipts say the same thing to everyone. Newest wins.
+     *
+     * A size somebody gave beats one read off the name ("20CT" said as 20 bags), but never a
+     * weight or a count the receipt printed: those are this shop's, not last time's. What another
+     * household said a line counts as only fills a gap: this household's own list knows better
+     * what it calls things ("baby spinach", not their "spinach").
+     */
+    private ReceiptDraft remembered(UUID householdId, ReceiptDraft draft) {
+        List<String> said = draft.lines().stream()
+                .filter(l -> ReceiptLine.ITEM.equals(l.kind()) && l.text() != null && !l.text().isBlank())
+                .map(l -> l.text().trim().toUpperCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        if (said.isEmpty()) {
+            return draft;
+        }
+        record Said(String brand, BigDecimal quantity, String unit, boolean measured, UUID ingredientId, String ingredientName,
+                    boolean ours) {
+        }
+        Map<String, Said> before = new HashMap<>();
+        String places = String.join(", ", Collections.nCopies(said.size(), "?"));
+        List<Object> args = new ArrayList<>();
+        args.add(householdId);
+        args.addAll(said);
+        args.add(householdId);
+        jdbc.query("""
+                SELECT DISTINCT ON (upper(rl.text))
+                       upper(rl.text) AS said, rl.brand, rl.quantity, rl.unit, rl.unit_price,
+                       rl.ingredient_id, i.name AS ingredient_name, r.household_id = ? AS ours
+                FROM receipt_lines rl
+                JOIN receipts r ON r.id = rl.receipt_id
+                LEFT JOIN ingredients i ON i.id = rl.ingredient_id
+                WHERE rl.kind = 'ITEM' AND upper(rl.text) IN (%s)
+                  AND (rl.brand IS NOT NULL OR rl.ingredient_id IS NOT NULL)
+                ORDER BY upper(rl.text), (r.household_id = ?) DESC, r.created_at DESC
+                """.formatted(places), rs -> {
+            before.put(rs.getString("said"), new Said(
+                    rs.getString("brand"),
+                    rs.getBigDecimal("quantity"),
+                    rs.getString("unit"),
+                    rs.getBigDecimal("unit_price") != null,
+                    rs.getObject("ingredient_id", UUID.class),
+                    rs.getString("ingredient_name"),
+                    rs.getBoolean("ours")));
+        }, args.toArray());
+        if (before.isEmpty()) {
+            return draft;
+        }
+        List<DraftLine> lines = draft.lines().stream()
+                .map(line -> {
+                    Said last = line.text() == null ? null : before.get(line.text().trim().toUpperCase(Locale.ROOT));
+                    if (last == null || !ReceiptLine.ITEM.equals(line.kind())) {
+                        return line;
+                    }
+                    boolean printed = line.unitPrice() != null;
+                    boolean takeSize = !printed && !last.measured() && last.quantity() != null;
+                    boolean takeIngredient = last.ingredientId() != null && (last.ours() || line.ingredientId() == null);
+                    return new DraftLine(line.text(), line.kind(),
+                            takeSize ? last.quantity() : line.quantity(),
+                            takeSize ? last.unit() : line.unit(),
+                            line.unitPrice(), line.price(), line.onSale(),
+                            takeIngredient ? last.ingredientId() : line.ingredientId(),
+                            takeIngredient ? last.ingredientName() : line.ingredientName(),
+                            line.brand() != null ? line.brand() : last.brand());
+                })
+                .toList();
+        return new ReceiptDraft(draft.storeName(), draft.storeId(), draft.purchasedOn(), draft.subtotal(), draft.tax(),
+                draft.total(), draft.sumMatches(), draft.duplicateOf(), lines, draft.unreadLines());
     }
 
     private List<KnownIngredient> knownIngredients(UUID householdId) {
@@ -174,6 +253,7 @@ public class ReceiptService {
                     .kind(kind)
                     .quantity(line.quantity())
                     .unit(blankToNull(line.unit()))
+                    .brand(Stores.tidy(line.brand()))
                     .unitPrice(line.unitPrice())
                     .price(line.price())
                     .onSale(line.onSale())
@@ -195,6 +275,7 @@ public class ReceiptService {
                     .price(line.getPrice())
                     .quantity(line.getQuantity())
                     .unit(line.getUnit())
+                    .brand(line.getBrand())
                     .onSale(line.isOnSale())
                     .observedOn(observedOn)
                     .source(PriceObservation.RECEIPT)
@@ -407,7 +488,7 @@ public class ReceiptService {
                         l.getUnitPrice(), l.getPrice(), l.isOnSale(),
                         l.getIngredient() != null ? l.getIngredient().getId() : null,
                         l.getIngredient() != null ? l.getIngredient().getName() : null,
-                        l.getId()))
+                        l.getId(), l.getBrand()))
                 .toList();
         int items = (int) lines.stream().filter(l -> ReceiptLine.ITEM.equals(l.kind())).count();
         int priced = (int) lines.stream().filter(l -> ReceiptLine.ITEM.equals(l.kind()) && l.ingredientId() != null).count();

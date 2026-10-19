@@ -52,6 +52,8 @@ test('scan, check and save a receipt: the list then shows what things cost', asy
     ['PAPER BAG', 'NOT_FOOD', 0.1, false, null],
   ]);
   expect(draft.lines[1]).toMatchObject({ quantity: 2.04, unit: 'lb', unitPrice: 0.69, ingredientId: bananas.ingredientId });
+  // The size in a name is how much the price was for.
+  expect(draft.lines[0]).toMatchObject({ quantity: 5, unit: 'oz', unitPrice: null });
   expect(await call('GET', `${base}/receipts`, { token })).toEqual([]);
 
   // Save, with the lemons named on the review screen.
@@ -67,8 +69,10 @@ test('scan, check and save a receipt: the list then shows what things cost', asy
 
   // The list says what each cost; the new lemons are not on it, but the price is kept.
   const list = await call('GET', `${base}/grocery-list`, { token });
+  // Its brand is whatever the draft remembered for the line — anybody's, so not fixed here.
   expect(find(list, 'baby spinach').lastPrice).toEqual({
-    price: 3.99, quantity: null, unit: null, storeName: 'Kings Food Markets', observedOn: '2026-10-18', onSale: false, source: 'RECEIPT',
+    price: 3.99, quantity: 5, unit: 'oz', storeName: 'Kings Food Markets', observedOn: '2026-10-18', onSale: false, source: 'RECEIPT',
+    brand: draft.lines[0].brand,
   });
   expect(find(list, 'bananas').lastPrice).toMatchObject({ price: 1.41, quantity: 2.04, unit: 'lb' });
   const lemonRow = await add(hh.id, token, lemons);
@@ -122,15 +126,16 @@ test('a price typed on a row: kept as today, shown at once, and only for a row t
   const coffee = await add(hh.id, member.token, unique('coffee').toLowerCase());
 
   const priced = await call('PUT', `${base}/grocery-list/items/${coffee.id}/price`, {
-    token: member.token, body: { price: 11.99, quantity: 2, unit: 'bag', storeName: 'Corner Shop' },
+    token: member.token, body: { price: 11.99, quantity: 2, unit: 'bag', storeName: 'Corner Shop', brand: 'Lavazza' },
   });
   expect(priced.id).toBe(coffee.id);
   expect(priced.lastPrice).toEqual({
     price: 11.99, quantity: 2, unit: 'bag', storeName: 'Corner Shop', observedOn: isoDate(0), onSale: false, source: 'MANUAL',
+    brand: 'Lavazza',
   });
   // Only the price is needed.
   const plain = await call('PUT', `${base}/grocery-list/items/${coffee.id}/price`, { token: member.token, body: { price: 9.5 } });
-  expect(plain.lastPrice).toMatchObject({ price: 9.5, quantity: null, unit: null, storeName: null, source: 'MANUAL' });
+  expect(plain.lastPrice).toMatchObject({ price: 9.5, quantity: null, unit: null, storeName: null, brand: null, source: 'MANUAL' });
 
   // The item sheet's "last paid at each shop": the newest per shop, one with no shop as its own.
   const byShop = await call('GET', `${base}/ingredients/${coffee.ingredientId}/prices`, { token: member.token });

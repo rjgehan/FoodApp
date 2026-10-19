@@ -172,7 +172,8 @@ class ReceiptReaderTest {
                         tuple("GALA APPLES", money("1.32"), "lb", money("2.99"), money("3.95"), false, APPLES.id()),
                         tuple("KNGS PASTA SAUCE 24OZ", money("2"), null, money("2.50"), money("5.00"), false,
                                 PASTA_SAUCE.id()),
-                        tuple("BARILLA SPAGHETTI 16OZ", null, null, null, money("0.99"), true, SPAGHETTI.id()),
+                        // Nothing weighed or counted: the size in its name is how much it was.
+                        tuple("BARILLA SPAGHETTI 16OZ", money("16"), "oz", null, money("0.99"), true, SPAGHETTI.id()),
                         tuple("CHICKEN THIGHS BNLS", money("1.52"), "lb", money("5.57"), money("8.47"), false,
                                 CHICKEN_THIGHS.id()),
                         tuple("PARMIGIANO REGGIANO", null, null, null, money("8.99"), true, null));
@@ -226,6 +227,35 @@ class ReceiptReaderTest {
     }
 
     // --- Weights and counts ---
+
+    @Test
+    void aPackSizeInTheNameIsWhatThePriceWasFor() {
+        assertThat(ReceiptReader.packSize("KNGS BABY SPINACH 5OZ")).contains(new ReceiptReader.PackSize(new BigDecimal("5"), "oz"));
+        assertThat(ReceiptReader.packSize("OLIVE OIL 16.9 FL OZ"))
+                .contains(new ReceiptReader.PackSize(new BigDecimal("16.9"), "fl oz"));
+        assertThat(ReceiptReader.packSize("TWININGS ENG BRKFST 20CT"))
+                .contains(new ReceiptReader.PackSize(new BigDecimal("20"), "ct"));
+        assertThat(ReceiptReader.packSize("POLAND SPRING 24 PK")).map(ReceiptReader.PackSize::unit).contains("pack");
+        assertThat(ReceiptReader.packSize("2% MILK 1GAL")).map(ReceiptReader.PackSize::unit).contains("gal");
+        assertThat(ReceiptReader.packSize("GREEK YOGURT 500G")).map(ReceiptReader.PackSize::unit).contains("g");
+        // An O read as a nought.
+        assertThat(ReceiptReader.packSize("KNGS BABY SPINACH 50Z")).contains(new ReceiptReader.PackSize(new BigDecimal("5"), "oz"));
+        // A count beats a size: the price was for the 12 pack.
+        assertThat(ReceiptReader.packSize("COLA 12PK 12OZ")).map(ReceiptReader.PackSize::unit).contains("pack");
+        // Not sizes.
+        assertThat(ReceiptReader.packSize("GROUND BEEF 85%")).isEmpty();
+        assertThat(ReceiptReader.packSize("V8 SPLASH")).isEmpty();
+        assertThat(ReceiptReader.packSize(null)).isEmpty();
+
+        DraftLine sized = read("KNGS BABY SPINACH 5OZ 3.99 F").lines().get(0);
+        assertThat(sized.quantity()).isEqualByComparingTo("5");
+        assertThat(sized.unit()).isEqualTo("oz");
+        assertThat(sized.unitPrice()).isNull();
+        // Weighed or counted on the receipt: that is how much, not the name's size.
+        DraftLine counted = read("YOGURT 5.3OZ", "2 @ 1.25 2.50").lines().get(0);
+        assertThat(counted.quantity()).isEqualByComparingTo("2");
+        assertThat(counted.unit()).isNull();
+    }
 
     @Test
     void weightLinesInTheWaysTillsPrintThem() {

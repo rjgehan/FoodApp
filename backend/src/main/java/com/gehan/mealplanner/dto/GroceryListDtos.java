@@ -50,7 +50,8 @@ public class GroceryListDtos {
 
     /**
      * A price typed in on a grocery row: what was paid, for how much of it (one, each, when left
-     * out), and at which shop (found or made by name; blank for nowhere in particular). Dated today.
+     * out), at which shop (found or made by name; blank for nowhere in particular), and whose make
+     * it was ("Twinings"; blank for no brand in particular). Dated today.
      */
     public record SetPriceRequest(
             @NotNull(message = "Say what it cost.")
@@ -59,7 +60,8 @@ public class GroceryListDtos {
             @Positive(message = "A quantity has to be more than zero.")
             @DecimalMax(value = ReceiptDtos.MAX_QUANTITY, message = ReceiptDtos.TOO_MUCH) BigDecimal quantity,
             @Size(max = 20, message = "Keep the unit to 20 characters.") String unit,
-            @Size(max = 80, message = "Keep the store's name to 80 characters.") String storeName) {
+            @Size(max = 80, message = "Keep the store's name to 80 characters.") String storeName,
+            @Size(max = 60, message = "Keep the brand to 60 characters.") String brand) {
     }
 
     /** `left` is what Gemini could not place either — rare, and those can be moved by hand. */
@@ -103,8 +105,8 @@ public class GroceryListDtos {
 
     /**
      * What was paid for something last time: `price` for `quantity` `unit` of it (one, each, when
-     * those are null), at `storeName` (null when nobody said where), on `observedOn`, and whether
-     * it was on sale. `source` is RECEIPT or MANUAL. Serializable, because it rides along on the
+     * those are null), of `brand` (null when nobody said whose), at `storeName` (null when nobody
+     * said where), on `observedOn`, and whether it was on sale. `source` is RECEIPT or MANUAL. Serializable, because it rides along on the
      * live list updates.
      */
     public record LastPrice(
@@ -114,7 +116,8 @@ public class GroceryListDtos {
             String storeName,
             LocalDate observedOn,
             boolean onSale,
-            String source) implements Serializable {
+            String source,
+            String brand) implements Serializable {
     }
 
     /**

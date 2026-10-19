@@ -43,11 +43,15 @@ extension SampleData {
                     ingredientId: bananasId, ingredientName: "bananas"),
         ReceiptLine(text: "ORGANIC LEMONS", quantity: 2, unitPrice: 0.99, price: 1.98,
                     ingredientId: lemonsId, ingredientName: "lemons"),
-        ReceiptLine(text: "KNGS BABY SPINACH 5OZ", price: 3.99, ingredientId: spinachId, ingredientName: "baby spinach"),
+        // The size off its name, as the server reads it.
+        ReceiptLine(text: "KNGS BABY SPINACH 5OZ", quantity: 5, unit: "oz", price: 3.99, ingredientId: spinachId,
+                    ingredientName: "baby spinach"),
         ReceiptLine(text: "BELL&EVANS THIGHS", quantity: 1.84, unit: "lb", unitPrice: 6.99, price: 12.86,
                     ingredientId: thighsId, ingredientName: "chicken thighs"),
         ReceiptLine(text: "GROUND BEEF 85%", price: 7.49, onSale: true, ingredientId: beefId, ingredientName: "ground beef"),
-        ReceiptLine(text: "OATLY OAT MILK", price: 5.49, ingredientId: oatMilkId, ingredientName: "oat milk"),
+        // Its brand remembered from the last receipt that said OATLY OAT MILK.
+        ReceiptLine(text: "OATLY OAT MILK", price: 5.49, ingredientId: oatMilkId, ingredientName: "oat milk",
+                    brand: "Oatly"),
         ReceiptLine(text: "SOURDOUGH BOULE", price: 6.99),
         ReceiptLine(text: "BAG FEE", kind: .notFood, price: 0.10),
     ]
@@ -82,10 +86,10 @@ extension SampleData {
     /// What oat milk last cost at each shop, newest first: the item sheet's "Last paid at each shop".
     static let pricesByShop: [LastPrice] = [
         LastPrice(price: 4.49, quantity: 1, unit: "carton", storeName: "Kings Food Markets",
-                  observedOn: "2026-10-18", onSale: false, source: "RECEIPT"),
+                  observedOn: "2026-10-18", onSale: false, source: "RECEIPT", brand: "Oatly"),
         LastPrice(price: 4.19, storeName: nil, observedOn: "2026-10-12", onSale: false, source: "MANUAL"),
         LastPrice(price: 3.79, quantity: 1, unit: "carton", storeName: "ShopRite of Hoboken",
-                  observedOn: "2026-10-04", onSale: true, source: "RECEIPT"),
+                  observedOn: "2026-10-04", onSale: true, source: "RECEIPT", brand: "Califia"),
     ]
 
     static let receipts: [ReceiptSummary] = [

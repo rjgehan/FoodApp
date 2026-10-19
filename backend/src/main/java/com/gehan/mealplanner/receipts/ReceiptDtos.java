@@ -74,7 +74,8 @@ public class ReceiptDtos {
             BigDecimal price,
             boolean onSale,
             UUID ingredientId,
-            String ingredientName) {
+            String ingredientName,
+            String brand) {
     }
 
     /**
@@ -105,7 +106,8 @@ public class ReceiptDtos {
             @PositiveOrZero(message = "A price can't be below zero.") @DecimalMax(value = MAX_MONEY, message = TOO_BIG) BigDecimal price,
             boolean onSale,
             UUID ingredientId,
-            @Size(max = 200, message = "Keep the ingredient's name to 200 characters.") String ingredientName) {
+            @Size(max = 200, message = "Keep the ingredient's name to 200 characters.") String ingredientName,
+            @Size(max = 60, message = "Keep the brand to 60 characters.") String brand) {
     }
 
     /**
@@ -138,7 +140,8 @@ public class ReceiptDtos {
             boolean onSale,
             UUID ingredientId,
             String ingredientName,
-            UUID id) {
+            UUID id,
+            String brand) {
     }
 
     /** One row of the Receipts list: "Kings Food Markets · Oct 18 · $86.40 · 23 priced". */
@@ -191,6 +194,7 @@ public class ReceiptDtos {
             LocalDate observedOn,
             boolean onSale,
             String source,
+            String brand,
             boolean yours) {
     }
 }

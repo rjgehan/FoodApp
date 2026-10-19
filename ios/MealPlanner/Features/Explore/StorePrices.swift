@@ -65,12 +65,15 @@ struct StoreItemPrice: Codable, Identifiable, Hashable {
     var observedOn: String?
     var onSale: Bool = false
     var source: String?
+    /// Who made it ("Twinings"), when whoever paid said.
+    var brand: String?
     var yours: Bool = false
 
     var id: UUID { ingredientId }
 
     init(ingredientId: UUID, ingredientName: String, price: Double, quantity: Double? = nil, unit: String? = nil,
-         observedOn: String? = nil, onSale: Bool = false, source: String? = nil, yours: Bool = false) {
+         observedOn: String? = nil, onSale: Bool = false, source: String? = nil, brand: String? = nil,
+         yours: Bool = false) {
         self.ingredientId = ingredientId
         self.ingredientName = ingredientName
         self.price = price
@@ -79,6 +82,7 @@ struct StoreItemPrice: Codable, Identifiable, Hashable {
         self.observedOn = observedOn
         self.onSale = onSale
         self.source = source
+        self.brand = brand
         self.yours = yours
     }
 
@@ -92,6 +96,7 @@ struct StoreItemPrice: Codable, Identifiable, Hashable {
         observedOn = try c.decodeIfPresent(String.self, forKey: .observedOn)
         onSale = try c.decodeIfPresent(Bool.self, forKey: .onSale) ?? false
         source = try c.decodeIfPresent(String.self, forKey: .source)
+        brand = try c.decodeIfPresent(String.self, forKey: .brand)
         yours = try c.decodeIfPresent(Bool.self, forKey: .yours) ?? false
     }
 }
@@ -178,11 +183,11 @@ enum StoreWords {
         return "\(words) · last \(day)"
     }
 
-    /// "for 1.32 lb · Oct 18 · on sale · yours" — under a price in a shop's list. "yours" only where
-    /// others have prices there too; at a shop only you have priced, every one would say it.
+    /// "Twinings, 20 bags · Oct 18 · on sale · yours" — under a price in a shop's list. "yours" only
+    /// where others have prices there too; at a shop only you have priced, every one would say it.
     static func detail(_ price: StoreItemPrice, sayYours: Bool = true) -> String? {
         let parts = [
-            ReceiptWords.amount(quantity: price.quantity, unit: price.unit).map { "for \($0)" },
+            ReceiptWords.what(brand: price.brand, quantity: price.quantity, unit: price.unit),
             ReceiptWords.day(price.observedOn),
             price.onSale ? "on sale" : nil,
             sayYours && price.yours ? "yours" : nil,
