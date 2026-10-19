@@ -1,12 +1,15 @@
 package com.gehan.mealplanner.receipts;
 
 import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StoreItemPrice;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -68,6 +71,60 @@ public class Prices {
         return prices.stream()
                 .sorted(Comparator.comparing(LastPrice::observedOn, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
+    }
+
+    /**
+     * Every shop's newest price for each thing bought there, across every household on the server
+     * — the store map's raw material, in one query. Ingredients are shared by all households, so
+     * one household's milk is another's. A price typed in without a shop belongs to none, so it
+     * is not here. Newest first within each thing, so whoever folds shops into chains can keep the
+     * first it meets.
+     */
+    public List<ShopPrice> newestAtEveryShop() {
+        return jdbc.query("""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (o.store_id, o.ingredient_id)
+                           o.store_id, o.household_id, o.ingredient_id, i.name AS ingredient_name, o.price,
+                           o.quantity, o.unit, o.observed_on, o.on_sale, o.source, o.created_at
+                    FROM price_observations o
+                    JOIN ingredients i ON i.id = o.ingredient_id
+                    WHERE o.store_id IS NOT NULL
+                    ORDER BY o.store_id, o.ingredient_id, o.observed_on DESC, o.created_at DESC
+                ) newest
+                ORDER BY observed_on DESC, created_at DESC
+                """, (rs, row) -> {
+            Date observedOn = rs.getDate("observed_on");
+            return new ShopPrice(
+                    rs.getObject("store_id", UUID.class),
+                    rs.getObject("household_id", UUID.class),
+                    rs.getObject("ingredient_id", UUID.class),
+                    rs.getString("ingredient_name"),
+                    rs.getBigDecimal("price"),
+                    rs.getBigDecimal("quantity"),
+                    rs.getString("unit"),
+                    observedOn != null ? observedOn.toLocalDate() : null,
+                    rs.getBoolean("on_sale"),
+                    rs.getString("source"));
+        });
+    }
+
+    /** One shop's newest price for one thing, and which household paid it — never sent as it is. */
+    public record ShopPrice(
+            UUID storeId,
+            UUID householdId,
+            UUID ingredientId,
+            String ingredientName,
+            BigDecimal price,
+            BigDecimal quantity,
+            String unit,
+            LocalDate observedOn,
+            boolean onSale,
+            String source) {
+
+        StoreItemPrice forAsker(UUID askerHousehold) {
+            return new StoreItemPrice(ingredientId, ingredientName, price, quantity, unit, observedOn, onSale, source,
+                    householdId.equals(askerHousehold));
+        }
     }
 
     private static LastPrice lastPrice(ResultSet rs) throws SQLException {
