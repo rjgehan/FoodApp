@@ -410,6 +410,14 @@ DO \$\$ DECLARE c record; BEGIN
 END \$\$;"
 ```
 
+## The store map: prices pooled across households
+
+Explore → Grocery stores (`GET /api/households/{id}/stores/prices`) shows every household's receipt
+and typed prices to everybody on the server, pooled by shop chain — the newest price for each thing
+at each chain, and how many households have priced there. Never whose: no household or person is
+named or sent. Nothing to set up and no new tables; anyone on the server sees it as soon as the
+backend has it. The iPhone's receipt check screen says so before Save.
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

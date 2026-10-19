@@ -16,6 +16,8 @@ import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptResponse;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptSummary;
 import com.gehan.mealplanner.receipts.ReceiptDtos.SaveLine;
 import com.gehan.mealplanner.receipts.ReceiptDtos.SaveReceiptRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StoreItemPrice;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StorePrices;
 import com.gehan.mealplanner.receipts.ReceiptDtos.StoreResponse;
 import com.gehan.mealplanner.repository.HouseholdMemberRepository;
 import com.gehan.mealplanner.repository.HouseholdRepository;
@@ -331,6 +333,69 @@ class ReceiptsDatabaseTest {
 
         User stranger = userRepository.save(User.builder().username("stranger-" + tag).displayName("S").build());
         assertThatThrownBy(() -> receiptService.pricesByStore(home, milk.ingredientId(), stranger.getId()))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void theStoreMapPoolsEveryHouseholdsPricesByChainAndPricesTheAskersListThere() {
+        GroceryListItemResponse milk = add("milk-" + tag);
+        GroceryListItemResponse eggs = add("eggs-" + tag);
+        GroceryListItemResponse bread = add("bread-" + tag);
+        GroceryListItemResponse butter = add("butter-" + tag);
+        add("saffron-" + tag);
+        User them = userRepository.save(User.builder().username("neighbour-" + tag).displayName("N").build());
+        UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Neighbours")).id();
+        // Names unique to this test: the database is shared, and the map is the whole server's.
+        String shop = "Shop" + tag;
+        String corner = "Corner" + tag;
+
+        save(receipt(shop + " Food Markets", EARLY_OCTOBER, null,
+                line("MILK", "4.29", r -> r.ingredientId = milk.ingredientId()),
+                line("EGGS", "5.99", r -> r.ingredientId = eggs.ingredientId())));
+        // Another household, the same chain spelled its own way, and newer milk.
+        receiptService.save(theirs, them.getId(), receipt(shop.toUpperCase() + " FOODS of Hoboken", MID_OCTOBER, null,
+                line("MILK", "4.49", r -> r.ingredientId = milk.ingredientId())));
+        // A chain only they shop at.
+        receiptService.save(theirs, them.getId(), receipt(corner + " Store", EARLY_OCTOBER, null,
+                line("BREAD", "2.50", r -> {
+                    r.ingredientId = bread.ingredientId();
+                    r.onSale = true;
+                }),
+                line("BUTTER", "3.79", r -> r.ingredientId = butter.ingredientId())));
+        // Typed in with no shop: no chain's price.
+        groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("3.00"), null, null, null));
+        // Bought already: no longer to buy, at any chain.
+        groceryListService.setChecked(home, butter.id(), me.getId(), true);
+
+        List<StorePrices> chains = receiptService.storePrices(home, me.getId()).stream()
+                .filter(c -> c.name().toLowerCase().contains(tag)).toList();
+
+        // Priced most lately first; ours named as we name it, theirs as they do.
+        assertThat(chains)
+                .extracting(StorePrices::name, StorePrices::lastPricedOn, StorePrices::listPriced, StorePrices::listCount,
+                        StorePrices::households, StorePrices::yours)
+                .containsExactly(
+                        tuple(shop + " Food Markets", MID_OCTOBER, 2, 4, 2, true),
+                        tuple(corner + " Store", EARLY_OCTOBER, 1, 4, 1, false));
+        assertThat(chains.get(0).listTotal()).isEqualByComparingTo("10.48");
+        assertThat(chains.get(1).listTotal()).isEqualByComparingTo("2.50");
+        // The newest price for each thing whoever paid it, A to Z, and only "yours" said of whose.
+        assertThat(chains.get(0).prices())
+                .extracting(StoreItemPrice::ingredientName, StoreItemPrice::price, StoreItemPrice::observedOn,
+                        StoreItemPrice::yours)
+                .containsExactly(
+                        tuple("eggs-" + tag, new BigDecimal("5.99"), EARLY_OCTOBER, true),
+                        tuple("milk-" + tag, new BigDecimal("4.49"), MID_OCTOBER, false));
+        assertThat(chains.get(1).prices())
+                .extracting(StoreItemPrice::ingredientName, StoreItemPrice::onSale, StoreItemPrice::yours)
+                .containsExactly(tuple("bread-" + tag, true, false), tuple("butter-" + tag, false, false));
+        // The same chain is the same id however it is asked for.
+        assertThat(receiptService.storePrices(theirs, them.getId()).stream()
+                .filter(c -> c.id().equals(chains.get(0).id())).findFirst().orElseThrow().name())
+                .isEqualTo(shop.toUpperCase() + " FOODS of Hoboken");
+
+        User stranger = userRepository.save(User.builder().username("stranger-" + tag).displayName("S").build());
+        assertThatThrownBy(() -> receiptService.storePrices(home, stranger.getId()))
                 .isInstanceOf(ResponseStatusException.class);
     }
 

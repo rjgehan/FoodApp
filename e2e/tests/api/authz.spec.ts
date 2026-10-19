@@ -74,6 +74,7 @@ test('an outsider cannot reach another household’s data', async () => {
     ['DELETE', `/api/households/${O}/receipts/${receipt.id}`],
     ['DELETE', `/api/households/${T}/receipts/${receipt.id}`],
     ['GET', `/api/households/${O}/stores`],
+    ['GET', `/api/households/${O}/stores/prices`],
     ['GET', `/api/households/${O}/ingredients/${item.ingredientId}/prices`],
     ['PUT', `/api/households/${O}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
     ['PUT', `/api/households/${T}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
@@ -109,7 +110,7 @@ test('an outsider cannot reach another household’s data', async () => {
 test('signed-out requests are refused', async () => {
   const hh = await newHousehold();
   for (const path of [`/api/households/${hh.id}/recipes`, `/api/households/${hh.id}/grocery-list`, '/api/users/me', '/api/kitchen-machines',
-    `/api/households/${hh.id}/receipts`, `/api/households/${hh.id}/stores`]) {
+    `/api/households/${hh.id}/receipts`, `/api/households/${hh.id}/stores`, `/api/households/${hh.id}/stores/prices`]) {
     expect(await statusOf('GET', path)).toBe(401);
   }
   const r = await newRecipe(hh.id, 'Toast', [{ name: 'bread', qty: 1 }]);

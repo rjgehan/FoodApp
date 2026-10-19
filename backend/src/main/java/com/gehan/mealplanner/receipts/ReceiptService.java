@@ -11,6 +11,8 @@ import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptResponse;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptSummary;
 import com.gehan.mealplanner.receipts.ReceiptDtos.SaveLine;
 import com.gehan.mealplanner.receipts.ReceiptDtos.SaveReceiptRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StoreItemPrice;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StorePrices;
 import com.gehan.mealplanner.receipts.ReceiptDtos.StoreResponse;
 import com.gehan.mealplanner.receipts.ReceiptReader.KnownIngredient;
 import com.gehan.mealplanner.receipts.ReceiptReader.KnownStore;
@@ -27,13 +29,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -289,6 +294,105 @@ public class ReceiptService {
         return storeRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
                 .map(s -> new StoreResponse(s.getId(), s.getName()))
                 .toList();
+    }
+
+    /**
+     * The map of grocery stores, for the whole server: every chain somebody has priced something at,
+     * with the newest price anybody paid there for each thing, and what the asker's list as it
+     * stands would come to there. Shops are folded into chains by name ({@link StoreChains}), so
+     * one household's "KINGS FOOD MARKETS" and another's "Kings" are one Kings.
+     *
+     * Nothing says whose a price was beyond whether it was the asker's own: other households are
+     * only counted. The chain priced most lately comes first.
+     *
+     * A row's price at a chain is its newest price for the thing, as it was paid — not scaled to
+     * the row's amount, the same as the list's own "≈ $86".
+     */
+    @Transactional(readOnly = true)
+    public List<StorePrices> storePrices(UUID householdId, UUID requesterId) {
+        householdService.assertMember(householdId, requesterId);
+
+        // Every household's shops, and the chain each one is.
+        Map<UUID, String> chainOf = new HashMap<>();
+        Map<String, String> ownName = new HashMap<>();
+        Map<String, Map<String, Integer>> namesUsed = new HashMap<>();
+        jdbc.query("SELECT id, household_id, name FROM stores", rs -> {
+            String name = rs.getString("name");
+            String chain = StoreChains.key(name);
+            if (chain.isEmpty()) {
+                return;
+            }
+            chainOf.put(rs.getObject("id", UUID.class), chain);
+            if (householdId.equals(rs.getObject("household_id", UUID.class))) {
+                ownName.merge(chain, name, (a, b) -> a.compareToIgnoreCase(b) <= 0 ? a : b);
+            }
+            namesUsed.computeIfAbsent(chain, c -> new HashMap<>()).merge(name, 1, Integer::sum);
+        });
+
+        // The newest price for each thing at each chain: the shops' newest come newest first, so
+        // the first met for a thing at a chain is the one to keep.
+        Map<String, Map<UUID, StoreItemPrice>> newest = new HashMap<>();
+        Map<String, Set<UUID>> households = new HashMap<>();
+        for (Prices.ShopPrice paid : prices.newestAtEveryShop()) {
+            String chain = chainOf.get(paid.storeId());
+            if (chain == null) {
+                continue;
+            }
+            newest.computeIfAbsent(chain, c -> new HashMap<>())
+                    .putIfAbsent(paid.ingredientId(), paid.forAsker(householdId));
+            households.computeIfAbsent(chain, c -> new HashSet<>()).add(paid.householdId());
+        }
+
+        // Still to buy, by what each row is (null for a row typed with no name): a thing on the
+        // list twice counts twice, as it does in the list's own total.
+        List<UUID> toBuy = jdbc.queryForList(
+                "SELECT ingredient_id FROM grocery_list_items WHERE household_id = ? AND NOT checked",
+                UUID.class, householdId);
+
+        return newest.entrySet().stream()
+                .map(entry -> {
+                    String chain = entry.getKey();
+                    List<StoreItemPrice> here = entry.getValue().values().stream()
+                            .sorted(Comparator.comparing(StoreItemPrice::ingredientName, String.CASE_INSENSITIVE_ORDER))
+                            .toList();
+                    BigDecimal total = BigDecimal.ZERO;
+                    int priced = 0;
+                    for (UUID ingredient : toBuy) {
+                        StoreItemPrice paid = ingredient != null ? entry.getValue().get(ingredient) : null;
+                        if (paid != null) {
+                            total = total.add(paid.price());
+                            priced++;
+                        }
+                    }
+                    LocalDate last = here.stream().map(StoreItemPrice::observedOn)
+                            .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+                    Set<UUID> pricedBy = households.getOrDefault(chain, Set.of());
+                    return new StorePrices(chainId(chain), chainName(chain, ownName, namesUsed), last, here, total,
+                            priced, toBuy.size(), pricedBy.size(),
+                            ownName.containsKey(chain) || pricedBy.contains(householdId));
+                })
+                .sorted(Comparator.comparing(StorePrices::lastPricedOn, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(StorePrices::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    /** The same chain is the same id on every request, so the phone can tell one from another. */
+    private static UUID chainId(String chain) {
+        return UUID.nameUUIDFromBytes(("store-chain:" + chain).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** The asker's own name for the chain, else the name most of its shops go by (the shorter on a tie). */
+    private static String chainName(String chain, Map<String, String> ownName, Map<String, Map<String, Integer>> namesUsed) {
+        String own = ownName.get(chain);
+        if (own != null) {
+            return own;
+        }
+        return namesUsed.getOrDefault(chain, Map.of()).entrySet().stream()
+                .max(Comparator.<Map.Entry<String, Integer>>comparingInt(Map.Entry::getValue)
+                        .thenComparing(e -> -e.getKey().length())
+                        .thenComparing(Map.Entry::getKey, Comparator.reverseOrder()))
+                .map(Map.Entry::getKey)
+                .orElse(chain);
     }
 
     private Receipt find(UUID householdId, UUID receiptId) {

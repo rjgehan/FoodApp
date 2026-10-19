@@ -113,7 +113,8 @@ struct ReceiptReviewView: View {
                         }
                     }
                 }
-                Text("Tap a line to say what it is or fix its price. Only food with a name keeps a price.")
+                // Said before Save, not after: what is saved here is seen by everybody on the server.
+                Text("Tap a line to say what it is or fix its price. Only food with a name keeps a price, and it goes on Explore's store map for everyone on this server — the shop and the price, never who paid it.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
                     .padding(.horizontal, 4)
 

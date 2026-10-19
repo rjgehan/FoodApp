@@ -154,4 +154,43 @@ public class ReceiptDtos {
 
     public record StoreResponse(UUID id, String name) {
     }
+
+    /**
+     * One chain of shops on the map of grocery stores, with what was last paid there by anybody on
+     * the server: the newest price for each thing, A to Z, from every household's receipts and
+     * typed prices — whose, never said; only how many `households` have priced something there,
+     * and whether one of them is the asker's (`yours`). `name` is the asker's own name for the
+     * chain when it has one, otherwise the name most of its receipts give.
+     *
+     * `listTotal` is what the asker's grocery list as it stands (the rows not yet ticked off) comes
+     * to there, for the `listPriced` of its `listCount` rows that the chain has a price for. `id`
+     * is the same for the same chain on every request.
+     */
+    public record StorePrices(
+            UUID id,
+            String name,
+            LocalDate lastPricedOn,
+            List<StoreItemPrice> prices,
+            BigDecimal listTotal,
+            int listPriced,
+            int listCount,
+            int households,
+            boolean yours) {
+    }
+
+    /**
+     * What one thing last cost at one chain: `price` for `quantity` `unit` of it (one, when null),
+     * and whether that newest price was the asker's own household's.
+     */
+    public record StoreItemPrice(
+            UUID ingredientId,
+            String ingredientName,
+            BigDecimal price,
+            BigDecimal quantity,
+            String unit,
+            LocalDate observedOn,
+            boolean onSale,
+            String source,
+            boolean yours) {
+    }
 }

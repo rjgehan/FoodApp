@@ -445,6 +445,22 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   const priced = await call('PUT', `${base}/grocery-list/items/${row.id}/price`, { token, body: { price: 3.49, storeName: 'Kings Food Markets' } });
   expect(priced.lastPrice).toMatchObject({ price: 3.49, quantity: null, unit: null, storeName: 'Kings Food Markets', observedOn: isoDate(0), source: 'MANUAL' });
 
+  // The store map: every household's shops, by chain — other tests' Kings receipts are in it too.
+  const chains = await call('GET', `${base}/stores/prices`, { token });
+  const kings = chains.find((c: any) => c.name === 'Kings Food Markets');
+  expect(Object.keys(kings).sort())
+    .toEqual(['households', 'id', 'lastPricedOn', 'listCount', 'listPriced', 'listTotal', 'name', 'prices', 'yours']);
+  expect(kings).toMatchObject({ yours: true, lastPricedOn: isoDate(0) });
+  expect(kings.households).toBeGreaterThanOrEqual(1);
+  expect(Object.keys(kings.prices[0]).sort())
+    .toEqual(['ingredientId', 'ingredientName', 'observedOn', 'onSale', 'price', 'quantity', 'source', 'unit', 'yours']);
+  expect(kings.prices.find((p: any) => p.ingredientId === row.ingredientId))
+    .toMatchObject({ price: 3.49, source: 'MANUAL', observedOn: isoDate(0), yours: true });
+  expect(kings.listPriced).toBeGreaterThanOrEqual(1);
+  expect(typeof kings.listTotal).toBe('number');
+  // Whose a price was is never said, beyond "yours".
+  expect(JSON.stringify(chains)).not.toMatch(/householdId|householdName|ownerName|addedBy/);
+
   // Swipe to delete.
   await call('DELETE', `${base}/receipts/${saved.id}`, { token });
   expect(await call('GET', `${base}/receipts`, { token })).toEqual([]);

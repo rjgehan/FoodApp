@@ -6,6 +6,7 @@ import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptResponse;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptSummary;
 import com.gehan.mealplanner.receipts.ReceiptDtos.SaveReceiptRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.StorePrices;
 import com.gehan.mealplanner.receipts.ReceiptDtos.StoreResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -75,5 +76,11 @@ public class ReceiptsController {
     @GetMapping("/stores")
     public List<StoreResponse> stores(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
         return receiptService.stores(householdId, userId);
+    }
+
+    /** The map of grocery stores: each shop, what was last paid there, and the list priced there. */
+    @GetMapping("/stores/prices")
+    public List<StorePrices> storePrices(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
+        return receiptService.storePrices(householdId, userId);
     }
 }
