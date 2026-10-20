@@ -163,6 +163,10 @@ struct GalleryView: View {
                                          sampleDetail: SampleData.receiptDetail, onScan: {})
                         }
                     }
+                    entry("Which store? — link a receipt", "mappin.and.ellipse") {
+                        StorePicker(session: session, suggest: "Kings Food Markets", current: SampleData.kingsHoboken,
+                                    onPick: { _ in }, onUnlink: {}, sample: StoreMapSamples.places)
+                    }
                     entry("Groceries — all bought", "cart.badge.checkmark") {
                         GroceriesView(session: session, sample: [], sampleCategories: SampleData.categories)
                     }
@@ -315,6 +319,9 @@ struct GalleryView: View {
                     }
                     entry("Prices at a shop", "list.bullet.rectangle") {
                         StorePricesSheet(shop: StoreMapSamples.shops[0], place: StoreMapSamples.places[0], distance: "0.3 mi")
+                    }
+                    entry("Hidden places", "eye.slash") {
+                        HiddenPlacesSheet(hidden: StoreMapSamples.hidden) { _ in }
                     }
                     entry("Global recipes", "globe") {
                         NavigationStack { GlobalRecipesScreen(session: session, sample: SampleData.published) }

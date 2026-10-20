@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /**
@@ -10,7 +11,12 @@ import SwiftUI
  misread), and a receipt already scanned (its barcode was saved before), with Open and Save
  anyway. The words it could not read wait folded at the bottom, never silently dropped, each with
  a + that makes it a line. A line it missed altogether is added by hand (Add a line), one it got
- wrong is removed from its sheet or by holding it, and the photo is a tap away to check against.
+ wrong is swiped away (or removed from its sheet, or by holding it), and the photo is a tap away
+ to check against.
+
+ The receipt is linked to the branch it came from (Which store?): the household's own branch of
+ that shop when it has linked one before, else the nearest of the chain when Location is on —
+ said as a guess, and changed with a tap — so its prices are pinned on the map at that shop.
 
  Save keeps the receipt and gives every food line with a name a price for that day. Cancel throws
  it all away.
@@ -30,6 +36,15 @@ struct ReceiptReviewView: View {
     @State private var storeName: String
     @State private var date: Date
     @State private var lines: [ReceiptLine]
+    /// Who each line is to the list, so a swiped-away line goes and the rest stay put.
+    @State private var lineKeys: [UUID]
+    /// The branch it is from, and why when the app chose it rather than the person.
+    @State private var place: ShopBranch?
+    @State private var placeNote: String?
+    /// Picked or unlinked by hand: no more guessing.
+    @State private var placeChosen = false
+    @State private var choosingStore = false
+    @State private var locator = StoreLocator()
     @State private var duplicateOf: UUID?
     /// "Oct 18" — when the receipt was scanned before, once it has been looked up.
     @State private var duplicateDay: String?
@@ -68,6 +83,7 @@ struct ReceiptReviewView: View {
         _storeName = State(initialValue: draft.storeName ?? "")
         _date = State(initialValue: draft.purchasedOn.flatMap { Day.date(String($0.prefix(10))) } ?? .now)
         _lines = State(initialValue: draft.lines)
+        _lineKeys = State(initialValue: draft.lines.map { _ in UUID() })
         _duplicateOf = State(initialValue: draft.duplicateOf)
         _unreadLeft = State(initialValue: draft.unreadLines ?? [])
     }
@@ -105,53 +121,66 @@ struct ReceiptReviewView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+        List {
+            Group {
                 if let duplicateOf {
-                    duplicateBanner(duplicateOf)
+                    duplicateBanner(duplicateOf).pageRow(top: 8, bottom: 14)
                 }
                 if mismatch, let expected {
                     NoteBox("Lines add up to \(Money.text(lineSum)) but the receipt says \(Money.text(expected)) — check the prices",
                             tone: .mustard, systemImage: "exclamationmark.triangle")
+                        .pageRow(top: duplicateOf == nil ? 8 : 0, bottom: 14)
                 }
 
-                details
+                details.pageRow(top: duplicateOf == nil && !mismatch ? 8 : 0, bottom: 14)
+
+                LinkedStoreRow(place: place, note: placeNote, distance: placeDistance) { choosingStore = true }
+                    .pageRow(bottom: 14)
 
                 if !photos.isEmpty {
-                    ReceiptPhotoStrip(pages: .scanned(photos), name: photoName)
+                    ReceiptPhotoStrip(pages: .scanned(photos), name: photoName).pageRow(bottom: 14)
                 }
 
                 SectionLabel("What you bought", trailing: "\(pricedCount) of \(foodCount) priced")
-                    .padding(.top, 4)
-                if lines.isEmpty {
-                    Text("No lines with prices were found on it.")
-                        .font(.system(size: 15)).foregroundStyle(Palette.muted)
-                } else {
-                    ListGroup {
-                        ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                            ReceiptLineRow(line: line,
-                                           onOpen: { picking = LinePick(index: index) },
-                                           onKind: { toggleKind(index) })
-                                .contextMenu {
-                                    Button(role: .destructive) { remove(index) } label: {
-                                        Label("Remove line", systemImage: "trash")
-                                    }
-                                }
+                    .pageRow(top: 4, bottom: 8)
+            }
+            if lines.isEmpty {
+                Text("No lines with prices were found on it.")
+                    .font(.system(size: 15)).foregroundStyle(Palette.muted)
+                    .pageRow(bottom: 14)
+            } else {
+                ForEach(Array(zip(lineKeys, lines).enumerated()), id: \.element.0) { index, pair in
+                    ReceiptLineRow(line: pair.1,
+                                   onOpen: { picking = LinePick(index: index) },
+                                   onKind: { toggleKind(index) })
+                        .contextMenu {
+                            Button(role: .destructive) { remove(index) } label: {
+                                Label("Remove line", systemImage: "trash")
+                            }
                         }
-                    }
+                        .cardRow(first: index == 0, last: index == lines.count - 1, inset: 16, padding: 0)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button("Remove", systemImage: "trash", role: .destructive) { remove(index) }
+                                // The theme's tomato, as Groceries draws Remove.
+                                .tint(Palette.accent)
+                        }
                 }
+                Color.clear.frame(height: 14).pageRow()
+            }
+            Group {
                 DashedAddButton(title: "Add a line it missed") {
                     picking = LinePick(new: ReceiptLine(text: "", price: 0))
                 }
+                .pageRow(bottom: 14)
                 // Said before Save, not after: what is saved here is seen by everybody on the server.
-                Text("Tap a line to say what it is or fix its price. Only food with a name keeps a price, and it goes on Explore's store map for everyone on this server — the shop and the price, never who paid it.")
+                Text("Tap a line to say what it is or fix its price, and swipe left to remove one. Only food with a name keeps a price, and it goes on Explore's store map for everyone on this server — the shop and the price, never who paid it.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                    .padding(.horizontal, 4)
+                    .pageRow(bottom: 14, horizontal: 24)
 
-                unread
+                unread.pageRow(bottom: 14)
 
                 if let error {
-                    NoteBox(error, tone: .accent, systemImage: "exclamationmark.triangle")
+                    NoteBox(error, tone: .accent, systemImage: "exclamationmark.triangle").pageRow(bottom: 14)
                 }
 
                 Button {
@@ -161,12 +190,12 @@ struct ReceiptReviewView: View {
                 }
                 .buttonStyle(.primary)
                 .disabled(!canSave)
-                .padding(.top, 4)
+                .pageRow(top: 4, bottom: 28)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 28)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .scrollDismissesKeyboard(.interactively)
         .pageBackground()
         .navigationTitle("Check the receipt")
@@ -186,6 +215,7 @@ struct ReceiptReviewView: View {
                 ReceiptLineSheet(line: new, choices: allChoices, isNew: true) { added in
                     withAnimation(.snappy(duration: 0.2)) {
                         lines.append(added)
+                        lineKeys.append(UUID())
                         if let words = pick.fromUnread, let at = unreadLeft.firstIndex(of: words) {
                             unreadLeft.remove(at: at)
                         }
@@ -193,10 +223,19 @@ struct ReceiptReviewView: View {
                 }
             }
         }
+        .sheet(isPresented: $choosingStore) {
+            StorePicker(session: session, suggest: shopName.isEmpty ? nil : shopName, current: place,
+                        onPick: { picked in link(picked) },
+                        onUnlink: place == nil ? nil : { link(nil) },
+                        sample: sample ? StoreMapSamples.places : nil)
+        }
         .navigationDestination(item: $opened) { id in
             ReceiptDetailView(session: session, id: id, sample: sample ? SampleData.receiptDetail : nil, backLabel: "Check")
         }
         .task { await loadExtras() }
+        // The shop's name settles (read, typed, picked), the household's shops arrive, the phone
+        // finds itself: each time, the best guess at the branch, until somebody picks one.
+        .task(id: guessKey) { await guessPlace() }
     }
 
     private var saveTitle: String {
@@ -319,7 +358,67 @@ struct ReceiptReviewView: View {
 
     private func remove(_ index: Int) {
         guard lines.indices.contains(index) else { return }
-        withAnimation(.snappy(duration: 0.2)) { _ = lines.remove(at: index) }
+        withAnimation(.snappy(duration: 0.2)) {
+            lines.remove(at: index)
+            lineKeys.remove(at: index)
+        }
+    }
+
+    // MARK: - The store
+
+    private var placeDistance: String? {
+        guard let here = locator.location, let lat = place?.latitude, let lon = place?.longitude else { return nil }
+        return StoreWords.distance(here.distance(from: CLLocation(latitude: lat, longitude: lon)))
+    }
+
+    private var guessKey: String {
+        "\(StoreMatch.key(shopName))|\(shops.count)|\(locator.location != nil)"
+    }
+
+    /**
+     Picked (or unlinked) in Which store?. A branch of another chain renames the shop: as the
+     household already calls that chain ("ShopRite of Hoboken"), else as the branch calls itself.
+     */
+    private func link(_ picked: ShopBranch?) {
+        placeChosen = true
+        placeNote = nil
+        place = picked
+        if let name = picked?.name, !StoreMatch.same(shopName, name) {
+            storeName = shops.first { StoreMatch.same($0.name, name) }?.name ?? name
+        }
+    }
+
+    /**
+     The household's own branch of the shop when it has linked one before — it is where they shop —
+     else the nearest of the chain within a few kilometres, when the phone knows where it is (and
+     only if Location is already allowed: a receipt is no time to be asked).
+     */
+    private func guessPlace() async {
+        guard !placeChosen else { return }
+        let name = shopName
+        // Typing: wait for the name to settle.
+        try? await Task.sleep(for: .milliseconds(400))
+        if Task.isCancelled || placeChosen { return }
+        guard !name.isEmpty else {
+            place = nil
+            placeNote = nil
+            return
+        }
+        if let own = shops.first(where: { StoreMatch.same($0.name, name) && $0.place?.located == true })?.place {
+            place = own
+            placeNote = "Where you shopped last time"
+            return
+        }
+        if let place, let placed = place.name, StoreMatch.same(placed, name), placeNote != nil { return }
+        place = nil
+        placeNote = nil
+        if sample { return }
+        locator.start(asking: false)
+        guard let here = locator.location,
+              let nearest = await StorePicker.nearest(named: name, near: here),
+              !Task.isCancelled, !placeChosen else { return }
+        place = nearest
+        placeNote = "Nearest one to you"
     }
 
     private func toggleKind(_ index: Int) {
@@ -345,6 +444,7 @@ struct ReceiptReviewView: View {
         if withBarcode, let barcode = scan.barcode, !barcode.isEmpty { out["barcode"] = barcode }
         if !scan.rawText.isEmpty { out["rawText"] = scan.rawText }
         if let photoIds, !photoIds.isEmpty { out["photoIds"] = photoIds.map(\.uuidString) }
+        if let place, !place.body.isEmpty { out["place"] = place.body }
         return out
     }
 
@@ -353,7 +453,7 @@ struct ReceiptReviewView: View {
         error = nil
         if sample {
             onSaved(ReceiptResponse(id: UUID(), storeName: shopName.isEmpty ? nil : shopName, purchasedOn: Day.iso(date), total: draft.total,
-                                    itemCount: lines.count, pricedCount: pricedCount, lines: lines, createdAt: nil))
+                                    itemCount: lines.count, pricedCount: pricedCount, lines: lines, createdAt: nil, place: place))
             return
         }
         guard let household = session.household?.id else { return }

@@ -425,6 +425,17 @@ at each chain, and how many households have priced there. Never whose: no househ
 named or sent. Nothing to set up and no new tables; anyone on the server sees it as soon as the
 backend has it. The iPhone's receipt check screen says so before Save.
 
+### Linked branches and hidden places
+
+A later release links a receipt to the branch it was bought at: four nullable `place_*` columns
+(name, address, latitude, longitude) on `receipts` and on `stores` (the branch a shop was last
+linked to), and `PUT …/receipts/{id}/place` to link a saved one. Linked branches go out with each
+chain on the store map (`places`), so they are pinned for everybody, without whose. It also adds
+`hidden_places`: places a household took off its own map (Not a store), never shared, deleted with
+the household. All made by Hibernate on start; older iPhone builds neither send nor read any of it.
+Rolling back leaves the columns unread; the old backend cannot delete a household that hid a place
+until `hidden_places`' foreign key is dropped (add it to the list in the `DO $$ … $$` above).
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

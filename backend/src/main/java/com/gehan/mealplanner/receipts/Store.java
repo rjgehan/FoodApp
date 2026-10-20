@@ -39,6 +39,10 @@ public class Store {
     @Column(nullable = false, length = 80)
     private String name;
 
+    /** The branch a receipt was last linked to, for the map. */
+    @Embedded
+    private StorePlace place;
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

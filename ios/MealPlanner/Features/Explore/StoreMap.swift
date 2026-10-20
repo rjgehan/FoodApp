@@ -17,7 +17,11 @@ import SwiftUI
 
  The map searches where it opens — on you, when Location is allowed — and again when you ask after
  moving it ("Search this area"), not on every drag. The household's own shops are searched for by
- name as well, so a Kings that Apple files under something other than a grocer still shows.
+ name as well, so a Kings that Apple files under something other than a grocer still shows, and
+ every branch a receipt was linked to (by anyone) is pinned where it stands.
+
+ What Apple calls a food market and is not one — the soup kitchen down the street — the household
+ hides from its map (Not a store), on every phone in the house, and can show again.
  */
 struct StoreMapScreen: View {
     var session: Session
@@ -35,20 +39,28 @@ struct StoreMapScreen: View {
     @State private var searching = false
     @State private var error: String?
     @State private var sheet: StoreSheet?
+    /// The places the household took off its map, and the one just hidden, for Undo.
+    @State private var hidden: [HiddenPlace] = []
+    @State private var justHidden: HiddenPlace?
 
     private enum StoreSheet: Identifiable {
         case shops
         case prices(StorePrices, StorePlace?)
+        case hidden
 
         var id: String {
             switch self {
             case .shops: return "shops"
             case .prices(let shop, let place): return "prices-\(shop.id)-\(place?.id ?? "")"
+            case .hidden: return "hidden"
             }
         }
     }
 
-    private var selected: StorePlace? { places.first { $0.id == selection } }
+    /// The places found, less the ones the household hid.
+    private var shown: [StorePlace] { places.filter { !hidden.hide($0) } }
+
+    private var selected: StorePlace? { shown.first { $0.id == selection } }
 
     /// Far enough from where the places were found that they may no longer be the ones around.
     private var moved: Bool {
@@ -63,7 +75,7 @@ struct StoreMapScreen: View {
     var body: some View {
         Map(position: $position, selection: $selection) {
             UserAnnotation()
-            ForEach(places) { place in
+            ForEach(shown) { place in
                 if let shop = StoreMatch.shop(named: place.name, in: shops), !shop.prices.isEmpty {
                     Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
                         PricePin(text: pinText(shop), isOn: selection == place.id)
@@ -120,6 +132,8 @@ struct StoreMapScreen: View {
                 }
             case .prices(let shop, let place):
                 StorePricesSheet(shop: shop, place: place, distance: place.flatMap(distance(to:)))
+            case .hidden:
+                HiddenPlacesSheet(hidden: hidden) { place in Task { await show(place) } }
             }
         }
         .task { await start() }
@@ -168,7 +182,8 @@ struct StoreMapScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 10) {
-                if let shop, !shop.prices.isEmpty {
+                let priced = shop?.prices.isEmpty == false
+                if let shop, priced {
                     Button { sheet = .prices(shop, place) } label: { Label("Prices here", systemImage: "list.bullet") }
                         .buttonStyle(.kitchen(.primary, size: .small))
                 }
@@ -177,6 +192,24 @@ struct StoreMapScreen: View {
                         item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault])
                     } label: { Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond") }
                         .buttonStyle(.kitchen(.secondary, size: .small))
+                }
+                // A shop with prices is seldom the mistake; its way off the map is tucked away.
+                if priced {
+                    Spacer(minLength: 0)
+                    Menu {
+                        Button("Not a store — hide it", systemImage: "eye.slash", role: .destructive) {
+                            Task { await hide(place) }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 36, height: 36)
+                            .background(Palette.surface2, in: Circle())
+                    }
+                    .accessibilityLabel("More for \(place.name)")
+                } else {
+                    Button { Task { await hide(place) } } label: { Label("Not a store", systemImage: "eye.slash") }
+                        .buttonStyle(.kitchen(.secondary, size: .small))
+                        .accessibilityHint("Hides it from the map for everyone in your household")
                 }
             }
         }
@@ -193,6 +226,21 @@ struct StoreMapScreen: View {
             }
             if let error {
                 NoteBox(error, tone: .mustard, systemImage: "exclamationmark.triangle")
+            }
+            if let justHidden {
+                HStack(spacing: 10) {
+                    Image(systemName: "eye.slash").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.muted)
+                    Text("Hid \(justHidden.name) for your household")
+                        .font(.system(size: 14)).foregroundStyle(Palette.text).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Undo") { Task { await show(justHidden) } }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.accentInk)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .cardSurface()
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             Button { if !priced.isEmpty { sheet = .shops } } label: {
                 HStack(spacing: 12) {
@@ -219,8 +267,19 @@ struct StoreMapScreen: View {
             }
             .buttonStyle(PressFade())
             .disabled(priced.isEmpty)
+            if !hidden.isEmpty && justHidden == nil {
+                Button { sheet = .hidden } label: {
+                    Text(hidden.count == 1 ? "1 place hidden · Show it" : "\(hidden.count) places hidden · Show them")
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(.regularMaterial, in: Capsule())
+                }
+                .buttonStyle(PressFade())
+            }
         }
         .shadow(color: Palette.shadow, radius: 12, y: 4)
+        .animation(.snappy(duration: 0.2), value: justHidden)
     }
 
     /// What a pin says: the list at this shop, or how many prices there are when the list has none.
@@ -246,7 +305,58 @@ struct StoreMapScreen: View {
             return
         }
         locator.start()
+        async let hiddenNow: Void = loadHidden()
         await loadShops()
+        await hiddenNow
+    }
+
+    private func loadHidden() async {
+        guard let household = session.household?.id,
+              let found = try? await APIClient.shared.hiddenPlaces(household: household) else { return }
+        hidden = found
+    }
+
+    /**
+     Off the map at once, for the household; Undo for a few seconds. A server that will not keep it
+     puts it back, with why.
+     */
+    private func hide(_ place: StorePlace) async {
+        selection = nil
+        let pending = HiddenPlace(id: UUID(), name: place.name, address: place.address,
+                                  latitude: place.latitude, longitude: place.longitude)
+        hidden.insert(pending, at: 0)
+        justHidden = pending
+        guard sample == nil, let household = session.household?.id else { return clearUndo(pending) }
+        do {
+            let kept = try await APIClient.shared.hidePlace(household: household, place)
+            hidden = hidden.map { $0.id == pending.id ? kept : $0 }
+            if justHidden?.id == pending.id { justHidden = kept }
+            clearUndo(kept)
+        } catch {
+            hidden.removeAll { $0.id == pending.id }
+            if justHidden?.id == pending.id { justHidden = nil }
+            self.error = "Couldn't hide \(place.name). \(error.localizedDescription)"
+        }
+    }
+
+    private func clearUndo(_ place: HiddenPlace) {
+        Task {
+            try? await Task.sleep(for: .seconds(6))
+            if justHidden?.id == place.id { justHidden = nil }
+        }
+    }
+
+    /// Back on the map; hidden again if the server says no.
+    private func show(_ place: HiddenPlace) async {
+        hidden.removeAll { $0.id == place.id }
+        if justHidden?.id == place.id { justHidden = nil }
+        guard sample == nil, let household = session.household?.id else { return }
+        do {
+            try await APIClient.shared.showPlace(household: household, id: place.id)
+        } catch {
+            hidden.insert(place, at: 0)
+            self.error = "Couldn't show \(place.name) again. \(error.localizedDescription)"
+        }
     }
 
     private func loadShops() async {
@@ -284,9 +394,23 @@ struct StoreMapScreen: View {
             byName.naturalLanguageQuery = shop.name
             byName.region = area
             byName.resultTypes = .pointOfInterest
+            // Only the ones in view: "ShopRite" is a hundred ShopRites, and the nearest is not
+            // always among the first Apple sends back from all over.
+            if #available(iOS 18.0, *) { byName.regionPriority = .required }
             if let items = try? await MKLocalSearch(request: byName).start().mapItems {
                 found += items.map(StorePlace.init)
                     .filter { StoreMatch.same($0.name, shop.name) && area.contains($0.coordinate) }
+            }
+        }
+
+        // Branches receipts were linked to: where somebody really bought, even where Apple files the
+        // shop as something else or its search missed it. One Apple found there already is the same.
+        for shop in shops where !shop.prices.isEmpty {
+            for branch in shop.places {
+                guard let place = branch.storePlace(chain: shop.name), area.contains(place.coordinate),
+                      !found.contains(where: { StoreMatch.same($0.name, place.name) && $0.metres(to: place) < 80 })
+                else { continue }
+                found.append(place)
             }
         }
 
@@ -444,6 +568,50 @@ struct StorePricesSheet: View {
     }
 }
 
+/// The places the household hid from its map, each with Show to put it back.
+struct HiddenPlacesSheet: View {
+    let hidden: [HiddenPlace]
+    var onShow: (HiddenPlace) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var shownAgain: Set<UUID> = []
+
+    var body: some View {
+        let left = hidden.filter { !shownAgain.contains($0.id) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                SheetHeader("Hidden places", subtitle: "Off the map for everyone in your household", onClose: { dismiss() })
+                if left.isEmpty {
+                    Text("Nothing hidden now.").font(.system(size: 14)).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity).padding(.vertical, 20)
+                } else {
+                    ListGroup(dividerInset: 68) {
+                        ForEach(left) { place in
+                            ListRow(place.name, subtitle: place.address, wrapSubtitle: true,
+                                    leading: { Tile("eye.slash", tone: .neutral) }) {
+                                Button("Show") {
+                                    shownAgain.insert(place.id)
+                                    onShow(place)
+                                }
+                                .buttonStyle(.kitchen(.secondary, size: .small))
+                                .accessibilityLabel("Show \(place.name) on the map again")
+                            }
+                        }
+                    }
+                }
+                Text("Hide a place from its card on the map (Not a store) when Apple has it down as a grocery store and it isn't one.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.faint)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
+        }
+        .pageBackground()
+        .kitchenSheet([.medium, .large])
+    }
+}
+
 /// Explore's door to the map: its tile and line, then the chains priced most lately, by anyone.
 struct GroceryStoresDoor: View {
     /// Nil until the server has answered (or never, for one from before the store map).
@@ -525,6 +693,12 @@ struct StorePlace: Identifiable, Hashable {
                   address: address, mapItem: item)
     }
 
+    /// As the crow flies.
+    func metres(to other: StorePlace) -> Double {
+        CLLocation(latitude: latitude, longitude: longitude)
+            .distance(from: CLLocation(latitude: other.latitude, longitude: other.longitude))
+    }
+
     static func == (a: StorePlace, b: StorePlace) -> Bool { a.id == b.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -558,9 +732,10 @@ final class StoreLocator: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    func start() {
+    /// `asking` false: only where Location is already allowed, with no question if it is not.
+    func start(asking: Bool = true) {
         switch manager.authorizationStatus {
-        case .notDetermined: manager.requestWhenInUseAuthorization()
+        case .notDetermined: if asking { manager.requestWhenInUseAuthorization() }
         case .authorizedWhenInUse, .authorizedAlways: manager.requestLocation()
         default: break
         }
@@ -606,6 +781,12 @@ private extension String {
 #Preview("Prices at Kings") {
     Color.clear.sheet(isPresented: .constant(true)) {
         StorePricesSheet(shop: StoreMapSamples.shops[0], place: StoreMapSamples.places[0], distance: "0.3 mi")
+    }
+}
+
+#Preview("Hidden places") {
+    Color.clear.sheet(isPresented: .constant(true)) {
+        HiddenPlacesSheet(hidden: StoreMapSamples.hidden) { _ in }
     }
 }
 

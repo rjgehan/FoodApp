@@ -438,7 +438,15 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
     expect(list[0]).toHaveProperty(key);
   }
   expect((await call('GET', `${base}/receipts/${saved.id}`, { token })).lines).toHaveLength(3);
-  expect(await call('GET', `${base}/stores`, { token })).toEqual([{ id: expect.any(String), name: 'Kings Food Markets' }]);
+  expect(await call('GET', `${base}/stores`, { token })).toEqual([{ id: expect.any(String), name: 'Kings Food Markets', place: null }]);
+
+  // StorePicker's link: {place: {name, address, latitude, longitude}, storeName?}; the receipt and
+  // the shop keep the branch.
+  const branch = { name: 'Kings Food Markets', address: '1212 Shipyard Ln, Hoboken, NJ', latitude: 40.7448, longitude: -74.0284 };
+  const linked = await call('PUT', `${base}/receipts/${saved.id}/place`, { token, body: { place: branch } });
+  expect(linked.place).toEqual(branch);
+  expect((await call('GET', `${base}/stores`, { token }))[0].place).toEqual(branch);
+  expect((await call('GET', `${base}/receipts/${saved.id}`, { token })).place).toEqual(branch);
 
   // The grocery row and its LastPrice.
   const row = find(await call('GET', `${base}/grocery-list`, { token }), 'baby spinach');
@@ -459,8 +467,21 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   const chains = await call('GET', `${base}/stores/prices`, { token });
   const kings = chains.find((c: any) => c.name === 'Kings Food Markets');
   expect(Object.keys(kings).sort())
-    .toEqual(['households', 'id', 'lastPricedOn', 'listCount', 'listPriced', 'listTotal', 'name', 'prices', 'yours']);
+    .toEqual(['households', 'id', 'lastPricedOn', 'listCount', 'listPriced', 'listTotal', 'name', 'places', 'prices', 'yours']);
+  expect(kings.places).toContainEqual({ name: 'Kings Food Markets', address: '1212 Shipyard Ln, Hoboken, NJ', latitude: 40.7448, longitude: -74.0284 });
   expect(kings).toMatchObject({ yours: true, lastPricedOn: isoDate(0) });
+
+  // Hidden places (Not a store): HiddenPlace's fields, the same one back for a repeat, 204 to show again.
+  const soupKitchen = { name: 'Soup Kitchen', address: '520 Clinton St', latitude: 40.7431, longitude: -74.0312 };
+  const hiddenPlace = await call('POST', `${base}/stores/hidden`, { token, body: soupKitchen });
+  expect(Object.keys(hiddenPlace).sort()).toEqual(['address', 'hiddenAt', 'id', 'latitude', 'longitude', 'name']);
+  expect(hiddenPlace).toMatchObject(soupKitchen);
+  expect((await call('POST', `${base}/stores/hidden`, { token, body: { ...soupKitchen, address: undefined } })).id).toBe(hiddenPlace.id);
+  expect(await call('GET', `${base}/stores/hidden`, { token })).toEqual([hiddenPlace]);
+  const shown = await fetch(`${API_URL}${base}/stores/hidden/${hiddenPlace.id}`, {
+    method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+  expect(shown.status).toBe(204);
+  expect(await call('GET', `${base}/stores/hidden`, { token })).toEqual([]);
   expect(kings.households).toBeGreaterThanOrEqual(1);
   expect(Object.keys(kings.prices[0]).sort())
     .toEqual(['brand', 'ingredientId', 'ingredientName', 'observedOn', 'onSale', 'price', 'quantity', 'source', 'unit', 'yours']);

@@ -191,12 +191,40 @@ struct ReceiptResponse: Codable, Identifiable, Hashable {
     var tax: Double? = nil
     /// The scanned pages, kept with it (none on a receipt from before they were).
     var photoIds: [UUID]? = nil
+    /// The branch it was bought at, when somebody linked it to one.
+    var place: ShopBranch? = nil
+}
+
+/**
+ Which branch of a shop: its name and address as Apple Maps gives them, and where it stands — a
+ receipt's (where it was bought) and a shop's (the branch it was last linked to). Same fields as
+ the server's `PlaceDto`.
+ */
+struct ShopBranch: Codable, Hashable {
+    var name: String?
+    var address: String?
+    var latitude: Double?
+    var longitude: Double?
+
+    var located: Bool { latitude != nil && longitude != nil }
+
+    /// As the server wants it: nil fields left out.
+    var body: [String: Any] {
+        var out: [String: Any] = [:]
+        if let name, !name.isEmpty { out["name"] = String(name.prefix(120)) }
+        if let address, !address.isEmpty { out["address"] = String(address.prefix(200)) }
+        if let latitude { out["latitude"] = latitude }
+        if let longitude { out["longitude"] = longitude }
+        return out
+    }
 }
 
 /// One of the household's own shops, named as its receipts head them.
 struct Shop: Codable, Identifiable, Hashable {
     let id: UUID
     let name: String
+    /// The branch it was last linked to.
+    var place: ShopBranch? = nil
 }
 
 /**
@@ -243,6 +271,17 @@ extension APIClient {
     /// The household's shops, for the review screen's shop name.
     func shops(household: UUID) async throws -> [Shop] {
         try await get("/api/households/\(household.uuidString)/stores")
+    }
+
+    /**
+     Links a saved receipt to the branch it was bought at, or with nil unlinks it. `storeName`
+     re-files it under that shop, and the prices it taught move with it.
+     */
+    func linkPlace(household: UUID, receipt: UUID, place: ShopBranch?, storeName: String? = nil) async throws -> ReceiptResponse {
+        var body: [String: Any] = [:]
+        if let place { body["place"] = place.body }
+        if let storeName, !storeName.isEmpty { body["storeName"] = String(storeName.prefix(80)) }
+        return try await send("PUT", "/api/households/\(household.uuidString)/receipts/\(receipt.uuidString)/place", body: body)
     }
 
     /// What one thing last cost at each shop the household has bought it from, newest first. A price

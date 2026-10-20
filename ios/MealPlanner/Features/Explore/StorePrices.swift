@@ -24,9 +24,12 @@ struct StorePrices: Codable, Identifiable, Hashable {
     var listCount: Int = 0
     var households: Int = 0
     var yours: Bool = false
+    /// Branches receipts were linked to: pinned even where Apple's search does not find them.
+    var places: [ShopBranch] = []
 
     init(id: UUID, name: String, lastPricedOn: String? = nil, prices: [StoreItemPrice] = [],
-         listTotal: Double = 0, listPriced: Int = 0, listCount: Int = 0, households: Int = 1, yours: Bool = true) {
+         listTotal: Double = 0, listPriced: Int = 0, listCount: Int = 0, households: Int = 1, yours: Bool = true,
+         places: [ShopBranch] = []) {
         self.id = id
         self.name = name
         self.lastPricedOn = lastPricedOn
@@ -36,6 +39,7 @@ struct StorePrices: Codable, Identifiable, Hashable {
         self.listCount = listCount
         self.households = households
         self.yours = yours
+        self.places = places
     }
 
     /// Forgiving, as the receipts are: a shop missing its counts still shows, with what it has.
@@ -50,6 +54,7 @@ struct StorePrices: Codable, Identifiable, Hashable {
         listCount = try c.decodeIfPresent(Int.self, forKey: .listCount) ?? 0
         households = try c.decodeIfPresent(Int.self, forKey: .households) ?? 0
         yours = try c.decodeIfPresent(Bool.self, forKey: .yours) ?? false
+        places = try c.decodeIfPresent([ShopBranch].self, forKey: .places) ?? []
     }
 }
 
@@ -110,6 +115,52 @@ extension APIClient {
     func storePrices(household: UUID) async throws -> [StorePrices] {
         try await get("/api/households/\(household.uuidString)/stores/prices")
     }
+
+    /// The places the household took off its map, lately hidden first.
+    func hiddenPlaces(household: UUID) async throws -> [HiddenPlace] {
+        try await get("/api/households/\(household.uuidString)/stores/hidden")
+    }
+
+    /// "Not a grocery store": off the map on every phone in the household.
+    func hidePlace(household: UUID, _ place: StorePlace) async throws -> HiddenPlace {
+        var body: [String: Any] = [
+            "name": String(place.name.prefix(120)),
+            "latitude": place.latitude,
+            "longitude": place.longitude,
+        ]
+        if let address = place.address, !address.isEmpty { body["address"] = String(address.prefix(200)) }
+        return try await send("POST", "/api/households/\(household.uuidString)/stores/hidden", body: body)
+    }
+
+    /// Back on the map.
+    func showPlace(household: UUID, id: UUID) async throws {
+        _ = try await sendNoContent("DELETE", "/api/households/\(household.uuidString)/stores/hidden/\(id.uuidString)")
+    }
+}
+
+/**
+ A place the household said is not a grocery store — the soup kitchen Apple files as a food
+ market — kept off the map and the stores a receipt can be linked to, until it is shown again.
+ Known again by its name and where it stands, as each search finds Apple's places afresh.
+ */
+struct HiddenPlace: Codable, Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    var address: String?
+    let latitude: Double
+    let longitude: Double
+    var hiddenAt: String?
+
+    func hides(_ place: StorePlace) -> Bool {
+        guard place.name.caseInsensitiveCompare(name) == .orderedSame else { return false }
+        let here = StorePlace(name: name, latitude: latitude, longitude: longitude)
+        return here.metres(to: place) < 40
+    }
+}
+
+extension Array where Element == HiddenPlace {
+    /// Whether any of these is that place.
+    func hide(_ place: StorePlace) -> Bool { contains { $0.hides(place) } }
 }
 
 /**
@@ -146,11 +197,19 @@ enum StoreMatch {
         return ka == kb || ka.hasPrefix(kb + " ") || kb.hasPrefix(ka + " ")
     }
 
-    /// Apple files a wine shop and a tobacconist as food markets too; nobody does a big shop there.
+    /**
+     Apple files a wine shop, a tobacconist and a soup kitchen as food markets too; nobody does a
+     big shop there. What this misses, the household hides from the map by hand (`HiddenPlace`).
+     */
     static func notGrocer(_ name: String) -> Bool {
-        let words = Set(name.lowercased().split { !$0.isLetter }.map(String.init))
-        return !words.isDisjoint(with: ["liquor", "liquors", "wine", "wines", "spirits", "beer", "beers",
-                                        "cigar", "cigars", "smoke", "smokes", "vape", "tobacco"])
+        let lowered = name.lowercased()
+        let words = Set(lowered.split { !$0.isLetter }.map(String.init))
+        if !words.isDisjoint(with: ["liquor", "liquors", "wine", "wines", "spirits", "beer", "beers",
+                                    "cigar", "cigars", "smoke", "smokes", "vape", "tobacco",
+                                    "shelter", "ministry", "ministries", "church"]) {
+            return true
+        }
+        return ["soup kitchen", "food bank", "community fridge", "food pantry"].contains { lowered.contains($0) }
     }
 
     /// The household's shop a place is, if it is one — the one priced most lately when two match.

@@ -79,6 +79,10 @@ public class Receipt {
      * The scanned pages, as stored images of the household's, in order: to look back at, and to
      * check the reader against what was really printed. Deleted with the receipt.
      */
+    /** The branch it was bought at, when somebody linked it to one. */
+    @Embedded
+    private StorePlace place;
+
     @ElementCollection
     @CollectionTable(name = "receipt_photos", joinColumns = @JoinColumn(name = "receipt_id"))
     @Column(name = "image_id", nullable = false)

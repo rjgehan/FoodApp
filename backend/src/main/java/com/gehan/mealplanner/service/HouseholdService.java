@@ -487,6 +487,7 @@ public class HouseholdService {
                 + "SELECT id FROM receipts WHERE household_id = ?)", householdId);
         jdbc.update("DELETE FROM receipts WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM stores WHERE household_id = ?", householdId);
+        jdbc.update("DELETE FROM hidden_places WHERE household_id = ?", householdId);
 
         // Places and saved links hold a picture, so they go before the pictures do. Saved links
         // are only ever planned by their own household, whose plan went above.

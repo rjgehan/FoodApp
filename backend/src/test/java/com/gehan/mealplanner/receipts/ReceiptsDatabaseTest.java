@@ -10,6 +10,10 @@ import com.gehan.mealplanner.dto.GroceryListDtos.SetPriceRequest;
 import com.gehan.mealplanner.dto.HouseholdDtos.CreateHouseholdRequest;
 import com.gehan.mealplanner.realtime.GroceryListEventPublisher;
 import com.gehan.mealplanner.receipts.ReceiptDtos.DraftLine;
+import com.gehan.mealplanner.receipts.ReceiptDtos.HiddenPlaceResponse;
+import com.gehan.mealplanner.receipts.ReceiptDtos.HidePlaceRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.LinkPlaceRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.PlaceDto;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReadReceiptRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptLineResponse;
@@ -72,6 +76,7 @@ class ReceiptsDatabaseTest {
     private static final LocalDate MID_OCTOBER = LocalDate.of(2026, 10, 10);
 
     @Autowired ReceiptService receiptService;
+    @Autowired HiddenPlaceService hiddenPlaceService;
     @Autowired ImageService imageService;
     @Autowired GroceryListService groceryListService;
     @Autowired HouseholdService householdService;
@@ -270,8 +275,10 @@ class ReceiptsDatabaseTest {
     void readingRemembersWhatWasSaidAboutTheSameLineLastTime() {
         GroceryListItemResponse tea = add("english breakfast tea-" + tag);
         GroceryListItemResponse bananas = add("bananas-" + tag);
-        String teaLine = "TWNGS" + tag.toUpperCase() + " ENG BRKFST 20CT";
-        String bananaLine = "BANANAS" + tag.toUpperCase();
+        // Letters only: a digit in the tag would split the word, and what it matches with it.
+        String letters = tag.replaceAll("[0-9]", "x").toUpperCase();
+        String teaLine = "TWNGS" + letters + " ENG BRKFST 20CT";
+        String bananaLine = "BANANAS" + letters;
         save(receipt("Kings Food Markets", EARLY_OCTOBER, null,
                 line(teaLine, "4.99", r -> {
                     r.ingredientId = tea.ingredientId();
@@ -337,7 +344,7 @@ class ReceiptsDatabaseTest {
         UUID second = imageService.store(home, "image/jpeg", new byte[]{4, 5, 6}).getId();
         SaveReceiptRequest scanned = receipt("Kings Food Markets", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }));
         SaveReceiptRequest withPictures = new SaveReceiptRequest(scanned.storeName(), scanned.purchasedOn(), scanned.subtotal(),
-                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(second, first));
+                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(second, first), null);
 
         ReceiptResponse saved = save(withPictures);
         assertThat(saved.photoIds()).containsExactly(second, first);
@@ -348,13 +355,99 @@ class ReceiptsDatabaseTest {
         UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Pics")).id();
         UUID theirPicture = imageService.store(theirs, "image/jpeg", new byte[]{7}).getId();
         assertThatThrownBy(() -> save(new SaveReceiptRequest(scanned.storeName(), scanned.purchasedOn(), scanned.subtotal(),
-                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(theirPicture))))
+                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(theirPicture), null)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
 
         receiptService.delete(home, saved.id(), me.getId());
         assertThat(count("stored_images WHERE id IN (?, ?)", first, second)).isZero();
         assertThat(count("stored_images WHERE id = ?", theirPicture)).isOne();
+    }
+
+    @Test
+    void aReceiptLinkedToABranchKeepsItAndTheShopRemembersIt() {
+        GroceryListItemResponse milk = add("milk-" + tag);
+        String shop = "Branchy" + tag;
+        PlaceDto hoboken = new PlaceDto(shop + " of Hoboken", "1212 Shipyard Ln, Hoboken, NJ", 40.7448, -74.0284);
+        SaveReceiptRequest scanned = receipt(shop, MID_OCTOBER, null, line("MILK", "4.29", r -> r.ingredientId = milk.ingredientId()));
+
+        ReceiptResponse saved = save(withPlace(scanned, hoboken));
+
+        assertThat(saved.place()).isEqualTo(hoboken);
+        assertThat(receiptService.stores(home, me.getId())).filteredOn(s -> s.name().equals(shop))
+                .extracting(StoreResponse::place).containsExactly(hoboken);
+        // The chain on the store map has the branch to pin.
+        assertThat(receiptService.storePrices(home, me.getId())).filteredOn(c -> c.name().equals(shop))
+                .flatExtracting(StorePrices::places).containsExactly(hoboken);
+
+        // Linked with no shop's name: the branch's name is the shop's.
+        ReceiptResponse unnamed = save(withPlace(receipt(" ", MID_OCTOBER, null, line("BREAD", "4.00", r -> { })), hoboken));
+        assertThat(unnamed.storeName()).isEqualTo(shop + " of Hoboken");
+    }
+
+    @Test
+    void aSavedReceiptIsLinkedLaterAndItsPricesMoveWithIt() {
+        GroceryListItemResponse eggs = add("eggs-" + tag);
+        String misread = "Welcune" + tag;
+        String shop = "Linked" + tag;
+        ReceiptResponse saved = save(receipt(misread, MID_OCTOBER, null,
+                line("EGGS", "5.99", r -> r.ingredientId = eggs.ingredientId())));
+        assertThat(lastPrice(eggs).storeName()).isEqualTo(misread);
+        PlaceDto branch = new PlaceDto(shop, "900 Madison St, Hoboken, NJ", 40.7396, -74.0337);
+
+        ReceiptResponse linked = receiptService.linkPlace(home, saved.id(), me.getId(), new LinkPlaceRequest(branch, shop));
+
+        assertThat(linked.place()).isEqualTo(branch);
+        assertThat(linked.storeName()).isEqualTo(shop);
+        // The price it taught is the linked shop's now, on the list and at each shop.
+        assertThat(lastPrice(eggs).storeName()).isEqualTo(shop);
+        assertThat(receiptService.pricesByStore(home, eggs.ingredientId(), me.getId()))
+                .extracting(LastPrice::storeName).containsExactly(shop);
+
+        // Unlinked: no branch, the shop stays.
+        ReceiptResponse unlinked = receiptService.linkPlace(home, saved.id(), me.getId(), new LinkPlaceRequest(null, null));
+        assertThat(unlinked.place()).isNull();
+        assertThat(unlinked.storeName()).isEqualTo(shop);
+
+        User stranger = userRepository.save(User.builder().username("linker-" + tag).displayName("L").build());
+        assertThatThrownBy(() -> receiptService.linkPlace(home, saved.id(), stranger.getId(), new LinkPlaceRequest(branch, null)))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void aPlaceThatIsNotAGroceryStoreIsHiddenForTheWholeHouseUntilShownAgain() {
+        HidePlaceRequest soupKitchen = new HidePlaceRequest("  St. Mary's Soup Kitchen " + tag, "520 Clinton St", 40.7431, -74.0312);
+
+        HiddenPlaceResponse hidden = hiddenPlaceService.hide(home, me.getId(), soupKitchen);
+
+        assertThat(hidden.name()).isEqualTo("St. Mary's Soup Kitchen " + tag);
+        assertThat(hidden.address()).isEqualTo("520 Clinton St");
+        // Hidden again from another phone, a few metres off where Apple put it then: the same one.
+        HiddenPlaceResponse again = hiddenPlaceService.hide(home, me.getId(),
+                new HidePlaceRequest("st. mary's soup kitchen " + tag, null, 40.74312, -74.03118));
+        assertThat(again.id()).isEqualTo(hidden.id());
+        // Another place of the same name across town is another place.
+        hiddenPlaceService.hide(home, me.getId(), new HidePlaceRequest(soupKitchen.name(), null, 40.7600, -74.0300));
+        assertThat(hiddenPlaceService.list(home, me.getId())).hasSize(2);
+
+        // Theirs to tidy, not ours: another household's map has it.
+        User neighbour = userRepository.save(User.builder().username("neighbour-" + tag).displayName("N").build());
+        UUID next = householdService.create(neighbour.getId(), new CreateHouseholdRequest("Next door")).id();
+        assertThat(hiddenPlaceService.list(next, neighbour.getId())).isEmpty();
+        assertThatThrownBy(() -> hiddenPlaceService.list(home, neighbour.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+        assertThatThrownBy(() -> hiddenPlaceService.hide(home, neighbour.getId(), soupKitchen))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+        // Shown again through their own house's address: ours stays hidden.
+        hiddenPlaceService.show(next, hidden.id(), neighbour.getId());
+        assertThat(hiddenPlaceService.list(home, me.getId())).extracting(HiddenPlaceResponse::id).contains(hidden.id());
+
+        hiddenPlaceService.show(home, hidden.id(), me.getId());
+        hiddenPlaceService.show(home, hidden.id(), me.getId());
+        assertThat(hiddenPlaceService.list(home, me.getId())).extracting(HiddenPlaceResponse::id).doesNotContain(hidden.id());
+        assertThat(hiddenPlaceService.list(home, me.getId())).hasSize(1);
     }
 
     // --- Listing and deleting ---
@@ -605,6 +698,7 @@ class ReceiptsDatabaseTest {
                 line("EGGS", "4.99", r -> r.ingredientId = eggs.ingredientId()),
                 line("SOMETHING", "1.00", r -> { })));
         groceryListService.setPrice(home, eggs.id(), me.getId(), new SetPriceRequest(new BigDecimal("5.10"), null, null, "Corner", null));
+        hiddenPlaceService.hide(home, me.getId(), new HidePlaceRequest("Soup kitchen", null, 40.74, -74.03));
         entityManager.flush();
 
         householdService.delete(home, me.getId());
@@ -616,6 +710,7 @@ class ReceiptsDatabaseTest {
         assertThat(count("receipts WHERE household_id = ?", home)).isZero();
         assertThat(count("price_observations WHERE household_id = ?", home)).isZero();
         assertThat(count("receipt_lines WHERE receipt_id = ?", saved.id())).isZero();
+        assertThat(count("hidden_places WHERE household_id = ?", home)).isZero();
     }
 
     @Test
@@ -668,9 +763,14 @@ class ReceiptsDatabaseTest {
                 b.ingredientId, b.ingredientName, b.brand);
     }
 
+    private static SaveReceiptRequest withPlace(SaveReceiptRequest r, PlaceDto place) {
+        return new SaveReceiptRequest(r.storeName(), r.purchasedOn(), r.subtotal(), r.tax(), r.total(), r.barcode(),
+                r.rawText(), r.lines(), r.photoIds(), place);
+    }
+
     private static SaveReceiptRequest receipt(String store, LocalDate on, String barcode, SaveLine... lines) {
         BigDecimal total = Arrays.stream(lines).map(SaveLine::price).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new SaveReceiptRequest(store, on, total, BigDecimal.ZERO, total, barcode, "raw text", List.of(lines), null);
+        return new SaveReceiptRequest(store, on, total, BigDecimal.ZERO, total, barcode, "raw text", List.of(lines), null, null);
     }
 
     private ReceiptResponse save(SaveReceiptRequest request) {
