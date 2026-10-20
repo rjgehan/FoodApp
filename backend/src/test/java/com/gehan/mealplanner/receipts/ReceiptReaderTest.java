@@ -229,6 +229,48 @@ class ReceiptReaderTest {
     // --- Weights and counts ---
 
     @Test
+    void whatThePhonesTextReadingGetsWrongIsPutRight() {
+        // A Cyrillic Т for a tax flag, a comma or a space in an amount, an O or an l for a digit.
+        assertThat(ReceiptReader.repair("SPARKLING WATER 12PK 5.99 \u0422")).isEqualTo("SPARKLING WATER 12PK 5.99 T");
+        assertThat(ReceiptReader.repair("ORGANIC LEMONS 1,98 F")).isEqualTo("ORGANIC LEMONS 1.98 F");
+        assertThat(ReceiptReader.repair("OATLY OAT MILK 5. 49 F")).isEqualTo("OATLY OAT MILK 5.49 F");
+        assertThat(ReceiptReader.repair("SOURDOUGH l.99")).isEqualTo("SOURDOUGH 1.99");
+        assertThat(ReceiptReader.repair("CARD SAVINGS 0.5O-")).isEqualTo("CARD SAVINGS 0.50-");
+        // A date run into its time.
+        assertThat(ReceiptReader.repair("10/18/265:42 PM")).isEqualTo("10/18/26 5:42 PM");
+        // A count or a weight whose @ was lost, when the sum says so.
+        assertThat(ReceiptReader.repair("2 0.99 1.98 F")).isEqualTo("2 @ 0.99 1.98 F");
+        assertThat(ReceiptReader.repair("1.32 lb 0.69 /lb 0.91 F")).isEqualTo("1.32 lb @ 0.69 /lb 0.91 F");
+        // Three numbers that are not that many at that price are left alone.
+        assertThat(ReceiptReader.repair("STORE 0412 1.00 9.99")).isEqualTo("STORE 0412 1.00 9.99");
+        assertThat(ReceiptReader.repair("2 0.99 5.00 F")).isEqualTo("2 0.99 5.00 F");
+        // Words are not amounts.
+        assertThat(ReceiptReader.repair("SALE OF THE DAY")).isEqualTo("SALE OF THE DAY");
+        assertThat(ReceiptReader.repair("KNGS BABY SPINACH 50Z 3.99 F")).isEqualTo("KNGS BABY SPINACH 50Z 3.99 F");
+        // A size glued to its unit is not an amount: 5.3OZ stays 5.3OZ.
+        assertThat(ReceiptReader.repair("CHOBANI 5.3OZ")).isEqualTo("CHOBANI 5.3OZ");
+
+        ReceiptDraft draft = read("ORGANIC LEMONS", "2 0.99 1,98 F", "OATLY OAT MILK 5. 49 \u0422", "SUBTOTAL 7.47");
+        assertThat(draft.lines()).extracting(DraftLine::text, DraftLine::quantity, DraftLine::price)
+                .containsExactly(tuple("ORGANIC LEMONS", money("2"), money("1.98")),
+                        tuple("OATLY OAT MILK", null, money("5.49")));
+        assertThat(draft.sumMatches()).isTrue();
+        assertThat(draft.unreadLines()).isEmpty();
+    }
+
+    @Test
+    void aTillsAbbreviationsAreReadAsTheWordsTheyStandFor() {
+        ReceiptReader.KnownIngredient breast = new ReceiptReader.KnownIngredient(UUID.randomUUID(), "chicken breast");
+        ReceiptReader.KnownIngredient yogurt = new ReceiptReader.KnownIngredient(UUID.randomUUID(), "greek yogurt");
+        ReceiptReader.KnownIngredient oil = new ReceiptReader.KnownIngredient(UUID.randomUUID(), "olive oil");
+        List<ReceiptReader.KnownIngredient> ours = List.of(breast, yogurt, oil);
+        assertThat(ReceiptReader.guessIngredient("BNLS SKNLS CHKN BRST", ours)).contains(breast);
+        assertThat(ReceiptReader.guessIngredient("KNGS GRK YGRT PLN 32OZ", ours)).contains(yogurt);
+        assertThat(ReceiptReader.guessIngredient("EVOO 500ML", ours)).contains(oil);
+        assertThat(ReceiptReader.guessIngredient("CAPE COD CHIPS", ours)).isEmpty();
+    }
+
+    @Test
     void aPackSizeInTheNameIsWhatThePriceWasFor() {
         assertThat(ReceiptReader.packSize("KNGS BABY SPINACH 5OZ")).contains(new ReceiptReader.PackSize(new BigDecimal("5"), "oz"));
         assertThat(ReceiptReader.packSize("OLIVE OIL 16.9 FL OZ"))
@@ -341,10 +383,32 @@ class ReceiptReaderTest {
     void savingsWordsAreDiscountsEvenWithoutAMinus() {
         for (String saving : List.of("YOU SAVED 0.40", "CARD SAVINGS 0.40", "SALE 0.40", "BONUS BUY 0.40",
                 "COUPON 0.40", "PRICE REDUCTION 0.40", "SC 0.40", "MFR CPN 0.40")) {
+            // With nothing to check it against, a saving is taken.
             DraftLine line = read("RASPBERRIES 4.99 F", saving).lines().get(0);
             assertThat(line.price()).as(saving).isEqualByComparingTo("4.59");
             assertThat(line.onSale()).as(saving).isTrue();
         }
+    }
+
+    @Test
+    void theTotalSettlesWhetherASavingWasTakenOrOnlySaid() {
+        // Only said: the total is the prices as printed.
+        ReceiptDraft said = read("RASPBERRIES 4.99 F", "YOU SAVED 0.40", "MILK 3.00", "TOTAL 7.99");
+        assertThat(said.lines()).extracting(DraftLine::price, DraftLine::onSale)
+                .containsExactly(tuple(money("4.99"), true), tuple(money("3.00"), false));
+        assertThat(said.sumMatches()).isTrue();
+        // Taken: the total is less.
+        ReceiptDraft taken = read("RASPBERRIES 4.99 F", "YOU SAVED 0.40", "MILK 3.00", "TOTAL 7.59");
+        assertThat(taken.lines().get(0).price()).isEqualByComparingTo("4.59");
+        // ShopRite's "On Sale You Saved" is read as said, and taken only if the total says so.
+        ReceiptDraft shopRite = read("TACO SEAS 2.49 F", "On Sale You Saved 1.80", "TAX 0.00", "BALANCE 0.69");
+        assertThat(shopRite.lines().get(0).price()).isEqualByComparingTo("0.69");
+        // Kings' "Member Savings" already in "You Pay"; taken again only if the total says so.
+        ReceiptDraft kings = read("4139000105 KIKKOMAN SOY SAUCE 4.29 3.99 S", "Member Savings -0.30", "BALANCE 3.99");
+        assertThat(kings.lines()).extracting(DraftLine::text, DraftLine::price, DraftLine::onSale)
+                .containsExactly(tuple("KIKKOMAN SOY SAUCE", money("3.99"), true));
+        assertThat(read("KIKKOMAN SOY SAUCE 4.29 3.99 S", "Member Savings -0.30", "BALANCE 3.69").lines().get(0).price())
+                .isEqualByComparingTo("3.69");
     }
 
     @Test
@@ -402,9 +466,15 @@ class ReceiptReaderTest {
     }
 
     @Test
-    void anAmountUnderTheTotalsThatIsNoneOfThemIsUnread() {
-        ReceiptDraft draft = read("BREAD 4.00", "TOTAL 4.00", "VISA 4.00", "ROUND UP FOR CHARITY 0.50");
-        assertThat(draft.unreadLines()).containsExactly("ROUND UP FOR CHARITY 0.50");
+    void underTheTotalIsThePaymentAndTheFootAndNothingUnread() {
+        // Real receipts print a dozen amounts under the total — card, change, savings, points.
+        ReceiptDraft draft = read("BREAD 4.00", "TOTAL 4.00", "VISA 4.00", "ROUND UP FOR CHARITY 0.50",
+                "Member Savings 11.08", "Total 11.08");
+        assertThat(draft.unreadLines()).isEmpty();
+        assertThat(draft.lines()).extracting(DraftLine::text).containsExactly("BREAD");
+        // Between the subtotal and the total, an amount that is neither still is.
+        assertThat(read("BREAD 4.00", "SUBTOTAL 4.00", "ROUND UP 0.50", "TOTAL 4.50").unreadLines())
+                .containsExactly("ROUND UP 0.50");
     }
 
     @Test
@@ -474,8 +544,11 @@ class ReceiptReaderTest {
     @Test
     void theShopIsTheFirstNameLikeLineAtTheTop() {
         assertThat(read("Welcome to Trader Joe's", "BREAD 4.00").storeName()).isEqualTo("Trader Joe's");
+        // A chain it knows, as the chain writes itself — whichever branch, and whatever the print did to it.
         assertThat(read("CUSTOMER COPY", "#123", "SHOPRITE OF HOBOKEN", "900 Madison St", "BREAD 4.00").storeName())
-                .isEqualTo("Shoprite Of Hoboken");
+                .isEqualTo("ShopRite");
+        assertThat(read("Welcune to ShapRite", "oF HOBOKEN", "BREAD 4.00").storeName()).isEqualTo("ShopRite");
+        assertThat(read("HOBOKEN FARMERS PANTRY", "BREAD 4.00").storeName()).isEqualTo("Hoboken Farmers Pantry");
         assertThat(read("123 Main St", "201-555-0101", "BREAD 4.00").storeName()).isNull();
         // A name-like line under the first item is not the shop.
         assertThat(read("BREAD 4.00", "GREAT VALUE").storeName()).isNull();
@@ -495,7 +568,11 @@ class ReceiptReaderTest {
     void sumMatchesWithinTwoCents() {
         assertThat(read("A THING 1.00", "ANOTHER 2.00", "SUBTOTAL 3.02").sumMatches()).isTrue();
         assertThat(read("A THING 1.00", "ANOTHER 2.00", "SUBTOTAL 3.03").sumMatches()).isFalse();
-        assertThat(read("A THING 1.00", "ANOTHER 2.00", "TOTAL 3.00").sumMatches()).isNull();
+        // No subtotal: the total less the tax, which here is none.
+        assertThat(read("A THING 1.00", "ANOTHER 2.00", "TOTAL 3.00").sumMatches()).isTrue();
+        assertThat(read("A THING 1.00", "ANOTHER 2.00", "TAX 0.10", "TOTAL 3.10").sumMatches()).isTrue();
+        assertThat(read("A THING 1.00", "ANOTHER 2.00", "TOTAL 3.50").sumMatches()).isFalse();
+        assertThat(read("A THING 1.00", "ANOTHER 2.00").sumMatches()).isNull();
     }
 
     // --- What nobody could read ---

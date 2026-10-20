@@ -93,7 +93,9 @@ public class ReceiptDtos {
             String rawText,
             @NotEmpty(message = "A receipt needs at least one line.")
             @Size(max = 500, message = "That's more lines than a receipt has.")
-            List<@Valid SaveLine> lines) {
+            List<@Valid SaveLine> lines,
+            /** The scanned pages, uploaded as the household's images first; none is fine. */
+            @Size(max = 12, message = "That's more pages than a receipt has.") List<UUID> photoIds) {
     }
 
     public record SaveLine(
@@ -126,7 +128,8 @@ public class ReceiptDtos {
             Instant createdAt,
             UUID storeId,
             BigDecimal subtotal,
-            BigDecimal tax) {
+            BigDecimal tax,
+            List<UUID> photoIds) {
     }
 
     /** The same fields as a {@link DraftLine}, plus the saved line's own id. */

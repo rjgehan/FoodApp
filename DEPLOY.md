@@ -398,6 +398,10 @@ Nothing to do by hand. Grocery rows gain an optional `lastPrice`, which older iP
 
 A later release adds a `brand` column to `receipt_lines` and `price_observations` (nullable, made by
 Hibernate on start). Older iPhone builds neither send nor read it, and rolling back leaves it unread.
+The one after adds `receipt_photos` (a receipt's scanned pages, as `stored_images` ids), also made on
+start; deleting a receipt or a household deletes its pictures. Rolling back leaves the table unread,
+and the old backend cannot delete a receipt that has pictures until its foreign key is dropped
+(`receipt_photos` — the same `DO $$ … $$` as above, with that table's name).
 
 Rolling back has the same catch as the kitchen release: the new tables point at households,
 users and ingredients, so the old backend cannot delete a household or an account that has

@@ -25,6 +25,7 @@ import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import com.gehan.mealplanner.service.GroceryListService;
 import com.gehan.mealplanner.service.HouseholdService;
+import com.gehan.mealplanner.service.ImageService;
 import com.gehan.mealplanner.web.ApiExceptionHandler;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -71,6 +72,7 @@ class ReceiptsDatabaseTest {
     private static final LocalDate MID_OCTOBER = LocalDate.of(2026, 10, 10);
 
     @Autowired ReceiptService receiptService;
+    @Autowired ImageService imageService;
     @Autowired GroceryListService groceryListService;
     @Autowired HouseholdService householdService;
     @Autowired UserRepository userRepository;
@@ -316,6 +318,43 @@ class ReceiptsDatabaseTest {
         DraftLine filled = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
                 "KINGS FOOD MARKETS", bananaLine, "2.10 lb @ 0.69 /lb 1.45 F", "TOTAL 1.45"), null)).lines().get(0);
         assertThat(filled.ingredientId()).isEqualTo(bananas.ingredientId());
+
+        // A line nobody has said anything about, and nothing of theirs fits: a guess from what
+        // anybody has priced, read through the till's abbreviations.
+        String word = tag.replaceAll("[0-9]", "x");
+        GroceryListItemResponse yogurt = add("greek yogurt " + word);
+        save(receipt("Kings Food Markets", EARLY_OCTOBER, null,
+                line("FAGE " + word.toUpperCase(), "6.49", r -> r.ingredientId = yogurt.ingredientId())));
+        DraftLine guessed = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", "KNGS GRK YGRT " + word.toUpperCase() + " 32OZ 5.49 F", "TOTAL 5.49"), null))
+                .lines().get(0);
+        assertThat(guessed.ingredientId()).isEqualTo(yogurt.ingredientId());
+    }
+
+    @Test
+    void aReceiptKeepsItsPicturesInOrderAndTakesThemWithItWhenDeleted() {
+        UUID first = imageService.store(home, "image/jpeg", new byte[]{1, 2, 3}).getId();
+        UUID second = imageService.store(home, "image/jpeg", new byte[]{4, 5, 6}).getId();
+        SaveReceiptRequest scanned = receipt("Kings Food Markets", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }));
+        SaveReceiptRequest withPictures = new SaveReceiptRequest(scanned.storeName(), scanned.purchasedOn(), scanned.subtotal(),
+                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(second, first));
+
+        ReceiptResponse saved = save(withPictures);
+        assertThat(saved.photoIds()).containsExactly(second, first);
+        assertThat(receiptService.get(home, saved.id(), me.getId()).photoIds()).containsExactly(second, first);
+
+        // Another household's picture is not this receipt's to keep.
+        User them = userRepository.save(User.builder().username("pics-" + tag).displayName("P").build());
+        UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Pics")).id();
+        UUID theirPicture = imageService.store(theirs, "image/jpeg", new byte[]{7}).getId();
+        assertThatThrownBy(() -> save(new SaveReceiptRequest(scanned.storeName(), scanned.purchasedOn(), scanned.subtotal(),
+                scanned.tax(), scanned.total(), null, scanned.rawText(), scanned.lines(), List.of(theirPicture))))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+
+        receiptService.delete(home, saved.id(), me.getId());
+        assertThat(count("stored_images WHERE id IN (?, ?)", first, second)).isZero();
+        assertThat(count("stored_images WHERE id = ?", theirPicture)).isOne();
     }
 
     // --- Listing and deleting ---
@@ -631,7 +670,7 @@ class ReceiptsDatabaseTest {
 
     private static SaveReceiptRequest receipt(String store, LocalDate on, String barcode, SaveLine... lines) {
         BigDecimal total = Arrays.stream(lines).map(SaveLine::price).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new SaveReceiptRequest(store, on, total, BigDecimal.ZERO, total, barcode, "raw text", List.of(lines));
+        return new SaveReceiptRequest(store, on, total, BigDecimal.ZERO, total, barcode, "raw text", List.of(lines), null);
     }
 
     private ReceiptResponse save(SaveReceiptRequest request) {
