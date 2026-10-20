@@ -5,6 +5,8 @@ import com.gehan.mealplanner.domain.Ingredient;
 import com.gehan.mealplanner.domain.User;
 import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
 import com.gehan.mealplanner.receipts.ReceiptDtos.DraftLine;
+import com.gehan.mealplanner.receipts.ReceiptDtos.LinkPlaceRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.PlaceDto;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReadReceiptRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptLineResponse;
@@ -39,6 +41,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -265,7 +268,14 @@ public class ReceiptService {
         }
 
         User by = userRepository.findById(requesterId).orElse(null);
-        Store store = stores.findOrCreate(household, request.storeName());
+        StorePlace place = request.place() != null ? request.place().toPlace() : null;
+        // A receipt linked to a branch but with no shop's name of its own takes the branch's.
+        String storeName = Stores.tidy(request.storeName()) != null ? request.storeName()
+                : place != null ? place.getName() : null;
+        Store store = stores.findOrCreate(household, storeName);
+        if (store != null && place != null && place.located()) {
+            store.setPlace(copy(place));
+        }
         Receipt receipt = Receipt.builder()
                 .household(household)
                 .store(store)
@@ -276,6 +286,7 @@ public class ReceiptService {
                 .barcode(barcode)
                 .rawText(request.rawText())
                 .photoIds(photos(householdId, request.photoIds()))
+                .place(place)
                 .createdBy(by)
                 .build();
 
@@ -370,6 +381,43 @@ public class ReceiptService {
         return name == null ? null : ingredientService.findOrCreate(name, blankToNull(line.unit()));
     }
 
+    /**
+     * Links a saved receipt to the branch it was bought at (or, with no place, unlinks it). With a
+     * `storeName` it is re-filed under that shop — found or made — and the prices it taught move
+     * with it, so they are that shop's on the list and the store map. The shop remembers the branch.
+     */
+    @Transactional
+    public ReceiptResponse linkPlace(UUID householdId, UUID receiptId, UUID requesterId, LinkPlaceRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        Household household = householdRepository.lockById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        Receipt receipt = find(householdId, receiptId);
+        StorePlace place = request.place() != null ? request.place().toPlace() : null;
+        receipt.setPlace(place);
+
+        String wanted = Stores.tidy(request.storeName());
+        if (wanted != null && (receipt.getStore() == null || !receipt.getStore().getName().equalsIgnoreCase(wanted))) {
+            Store moved = stores.findOrCreate(household, wanted);
+            receipt.setStore(moved);
+            List<PriceObservation> taught = priceObservationRepository.findByReceipt(receiptId);
+            taught.forEach(o -> o.setStore(moved));
+            priceObservationRepository.saveAll(taught);
+            priceObservationRepository.flush();
+            Set<UUID> ingredients = new LinkedHashSet<>();
+            taught.forEach(o -> ingredients.add(o.getIngredient().getId()));
+            groceryListService.pricesChanged(householdId, ingredients);
+        }
+        if (receipt.getStore() != null && place != null && place.located()) {
+            receipt.getStore().setPlace(copy(place));
+        }
+        return toResponse(receiptRepository.save(receipt));
+    }
+
+    /** Its own copy: an embedded value is not to be shared between two rows. */
+    private static StorePlace copy(StorePlace place) {
+        return new StorePlace(place.getName(), place.getAddress(), place.getLatitude(), place.getLongitude());
+    }
+
     /** Newest shopping first: by the day on the receipt, or the day it was saved when it has none. */
     @Transactional(readOnly = true)
     public List<ReceiptSummary> list(UUID householdId, UUID requesterId) {
@@ -432,7 +480,7 @@ public class ReceiptService {
     public List<StoreResponse> stores(UUID householdId, UUID requesterId) {
         householdService.assertMember(householdId, requesterId);
         return storeRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
-                .map(s -> new StoreResponse(s.getId(), s.getName()))
+                .map(s -> new StoreResponse(s.getId(), s.getName(), PlaceDto.of(s.getPlace())))
                 .toList();
     }
 
@@ -483,6 +531,24 @@ public class ReceiptService {
             households.computeIfAbsent(chain, c -> new HashSet<>()).add(paid.householdId());
         }
 
+        // The branches receipts were linked to, by chain: one each, to about ten metres.
+        Map<String, Map<String, PlaceDto>> branches = new HashMap<>();
+        jdbc.query("""
+                SELECT s.name AS store_name, r.place_name, r.place_address, r.place_latitude, r.place_longitude
+                FROM receipts r JOIN stores s ON s.id = r.store_id
+                WHERE r.place_latitude IS NOT NULL AND r.place_longitude IS NOT NULL
+                ORDER BY r.created_at DESC
+                """, rs -> {
+            String chain = StoreChains.key(rs.getString("store_name"));
+            if (chain.isEmpty()) {
+                return;
+            }
+            double lat = rs.getDouble("place_latitude"), lon = rs.getDouble("place_longitude");
+            String spot = Math.round(lat * 10_000) + "," + Math.round(lon * 10_000);
+            branches.computeIfAbsent(chain, c -> new LinkedHashMap<>()).putIfAbsent(spot,
+                    new PlaceDto(rs.getString("place_name"), rs.getString("place_address"), lat, lon));
+        });
+
         // Still to buy, by what each row is (null for a row typed with no name): a thing on the
         // list twice counts twice, as it does in the list's own total.
         List<UUID> toBuy = jdbc.queryForList(
@@ -509,7 +575,8 @@ public class ReceiptService {
                     Set<UUID> pricedBy = households.getOrDefault(chain, Set.of());
                     return new StorePrices(chainId(chain), chainName(chain, ownName, namesUsed), last, here, total,
                             priced, toBuy.size(), pricedBy.size(),
-                            ownName.containsKey(chain) || pricedBy.contains(householdId));
+                            ownName.containsKey(chain) || pricedBy.contains(householdId),
+                            List.copyOf(branches.getOrDefault(chain, Map.of()).values()));
                 })
                 .sorted(Comparator.comparing(StorePrices::lastPricedOn, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(StorePrices::name, String.CASE_INSENSITIVE_ORDER))
@@ -554,7 +621,7 @@ public class ReceiptService {
         return new ReceiptResponse(receipt.getId(), storeName(receipt), receipt.getPurchasedOn(), receipt.getTotal(),
                 items, priced, lines, receipt.getCreatedAt(),
                 receipt.getStore() != null ? receipt.getStore().getId() : null, receipt.getSubtotal(), receipt.getTax(),
-                List.copyOf(receipt.getPhotoIds()));
+                List.copyOf(receipt.getPhotoIds()), PlaceDto.of(receipt.getPlace()));
     }
 
     private static String storeName(Receipt receipt) {

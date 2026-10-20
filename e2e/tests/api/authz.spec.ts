@@ -21,6 +21,8 @@ test('an outsider cannot reach another household’s data', async () => {
     token: owner.token,
     body: { storeName: 'Kings Food Markets', lines: [{ text: 'BEEF', kind: 'ITEM', price: 9.99, onSale: false, ingredientId: item.ingredientId }] },
   });
+  const hidden = await call('POST', `/api/households/${ours.id}/stores/hidden`, {
+    token: owner.token, body: { name: 'Soup Kitchen', latitude: 40.7431, longitude: -74.0312 } });
 
   const O = ours.id;
   const T = theirs.id;
@@ -71,10 +73,15 @@ test('an outsider cannot reach another household’s data', async () => {
     ['GET', `/api/households/${O}/receipts`],
     ['GET', `/api/households/${O}/receipts/${receipt.id}`],
     ['GET', `/api/households/${T}/receipts/${receipt.id}`],
+    ['PUT', `/api/households/${O}/receipts/${receipt.id}/place`, { place: { name: 'Sneaky', latitude: 1, longitude: 1 } }],
+    ['PUT', `/api/households/${T}/receipts/${receipt.id}/place`, { place: { name: 'Sneaky', latitude: 1, longitude: 1 } }],
     ['DELETE', `/api/households/${O}/receipts/${receipt.id}`],
     ['DELETE', `/api/households/${T}/receipts/${receipt.id}`],
     ['GET', `/api/households/${O}/stores`],
     ['GET', `/api/households/${O}/stores/prices`],
+    ['GET', `/api/households/${O}/stores/hidden`],
+    ['POST', `/api/households/${O}/stores/hidden`, { name: 'Sneaky', latitude: 1, longitude: 1 }],
+    ['DELETE', `/api/households/${O}/stores/hidden/${hidden.id}`],
     ['GET', `/api/households/${O}/ingredients/${item.ingredientId}/prices`],
     ['PUT', `/api/households/${O}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
     ['PUT', `/api/households/${T}/grocery-list/items/${item.id}/price`, { price: 0.01 }],
@@ -86,6 +93,10 @@ test('an outsider cannot reach another household’s data', async () => {
     if (status < 400) leaks.push(`${method} ${path} → ${status}`);
   }
   expect(leaks, 'requests an outsider should not be allowed').toEqual([]);
+  // Showing our hidden place through their own house's address shows nothing of ours.
+  await call('DELETE', `/api/households/${T}/stores/hidden/${hidden.id}`, { token: outsider.token });
+  expect((await call('GET', `/api/households/${O}/stores/hidden`, { token: owner.token })).map((h: any) => h.id))
+    .toEqual([hidden.id]);
 
   // Everything is still ours and untouched.
   const still = await call('GET', `/api/recipes/${recipe.id}`, { token: owner.token });

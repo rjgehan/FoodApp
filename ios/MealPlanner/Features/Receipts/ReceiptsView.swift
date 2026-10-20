@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 /**
@@ -154,8 +155,10 @@ struct ReceiptSummaryRow: View {
 }
 
 /**
- A saved receipt, read-only: the shop, the day, the total and how many lines kept a price, then
- every line as it was saved — what it counts as, the price, Sale, Not food.
+ A saved receipt: the shop, the day, the total and how many lines kept a price, the branch it was
+ bought at (with the way there), then every line as it was saved — what it counts as, the price,
+ Sale, Not food. The lines are as saved; the branch can be linked, changed or unlinked, and a
+ branch of another shop re-files the receipt there, its prices with it.
  */
 struct ReceiptDetailView: View {
     var session: Session
@@ -167,12 +170,26 @@ struct ReceiptDetailView: View {
 
     @State private var receipt: ReceiptResponse?
     @State private var error: String?
+    @State private var choosingStore = false
+    @State private var linking = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let receipt {
+                    if let error {
+                        NoteBox(error, tone: .accent, systemImage: "exclamationmark.triangle")
+                    }
                     header(receipt)
+                    LinkedStoreRow(place: receipt.place) { choosingStore = true }
+                        .disabled(linking)
+                        .opacity(linking ? 0.6 : 1)
+                    if let item = receipt.place?.mapItem {
+                        Button {
+                            item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault])
+                        } label: { Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond") }
+                            .buttonStyle(.kitchen(.secondary, size: .small))
+                    }
                     if let photos = receipt.photoIds, !photos.isEmpty {
                         ReceiptPhotoStrip(pages: .kept(photos),
                                           name: [receipt.storeName ?? "Receipt",
@@ -202,7 +219,44 @@ struct ReceiptDetailView: View {
         .navigationTitle(receipt?.storeName ?? "Receipt")
         .navigationBarTitleDisplayMode(.inline)
         .textBackButton(backLabel)
+        .sheet(isPresented: $choosingStore) {
+            if let receipt {
+                StorePicker(session: session, suggest: receipt.storeName, current: receipt.place,
+                            onPick: { picked in Task { await link(picked) } },
+                            onUnlink: receipt.place == nil ? nil : { Task { await link(nil) } },
+                            sample: sample == nil ? nil : StoreMapSamples.places)
+            }
+        }
         .task { await load() }
+    }
+
+    /**
+     Linked to the branch picked (nil unlinks). A branch of another shop than the receipt names —
+     a misread name put right — re-files it there, and the prices it taught move with it.
+     */
+    private func link(_ picked: ShopBranch?) async {
+        guard let current = receipt else { return }
+        var refile = picked?.name.flatMap { name in StoreMatch.same(current.storeName ?? "", name) ? nil : name }
+        if sample != nil {
+            var linked = current
+            linked.place = picked
+            receipt = linked
+            return
+        }
+        guard let household = session.household?.id else { return }
+        linking = true
+        defer { linking = false }
+        do {
+            // Under the household's own name for that chain when it has one, not a second shop.
+            if let wanted = refile, let shops = try? await APIClient.shared.shops(household: household),
+               let own = shops.first(where: { StoreMatch.same($0.name, wanted) }) {
+                refile = own.name
+            }
+            receipt = try await APIClient.shared.linkPlace(household: household, receipt: id, place: picked, storeName: refile)
+            error = nil
+        } catch {
+            self.error = "Couldn't link the store. \(error.localizedDescription)"
+        }
     }
 
     private func header(_ receipt: ReceiptResponse) -> some View {

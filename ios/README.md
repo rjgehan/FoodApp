@@ -406,9 +406,20 @@ check screen (`ReceiptReviewView`) shows it to be put right — the shop name, t
 name, price, sale or kind — warns when the lines do not add up to the subtotal or the receipt was
 scanned before (Open / Save anyway, which saves without the barcode), and keeps what it could not
 read folded at the bottom, each with a + that makes it a line (its price filled in where one can be
-made out). Add a line it missed adds one by hand, food or not; a line read wrong is removed from its
-sheet or by holding it; See the receipt opens the photo, zoomable, to check against. The "doesn't add
-up" note follows every change. Save (`POST …/receipts`) gives every food line with a name a price for
+made out). Add a line it missed adds one by hand, food or not; a line read wrong is swiped left
+(Remove), or removed from its sheet or by holding it — the lines are a `List` drawn as one card
+(`cardRow`), as Groceries is, for the system's swipe. See the receipt opens the photo, zoomable, to
+check against. The "doesn't add up" note follows every change.
+
+The store row under the shop links the receipt to the branch it came from (`StorePicker.swift`,
+Which store?): the household's own stores it has linked before, the grocers near you (the
+receipt's chain first) and a search by name, all Apple Maps places. Unpicked, it guesses — the
+household's own branch of that shop, else the chain's nearest within 5 km when Location is
+*already* allowed (the check screen never asks) — and says it guessed. Picking another chain's
+branch renames the shop (as the household already calls that chain, if it does). The branch goes
+up with the receipt (`place`), and a saved receipt links, changes or unlinks one later
+(`PUT …/receipts/{id}/place`; another chain's branch re-files it there, prices and all), with
+Directions. Save (`POST …/receipts`) gives every food line with a name a price for
 that day. ••• → Receipts lists them, opens one read-only — See the receipt, with Share for AirDrop
 to a Mac — and swipe deletes one with its prices and its pictures.
 
@@ -443,7 +454,7 @@ without a name, and the check screen says so before Save.
 
 Explore's last door, Grocery stores (`Features/Explore/StoreMap.swift`), is a map of the grocery
 stores around you — Apple Maps' own places (`MKLocalPointsOfInterestRequest`, food markets, with
-liquor and tobacco shops left out), so there is no key or account — with every chain anybody on
+liquor and tobacco shops and soup kitchens left out), so there is no key or account — with every chain anybody on
 the server has prices from pinned by what *your* list would come to there ("≈ $38.94"). Other
 stores are small dots, named once tapped. Tap any store for its address, how far it is and
 Directions (Apple Maps); one with prices also has Prices here: every thing's newest price there,
@@ -455,7 +466,16 @@ prices, pooled by chain — "KINGS FOOD MARKETS" and "Kings" are one chain, "Sho
 ShopRite (`StoreChains` on the server and `StoreMatch` here say names the same way; change both) —
 the newest price for each thing, how many households have priced there, and nothing about whose.
 The map matches chains to Apple's places by the same rule, and searches for each priced chain by
-name as well, so a branch Apple files under something other than a grocer still shows. It asks for
+name as well — only within what is on screen (`regionPriority = .required`, iOS 18), since Apple's
+first few "ShopRite"s from all over can leave out the one around the corner — so a branch Apple
+files under something other than a grocer still shows. Every branch a receipt was linked to (by
+anyone: `places` on each chain) is pinned where it stands too, found by Apple or not.
+
+Apple's food markets include soup kitchens, food banks and churches; names that say so are left
+out (`StoreMatch.notGrocer`), and anything else that is not a store is hidden from its card (Not
+a store, or ••• on a priced one) — `POST …/stores/hidden`, for the whole household, matched again
+by name within 40 m. Undo shows for a few seconds; "1 place hidden · Show it" under the shops lists
+them to show again. Which store? leaves them out too, and swipes one away the same way. It asks for
 location while open (`NSLocationWhenInUseUsageDescription`), searches where it settles while it is
 following you, then only when asked ("Search this area"); with Location refused it opens on the
 wider area and says how to turn it on. In the Simulator, `xcrun simctl location <udid> set

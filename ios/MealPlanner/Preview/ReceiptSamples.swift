@@ -79,8 +79,12 @@ extension SampleData {
         IngredientChoice(name: $0.name, ingredientId: $0.ingredientId)
     }
 
+    /// Kings' Hoboken branch, where the household shops.
+    static let kingsHoboken = ShopBranch(name: "Kings Food Markets", address: "1212 Shipyard Ln",
+                                         latitude: 40.7448, longitude: -74.0284)
+
     static let shops: [Shop] = [
-        Shop(id: kings, name: "Kings Food Markets"),
+        Shop(id: kings, name: "Kings Food Markets", place: kingsHoboken),
         Shop(id: UUID(), name: "ShopRite of Hoboken"),
     ]
 
@@ -106,7 +110,7 @@ extension SampleData {
     static let receiptDetail = ReceiptResponse(
         id: UUID(uuidString: "0D5A0000-0000-4000-8000-000000000301")!, storeName: "Kings Food Markets",
         purchasedOn: "2026-10-18", total: 39.82, itemCount: 8, pricedCount: 6, lines: receiptLines,
-        createdAt: "2026-10-18T21:50:00Z", subtotal: 39.81, tax: 0.01
+        createdAt: "2026-10-18T21:50:00Z", subtotal: 39.81, tax: 0.01, place: kingsHoboken
     )
 
     /// The mockup's list as it reads once a receipt has priced most of it.

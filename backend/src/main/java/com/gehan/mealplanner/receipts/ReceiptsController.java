@@ -1,6 +1,9 @@
 package com.gehan.mealplanner.receipts;
 
 import com.gehan.mealplanner.dto.GroceryListDtos.LastPrice;
+import com.gehan.mealplanner.receipts.ReceiptDtos.HiddenPlaceResponse;
+import com.gehan.mealplanner.receipts.ReceiptDtos.HidePlaceRequest;
+import com.gehan.mealplanner.receipts.ReceiptDtos.LinkPlaceRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReadReceiptRequest;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptDraft;
 import com.gehan.mealplanner.receipts.ReceiptDtos.ReceiptResponse;
@@ -23,9 +26,11 @@ import java.util.UUID;
 public class ReceiptsController {
 
     private final ReceiptService receiptService;
+    private final HiddenPlaceService hiddenPlaceService;
 
-    public ReceiptsController(ReceiptService receiptService) {
+    public ReceiptsController(ReceiptService receiptService, HiddenPlaceService hiddenPlaceService) {
         this.receiptService = receiptService;
+        this.hiddenPlaceService = hiddenPlaceService;
     }
 
     /** The text the phone read off a receipt, back as a draft to check. Saves nothing. */
@@ -56,6 +61,15 @@ public class ReceiptsController {
         return receiptService.get(householdId, receiptId, userId);
     }
 
+    /** Links a saved receipt to the branch it was bought at, or unlinks it. */
+    @PutMapping("/receipts/{receiptId}/place")
+    public ReceiptResponse linkPlace(@AuthenticationPrincipal UUID userId,
+                                     @PathVariable UUID householdId,
+                                     @PathVariable UUID receiptId,
+                                     @Valid @RequestBody LinkPlaceRequest request) {
+        return receiptService.linkPlace(householdId, receiptId, userId, request);
+    }
+
     /** Takes the receipt back, and every price it taught. */
     @DeleteMapping("/receipts/{receiptId}")
     public ResponseEntity<Void> delete(@AuthenticationPrincipal UUID userId,
@@ -82,5 +96,28 @@ public class ReceiptsController {
     @GetMapping("/stores/prices")
     public List<StorePrices> storePrices(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
         return receiptService.storePrices(householdId, userId);
+    }
+
+    /** The places the household has taken off its store map. */
+    @GetMapping("/stores/hidden")
+    public List<HiddenPlaceResponse> hiddenPlaces(@AuthenticationPrincipal UUID userId, @PathVariable UUID householdId) {
+        return hiddenPlaceService.list(householdId, userId);
+    }
+
+    /** "Not a grocery store": off the household's map. The one already hidden comes back for a repeat. */
+    @PostMapping("/stores/hidden")
+    public ResponseEntity<HiddenPlaceResponse> hidePlace(@AuthenticationPrincipal UUID userId,
+                                                         @PathVariable UUID householdId,
+                                                         @Valid @RequestBody HidePlaceRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(hiddenPlaceService.hide(householdId, userId, request));
+    }
+
+    /** Back on the map. */
+    @DeleteMapping("/stores/hidden/{hiddenId}")
+    public ResponseEntity<Void> showPlace(@AuthenticationPrincipal UUID userId,
+                                          @PathVariable UUID householdId,
+                                          @PathVariable UUID hiddenId) {
+        hiddenPlaceService.show(householdId, hiddenId, userId);
+        return ResponseEntity.noContent().build();
     }
 }

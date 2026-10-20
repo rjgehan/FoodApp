@@ -2,6 +2,8 @@ package com.gehan.mealplanner.receipts;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -95,7 +97,44 @@ public class ReceiptDtos {
             @Size(max = 500, message = "That's more lines than a receipt has.")
             List<@Valid SaveLine> lines,
             /** The scanned pages, uploaded as the household's images first; none is fine. */
-            @Size(max = 12, message = "That's more pages than a receipt has.") List<UUID> photoIds) {
+            @Size(max = 12, message = "That's more pages than a receipt has.") List<UUID> photoIds,
+            /** The branch it was bought at, picked from the map; none is fine. */
+            @Valid PlaceDto place) {
+    }
+
+    /**
+     * A branch of a shop, as Apple Maps gives it: its name, its address, and where it stands. Every
+     * field may be missing but the place as a whole means something only with both coordinates.
+     */
+    public record PlaceDto(
+            @Size(max = 120, message = "Keep the store's name to 120 characters.") String name,
+            @Size(max = 200, message = "Keep the address to 200 characters.") String address,
+            @DecimalMin(value = "-90", message = "That isn't a latitude.") @DecimalMax(value = "90", message = "That isn't a latitude.") Double latitude,
+            @DecimalMin(value = "-180", message = "That isn't a longitude.") @DecimalMax(value = "180", message = "That isn't a longitude.") Double longitude) {
+
+        static PlaceDto of(StorePlace place) {
+            return place == null || place.getName() == null && !place.located() ? null
+                    : new PlaceDto(place.getName(), place.getAddress(), place.getLatitude(), place.getLongitude());
+        }
+
+        StorePlace toPlace() {
+            String tidyName = Stores.tidy(name);
+            String tidyAddress = Stores.tidy(address);
+            if (tidyName == null && (latitude == null || longitude == null)) {
+                return null;
+            }
+            return new StorePlace(tidyName, tidyAddress, latitude, longitude);
+        }
+    }
+
+    /**
+     * Linking a saved receipt to the branch it was bought at — or, with no place, unlinking it.
+     * `storeName` re-files it under that shop (found or made by name), and the prices it taught move
+     * with it; left out, the shop stays as it was.
+     */
+    public record LinkPlaceRequest(
+            @Valid PlaceDto place,
+            @Size(max = 80, message = "Keep the store's name to 80 characters.") String storeName) {
     }
 
     public record SaveLine(
@@ -129,7 +168,8 @@ public class ReceiptDtos {
             UUID storeId,
             BigDecimal subtotal,
             BigDecimal tax,
-            List<UUID> photoIds) {
+            List<UUID> photoIds,
+            PlaceDto place) {
     }
 
     /** The same fields as a {@link DraftLine}, plus the saved line's own id. */
@@ -158,7 +198,24 @@ public class ReceiptDtos {
             Instant createdAt) {
     }
 
-    public record StoreResponse(UUID id, String name) {
+    /**
+     * Taking a place off the household's store map: what Apple Maps calls it and where it stands
+     * (both needed, to know it again), and its address to say which one it was.
+     */
+    public record HidePlaceRequest(
+            @NotBlank(message = "Say which place to hide.") @Size(max = 120, message = "Keep the place's name to 120 characters.") String name,
+            @Size(max = 200, message = "Keep the address to 200 characters.") String address,
+            @NotNull(message = "Say where the place is.") @DecimalMin(value = "-90", message = "That isn't a latitude.") @DecimalMax(value = "90", message = "That isn't a latitude.") Double latitude,
+            @NotNull(message = "Say where the place is.") @DecimalMin(value = "-180", message = "That isn't a longitude.") @DecimalMax(value = "180", message = "That isn't a longitude.") Double longitude) {
+    }
+
+    /** A place the household took off its store map, and when. */
+    public record HiddenPlaceResponse(UUID id, String name, String address, double latitude, double longitude,
+                                      Instant hiddenAt) {
+    }
+
+    /** One of the household's shops, and the branch it was last linked to (null for none). */
+    public record StoreResponse(UUID id, String name, PlaceDto place) {
     }
 
     /**
@@ -181,7 +238,9 @@ public class ReceiptDtos {
             int listPriced,
             int listCount,
             int households,
-            boolean yours) {
+            boolean yours,
+            /** Branches receipts have been linked to, for pins Apple's search does not give. */
+            List<PlaceDto> places) {
     }
 
     /**

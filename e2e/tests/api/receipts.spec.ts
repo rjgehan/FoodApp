@@ -80,7 +80,7 @@ test('scan, check and save a receipt: the list then shows what things cost', asy
 
   // The shop is the household's now, and the next read of a Kings receipt knows it.
   const stores = await call('GET', `${base}/stores`, { token });
-  expect(stores).toEqual([{ id: saved.storeId, name: 'Kings Food Markets' }]);
+  expect(stores).toEqual([{ id: saved.storeId, name: 'Kings Food Markets', place: null }]);
   expect((await call('POST', `${base}/receipts/read`, { token, body: { lines: KINGS } })).storeId).toBe(saved.storeId);
 
   // The receipts list and one receipt.
@@ -171,6 +171,10 @@ test('friendly refusals for what does not make sense', async () => {
   expect(await refusal('POST', `${base}/receipts`, { storeName: 'Kings', lines: [{ ...line, kind: 'SNACK' }] })).toEqual({ status: 400, message: 'A line is either ITEM or NOT_FOOD.' });
   expect(await refusal('PUT', `${base}/grocery-list/items/${coffee.id}/price`, { price: -2 })).toEqual({ status: 400, message: "A price can't be below zero." });
   expect(await refusal('PUT', `${base}/grocery-list/items/${coffee.id}/price`, {})).toEqual({ status: 400, message: 'Say what it cost.' });
+  expect(await refusal('POST', `${base}/receipts`, { storeName: 'Kings', lines: [line], place: { name: 'Kings', latitude: 91, longitude: 0 } }))
+    .toEqual({ status: 400, message: "That isn't a latitude." });
+  expect(await refusal('POST', `${base}/stores/hidden`, { name: 'Soup Kitchen' })).toEqual({ status: 400, message: 'Say where the place is.' });
+  expect(await refusal('POST', `${base}/stores/hidden`, { name: ' ', latitude: 40, longitude: -74 })).toEqual({ status: 400, message: 'Say which place to hide.' });
   expect(await call('GET', `${base}/receipts`, { token })).toEqual([]);
 });
 

@@ -54,6 +54,14 @@ enum StoreMapSamples {
         StorePlace(name: "ACME Markets", latitude: 40.7505, longitude: -74.0263, address: "1501 Washington St"),
     ]
 
+    /// What the household took off its map: Apple's food markets that are not.
+    static let hidden: [HiddenPlace] = [
+        HiddenPlace(id: UUID(uuidString: "0D5A0000-0000-4000-8000-000000000211")!, name: "St. Mary's Soup Kitchen",
+                    address: "520 Clinton St", latitude: 40.7431, longitude: -74.0312),
+        HiddenPlace(id: UUID(uuidString: "0D5A0000-0000-4000-8000-000000000212")!, name: "SouzaFit",
+                    address: "517 Washington St", latitude: 40.7428, longitude: -74.0290),
+    ]
+
     private static let hoboken = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 40.7445, longitude: -74.0300),
         span: MKCoordinateSpan(latitudeDelta: 0.018, longitudeDelta: 0.018))
