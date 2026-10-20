@@ -26,11 +26,13 @@ struct ReceiptScanFlow: View {
     /// The words from the last scan, so a server that could not be reached can be asked again
     /// without photographing the receipt again.
     @State private var lastScan: ReceiptScanText?
+    /// The pages photographed, kept with the receipt when it is saved.
+    @State private var pages: [UIImage] = []
 
     enum Stage {
         case camera
         case reading(String)
-        case review(ReceiptDraft, ReceiptScanText)
+        case review(ReceiptDraft, ReceiptScanText, [UIImage])
         case failed(String, settings: Bool)
     }
 
@@ -42,7 +44,7 @@ struct ReceiptScanFlow: View {
         self.onSaved = onSaved
         let start: Stage
         if let sample {
-            start = .review(sample, ReceiptScanText(lines: SampleData.receiptText, barcode: nil))
+            start = .review(sample, ReceiptScanText(lines: SampleData.receiptText, barcode: nil), [])
         } else {
             start = .camera
         }
@@ -55,9 +57,9 @@ struct ReceiptScanFlow: View {
             camera
         case .reading(let message):
             reading(message)
-        case .review(let draft, let scan):
+        case .review(let draft, let scan, let photos):
             NavigationStack {
-                ReceiptReviewView(session: session, draft: draft, scan: scan, choices: choices,
+                ReceiptReviewView(session: session, draft: draft, scan: scan, photos: photos, choices: choices,
                                   sample: sample != nil,
                                   onCancel: { dismiss() },
                                   onSaved: { saved in
@@ -106,9 +108,10 @@ struct ReceiptScanFlow: View {
                 .font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
             Spacer()
             #if DEBUG
-            // The sample receipt's words, read by the real server: the whole flow, minus the camera.
+            // The sample receipt drawn as a page and read like a photographed one — the phone's
+            // own reading, then the real server: the whole flow, minus the camera.
             Button {
-                Task { await readText(ReceiptScanText(lines: SampleData.receiptText, barcode: nil)) }
+                Task { await read([SampleReceiptPage.draw(SampleData.receiptText)]) }
             } label: {
                 Label("Read a sample receipt", systemImage: "doc.text")
             }
@@ -164,6 +167,7 @@ struct ReceiptScanFlow: View {
     private func read(_ pages: [UIImage]) async {
         stage = .reading("Reading the receipt…")
         lastScan = nil
+        self.pages = pages
         do {
             let scan = try await ReceiptText.read(pages)
             await readText(scan)
@@ -185,12 +189,53 @@ struct ReceiptScanFlow: View {
         do {
             let draft = try await APIClient.shared.readReceipt(household: household, lines: scan.lines,
                                                                barcode: scan.barcode)
-            stage = .review(draft, scan)
+            stage = .review(draft, scan, pages)
         } catch {
             stage = .failed(error.localizedDescription, settings: false)
         }
     }
 }
+
+#if DEBUG
+/// The sample receipt as a page of print, for the Simulator, which has no camera: a till's
+/// monospaced lines, the price on the right, a little crooked, as a real photograph would be.
+enum SampleReceiptPage {
+    static func draw(_ lines: [String]) -> UIImage {
+        let width: CGFloat = 760, rowHeight: CGFloat = 52
+        let size = CGSize(width: width, height: 120 + rowHeight * CGFloat(lines.count))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let font = UIFont.monospacedSystemFont(ofSize: 28, weight: .regular)
+        let ink: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor(white: 0.1, alpha: 1)]
+        let flat = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: 0.98, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            for (row, line) in lines.enumerated() {
+                let y = 60 + rowHeight * CGFloat(row)
+                if let price = line.range(of: #"\s(\d+\.\d\d-?(\s[A-Z])?)$"#, options: .regularExpression), row > 2 {
+                    let words = String(line[..<price.lowerBound]), amount = String(line[price]).trimmingCharacters(in: .whitespaces)
+                    (words as NSString).draw(at: CGPoint(x: 40, y: y), withAttributes: ink)
+                    let measured = (amount as NSString).size(withAttributes: ink)
+                    (amount as NSString).draw(at: CGPoint(x: width - 40 - measured.width, y: y), withAttributes: ink)
+                } else {
+                    (line as NSString).draw(at: CGPoint(x: 40, y: y), withAttributes: ink)
+                }
+            }
+        }
+        // Two degrees off straight.
+        let angle: CGFloat = 2 * .pi / 180
+        let turned = CGSize(width: size.width * cos(angle) + size.height * sin(angle),
+                            height: size.height * cos(angle) + size.width * sin(angle))
+        return UIGraphicsImageRenderer(size: turned, format: format).image { context in
+            UIColor(white: 0.92, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: turned))
+            context.cgContext.translateBy(x: turned.width / 2, y: turned.height / 2)
+            context.cgContext.rotate(by: -angle)
+            flat.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
+        }
+    }
+}
+#endif
 
 // MARK: - The document camera
 

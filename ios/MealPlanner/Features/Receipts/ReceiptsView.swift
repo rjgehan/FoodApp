@@ -173,6 +173,12 @@ struct ReceiptDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if let receipt {
                     header(receipt)
+                    if let photos = receipt.photoIds, !photos.isEmpty {
+                        ReceiptPhotoStrip(pages: .kept(photos),
+                                          name: [receipt.storeName ?? "Receipt",
+                                                 ReceiptWords.day(receipt.purchasedOn ?? receipt.createdAt)]
+                                              .compactMap { $0 }.joined(separator: " "))
+                    }
                     SectionLabel("Lines", trailing: "\(receipt.lines.count)")
                         .padding(.top, 4)
                     if !receipt.lines.isEmpty {

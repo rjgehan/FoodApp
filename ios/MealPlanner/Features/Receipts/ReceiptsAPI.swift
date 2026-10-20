@@ -84,6 +84,21 @@ struct ReceiptLine: Codable, Hashable {
         return "\(amount) @ \(Money.text(unitPrice))\(per)"
     }
 
+    /**
+     A line from words the server could not read — "KNGS ARTSN BRD 4.Z9 F" — to be put right by
+     hand: its last amount, if one can be made out, as the price, and the words before it.
+     */
+    static func fromUnread(_ words: String) -> ReceiptLine {
+        let pattern = #"\s*-?\$?(\d{1,4}[.,]\s?\d{2})-?(\s+[A-Z*$]{1,2})*\s*$"#
+        guard let range = words.range(of: pattern, options: .regularExpression) else {
+            return ReceiptLine(text: words.trimmingCharacters(in: .whitespaces), price: 0)
+        }
+        let amount = words[range].filter { $0.isNumber || $0 == "." || $0 == "," }.replacingOccurrences(of: ",", with: ".")
+        let text = words[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: #"^\d{4,14}\s+"#, with: "", options: .regularExpression)
+        return ReceiptLine(text: text.isEmpty ? words : text, price: Double(amount) ?? 0)
+    }
+
     /// "Twinings · 20 bags", "1.32 lb @ $0.69/lb" — under the line's words, or nil.
     var detail: String? {
         let brand = brand?.trimmingCharacters(in: .whitespaces)
@@ -174,6 +189,8 @@ struct ReceiptResponse: Codable, Identifiable, Hashable {
     /// Not promised by every server; shown when they come.
     var subtotal: Double? = nil
     var tax: Double? = nil
+    /// The scanned pages, kept with it (none on a receipt from before they were).
+    var photoIds: [UUID]? = nil
 }
 
 /// One of the household's own shops, named as its receipts head them.
