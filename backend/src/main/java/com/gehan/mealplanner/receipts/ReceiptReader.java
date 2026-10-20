@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -45,6 +46,13 @@ import java.util.stream.Collectors;
  *       three are kept, to check the lines add up.</li>
  *   <li>Bags, bottle deposits and gift cards are paid for but are not food: NOT_FOOD, which the
  *       person can flip.</li>
+ *   <li>Two prices on an item's line — Kings' "Price" and "You Pay" — are what it would have cost
+ *       and what was paid: the second is the price, and the first only says it was on sale. A
+ *       product code in front of the name ("2410044077 CHEEZ CRACKERS") is not part of it.</li>
+ *   <li>A saving already in the price paid — Kings' "Member Savings -0.30" under 4.29 → 3.99, or
+ *       ShopRite's "On Sale You Saved 1.80" — marks the item on sale and is not taken off again.</li>
+ *   <li>Department headings (GROCERY, PRODUCE, DELI…) and rows of stars are skipped, and nothing
+ *       under the total is unread news: it is the payment and the receipt's foot.</li>
  *   <li>A pack size in an item's name — "BABY SPINACH 5OZ", "TEA 20CT", "WATER 24PK" — is how
  *       much the price was for, when nothing was weighed or counted: 5 oz, 20 ct, 24 pack. An
  *       OCR'd "50Z" is 5 oz: the O read as a nought.</li>
@@ -94,6 +102,9 @@ public final class ReceiptReader {
                     + "(?<unit>FL\\.?\\s?OZ|OZ|0Z|LBS?|CT|PK|PACK|GAL|QT|PT|ML|LTR|L|KG|GR|G)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /** An amount at the end of an item's words, before the price paid: the "Price" column. */
+    private static final Pattern LISTED = Pattern.compile("\\s\\$?(\\d{1,4}\\.\\d{2})$");
+
     private static final Pattern SUBTOTAL = Pattern.compile("\\bSUB[\\s-]?TOTAL\\b");
     private static final Pattern TAX = Pattern.compile("\\bTAX(?:\\b|\\d)");
     // The total says so first or last ("TOTAL", "**** BALANCE", "ORDER TOTAL"), never in the
@@ -101,7 +112,20 @@ public final class ReceiptReader {
     private static final Pattern TOTAL = Pattern.compile(
             "^(?:TOTAL|BALANCE|AMOUNT DUE|AMT DUE|BAL DUE)\\b|\\b(?:TOTAL|BALANCE|DUE)$");
     private static final Pattern DISCOUNT = Pattern.compile(
-            "\\b(?:SAVINGS|YOU SAVED|SALE|BONUS|COUPON|CARD SAVINGS|PRICE REDUCTION|SC|MFR|DISCOUNT|PROMO)\\b");
+            "\\b(?:SAVINGS|YOU SAVED|SALE|BONUS|COUPON|CARD SAVINGS|PRICE REDUCTION|SC|MFR|DISCOUNT|PROMO)\\b"
+                    + "|\\bMEMBER\\s+SAV\\w*|\\bSAVIN\\w*");
+    /** A saving said, not taken: "On Sale You Saved 1.80" next to a price already reduced. */
+    // ShopRite's "On Sale You Saved", as faded print reads it: "Jn Sale You Savec", "You Syvec".
+    private static final Pattern SAVED = Pattern.compile("\\bYOU\\s+S[A-Z]{2,5}\\b|\\bSAVE[DOC]\\b|\\b[OIJ0]N\\s+SALE\\b");
+    /** A department heading between the items, maybe with the column titles after it. */
+    private static final Pattern HEADING = Pattern.compile(
+            "^(?:\\W*)(?:GROCERY|PRODUCE|DAIRY|FROZEN|REFRIG(?:ERATED)?(?:\\s*/\\s*FROZEN)?|MEAT|MEATS|SEAFOOD|DELI|BAKERY"
+                    + "|BAKED GOODS|GEN(?:ERAL)? MERCH\\w*|HBC|HEALTH (?:&|AND) BEAUTY|BEER (?:&|AND) WINE|FLORAL|BULK"
+                    + "|PREPARED FOODS?|NATURAL(?: FOODS)?|ORGANIC|CHEESE|PHARMACY|HOUSEHOLD|PET|BABY|SNACKS|BEVERAGES?"
+                    + "|REGULAR ITEMS|WEIGHED ITEMS|PRICE|YOU PAY)(?:\\W+(?:PRICE|YOU PAY|ITEMS))*\\W*$");
+    /** Words in the items' midst that are about the shopper, not the shopping. */
+    private static final Pattern SHOPPER = Pattern.compile(
+            "\\b(?:VALUED\\s+CUST\\w*|CUSTOMER|REWARDS?|CLUB CARD|PRICE ?PLUS|LOYALTY|MEMBER #|ACCOUNT)\\b");
     private static final Pattern SAVINGS_SUMMARY = Pattern.compile(
             "\\b(?:TOTAL|YOUR|TODAY'?S?)\\b.*\\bSAV|\\bSAV\\w*\\b.*\\b(?:TODAY|TOTAL|THIS (?:TRIP|VISIT))\\b");
     /** Payment words that are never part of an item's name. */
@@ -122,6 +146,50 @@ public final class ReceiptReader {
     private static final Pattern HEADER_NOISE = Pattern.compile(
             "\\b(?:WELCOME|RECEIPT|CASHIER|STORE|MANAGER|THANK|CUSTOMER|COPY|SALE|REGISTER)\\b");
 
+    /**
+     * What a till's abbreviations mean, for guessing what a line is: "BNLS SKNLS CHKN BRST" is
+     * boneless skinless chicken breast. Only for the guess — the line keeps its words as printed.
+     */
+    private static final Map<String, String> ABBREVIATIONS = Map.ofEntries(
+            Map.entry("chkn", "chicken"), Map.entry("chk", "chicken"), Map.entry("ckn", "chicken"),
+            Map.entry("chix", "chicken"), Map.entry("brst", "breast"), Map.entry("bst", "breast"),
+            Map.entry("thgh", "thigh"), Map.entry("thghs", "thighs"), Map.entry("bnls", "boneless"),
+            Map.entry("sknls", "skinless"), Map.entry("grnd", "ground"), Map.entry("grd", "ground"),
+            Map.entry("bf", "beef"), Map.entry("trky", "turkey"), Map.entry("tky", "turkey"),
+            Map.entry("bcn", "bacon"), Map.entry("saus", "sausage"), Map.entry("ssg", "sausage"),
+            Map.entry("slmn", "salmon"), Map.entry("shrmp", "shrimp"), Map.entry("tna", "tuna"),
+            Map.entry("spnch", "spinach"), Map.entry("bby", "baby"), Map.entry("lttc", "lettuce"),
+            Map.entry("lett", "lettuce"), Map.entry("rom", "romaine"), Map.entry("tom", "tomato"),
+            Map.entry("toms", "tomatoes"), Map.entry("tmto", "tomato"), Map.entry("pot", "potato"),
+            Map.entry("pots", "potatoes"), Map.entry("onn", "onion"), Map.entry("onns", "onions"),
+            Map.entry("ylw", "yellow"), Map.entry("yel", "yellow"), Map.entry("grn", "green"),
+            Map.entry("pepr", "pepper"), Map.entry("ppr", "pepper"), Map.entry("cuke", "cucumber"),
+            Map.entry("cuc", "cucumber"), Map.entry("crt", "carrot"), Map.entry("crts", "carrots"),
+            Map.entry("broc", "broccoli"), Map.entry("caul", "cauliflower"), Map.entry("mush", "mushroom"),
+            Map.entry("mshrm", "mushroom"), Map.entry("mshrms", "mushrooms"), Map.entry("grlc", "garlic"),
+            Map.entry("apl", "apple"), Map.entry("apls", "apples"), Map.entry("bnna", "banana"),
+            Map.entry("bnns", "bananas"), Map.entry("strwb", "strawberry"), Map.entry("strawb", "strawberry"),
+            Map.entry("blbry", "blueberry"), Map.entry("blueb", "blueberry"), Map.entry("avo", "avocado"),
+            Map.entry("avoc", "avocado"), Map.entry("lmn", "lemon"), Map.entry("lmns", "lemons"),
+            Map.entry("whl", "whole"), Map.entry("mlk", "milk"), Map.entry("ygrt", "yogurt"),
+            Map.entry("yog", "yogurt"), Map.entry("yogt", "yogurt"), Map.entry("grk", "greek"),
+            Map.entry("chs", "cheese"), Map.entry("chse", "cheese"), Map.entry("chdr", "cheddar"),
+            Map.entry("shrp", "sharp"), Map.entry("mozz", "mozzarella"), Map.entry("parm", "parmesan"),
+            Map.entry("btr", "butter"), Map.entry("crm", "cream"), Map.entry("hvy", "heavy"),
+            Map.entry("brd", "bread"), Map.entry("sdough", "sourdough"), Map.entry("flr", "flour"),
+            Map.entry("sgr", "sugar"), Map.entry("rce", "rice"), Map.entry("psta", "pasta"),
+            Map.entry("spgh", "spaghetti"), Map.entry("spag", "spaghetti"), Map.entry("sce", "sauce"),
+            Map.entry("sauc", "sauce"), Map.entry("olv", "olive"), Map.entry("evoo", "olive oil"),
+            Map.entry("vngr", "vinegar"), Map.entry("crl", "cereal"), Map.entry("choc", "chocolate"),
+            Map.entry("cof", "coffee"), Map.entry("cfe", "coffee"), Map.entry("cffe", "coffee"),
+            Map.entry("wtr", "water"), Map.entry("sprk", "sparkling"), Map.entry("oj", "orange juice"),
+            Map.entry("jce", "juice"), Map.entry("bns", "beans"), Map.entry("blk", "black"),
+            Map.entry("chkpea", "chickpea"), Map.entry("chkpeas", "chickpeas"), Map.entry("hmms", "hummus"),
+            Map.entry("tort", "tortilla"), Map.entry("trtla", "tortilla"), Map.entry("eng", "english"),
+            Map.entry("brkfst", "breakfast"), Map.entry("bkfst", "breakfast"), Map.entry("pln", "plain"),
+            Map.entry("van", "vanilla"), Map.entry("strw", "strawberry"), Map.entry("pb", "peanut butter"),
+            Map.entry("pnut", "peanut"));
+
     /** The shop's own brand and the words a till abbreviates to, none of which say what a thing is. */
     private static final Set<String> NOT_WHAT_IT_IS = Set.of(
             "kngs", "kings", "kng", "kf", "kfm",
@@ -140,6 +208,7 @@ public final class ReceiptReader {
                                     Collection<KnownStore> stores) {
         Reading reading = new Reading(tidy(lines));
         reading.run();
+        reading.settle();
 
         String storeName = reading.storeName();
         UUID storeId = storeName == null ? null : stores.stream()
@@ -165,12 +234,24 @@ public final class ReceiptReader {
                 })
                 .toList();
 
+        // What the lines should add up to: the subtotal, or — on a receipt that prints none, as
+        // Kings' does — the total less the tax.
+        BigDecimal expected = reading.subtotal != null ? reading.subtotal
+                : reading.total != null ? reading.total.subtract(reading.tax != null ? reading.tax : BigDecimal.ZERO) : null;
         Boolean sumMatches = null;
-        if (reading.subtotal != null) {
+        if (expected != null && !drafted.isEmpty()) {
             BigDecimal sum = drafted.stream().map(DraftLine::price).reduce(BigDecimal.ZERO, BigDecimal::add);
-            sumMatches = sum.subtract(reading.subtotal).abs().compareTo(NEAR_ENOUGH) <= 0;
+            sumMatches = sum.subtract(expected).abs().compareTo(NEAR_ENOUGH) <= 0;
         }
-        return new ReceiptDraft(storeName, storeId, reading.date, reading.subtotal, reading.tax, reading.total,
+        // The day said most; between days said as often, the latest that is not still to come — a
+        // receipt is scanned soon after the shop, and a misread year is usually an older one.
+        LocalDate today = LocalDate.now();
+        LocalDate day = reading.dates.entrySet().stream()
+                .max(Comparator.<Map.Entry<LocalDate, Integer>>comparingInt(Map.Entry::getValue)
+                        .thenComparing(e -> !e.getKey().isAfter(today.plusDays(1)))
+                        .thenComparing(Map.Entry::getKey))
+                .map(Map.Entry::getKey).orElse(reading.date);
+        return new ReceiptDraft(storeName, storeId, day, reading.subtotal, reading.tax, reading.total,
                 sumMatches, null, drafted, List.copyOf(reading.unread));
     }
 
@@ -215,14 +296,81 @@ public final class ReceiptReader {
         return Optional.ofNullable(count != null ? count : last);
     }
 
-    /** Tabs and runs of spaces are one space; nothing is null. */
+    /**
+     * Tabs and runs of spaces are one space; nothing is null; and the slips the phone's text
+     * reading makes on a till's print are put right before anything reads the line — see
+     * {@link #repair}.
+     */
     private static List<String> tidy(List<String> lines) {
         if (lines == null) {
             return List.of();
         }
         return lines.stream()
-                .map(line -> line == null ? "" : line.replace('\t', ' ').replaceAll("\\s+", " ").trim())
+                .map(line -> line == null ? "" : repair(line.replace('\t', ' ').replaceAll("\\s+", " ").trim()))
                 .toList();
+    }
+
+    /** Cyrillic and Greek capitals that look like Latin ones, as the text reading sometimes returns them. */
+    private static final String LOOKALIKES = "АВЕКМНОРСТХаеорсхуΑΒΕΗΙΚΜΝΟΡΤΧΥ";
+    private static final String LATIN = "ABEKMHOPCTXaeopcxyABEHIKMNOPTXY";
+
+    // An amount at the very end, as the text reading spoils it: "1,98", "3. 49", "l.99", "4.O9".
+    private static final Pattern SPOILT_AMOUNT = Pattern.compile(
+            "(?<lead>^|\\s|\\$)(?<amount>[\\dOoIl]{0,4}\\s?[.,]\\s?[\\dOoIl]{2})(?<tail>-?(?:\\s+[A-Z*]{1,2}){0,2})$");
+    // A date run into its time: "10/18/265:42 PM".
+    private static final Pattern DATE_INTO_TIME = Pattern.compile("(\\b\\d{1,2}/\\d{1,2}/\\d{2})(\\d{1,2}:\\d{2})");
+    // A count or weight line whose @ was not read: "2 0.99 1.98", "1.32 lb 0.69 /lb 0.91".
+    // A tax flag read as something else after an amount: S as $, 5, 8 or §.
+    private static final Pattern MISREAD_FLAG = Pattern.compile("(\\d[.,]\\d{2}-?)\\s+[$58§|!l]$");
+    // ...or glued on: "5.795" is 5.79 S, but only where an amount stands before it ("5.79 5.795").
+    private static final Pattern GLUED_FLAG = Pattern.compile("(\\d\\.\\d{2}\\s+\\d{1,4}\\.\\d{2})[$58§]$");
+    private static final Pattern COUNT_WITHOUT_AT = Pattern.compile(
+            "^(?<qty>\\d{1,4}(?:\\.\\d{1,3})?)(?<unit>\\s?(?:LBS?|KG|OZ)\\.?)?\\s+\\$?(?<each>\\d{1,4}\\.\\d{2,3})"
+                    + "(?<per>\\s*/\\s*(?:LBS?|KG|OZ|EA))?\\s+(?<amount>\\d{1,4}\\.\\d{2})(?<flags>(?:\\s*[A-Z*]{1,2}){0,2})$",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * What the phone's text reading gets wrong on a till's print, put right: lookalike letters
+     * from other alphabets, an amount at the end with a comma, a space, or an O or an l for a
+     * digit in it, a date run into its time, and a count or weight line whose @ was lost — only
+     * when the amount it ends with is that many at that price, so a line that merely has three
+     * numbers in it is left alone.
+     */
+    static String repair(String line) {
+        StringBuilder plain = new StringBuilder(line.length());
+        for (char ch : line.toCharArray()) {
+            int at = LOOKALIKES.indexOf(ch);
+            plain.append(at >= 0 ? LATIN.charAt(at) : ch);
+        }
+        String fixed = DATE_INTO_TIME.matcher(plain.toString()).replaceAll("$1 $2");
+        fixed = MISREAD_FLAG.matcher(fixed).replaceAll("$1 S");
+        fixed = GLUED_FLAG.matcher(fixed).replaceAll("$1 S");
+        // "/1b" is /lb, "0.89 1b" is 0.89 lb, "lb@" is lb @, and "Z.25" in a weight is 2.25.
+        fixed = fixed.replaceAll("/\\s?[1I][bD]\\b", "/lb")
+                .replaceAll("(\\d)\\s?(?:1b|Ib)\\b", "$1 lb")
+                .replaceAll("(?i)\\b(lbs?|kg|oz)@", "$1 @")
+                .replaceAll("(?<=^|\\s)Z(?=\\.\\d{2})", "2");
+
+        Matcher spoilt = SPOILT_AMOUNT.matcher(fixed);
+        if (spoilt.find() && spoilt.group("amount").chars().anyMatch(Character::isDigit)) {
+            String amount = spoilt.group("amount").replace(" ", "").replace(',', '.')
+                    .replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1');
+            fixed = fixed.substring(0, spoilt.start("amount")) + amount + spoilt.group("tail");
+        }
+
+        Matcher count = COUNT_WITHOUT_AT.matcher(fixed);
+        if (count.matches()) {
+            BigDecimal quantity = new BigDecimal(count.group("qty"));
+            BigDecimal each = new BigDecimal(count.group("each"));
+            BigDecimal amount = new BigDecimal(count.group("amount"));
+            BigDecimal expected = quantity.multiply(each).setScale(2, RoundingMode.HALF_UP);
+            if (quantity.signum() > 0 && expected.subtract(amount).abs().compareTo(NEAR_ENOUGH) <= 0) {
+                fixed = count.group("qty") + (count.group("unit") != null ? count.group("unit") : "") + " @ "
+                        + count.group("each") + (count.group("per") != null ? count.group("per") : "") + " "
+                        + count.group("amount") + count.group("flags");
+            }
+        }
+        return fixed;
     }
 
     // --- Reading the lines ---
@@ -236,12 +384,26 @@ public final class ReceiptReader {
         BigDecimal unitPrice;
         BigDecimal price;
         boolean onSale;
+        /** The "Price" column, when the line had one before the price paid. */
+        BigDecimal listed;
 
         Item(String text, BigDecimal price) {
+            // A product code in front is the till's, not the name: "2410044077 CHEEZ CRACKERS".
+            text = text.replaceFirst("^\\d{4,14}\\s+(?=\\S*[A-Za-z])", "");
             this.text = text.length() > 200 ? text.substring(0, 200) : text;
             this.price = price;
             if (NOT_FOOD.matcher(text.toUpperCase(Locale.ROOT)).find()) {
                 kind = ReceiptLine.NOT_FOOD;
+            }
+        }
+
+        /** The "Price" column, then the "You Pay" one: the second is what was paid. */
+        void takeListedPrice() {
+            Matcher listedPrice = LISTED.matcher(text);
+            if (listedPrice.find() && hasLetters(text.substring(0, listedPrice.start()))) {
+                listed = new BigDecimal(listedPrice.group(1));
+                text = text.substring(0, listedPrice.start()).trim();
+                onSale = listed.compareTo(price) > 0;
             }
         }
 
@@ -250,6 +412,10 @@ public final class ReceiptReader {
             unit = m.unit;
             unitPrice = m.unitPrice;
         }
+    }
+
+    /** A saving read one way (`taken` or not) that the receipt's total may turn round. */
+    private record Maybe(Item item, BigDecimal amount, boolean taken) {
     }
 
     /** An amount at the end of a line and the words before it. */
@@ -273,6 +439,8 @@ public final class ReceiptReader {
         final List<String> header = new ArrayList<>();
         boolean kings;
         LocalDate date;
+        /** Every day the receipt says, and how often: a misread one is outvoted. */
+        final Map<LocalDate, Integer> dates = new java.util.LinkedHashMap<>();
         BigDecimal subtotal;
         BigDecimal tax;
         BigDecimal total;
@@ -280,6 +448,8 @@ public final class ReceiptReader {
         boolean inTotals;
         /** The total itself has been read: everything after is payment and the receipt's foot. */
         boolean pastTotal;
+        /** Savings read one way that the total may say were the other: taken, or only said. */
+        final List<Maybe> maybe = new ArrayList<>();
         /** A weight or count line waiting for the item below it, with its line as printed. */
         Measure waiting;
         String waitingLine;
@@ -305,6 +475,47 @@ public final class ReceiptReader {
             }
         }
 
+        /**
+         * The savings that could be read either way, turned round where that makes the lines add
+         * up to what the receipt says and the way they were read does not: the fewest turned that
+         * do it. A receipt with no subtotal or total to go by is left as read.
+         */
+        void settle() {
+            BigDecimal expected = subtotal != null ? subtotal
+                    : total != null ? total.subtract(tax != null ? tax : BigDecimal.ZERO) : null;
+            if (expected == null || maybe.isEmpty() || maybe.size() > 12) {
+                return;
+            }
+            BigDecimal sum = items.stream().map(item -> item.price).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (sum.subtract(expected).abs().compareTo(NEAR_ENOUGH) <= 0) {
+                return;
+            }
+            int best = -1;
+            for (int mask = 1; mask < (1 << maybe.size()); mask++) {
+                BigDecimal turned = sum;
+                for (int k = 0; k < maybe.size(); k++) {
+                    if ((mask & (1 << k)) != 0) {
+                        Maybe m = maybe.get(k);
+                        turned = m.taken() ? turned.add(m.amount()) : turned.subtract(m.amount());
+                    }
+                }
+                if (turned.subtract(expected).abs().compareTo(NEAR_ENOUGH) <= 0
+                        && (best < 0 || Integer.bitCount(mask) < Integer.bitCount(best))) {
+                    best = mask;
+                }
+            }
+            if (best < 0) {
+                return;
+            }
+            for (int k = 0; k < maybe.size(); k++) {
+                if ((best & (1 << k)) != 0) {
+                    Maybe m = maybe.get(k);
+                    m.item().price = m.taken() ? m.item().price.add(m.amount())
+                            : m.item().price.subtract(m.amount()).max(BigDecimal.ZERO);
+                }
+            }
+        }
+
         /** Reads the line at i, and says which line it got to: further on when it took the next one too. */
         private int readLine(int i, String line, String upper) {
             Money money = money(line);
@@ -316,6 +527,7 @@ public final class ReceiptReader {
                     if (date == null) {
                         date = seen;
                     }
+                    dates.merge(seen, 1, Integer::sum);
                     return i;
                 }
             }
@@ -334,6 +546,17 @@ public final class ReceiptReader {
 
         /** A line of words with no price on it. */
         private int readWords(int i, String line) {
+            String upper = line.toUpperCase(Locale.ROOT);
+            // A total's word whose amount the reading put on another row ("TAX" … "0.00"): no news.
+            if (!items.isEmpty() && (SUBTOTAL.matcher(upper).find() || TAX.matcher(upper).find()
+                    || TOTAL.matcher(label(line)).find()) && upper.replaceAll("[^A-Z]", "").length() <= 12) {
+                inTotals = true;
+                return i;
+            }
+            if (!items.isEmpty() && !inTotals && (HEADING.matcher(upper).matches() || SHOPPER.matcher(upper).find()
+                    || decoration(line))) {
+                return i;
+            }
             int next = nextLine(i);
             if (!inTotals && next >= 0 && hasLetters(line)) {
                 // A name whose price, or weight and price, is on the row below.
@@ -414,8 +637,14 @@ public final class ReceiptReader {
                 return;
             }
             if (inTotals) {
-                // An amount under the totals that is not one of them: could be anything, so say so.
-                unread.add(line);
+                // An amount between the subtotal and the total that is not one of them could be
+                // anything, so say so; under the total it is the payment and the receipt's foot.
+                if (!pastTotal) {
+                    unread.add(line);
+                }
+                return;
+            }
+            if (SHOPPER.matcher(upper).find() && !DISCOUNT.matcher(upper).find()) {
                 return;
             }
             if (money.negative() || DISCOUNT.matcher(upper).find()) {
@@ -424,8 +653,33 @@ public final class ReceiptReader {
                     unread.add(line);
                     return;
                 }
-                last.price = last.price.subtract(money.amount()).max(BigDecimal.ZERO);
+                // The weight a coupon was worked out on ("1.45 lb @ 1.50 /lb" over 2.18 off) is the coupon's.
+                if (waiting != null && waiting.fits(money.amount())) {
+                    waiting = null;
+                    waitingLine = null;
+                }
                 last.onSale = true;
+                /*
+                 Some savings lines say what was saved on a price already reduced, and some take it
+                 off; the words alone do not always tell. These are read the likelier way here, and
+                 the receipt's total settles it at the end (`settle`).
+                 - ShopRite's "On Sale You Saved 1.80" under a sale price: said, not taken.
+                 - Kings' 4.29 → 3.99, then "Member Savings -0.30": already in the price paid.
+                 - A bare "You Saved 0.40": taken.
+                */
+                boolean onSaleNote = !money.negative() && SAVED.matcher(upper).find()
+                        && upper.matches(".*\\b[OIJ0]N\\s+SALE\\b.*");
+                boolean included = last.listed != null
+                        && last.listed.subtract(last.price).subtract(money.amount()).abs().compareTo(NEAR_ENOUGH) <= 0;
+                boolean saidOnly = !money.negative() && SAVED.matcher(upper).find();
+                if (onSaleNote || included) {
+                    maybe.add(new Maybe(last, money.amount(), false));
+                    return;
+                }
+                if (saidOnly) {
+                    maybe.add(new Maybe(last, money.amount(), true));
+                }
+                last.price = last.price.subtract(money.amount()).max(BigDecimal.ZERO);
                 return;
             }
             if (money.text().isEmpty() || !hasLetters(money.text())) {
@@ -433,6 +687,7 @@ public final class ReceiptReader {
                 return;
             }
             Item item = new Item(money.text(), money.amount());
+            item.takeListedPrice();
             if (waiting != null) {
                 item.measure(waiting);
                 waiting = null;
@@ -461,6 +716,10 @@ public final class ReceiptReader {
         String storeName() {
             if (kings) {
                 return KINGS;
+            }
+            String chain = knownChain(header);
+            if (chain != null) {
+                return chain;
             }
             for (String line : header) {
                 String name = line.replaceFirst("(?i)^welcome to\\s+", "").trim();
@@ -586,6 +845,60 @@ public final class ReceiptReader {
         return text.toUpperCase(Locale.ROOT).replaceAll("^[^A-Z0-9]+|[^A-Z0-9]+$", "");
     }
 
+    /** A row of stars, dashes or equals signs, maybe with a stray letter the reading saw in it. */
+    static boolean decoration(String line) {
+        long marks = line.chars().filter(c -> c == '*' || c == '-' || c == '=' || c == '#' || c == '_').count();
+        return line.length() >= 6 && marks >= line.replace(" ", "").length() * 0.6;
+    }
+
+    /** Chains a receipt names at its head, as they write themselves. */
+    private static final List<String> CHAINS = List.of(
+            "ShopRite", "Whole Foods Market", "Trader Joe's", "Stop & Shop", "ACME Markets", "Wegmans", "Target",
+            "Costco", "Walmart", "Aldi", "Lidl", "Key Food", "Morton Williams", "H Mart", "Fairway Market",
+            "Foodtown", "Food Bazaar", "Stew Leonard's", "The Fresh Market", "Sprouts", "Safeway", "Kroger",
+            "Publix", "Giant", "Hannaford", "Gristedes", "D'Agostino", "C-Town", "Western Beef", "Uncle Giuseppe's",
+            "BJ's", "Food Lion", "Harris Teeter", "Meijer", "Hy-Vee", "Albertsons", "Ralphs", "Vons", "Jewel-Osco");
+
+    /**
+     * A known chain named in the receipt's head, allowing for a letter or two the reading got
+     * wrong — "Welcune to ShapRite" is ShopRite.
+     */
+    static String knownChain(List<String> head) {
+        for (String line : head) {
+            List<String> words = Arrays.stream(line.toLowerCase(Locale.ROOT).replaceAll("['’&.\\-]", "")
+                    .split("[^a-z]+")).filter(w -> !w.isEmpty()).toList();
+            for (String chain : CHAINS) {
+                String key = chain.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+                int span = chain.split("[\\s-]+").length;
+                for (int i = 0; i + span <= words.size(); i++) {
+                    String said = String.join("", words.subList(i, i + span));
+                    int allowed = key.length() >= 8 ? 2 : key.length() >= 5 ? 1 : 0;
+                    if (said.length() >= 3 && editDistance(said, key) <= allowed) {
+                        return chain;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    static int editDistance(String a, String b) {
+        int[] row = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            row[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            int diagonal = row[0];
+            row[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int above = row[j];
+                row[j] = Math.min(Math.min(row[j] + 1, row[j - 1] + 1), diagonal + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1));
+                diagonal = above;
+            }
+        }
+        return row[b.length()];
+    }
+
     private static boolean hasLetters(String text) {
         return text.chars().filter(Character::isLetter).count() >= 2;
     }
@@ -637,11 +950,14 @@ public final class ReceiptReader {
     /** The words that say what something is, in order, each in its singular. */
     static Set<String> words(String text) {
         Set<String> words = new LinkedHashSet<>();
-        for (String word : text.toLowerCase(Locale.ROOT).split("[^a-z]+")) {
-            if (word.length() < 2 || NOT_WHAT_IT_IS.contains(word)) {
-                continue;
+        for (String said : text.toLowerCase(Locale.ROOT).split("[^a-z]+")) {
+            // A till's abbreviation is read as the word it stands for, maybe two ("evoo").
+            for (String word : ABBREVIATIONS.getOrDefault(said, said).split(" ")) {
+                if (word.length() < 2 || NOT_WHAT_IT_IS.contains(word)) {
+                    continue;
+                }
+                words.add(singular(word));
             }
-            words.add(singular(word));
         }
         return words;
     }

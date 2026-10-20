@@ -483,6 +483,8 @@ public class HouseholdService {
         jdbc.update("DELETE FROM price_observations WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM receipt_lines WHERE receipt_id IN ("
                 + "SELECT id FROM receipts WHERE household_id = ?)", householdId);
+        jdbc.update("DELETE FROM receipt_photos WHERE receipt_id IN ("
+                + "SELECT id FROM receipts WHERE household_id = ?)", householdId);
         jdbc.update("DELETE FROM receipts WHERE household_id = ?", householdId);
         jdbc.update("DELETE FROM stores WHERE household_id = ?", householdId);
 

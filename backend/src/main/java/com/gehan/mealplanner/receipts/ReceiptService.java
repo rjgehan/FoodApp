@@ -19,6 +19,7 @@ import com.gehan.mealplanner.receipts.ReceiptReader.KnownIngredient;
 import com.gehan.mealplanner.receipts.ReceiptReader.KnownStore;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.IngredientRepository;
+import com.gehan.mealplanner.repository.StoredImageRepository;
 import com.gehan.mealplanner.repository.UserRepository;
 import com.gehan.mealplanner.service.GroceryListService;
 import com.gehan.mealplanner.service.HouseholdService;
@@ -73,6 +74,7 @@ public class ReceiptService {
     private final Stores stores;
     private final Prices prices;
     private final JdbcTemplate jdbc;
+    private final StoredImageRepository imageRepository;
 
     public ReceiptService(ReceiptRepository receiptRepository,
                           PriceObservationRepository priceObservationRepository,
@@ -85,7 +87,8 @@ public class ReceiptService {
                           GroceryListService groceryListService,
                           Stores stores,
                           Prices prices,
-                          JdbcTemplate jdbc) {
+                          JdbcTemplate jdbc,
+                          StoredImageRepository imageRepository) {
         this.receiptRepository = receiptRepository;
         this.priceObservationRepository = priceObservationRepository;
         this.storeRepository = storeRepository;
@@ -98,6 +101,7 @@ public class ReceiptService {
         this.stores = stores;
         this.prices = prices;
         this.jdbc = jdbc;
+        this.imageRepository = imageRepository;
     }
 
     /**
@@ -111,7 +115,10 @@ public class ReceiptService {
         List<KnownStore> known = storeRepository.findByHouseholdIdOrderByNameAsc(householdId).stream()
                 .map(s -> new KnownStore(s.getId(), s.getName()))
                 .toList();
-        ReceiptDraft draft = remembered(householdId, ReceiptReader.read(request.lines(), knownIngredients(householdId), known));
+        // What each line is, best evidence first: the household's own list, then what was said about
+        // the same printed line before, then — only for a gap — what anybody has priced.
+        ReceiptDraft draft = guessedFromOthers(remembered(householdId,
+                ReceiptReader.read(request.lines(), knownIngredients(householdId), known)));
         String barcode = blankToNull(request.barcode());
         if (barcode == null) {
             return draft;
@@ -196,6 +203,37 @@ public class ReceiptService {
                 draft.total(), draft.sumMatches(), draft.duplicateOf(), lines, draft.unreadLines());
     }
 
+    /** A line nothing has said anything about yet: a guess from what anybody on the server has priced. */
+    private ReceiptDraft guessedFromOthers(ReceiptDraft draft) {
+        if (draft.lines().stream().noneMatch(l -> ReceiptLine.ITEM.equals(l.kind()) && l.ingredientId() == null)) {
+            return draft;
+        }
+        List<KnownIngredient> others = pricedAnywhere();
+        List<DraftLine> lines = draft.lines().stream()
+                .map(line -> {
+                    if (!ReceiptLine.ITEM.equals(line.kind()) || line.ingredientId() != null) {
+                        return line;
+                    }
+                    return ReceiptReader.guessIngredient(line.text(), others)
+                            .map(guess -> new DraftLine(line.text(), line.kind(), line.quantity(), line.unit(),
+                                    line.unitPrice(), line.price(), line.onSale(), guess.id(), guess.name(), line.brand()))
+                            .orElse(line);
+                })
+                .toList();
+        return new ReceiptDraft(draft.storeName(), draft.storeId(), draft.purchasedOn(), draft.subtotal(), draft.tax(),
+                draft.total(), draft.sumMatches(), draft.duplicateOf(), lines, draft.unreadLines());
+    }
+
+    /** What anybody on the server has priced, the most priced first, for lines the household has nothing for. */
+    private List<KnownIngredient> pricedAnywhere() {
+        return jdbc.query("""
+                SELECT i.id, i.name FROM ingredients i
+                JOIN (SELECT ingredient_id, count(*) AS n FROM price_observations GROUP BY ingredient_id
+                      ORDER BY n DESC LIMIT 3000) priced ON priced.ingredient_id = i.id
+                ORDER BY priced.n DESC
+                """, (rs, n) -> new KnownIngredient(rs.getObject("id", UUID.class), rs.getString("name")));
+    }
+
     private List<KnownIngredient> knownIngredients(UUID householdId) {
         return jdbc.query("""
                 SELECT i.id, i.name FROM ingredients i
@@ -237,6 +275,7 @@ public class ReceiptService {
                 .total(request.total())
                 .barcode(barcode)
                 .rawText(request.rawText())
+                .photoIds(photos(householdId, request.photoIds()))
                 .createdBy(by)
                 .build();
 
@@ -288,6 +327,20 @@ public class ReceiptService {
         priceObservationRepository.flush();
         groceryListService.pricesChanged(householdId, priced);
         return toResponse(receipt);
+    }
+
+    /** The pages, each one of this household's own images; anybody else's is refused. */
+    private List<UUID> photos(UUID householdId, List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<UUID> wanted = ids.stream().filter(Objects::nonNull).distinct().toList();
+        long ours = imageRepository.findAllById(wanted).stream()
+                .filter(image -> image.getHousehold().getId().equals(householdId)).count();
+        if (ours != wanted.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "One of the receipt's pictures isn't there. Scan it again.");
+        }
+        return new ArrayList<>(wanted);
     }
 
     /** ITEM unless the line says NOT_FOOD; anything else is a mistake worth saying so. */
@@ -356,8 +409,14 @@ public class ReceiptService {
         Set<UUID> ingredients = new LinkedHashSet<>();
         taught.forEach(o -> ingredients.add(o.getIngredient().getId()));
         priceObservationRepository.deleteAll(taught);
+        List<UUID> photos = List.copyOf(receipt.getPhotoIds());
         receiptRepository.delete(receipt);
         receiptRepository.flush();
+        // The pictures were only ever the receipt's; they go with it.
+        if (!photos.isEmpty()) {
+            jdbc.update("DELETE FROM stored_images WHERE household_id = ? AND id = ANY (?)", householdId,
+                    photos.toArray(UUID[]::new));
+        }
         groceryListService.pricesChanged(householdId, ingredients);
     }
 
@@ -494,7 +553,8 @@ public class ReceiptService {
         int priced = (int) lines.stream().filter(l -> ReceiptLine.ITEM.equals(l.kind()) && l.ingredientId() != null).count();
         return new ReceiptResponse(receipt.getId(), storeName(receipt), receipt.getPurchasedOn(), receipt.getTotal(),
                 items, priced, lines, receipt.getCreatedAt(),
-                receipt.getStore() != null ? receipt.getStore().getId() : null, receipt.getSubtotal(), receipt.getTax());
+                receipt.getStore() != null ? receipt.getStore().getId() : null, receipt.getSubtotal(), receipt.getTax(),
+                List.copyOf(receipt.getPhotoIds()));
     }
 
     private static String storeName(Receipt receipt) {

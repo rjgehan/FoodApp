@@ -8,7 +8,9 @@ import SwiftUI
 
  Two things it says out loud: lines that do not add up to the receipt's subtotal (usually a price
  misread), and a receipt already scanned (its barcode was saved before), with Open and Save
- anyway. The words it could not read wait folded at the bottom, never silently dropped.
+ anyway. The words it could not read wait folded at the bottom, never silently dropped, each with
+ a + that makes it a line. A line it missed altogether is added by hand (Add a line), one it got
+ wrong is removed from its sheet or by holding it, and the photo is a tap away to check against.
 
  Save keeps the receipt and gives every food line with a name a price for that day. Cancel throws
  it all away.
@@ -17,6 +19,8 @@ struct ReceiptReviewView: View {
     var session: Session
     let draft: ReceiptDraft
     let scan: ReceiptScanText
+    /// The pages photographed: shown to check against, and kept with the receipt when it is saved.
+    var photos: [UIImage] = []
     var choices: [IngredientChoice]
     /// Previews and the Gallery: draw it, send nothing.
     var sample = false
@@ -34,19 +38,29 @@ struct ReceiptReviewView: View {
     /// The earlier copy of this receipt, pushed by Open.
     @State private var opened: UUID?
     @State private var showUnread = false
+    /// The words it could not read, less those made into lines.
+    @State private var unreadLeft: [String]
     @State private var busy = false
     @State private var error: String?
+    /// The pages once uploaded, so a second Save (Save anyway) does not send them again.
+    @State private var photoIds: [UUID]?
 
-    /// The line whose sheet is open, by its place on the receipt.
+    /// The line whose sheet is open: one on the receipt by its place, or a new one to add (from
+    /// nothing, or from words it could not read).
     struct LinePick: Identifiable {
-        let id: Int
+        var index: Int?
+        var new: ReceiptLine?
+        var fromUnread: String?
+        var id: String { index.map { "line-\($0)" } ?? "new-\(fromUnread ?? "")" }
     }
 
-    init(session: Session, draft: ReceiptDraft, scan: ReceiptScanText, choices: [IngredientChoice],
-         sample: Bool = false, onCancel: @escaping () -> Void, onSaved: @escaping (ReceiptResponse) -> Void) {
+    init(session: Session, draft: ReceiptDraft, scan: ReceiptScanText, photos: [UIImage] = [],
+         choices: [IngredientChoice], sample: Bool = false, onCancel: @escaping () -> Void,
+         onSaved: @escaping (ReceiptResponse) -> Void) {
         self.session = session
         self.draft = draft
         self.scan = scan
+        self.photos = photos
         self.choices = choices
         self.sample = sample
         self.onCancel = onCancel
@@ -55,6 +69,7 @@ struct ReceiptReviewView: View {
         _date = State(initialValue: draft.purchasedOn.flatMap { Day.date(String($0.prefix(10))) } ?? .now)
         _lines = State(initialValue: draft.lines)
         _duplicateOf = State(initialValue: draft.duplicateOf)
+        _unreadLeft = State(initialValue: draft.unreadLines ?? [])
     }
 
     private var shopName: String { storeName.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -62,14 +77,17 @@ struct ReceiptReviewView: View {
     /// Every line, not-food ones included — that is how the receipt's subtotal was reached.
     private var lineSum: Double { lines.reduce(0) { $0 + $1.price } }
 
-    /// What the lines should add up to: the subtotal, or the total when no subtotal was read.
-    private var expected: Double? { draft.subtotal ?? draft.total }
+    /// What the lines should add up to: the subtotal, or — on a receipt that prints none, as
+    /// Kings' does — the total less the tax.
+    private var expected: Double? {
+        draft.subtotal ?? draft.total.map { $0 - (draft.tax ?? 0) }
+    }
 
-    /// Worked out again as prices are corrected, so the warning goes once they add up. With no
-    /// subtotal read there is nothing to compare, and only the server's word counts.
+    /// Worked out again as lines are corrected, added and removed, so the warning goes once they
+    /// add up. With nothing read to compare against, there is no warning.
     private var mismatch: Bool {
-        guard let subtotal = draft.subtotal else { return draft.sumMatches == false }
-        return abs(lineSum - subtotal) > 0.02
+        guard let expected, !lines.isEmpty else { return false }
+        return abs(lineSum - expected) > 0.02
     }
 
     private var foodCount: Int { lines.filter { $0.kind == .item }.count }
@@ -99,6 +117,10 @@ struct ReceiptReviewView: View {
 
                 details
 
+                if !photos.isEmpty {
+                    ReceiptPhotoStrip(pages: .scanned(photos), name: photoName)
+                }
+
                 SectionLabel("What you bought", trailing: "\(pricedCount) of \(foodCount) priced")
                     .padding(.top, 4)
                 if lines.isEmpty {
@@ -108,10 +130,18 @@ struct ReceiptReviewView: View {
                     ListGroup {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                             ReceiptLineRow(line: line,
-                                           onOpen: { picking = LinePick(id: index) },
+                                           onOpen: { picking = LinePick(index: index) },
                                            onKind: { toggleKind(index) })
+                                .contextMenu {
+                                    Button(role: .destructive) { remove(index) } label: {
+                                        Label("Remove line", systemImage: "trash")
+                                    }
+                                }
                         }
                     }
+                }
+                DashedAddButton(title: "Add a line it missed") {
+                    picking = LinePick(new: ReceiptLine(text: "", price: 0))
                 }
                 // Said before Save, not after: what is saved here is seen by everybody on the server.
                 Text("Tap a line to say what it is or fix its price. Only food with a name keeps a price, and it goes on Explore's store map for everyone on this server — the shop and the price, never who paid it.")
@@ -148,9 +178,18 @@ struct ReceiptReviewView: View {
             }
         }
         .sheet(item: $picking) { pick in
-            if lines.indices.contains(pick.id) {
-                ReceiptLineSheet(line: lines[pick.id], choices: allChoices) { edited in
-                    if lines.indices.contains(pick.id) { lines[pick.id] = edited }
+            if let index = pick.index, lines.indices.contains(index) {
+                ReceiptLineSheet(line: lines[index], choices: allChoices, onRemove: { remove(index) }) { edited in
+                    if lines.indices.contains(index) { lines[index] = edited }
+                }
+            } else if let new = pick.new {
+                ReceiptLineSheet(line: new, choices: allChoices, isNew: true) { added in
+                    withAnimation(.snappy(duration: 0.2)) {
+                        lines.append(added)
+                        if let words = pick.fromUnread, let at = unreadLeft.firstIndex(of: words) {
+                            unreadLeft.remove(at: at)
+                        }
+                    }
                 }
             }
         }
@@ -227,9 +266,9 @@ struct ReceiptReviewView: View {
         }
     }
 
-    /// The words the server could not make sense of, folded away.
+    /// The words the server could not make sense of, folded away; + makes one a line.
     @ViewBuilder private var unread: some View {
-        let words = draft.unreadLines ?? []
+        let words = unreadLeft
         if !words.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Button {
@@ -249,7 +288,18 @@ struct ReceiptReviewView: View {
                 if showUnread {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(words.enumerated()), id: \.offset) { _, text in
-                            Text(text).font(.system(size: 13, design: .monospaced)).foregroundStyle(Palette.muted)
+                            HStack(spacing: 8) {
+                                Text(text).font(.system(size: 13, design: .monospaced)).foregroundStyle(Palette.muted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Button {
+                                    picking = LinePick(new: ReceiptLine.fromUnread(text), fromUnread: text)
+                                } label: {
+                                    Image(systemName: "plus.circle.fill").font(.system(size: 20))
+                                        .foregroundStyle(Palette.accentInk)
+                                }
+                                .buttonStyle(PressFade())
+                                .accessibilityLabel("Add \(text) as a line")
+                            }
                         }
                     }
                     .padding(12)
@@ -261,6 +311,16 @@ struct ReceiptReviewView: View {
     }
 
     // MARK: - Behaviour
+
+    /// "Kings Food Markets Oct 18", for the pictures when they are shared.
+    private var photoName: String {
+        [shopName.isEmpty ? "Receipt" : shopName, ReceiptWords.day(Day.iso(date))].compactMap { $0 }.joined(separator: " ")
+    }
+
+    private func remove(_ index: Int) {
+        guard lines.indices.contains(index) else { return }
+        withAnimation(.snappy(duration: 0.2)) { _ = lines.remove(at: index) }
+    }
 
     private func toggleKind(_ index: Int) {
         guard lines.indices.contains(index) else { return }
@@ -284,6 +344,7 @@ struct ReceiptReviewView: View {
         if let total = draft.total { out["total"] = Money.json(total) }
         if withBarcode, let barcode = scan.barcode, !barcode.isEmpty { out["barcode"] = barcode }
         if !scan.rawText.isEmpty { out["rawText"] = scan.rawText }
+        if let photoIds, !photoIds.isEmpty { out["photoIds"] = photoIds.map(\.uuidString) }
         return out
     }
 
@@ -296,9 +357,13 @@ struct ReceiptReviewView: View {
             return
         }
         guard let household = session.household?.id else { return }
-        let wanted = request(withBarcode: !anyway)
         busy = true
         defer { busy = false }
+        // The pages first, best effort: a page that will not go up leaves the receipt without it.
+        if photoIds == nil, !photos.isEmpty {
+            photoIds = await ReceiptPhotos.upload(photos, household: household)
+        }
+        let wanted = request(withBarcode: !anyway)
         do {
             let saved = try await APIClient.shared.saveReceipt(household: household, body: wanted)
             onSaved(saved)
@@ -437,6 +502,10 @@ private struct KindButton: View {
 struct ReceiptLineSheet: View {
     let line: ReceiptLine
     let choices: [IngredientChoice]
+    /// A line the reading missed, being added: what it is names it.
+    var isNew = false
+    /// Takes the line off the receipt; nil for one being added.
+    var onRemove: (() -> Void)? = nil
     var onDone: (ReceiptLine) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -449,12 +518,15 @@ struct ReceiptLineSheet: View {
     /// What the size box said when the sheet opened, so a weight the till printed is kept unless changed.
     private let originalAmount: String
 
-    init(line: ReceiptLine, choices: [IngredientChoice], onDone: @escaping (ReceiptLine) -> Void) {
+    init(line: ReceiptLine, choices: [IngredientChoice], isNew: Bool = false, onRemove: (() -> Void)? = nil,
+         onDone: @escaping (ReceiptLine) -> Void) {
         self.line = line
         self.choices = choices
+        self.isNew = isNew
+        self.onRemove = onRemove
         self.onDone = onDone
         _name = State(initialValue: line.ingredientName ?? "")
-        _priceText = State(initialValue: Money.field(line.price))
+        _priceText = State(initialValue: isNew && line.price == 0 ? "" : Money.field(line.price))
         _kind = State(initialValue: line.kind)
         _onSale = State(initialValue: line.onSale)
         _brand = State(initialValue: line.brand ?? "")
@@ -481,7 +553,10 @@ struct ReceiptLineSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SheetHeader(line.text, subtitle: line.weighed, onClose: { dismiss() })
+                SheetHeader(isNew ? "Add a line" : line.text,
+                            subtitle: isNew ? (line.text.isEmpty ? "Something the reading missed" : "From \"\(line.text)\"")
+                                : line.weighed,
+                            onClose: { dismiss() })
 
                 SegmentedControl(selection: $kind.animation(.snappy(duration: 0.2)),
                                  options: [(ReceiptLineKind.item, "Food"), (ReceiptLineKind.notFood, "Not food")])
@@ -511,22 +586,39 @@ struct ReceiptLineSheet: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } else {
+                    if isNew && line.text.isEmpty {
+                        FieldBox("What it is", text: $name, prompt: "Bag fee", systemImage: "bag")
+                    }
                     Text("Bags, deposits and gift cards keep no price.")
                         .font(.system(size: 13)).foregroundStyle(Palette.muted)
                 }
 
+                // Numbers with a return key: the decimal pad has none, and covered the button under it.
                 FieldBox("Price paid", text: $priceText, prompt: "0.00", systemImage: "dollarsign",
                          hint: "What the line cost after any discount under it.")
-                    .keyboardType(.decimalPad)
+                    .keyboardType(.numbersAndPunctuation)
+                    .submitLabel(.done)
 
                 Toggle("On sale", isOn: $onSale)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Palette.text)
                     .padding(.horizontal, 4)
 
-                Button("Done", action: apply)
+                Button(isNew ? "Add line" : "Done", action: apply)
                     .buttonStyle(.primary)
-                    .disabled(price == nil || (kind == .item && amount == nil))
+                    .disabled(price == nil || (kind == .item && amount == nil) || (isNew && typed.isEmpty && line.text.isEmpty))
+
+                if let onRemove {
+                    Button(role: .destructive) {
+                        onRemove()
+                        dismiss()
+                    } label: {
+                        Label("Remove from receipt", systemImage: "trash")
+                    }
+                    .buttonStyle(.kitchen(.danger, size: .small))
+                    .frame(maxWidth: .infinity)
+                    .accessibilityHint("For a line the reading got wrong: it keeps no price")
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -544,6 +636,8 @@ struct ReceiptLineSheet: View {
      */
     private func apply() {
         var edited = line
+        // A line added by hand is called what it is.
+        if edited.text.trimmingCharacters(in: .whitespaces).isEmpty { edited.text = typed }
         edited.kind = kind
         edited.onSale = onSale
         if let price { edited.price = price }
@@ -565,6 +659,11 @@ struct ReceiptLineSheet: View {
             edited.ingredientName = typed
         } else {
             edited.ingredientName = typed
+            edited.ingredientId = nil
+        }
+        // Its name was what it is, not something it counts as: not food keeps no price.
+        if kind == .notFood {
+            edited.ingredientName = nil
             edited.ingredientId = nil
         }
         onDone(edited)

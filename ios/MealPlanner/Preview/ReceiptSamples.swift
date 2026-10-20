@@ -29,12 +29,13 @@ extension SampleData {
         "CARD SAVINGS 0.50-",
         "OATLY OAT MILK 5.49 F",
         "SOURDOUGH BOULE 6.99 F",
+        // A smudged price the reader cannot make out: the check screen's + puts it on.
+        "KNGS ARTSN BRD 4.Z9 F",
         "BAG FEE 0.10 T",
-        "KINGS REWARDS #4417",
-        "SUBTOTAL 39.81",
+        "SUBTOTAL 44.10",
         "TAX 0.01",
-        "TOTAL 39.82",
-        "VISA ****4417 39.82",
+        "TOTAL 44.11",
+        "VISA ****4417 44.11",
         "THANK YOU FOR SHOPPING KINGS",
     ]
 
@@ -56,13 +57,13 @@ extension SampleData {
         ReceiptLine(text: "BAG FEE", kind: .notFood, price: 0.10),
     ]
 
-    /// What the server makes of `receiptText`: everything adds up.
+    /// What the server makes of `receiptText`: everything but the smudged bread, which is why it
+    /// does not add up until that is put on by hand.
     static let receiptDraft = ReceiptDraft(
         storeName: "Kings Food Markets", storeId: kings, purchasedOn: "2026-10-18",
-        subtotal: 39.81, tax: 0.01, total: 39.82, sumMatches: true, duplicateOf: nil,
+        subtotal: 44.10, tax: 0.01, total: 44.11, sumMatches: false, duplicateOf: nil,
         lines: receiptLines,
-        // The sign-off is dropped as the shop talking; the rewards line is one it cannot explain.
-        unreadLines: ["KINGS REWARDS #4417"]
+        unreadLines: ["KNGS ARTSN BRD 4.Z9 F"]
     )
 
     /// The same shop with the thighs misread as $18.86, so the lines no longer add up.

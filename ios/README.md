@@ -389,9 +389,15 @@ Prices come from the household's own receipts — there is no shop to ask. Groce
 receipt (or Scan on the "Got the receipt?" toast after Done shopping, which never opens anything
 by itself) opens VisionKit's document camera: it finds the paper, flattens it and takes as many
 pages as a long receipt needs. Vision reads the words on the phone
-(`Features/Receipts/ReceiptText.swift`: accurate, no language correction, then the pieces put back
-into rows by how much they overlap up and down, each row left to right), and the first barcode on
-it is kept only to spot a receipt scanned twice. No model and nothing but the words leave the phone.
+(`Features/Receipts/ReceiptText.swift`: accurate, no language correction, no smallest text size —
+a long receipt's print is a tiny share of its page). A page where that finds hardly a price is read
+again with Vision's previous revision and with the contrast raised, and the read with the most
+prices kept: a faded ShopRite receipt came back as upside-down nonsense on the first read. The
+pieces are put back into rows by their own slant — the page is turned straight by the slant most
+long pieces share, and each row followed along the long pieces around it, so a receipt held two to
+six degrees crooked, or curled, keeps every price on its own item. The first barcode is kept only to
+spot a receipt scanned twice. Nothing but the words leaves the phone until Save, which also uploads
+the pages themselves (`ReceiptPhotos.swift`), kept with the receipt to look back at and share.
 
 The words go to `POST …/receipts/read`, and the server's rules (`ReceiptReader`, unit-tested in
 Java) make the draft: shop, date, subtotal/tax/total, each line's price after its discounts, how
@@ -399,8 +405,18 @@ it was weighed, Not food for bags and deposits, and the ingredient each line pro
 check screen (`ReceiptReviewView`) shows it to be put right — the shop name, the date, a line's
 name, price, sale or kind — warns when the lines do not add up to the subtotal or the receipt was
 scanned before (Open / Save anyway, which saves without the barcode), and keeps what it could not
-read folded at the bottom. Save (`POST …/receipts`) gives every food line with a name a price for
-that day. ••• → Receipts lists them, opens one read-only, and swipe deletes one with its prices.
+read folded at the bottom, each with a + that makes it a line (its price filled in where one can be
+made out). Add a line it missed adds one by hand, food or not; a line read wrong is removed from its
+sheet or by holding it; See the receipt opens the photo, zoomable, to check against. The "doesn't add
+up" note follows every change. Save (`POST …/receipts`) gives every food line with a name a price for
+that day. ••• → Receipts lists them, opens one read-only — See the receipt, with Share for AirDrop
+to a Mac — and swipe deletes one with its prices and its pictures.
+
+The server's reader was put right against real receipts (`backend/src/test/resources/receipts`,
+their printed words only, run by `RealReceiptsTest`): Kings' product codes and its Price and You Pay
+columns, member savings already in the price paid, ShopRite's "On Sale You Saved" notes, department
+headings, tax flags read as $, 5 or 8, and a receipt with no subtotal checked against its total
+less tax. Where a saving could have been taken or only said, the receipt's total decides.
 
 A line's sheet keeps what it *is* apart from whose and how much: Counts as is the thing itself
 ("english breakfast tea", as the grocery list says it), Brand is who made it ("Twinings"), and How

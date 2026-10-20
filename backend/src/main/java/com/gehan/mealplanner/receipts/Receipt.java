@@ -75,6 +75,17 @@ public class Receipt {
     @Builder.Default
     private List<ReceiptLine> lines = new ArrayList<>();
 
+    /**
+     * The scanned pages, as stored images of the household's, in order: to look back at, and to
+     * check the reader against what was really printed. Deleted with the receipt.
+     */
+    @ElementCollection
+    @CollectionTable(name = "receipt_photos", joinColumns = @JoinColumn(name = "receipt_id"))
+    @Column(name = "image_id", nullable = false)
+    @OrderColumn(name = "position")
+    @Builder.Default
+    private List<UUID> photoIds = new ArrayList<>();
+
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
