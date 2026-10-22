@@ -271,9 +271,14 @@ struct PublicRecipeScreen: View {
         saving = true
         defer { saving = false }
         do {
-            copy = try await SharedRecipeLink.save(token: token, household: household.id)
+            let copied = try await SharedRecipeLink.save(token: token, household: household.id)
+            copy = copied
             // The app is on the house the copy went into, so the recipe it opens is there.
-            if session.household?.id != household.id { session.choose(household) }
+            let here = session.household?.id == household.id
+            if !here { session.choose(household) }
+            // Recipes shows it at once: the copy itself when the app was already on that house,
+            // else everything fetched again for the house it has just moved to.
+            NotificationCenter.default.post(name: .recipesChanged, object: here ? copied : nil)
         } catch {
             self.error = error.localizedDescription
         }

@@ -157,6 +157,21 @@ struct GalleryView: View {
                                               onCancel: {}, onSaved: { _ in })
                         }
                     }
+                    entry("Check a receipt — store shorthand", "sparkles") {
+                        NavigationStack {
+                            ReceiptReviewView(session: session, draft: SampleData.receiptDraftShorthand,
+                                              scan: ReceiptScanText(lines: SampleData.receiptText, barcode: nil),
+                                              choices: SampleData.receiptChoices, sample: true,
+                                              onCancel: {}, onSaved: { _ in })
+                        }
+                    }
+                    entry("Edit a saved receipt", "square.and.pencil") {
+                        NavigationStack {
+                            ReceiptReviewView(session: session, editing: SampleData.receiptDetail,
+                                              choices: SampleData.receiptChoices, sample: true,
+                                              onCancel: {}, onSaved: { _ in })
+                        }
+                    }
                     entry("Receipts", "receipt") {
                         NavigationStack {
                             ReceiptsView(session: session, sample: SampleData.receipts,

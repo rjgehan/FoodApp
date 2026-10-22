@@ -27,6 +27,11 @@ struct RecipesView: View {
     @State private var addingOne = false
     /// Houses whose "Set up your kitchen" card was put away while this screen was up.
     @State private var kitchenCardClosed: Set<UUID> = []
+    @Environment(\.scenePhase) private var scenePhase
+    /// The app went to the background since Recipes last looked.
+    @State private var wasAway = false
+    /// When coming back last fetched everything, so flicking in and out does not fetch each time.
+    @State private var lastWakeLoad = Date.distantPast
 
     init(session: Session, sample: [Recipe]? = nil, sampleCategories: [RecipeCategory]? = nil) {
         self.session = session
@@ -103,13 +108,36 @@ struct RecipesView: View {
                 await store.load()
                 await store.loadSavedLinks()
             }
-            // A recipe deleted from its own page, however deep in a drawer that was. One that says
-            // which recipe it was (Organise on its page) is just put right, not fetched again.
+            // A recipe deleted from its own page, however deep in a drawer that was, or one saved
+            // from the share sheet. One that says which recipe it was (Organise on its page, a
+            // shared one saved into this house) is just put right, not fetched again; otherwise
+            // everything is, Saved links too (a link kept from the share sheet).
             .onReceive(NotificationCenter.default.publisher(for: .recipesChanged)) { note in
                 if let recipe = note.object as? Recipe {
                     store.saved(recipe)
                 } else {
-                    Task { await store.load() }
+                    Task {
+                        await store.load()
+                        await store.loadSavedLinks()
+                    }
+                }
+            }
+            // Back from the background — a recipe may have been saved on the web, another phone or
+            // the share sheet meanwhile: everything again, at most every 30 seconds.
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .background:
+                    wasAway = true
+                case .active where wasAway:
+                    wasAway = false
+                    guard !store.isSample, Date.now.timeIntervalSince(lastWakeLoad) >= 30 else { return }
+                    lastWakeLoad = .now
+                    Task {
+                        await store.load()
+                        await store.loadSavedLinks()
+                    }
+                default:
+                    break
                 }
             }
             .householdSheets(session, switching: $switchingHousehold, account: $showingAccount, ideas: $showingIdeas)

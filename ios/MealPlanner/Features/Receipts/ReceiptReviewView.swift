@@ -18,8 +18,19 @@ import SwiftUI
  that shop when it has linked one before, else the nearest of the chain when Location is on —
  said as a guess, and changed with a tap — so its prices are pinned on the map at that shop.
 
+ On a phone with Apple Intelligence, the lines the server could not name — or only guessed from
+ other households' receipts — are read on the phone as soon as the draft arrives ("Reading
+ names…", see ReceiptAssist.swift), and each one it names wears a Guess pill, as do the server's
+ own guesses from other households, until somebody taps the line. Lines the server remembered
+ or matched against the household's own ingredients are left alone.
+
  Save keeps the receipt and gives every food line with a name a price for that day. Cancel throws
  it all away.
+
+ The same screen puts right a receipt saved before (Edit on the receipt, `init(session:editing:…)`):
+ its shop, day and lines as saved, its pictures as kept, no barcode and no duplicate warning, no
+ store guessing (the branch is the receipt's own Which store?) and no Apple Intelligence. Save
+ sends it back (`PUT /receipts/{id}`) with the totals as they were; Cancel changes nothing.
  */
 struct ReceiptReviewView: View {
     var session: Session
@@ -32,6 +43,8 @@ struct ReceiptReviewView: View {
     var sample = false
     var onCancel: () -> Void
     var onSaved: (ReceiptResponse) -> Void
+    /// A receipt saved before, being put right; nil for a new scan.
+    var editing: ReceiptResponse? = nil
 
     @State private var storeName: String
     @State private var date: Date
@@ -59,6 +72,19 @@ struct ReceiptReviewView: View {
     @State private var error: String?
     /// The pages once uploaded, so a second Save (Save anyway) does not send them again.
     @State private var photoIds: [UUID]?
+    /// Lines whose name is a guess — Apple Intelligence's, or the server's from other
+    /// households — by their key, until somebody opens or flips them.
+    @State private var guessed: Set<UUID>
+    /// Lines somebody has put right by hand, which Apple Intelligence leaves alone.
+    @State private var touched: Set<UUID> = []
+    /// Apple Intelligence has been asked about this draft (once, even if the screen comes back).
+    @State private var assisted = false
+    /// Lines Apple Intelligence has answered for (named or not), so a reading cut short by
+    /// leaving the screen picks up only the rest when it comes back.
+    @State private var answeredKeys: Set<UUID> = []
+    /// "Reading names… 2 of 5": how many lines it is reading, and how many are done.
+    @State private var namesAsked = 0
+    @State private var namesDone = 0
 
     /// The line whose sheet is open: one on the receipt by its place, or a new one to add (from
     /// nothing, or from words it could not read).
@@ -83,9 +109,29 @@ struct ReceiptReviewView: View {
         _storeName = State(initialValue: draft.storeName ?? "")
         _date = State(initialValue: draft.purchasedOn.flatMap { Day.date(String($0.prefix(10))) } ?? .now)
         _lines = State(initialValue: draft.lines)
-        _lineKeys = State(initialValue: draft.lines.map { _ in UUID() })
+        let keys = draft.lines.map { _ in UUID() }
+        _lineKeys = State(initialValue: keys)
         _duplicateOf = State(initialValue: draft.duplicateOf)
         _unreadLeft = State(initialValue: draft.unreadLines ?? [])
+        // The server's own guesses from other households' receipts say so, as the model's do.
+        let othersGuessed = zip(keys, draft.lines).filter { _, line in
+            line.ingredientSource == ReceiptAssist.Source.others && line.countsAs != nil
+        }
+        _guessed = State(initialValue: Set(othersGuessed.map { key, _ in key }))
+    }
+
+    /**
+     A receipt saved before, to be put right: its shop, day, totals and lines as saved — brands,
+     sizes, kinds and what each counts as — and its pictures as kept.
+     */
+    init(session: Session, editing receipt: ReceiptResponse, choices: [IngredientChoice], sample: Bool = false,
+         onCancel: @escaping () -> Void, onSaved: @escaping (ReceiptResponse) -> Void) {
+        let saved = ReceiptDraft(storeName: receipt.storeName, storeId: nil, purchasedOn: receipt.purchasedOn,
+                                 subtotal: receipt.subtotal, tax: receipt.tax, total: receipt.total,
+                                 sumMatches: nil, duplicateOf: nil, lines: receipt.lines, unreadLines: nil)
+        self.init(session: session, draft: saved, scan: ReceiptScanText(lines: [], barcode: nil), photos: [],
+                  choices: choices, sample: sample, onCancel: onCancel, onSaved: onSaved)
+        editing = receipt
     }
 
     private var shopName: String { storeName.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -120,6 +166,26 @@ struct ReceiptReviewView: View {
         return (choices + guesses).filter { seen.insert($0.name.lowercased()).inserted }
     }
 
+    /// What Apple Intelligence may answer with: the grocery list's names (what was just bought
+    /// first), then the household's own names the server put on other lines — not other
+    /// households' guesses.
+    private var assistNames: [String] {
+        let known = lines.filter { $0.ingredientSource != ReceiptAssist.Source.others }.compactMap(\.countsAs)
+        return choices.map(\.name) + known
+    }
+
+    /// The lines as the assistant sees them, keyed as the list is.
+    private var assistLines: [ReceiptAssist.Line] {
+        zip(lineKeys, lines).map { key, line in
+            ReceiptAssist.Line(key: key, text: line.text, brand: line.brand,
+                               size: ReceiptWords.amount(quantity: line.quantity, unit: line.unit),
+                               isFood: line.kind == .item, ingredientName: line.ingredientName,
+                               source: line.ingredientSource)
+        }
+    }
+
+    private var isEditing: Bool { editing != nil }
+
     var body: some View {
         List {
             Group {
@@ -134,11 +200,24 @@ struct ReceiptReviewView: View {
 
                 details.pageRow(top: duplicateOf == nil && !mismatch ? 8 : 0, bottom: 14)
 
-                LinkedStoreRow(place: place, note: placeNote, distance: placeDistance) { choosingStore = true }
-                    .pageRow(bottom: 14)
+                // A saved receipt's branch is changed on the receipt itself, not here.
+                if !isEditing {
+                    LinkedStoreRow(place: place, note: placeNote, distance: placeDistance) { choosingStore = true }
+                        .pageRow(bottom: 14)
+                }
 
-                if !photos.isEmpty {
+                if let kept = editing?.photoIds, !kept.isEmpty {
+                    ReceiptPhotoStrip(pages: .kept(kept), name: photoName).pageRow(bottom: 14)
+                } else if !photos.isEmpty {
                     ReceiptPhotoStrip(pages: .scanned(photos), name: photoName).pageRow(bottom: 14)
+                }
+
+                if namesAsked > 0 {
+                    readingNames.pageRow(bottom: 14)
+                } else if !guessed.isEmpty {
+                    NoteBox("Lines marked Guess were named for you. Tap one to check it or put it right.",
+                            tone: .plum, systemImage: "sparkles")
+                        .pageRow(bottom: 14)
                 }
 
                 SectionLabel("What you bought", trailing: "\(pricedCount) of \(foodCount) priced")
@@ -151,8 +230,13 @@ struct ReceiptReviewView: View {
             } else {
                 ForEach(Array(zip(lineKeys, lines).enumerated()), id: \.element.0) { index, pair in
                     ReceiptLineRow(line: pair.1,
-                                   onOpen: { picking = LinePick(index: index) },
-                                   onKind: { toggleKind(index) })
+                                   onOpen: {
+                                       // Looked at: no longer a guess, and no answer on its way overwrites it.
+                                       settled(index)
+                                       picking = LinePick(index: index)
+                                   },
+                                   onKind: { toggleKind(index) },
+                                   guess: guessed.contains(pair.0))
                         .contextMenu {
                             Button(role: .destructive) { remove(index) } label: {
                                 Label("Remove line", systemImage: "trash")
@@ -198,7 +282,7 @@ struct ReceiptReviewView: View {
         .environment(\.defaultMinListRowHeight, 0)
         .scrollDismissesKeyboard(.interactively)
         .pageBackground()
-        .navigationTitle("Check the receipt")
+        .navigationTitle(isEditing ? "Edit the receipt" : "Check the receipt")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             BarTextButton("Cancel", placement: .topBarLeading, action: onCancel)
@@ -209,7 +293,10 @@ struct ReceiptReviewView: View {
         .sheet(item: $picking) { pick in
             if let index = pick.index, lines.indices.contains(index) {
                 ReceiptLineSheet(line: lines[index], choices: allChoices, onRemove: { remove(index) }) { edited in
-                    if lines.indices.contains(index) { lines[index] = edited }
+                    if lines.indices.contains(index) {
+                        lines[index] = edited
+                        settled(index)
+                    }
                 }
             } else if let new = pick.new {
                 ReceiptLineSheet(line: new, choices: allChoices, isNew: true) { added in
@@ -230,9 +317,12 @@ struct ReceiptReviewView: View {
                         sample: sample ? StoreMapSamples.places : nil)
         }
         .navigationDestination(item: $opened) { id in
-            ReceiptDetailView(session: session, id: id, sample: sample ? SampleData.receiptDetail : nil, backLabel: "Check")
+            ReceiptDetailView(session: session, id: id, sample: sample ? SampleData.receiptDetail : nil, backLabel: "Check",
+                              choices: choices)
         }
         .task { await loadExtras() }
+        // The lines the server could not name, read on the phone while the rest is checked.
+        .task { await readNames() }
         // The shop's name settles (read, typed, picked), the household's shops arrive, the phone
         // finds itself: each time, the best guess at the branch, until somebody picks one.
         .task(id: guessKey) { await guessPlace() }
@@ -240,8 +330,27 @@ struct ReceiptReviewView: View {
 
     private var saveTitle: String {
         if busy { return "Saving…" }
+        if isEditing { return "Save changes" }
         if pricedCount == 0 { return "Save receipt" }
         return "Save \(pricedCount) \(pricedCount == 1 ? "price" : "prices")"
+    }
+
+    /// "Reading names… 2 of 5", while Apple Intelligence reads the lines the server could not name.
+    private var readingNames: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small).tint(Palette.plum)
+            Text("Reading names… \(namesDone) of \(namesAsked)")
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "sparkles").font(.system(size: 12, weight: .semibold))
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(Palette.plum)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Palette.plumSoft.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Apple Intelligence is reading names, \(namesDone) of \(namesAsked)")
     }
 
     // MARK: - Pieces
@@ -359,8 +468,65 @@ struct ReceiptReviewView: View {
     private func remove(_ index: Int) {
         guard lines.indices.contains(index) else { return }
         withAnimation(.snappy(duration: 0.2)) {
+            guessed.remove(lineKeys[index])
             lines.remove(at: index)
             lineKeys.remove(at: index)
+        }
+    }
+
+    /// Somebody has looked at the line and said what it is: no longer a guess, and no model
+    /// answer still on its way changes it.
+    private func settled(_ index: Int) {
+        guard lineKeys.indices.contains(index) else { return }
+        let key = lineKeys[index]
+        guessed.remove(key)
+        touched.insert(key)
+    }
+
+    // MARK: - Apple Intelligence
+
+    /**
+     Once, on a new scan: the food lines with no name (or only another household's guess) to
+     Apple Intelligence, a couple at a time, each filled in as its answer comes. A line put right
+     by hand meanwhile, or removed, is left as it is; one with no answer stays as the server sent it.
+     */
+    private func readNames() async {
+        guard !isEditing, !assisted, let thinker = ReceiptAI.thinker else { return }
+        assisted = true
+        // Not a line put right by hand, nor one already answered before the screen went away.
+        let unanswered = assistLines.filter { !touched.contains($0.key) && !answeredKeys.contains($0.key) }
+        let questions = ReceiptAssist.questions(for: unanswered)
+        guard !questions.isEmpty else { return }
+        namesDone = 0
+        namesAsked = questions.count
+        let answers = ReceiptAssist.guesses(for: questions, names: assistNames, thinker: thinker)
+        for await answer in answers {
+            namesDone += 1
+            answeredKeys.insert(answer.key)
+            take(answer)
+        }
+        // Cut short (the screen went, say to open the earlier copy): the rest when it comes back.
+        if Task.isCancelled { assisted = false }
+        withAnimation(.snappy(duration: 0.2)) { namesAsked = 0 }
+    }
+
+    /// One answer onto its line: the household's own ingredient when it names one, else a new
+    /// name for the server to make; "not food" flips the line.
+    private func take(_ answer: ReceiptAssist.Answer) {
+        guard let guess = answer.guess, !touched.contains(answer.key),
+              let index = lineKeys.firstIndex(of: answer.key), lines[index].kind == .item else { return }
+        withAnimation(.snappy(duration: 0.2)) {
+            switch guess {
+            case .named(let name):
+                let known = allChoices.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                lines[index].ingredientName = known?.name ?? name
+                lines[index].ingredientId = known?.ingredientId
+            case .notFood:
+                lines[index].kind = .notFood
+                lines[index].ingredientName = nil
+                lines[index].ingredientId = nil
+            }
+            guessed.insert(answer.key)
         }
     }
 
@@ -394,7 +560,7 @@ struct ReceiptReviewView: View {
      only if Location is already allowed: a receipt is no time to be asked).
      */
     private func guessPlace() async {
-        guard !placeChosen else { return }
+        guard !placeChosen, !isEditing else { return }
         let name = shopName
         // Typing: wait for the name to settle.
         try? await Task.sleep(for: .milliseconds(400))
@@ -425,12 +591,15 @@ struct ReceiptReviewView: View {
         guard lines.indices.contains(index) else { return }
         withAnimation(.snappy(duration: 0.2)) {
             lines[index].kind = lines[index].kind == .item ? .notFood : .item
+            settled(index)
         }
     }
 
     /**
-     `POST /receipts`'s body. `withBarcode` false is Save anyway: the barcode is what makes the
-     server refuse a second copy, so it stays behind.
+     `POST /receipts`'s body (and `PUT /receipts/{id}`'s, which is the same: there the scan's
+     words, barcode and pictures are none, so the server keeps the receipt's own). `withBarcode`
+     false is Save anyway: the barcode is what makes the server refuse a second copy, so it stays
+     behind.
      */
     private func request(withBarcode: Bool) -> [String: Any] {
         var out: [String: Any] = [
@@ -451,6 +620,10 @@ struct ReceiptReviewView: View {
     private func save(anyway: Bool) async {
         guard canSave else { return }
         error = nil
+        if let editing {
+            await saveChanges(to: editing)
+            return
+        }
         if sample {
             onSaved(ReceiptResponse(id: UUID(), storeName: shopName.isEmpty ? nil : shopName, purchasedOn: Day.iso(date), total: draft.total,
                                     itemCount: lines.count, pricedCount: pricedCount, lines: lines, createdAt: nil, place: place))
@@ -473,6 +646,28 @@ struct ReceiptReviewView: View {
             await loadDuplicateDay()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// A saved receipt put right: its lines, shop and day go back, and the prices it saved with them.
+    private func saveChanges(to receipt: ReceiptResponse) async {
+        if sample {
+            onSaved(ReceiptResponse(id: receipt.id, storeName: shopName.isEmpty ? nil : shopName,
+                                    purchasedOn: Day.iso(date), total: receipt.total, itemCount: lines.count,
+                                    pricedCount: pricedCount, lines: lines, createdAt: receipt.createdAt,
+                                    subtotal: receipt.subtotal, tax: receipt.tax, photoIds: receipt.photoIds,
+                                    place: receipt.place))
+            return
+        }
+        guard let household = session.household?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let saved = try await APIClient.shared.updateReceipt(household: household, id: receipt.id,
+                                                                 body: request(withBarcode: false))
+            onSaved(saved)
+        } catch {
+            self.error = "Couldn't save the changes. \(error.localizedDescription)"
         }
     }
 
@@ -499,12 +694,15 @@ struct ReceiptReviewView: View {
 /**
  One receipt line: what it said, the ingredient it counts as (or why it keeps no price), a Sale
  pill, how it was weighed, and the price on the right. On the review screen the words open the
- line's sheet and the Food / Not food pill flips it; on a saved receipt it only shows.
+ line's sheet and the Food / Not food pill flips it; on a saved receipt it only shows. A Guess
+ pill marks a name worked out for the person — by Apple Intelligence, or from other households'
+ receipts — that nobody has looked at yet.
  */
 struct ReceiptLineRow: View {
     let line: ReceiptLine
     var onOpen: (() -> Void)? = nil
     var onKind: (() -> Void)? = nil
+    var guess = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -541,6 +739,10 @@ struct ReceiptLineRow: View {
                 .multilineTextAlignment(.leading)
             HStack(spacing: 6) {
                 match
+                if guess {
+                    Pill("Guess", tone: .plum, systemImage: "sparkles")
+                        .accessibilityLabel("A guess: check it")
+                }
                 if line.onSale { Pill("Sale", tone: .herb) }
             }
             if let detail = line.detail {
@@ -786,6 +988,21 @@ struct ReceiptLineSheet: View {
                           choices: SampleData.receiptChoices, sample: true, onCancel: {}, onSaved: { _ in })
     }
     .preferredColorScheme(.dark)
+}
+
+#Preview("Check the receipt — store shorthand, guesses") {
+    NavigationStack {
+        ReceiptReviewView(session: .preview, draft: SampleData.receiptDraftShorthand,
+                          scan: ReceiptScanText(lines: SampleData.receiptText, barcode: nil),
+                          choices: SampleData.receiptChoices, sample: true, onCancel: {}, onSaved: { _ in })
+    }
+}
+
+#Preview("Edit a saved receipt") {
+    NavigationStack {
+        ReceiptReviewView(session: .preview, editing: SampleData.receiptDetail, choices: SampleData.receiptChoices,
+                          sample: true, onCancel: {}, onSaved: { _ in })
+    }
 }
 
 #Preview("A line") {

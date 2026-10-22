@@ -427,8 +427,24 @@ branch renames the shop (as the household already calls that chain, if it does).
 up with the receipt (`place`), and a saved receipt links, changes or unlinks one later
 (`PUT …/receipts/{id}/place`; another chain's branch re-files it there, prices and all), with
 Directions. Save (`POST …/receipts`) gives every food line with a name a price for
-that day. ••• → Receipts lists them, opens one read-only — See the receipt, with Share for AirDrop
-to a Mac — and swipe deletes one with its prices and its pictures.
+that day. ••• → Receipts lists them, opens one — See the receipt, with Share for AirDrop
+to a Mac — and swipe deletes one with its prices and its pictures. Edit on a saved receipt opens
+the check screen in its edit mode (`ReceiptReviewView(session:editing:…)`): the shop, day and lines
+as saved, the kept pictures, no barcode, no duplicate warning and no store guessing; Save sends it
+back (`PUT …/receipts/{id}`, totals, barcode, words and pictures as they were) and its prices are
+taught again — the receipt, Receipts and, when Receipts closes, the grocery list all show the change.
+
+Store shorthand ("KNGS GRK YGRT PLN") is read by Apple Intelligence on a phone that has it
+(`ReceiptAssist.swift` has the rules, `OnDeviceReceipts.swift` the model). As soon as the draft
+arrives, every food line the server could not name — or only guessed from other households'
+receipts (`ingredientSource` OTHERS) — is asked about, two at a time, one short greedy session each
+("Reading names… 2 of 5"): which of the grocery list's names it is (ticked rows and the shop just
+finished first) as a guided `.anyOf`, or "something else", then a plain name of a few words or "not
+food". Lines the server REMEMBERED or MATCHED are never asked about. A name the model gave, or the
+server's OTHERS guess, wears a Guess pill until the line is opened or flipped; a refusal, a pick off
+the list or a wordy answer leaves the line as the server sent it. Saving sends the name, so the
+server's memory knows the line next time with no model at all. `-mp_debug_ai fake|off` works here
+too, and `./checks/run.sh` checks the rules.
 
 The server's reader was put right against real receipts (`backend/src/test/resources/receipts`,
 their printed words only, run by `RealReceiptsTest`): Kings' product codes and its Price and You Pay
