@@ -1,5 +1,6 @@
 package com.gehan.mealplanner.receipts;
 
+import com.gehan.mealplanner.config.StartupBackfills;
 import com.gehan.mealplanner.domain.HouseholdMember;
 import com.gehan.mealplanner.domain.HouseholdRole;
 import com.gehan.mealplanner.domain.User;
@@ -450,6 +451,228 @@ class ReceiptsDatabaseTest {
         assertThat(hiddenPlaceService.list(home, me.getId())).hasSize(1);
     }
 
+    // --- Editing ---
+
+    @Test
+    void editingAReceiptPutsItsLinesRightAndTeachesItsPricesAgain() {
+        GroceryListItemResponse eggs = add("eggs-" + tag);
+        GroceryListItemResponse milk = add("milk-" + tag);
+        GroceryListItemResponse bread = add("bread-" + tag);
+        String barcode = "bc-" + tag;
+        ReceiptResponse saved = save(receipt("Kings Food Markets", EARLY_OCTOBER, barcode,
+                line("EGGS", "4.99", r -> r.ingredientId = eggs.ingredientId()),
+                line("MILK", "4.29", r -> r.ingredientId = milk.ingredientId()),
+                line("BAG", "0.10", r -> r.kind = "NOT_FOOD")));
+        UUID firstEggsLine = saved.lines().get(0).id();
+        clearInvocations(eventPublisher);
+
+        ReceiptResponse edited = receiptService.edit(home, saved.id(), me.getId(), new SaveReceiptRequest(
+                "Kings Food Markets", MID_OCTOBER, new BigDecimal("9.47"), BigDecimal.ZERO, new BigDecimal("9.47"),
+                "ignored-" + tag, "ignored raw text", List.of(
+                        line("EGGS LG", "5.49", r -> {
+                            r.ingredientId = eggs.ingredientId();
+                            r.brand = "Pete and Gerry's";
+                            r.onSale = true;
+                        }),
+                        // Not milk after all: a bottle deposit, which prices nothing.
+                        line("MILK", "0.10", r -> {
+                            r.kind = "NOT_FOOD";
+                            r.ingredientId = milk.ingredientId();
+                        }),
+                        line("SOURDOUGH", "3.88", r -> r.ingredientName = "bread-" + tag)),
+                null, null));
+
+        assertThat(edited.id()).isEqualTo(saved.id());
+        assertThat(edited.purchasedOn()).isEqualTo(MID_OCTOBER);
+        assertThat(edited.total()).isEqualByComparingTo("9.47");
+        assertThat(edited.itemCount()).isEqualTo(2);
+        assertThat(edited.pricedCount()).isEqualTo(2);
+        assertThat(edited.lines())
+                .extracting(ReceiptLineResponse::text, ReceiptLineResponse::kind, ReceiptLineResponse::ingredientName,
+                        ReceiptLineResponse::brand)
+                .containsExactly(
+                        tuple("EGGS LG", "ITEM", "eggs-" + tag, "Pete and Gerry's"),
+                        tuple("MILK", "NOT_FOOD", null, null),
+                        tuple("SOURDOUGH", "ITEM", "bread-" + tag, null));
+        assertThat(edited.lines()).extracting(ReceiptLineResponse::id).doesNotContain(firstEggsLine);
+        assertThat(receiptService.get(home, saved.id(), me.getId())).isEqualTo(edited);
+
+        // The prices are the lines as they are now, on the day it says now; milk's is gone with its line.
+        entityManager.flush();
+        assertThat(count("price_observations WHERE household_id = ?", home)).isEqualTo(2);
+        assertThat(count("receipt_lines WHERE receipt_id = ?", saved.id())).isEqualTo(3);
+        assertThat(lastPrice(eggs)).isEqualTo(new LastPrice(new BigDecimal("5.49"), null, null, "Kings Food Markets",
+                MID_OCTOBER, true, "RECEIPT", "Pete and Gerry's"));
+        assertThat(lastPrice(bread).price()).isEqualByComparingTo("3.88");
+        assertThat(lastPrice(milk)).isNull();
+        // The barcode and the text the phone read are as first saved.
+        assertThat(jdbc.queryForMap("SELECT barcode, raw_text FROM receipts WHERE id = ?", saved.id()))
+                .containsEntry("barcode", barcode).containsEntry("raw_text", "raw text");
+        // The list's row for it says so too.
+        assertThat(receiptService.list(home, me.getId()))
+                .extracting(ReceiptSummary::purchasedOn, ReceiptSummary::itemCount, ReceiptSummary::pricedCount)
+                .containsExactly(tuple(MID_OCTOBER, 2, 2));
+
+        // Every row it priced before or prices now goes out again: milk to show it has no price now.
+        ArgumentCaptor<GroceryListItemResponse> sent = ArgumentCaptor.forClass(GroceryListItemResponse.class);
+        verify(eventPublisher, atLeastOnce()).itemChanged(eq(home), sent.capture());
+        assertThat(sent.getAllValues()).extracting(GroceryListItemResponse::id)
+                .contains(eggs.id(), milk.id(), bread.id());
+        assertThat(sent.getAllValues()).filteredOn(i -> i.id().equals(milk.id()))
+                .allSatisfy(i -> assertThat(i.lastPrice()).isNull());
+    }
+
+    @Test
+    void editingTheShopsNameMovesItsPricesToThatShop() {
+        GroceryListItemResponse eggs = add("eggs-" + tag);
+        String misread = "Welcune" + tag;
+        String shop = "Edited" + tag;
+        ReceiptResponse saved = save(receipt(misread, MID_OCTOBER, null,
+                line("EGGS", "5.99", r -> r.ingredientId = eggs.ingredientId())));
+
+        ReceiptResponse edited = receiptService.edit(home, saved.id(), me.getId(), receipt(shop, MID_OCTOBER, null,
+                line("EGGS", "5.99", r -> r.ingredientId = eggs.ingredientId())));
+
+        assertThat(edited.storeName()).isEqualTo(shop);
+        assertThat(edited.storeId()).isNotEqualTo(saved.storeId());
+        assertThat(lastPrice(eggs).storeName()).isEqualTo(shop);
+        assertThat(receiptService.pricesByStore(home, eggs.ingredientId(), me.getId()))
+                .extracting(LastPrice::storeName).containsExactly(shop);
+
+        // Blank: a receipt from nowhere in particular, and its price is too.
+        ReceiptResponse nowhere = receiptService.edit(home, saved.id(), me.getId(), receipt(" ", MID_OCTOBER, null,
+                line("EGGS", "5.99", r -> r.ingredientId = eggs.ingredientId())));
+        assertThat(nowhere.storeName()).isNull();
+        assertThat(lastPrice(eggs).storeName()).isNull();
+    }
+
+    @Test
+    void editingKeepsTheReceiptsPicturesUnlessItSaysWhichToKeep() {
+        UUID first = imageService.store(home, "image/jpeg", new byte[]{1}).getId();
+        UUID second = imageService.store(home, "image/jpeg", new byte[]{2}).getId();
+        UUID third = imageService.store(home, "image/jpeg", new byte[]{3}).getId();
+        ReceiptResponse saved = save(withPhotos(receipt("Kings Food Markets", MID_OCTOBER, null,
+                line("BREAD", "4.00", r -> { })), List.of(first, second)));
+
+        // Left out: the pictures it has stay.
+        ReceiptResponse kept = receiptService.edit(home, saved.id(), me.getId(),
+                receipt("Kings Food Markets", MID_OCTOBER, null, line("BREAD", "4.25", r -> { })));
+        assertThat(kept.photoIds()).containsExactly(first, second);
+
+        // A list: exactly those, in that order, and the one it no longer has is deleted.
+        ReceiptResponse replaced = receiptService.edit(home, saved.id(), me.getId(), withPhotos(
+                receipt("Kings Food Markets", MID_OCTOBER, null, line("BREAD", "4.25", r -> { })), List.of(third, second)));
+        assertThat(replaced.photoIds()).containsExactly(third, second);
+        assertThat(count("stored_images WHERE id = ?", first)).isZero();
+        assertThat(count("stored_images WHERE id IN (?, ?)", second, third)).isEqualTo(2);
+
+        // Another household's picture is still not this receipt's to keep.
+        User them = userRepository.save(User.builder().username("editpics-" + tag).displayName("P").build());
+        UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Pics")).id();
+        UUID theirPicture = imageService.store(theirs, "image/jpeg", new byte[]{7}).getId();
+        assertThatThrownBy(() -> receiptService.edit(home, saved.id(), me.getId(), withPhotos(
+                receipt("Kings Food Markets", MID_OCTOBER, null, line("BREAD", "4.25", r -> { })), List.of(theirPicture))))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+    }
+
+    @Test
+    void anEditIsRefusedForWhatASaveWouldBe() {
+        ReceiptResponse saved = save(receipt("Kings", MID_OCTOBER, null, line("BREAD", "4.00", r -> { })));
+        assertThatThrownBy(() -> receiptService.edit(home, saved.id(), me.getId(),
+                receipt("Kings", MID_OCTOBER, null, line("BREAD", "4.00", r -> r.kind = "SNACK"))))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getReason()).isEqualTo("A line is either ITEM or NOT_FOOD."));
+        assertThatThrownBy(() -> receiptService.edit(home, saved.id(), me.getId(),
+                receipt("Kings", MID_OCTOBER, null, line("BREAD", "4.00", r -> r.ingredientId = UUID.randomUUID()))))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getReason()).contains("Pick it again"));
+        assertThatThrownBy(() -> receiptService.edit(home, UUID.randomUUID(), me.getId(),
+                receipt("Kings", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }))))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    // --- Remembering lines ---
+
+    @Test
+    void theSameLineIsRememberedHoweverThePhoneReadItAndSaysWhereEachGuessCameFrom() {
+        String word = tag.replaceAll("[0-9]", "x").toUpperCase();
+        GroceryListItemResponse yogurt = add("plain greek yogurt " + word.toLowerCase());
+        add("baby spinach");
+        // Said once, as the phone read it then: with a nought for an O and a product code in front.
+        save(receipt("Kings Food Markets", EARLY_OCTOBER, null,
+                line("2410044077 KNGS GRK Y0GURT PLN " + word, "5.49", r -> {
+                    r.ingredientId = yogurt.ingredientId();
+                    r.brand = "Fage";
+                })));
+
+        ReceiptDraft draft = receiptService.read(home, me.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", "KNGS GRK YOGURT, PLN " + word + " 5.29 F", "KNGS BABY SPINACH 5OZ 3.99 F",
+                "MYSTERY WIDGETZQ 1.00 F", "TOTAL 10.28"), null));
+
+        assertThat(draft.lines())
+                .extracting(DraftLine::ingredientName, DraftLine::brand, DraftLine::ingredientSource)
+                .containsExactly(
+                        tuple("plain greek yogurt " + word.toLowerCase(), "Fage", DraftLine.REMEMBERED),
+                        tuple("baby spinach", null, DraftLine.MATCHED),
+                        tuple(null, null, null));
+    }
+
+    @Test
+    void whatThisHouseholdSaidAtTheSameChainComesFirst() {
+        String word = tag.replaceAll("[0-9]", "x").toUpperCase();
+        String printed = "KNGS SPRK WTR " + word;
+        GroceryListItemResponse seltzer = add("seltzer-" + tag);
+        GroceryListItemResponse tonic = add("tonic-" + tag);
+        // Kings first, then a newer receipt from elsewhere calling the same words something else.
+        save(receipt("Kings Food Markets", EARLY_OCTOBER, null, line(printed, "1.29", r -> r.ingredientId = seltzer.ingredientId())));
+        save(receipt("Corner" + tag, MID_OCTOBER, null, line(printed, "1.49", r -> r.ingredientId = tonic.ingredientId())));
+
+        // At a Kings, Kings' word for it beats the newer one; anywhere else, the newest does.
+        DraftLine atKings = receiptService.read(home, me.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", printed + " 1.29 F", "TOTAL 1.29"), null)).lines().get(0);
+        assertThat(atKings.ingredientId()).isEqualTo(seltzer.ingredientId());
+        DraftLine elsewhere = receiptService.read(home, me.getId(), new ReadReceiptRequest(List.of(
+                printed + " 1.29 F", "TOTAL 1.29"), null)).lines().get(0);
+        assertThat(elsewhere.ingredientId()).isEqualTo(tonic.ingredientId());
+
+        // A household with nothing of its own: the same chain's word first there too, whoever said it.
+        User them = userRepository.save(User.builder().username("chain-" + tag).displayName("C").build());
+        UUID theirs = householdService.create(them.getId(), new CreateHouseholdRequest("Chain")).id();
+        DraftLine theirKings = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
+                "KINGS FOOD MARKETS", printed + " 1.29 F", "TOTAL 1.29"), null)).lines().get(0);
+        assertThat(theirKings.ingredientId()).isEqualTo(seltzer.ingredientId());
+        assertThat(theirKings.ingredientSource()).isEqualTo(DraftLine.REMEMBERED);
+        // And what other households have priced, for a line nobody has said anything about.
+        DraftLine guessed = receiptService.read(theirs, them.getId(), new ReadReceiptRequest(List.of(
+                "TONIC-" + tag.toUpperCase() + " 2.00 F", "TOTAL 2.00"), null)).lines().get(0);
+        assertThat(guessed.ingredientId()).isEqualTo(tonic.ingredientId());
+        assertThat(guessed.ingredientSource()).isEqualTo(DraftLine.OTHERS);
+    }
+
+    @Test
+    void linesFromBeforeMatchKeysGetTheirsOnceAndOnlyOnce() {
+        ReceiptResponse saved = save(receipt("Kings Food Markets", MID_OCTOBER, null,
+                line("0012345 KNGS GRK Y0GURT", "5.49", r -> { }),
+                line("BAG", "0.10", r -> r.kind = "NOT_FOOD")));
+        assertThat(jdbc.queryForList("SELECT match_key FROM receipt_lines WHERE receipt_id = ? ORDER BY position",
+                String.class, saved.id())).containsExactly("KNGS GRK YOGURT", "BAG");
+        // As a line saved before the key existed has it.
+        jdbc.update("UPDATE receipt_lines SET match_key = NULL WHERE receipt_id = ?", saved.id());
+
+        assertThat(StartupBackfills.fillReceiptLineMatchKeys(jdbc)).isGreaterThanOrEqualTo(2);
+
+        assertThat(jdbc.queryForList("SELECT match_key FROM receipt_lines WHERE receipt_id = ? ORDER BY position",
+                String.class, saved.id())).containsExactly("KNGS GRK YOGURT", "BAG");
+        assertThat(StartupBackfills.fillReceiptLineMatchKeys(jdbc)).isZero();
+        // One somebody set is never touched.
+        jdbc.update("UPDATE receipt_lines SET match_key = 'SOMETHING ELSE' WHERE receipt_id = ? AND position = 0", saved.id());
+        StartupBackfills.fillReceiptLineMatchKeys(jdbc);
+        assertThat(jdbc.queryForObject("SELECT match_key FROM receipt_lines WHERE receipt_id = ? AND position = 0",
+                String.class, saved.id())).isEqualTo("SOMETHING ELSE");
+    }
+
     // --- Listing and deleting ---
 
     @Test
@@ -666,6 +889,7 @@ class ReceiptsDatabaseTest {
                 () -> receiptService.save(home, them, receipt("X", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }))),
                 () -> receiptService.list(home, them),
                 () -> receiptService.get(home, ours.id(), them),
+                () -> receiptService.edit(home, ours.id(), them, receipt("X", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }))),
                 () -> receiptService.delete(home, ours.id(), them),
                 () -> receiptService.stores(home, them),
                 () -> groceryListService.setPrice(home, eggs.id(), them, new SetPriceRequest(BigDecimal.ONE, null, null, null, null)));
@@ -678,6 +902,10 @@ class ReceiptsDatabaseTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
         assertThatThrownBy(() -> receiptService.delete(theirs, ours.id(), them))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+        assertThatThrownBy(() -> receiptService.edit(theirs, ours.id(), them,
+                receipt("X", MID_OCTOBER, null, line("BREAD", "4.00", r -> { }))))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
         assertThatThrownBy(() -> groceryListService.setPrice(theirs, eggs.id(), them,
@@ -766,6 +994,11 @@ class ReceiptsDatabaseTest {
     private static SaveReceiptRequest withPlace(SaveReceiptRequest r, PlaceDto place) {
         return new SaveReceiptRequest(r.storeName(), r.purchasedOn(), r.subtotal(), r.tax(), r.total(), r.barcode(),
                 r.rawText(), r.lines(), r.photoIds(), place);
+    }
+
+    private static SaveReceiptRequest withPhotos(SaveReceiptRequest r, List<UUID> photoIds) {
+        return new SaveReceiptRequest(r.storeName(), r.purchasedOn(), r.subtotal(), r.tax(), r.total(), r.barcode(),
+                r.rawText(), r.lines(), photoIds, r.place());
     }
 
     private static SaveReceiptRequest receipt(String store, LocalDate on, String barcode, SaveLine... lines) {

@@ -436,6 +436,16 @@ the household. All made by Hibernate on start; older iPhone builds neither send 
 Rolling back leaves the columns unread; the old backend cannot delete a household that hid a place
 until `hidden_places`' foreign key is dropped (add it to the list in the `DO $$ … $$` above).
 
+### Editing receipts and remembering lines
+
+`PUT …/receipts/{id}` edits a saved receipt (same body as saving; its prices are taught again). A
+nullable `match_key` column on `receipt_lines` (made by Hibernate) is what a line is remembered by;
+`StartupBackfills` fills it for existing lines on the first start (JDBC, only where it is null, so
+repeating it is harmless) and `SchemaTouchUps` adds `idx_receipt_lines_match_key`. Until the backfill
+has run, older lines are simply not remembered. Draft lines gain a trailing `ingredientSource`
+(`REMEMBERED`/`MATCHED`/`OTHERS`/null), which older iPhone builds ignore. Rolling back leaves the
+column unread and drops nothing.
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

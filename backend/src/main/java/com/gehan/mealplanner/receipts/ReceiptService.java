@@ -44,7 +44,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -134,9 +133,13 @@ public class ReceiptService {
     /**
      * What somebody said about the same line on an earlier receipt — its brand, its size, what it
      * counts as — put on this one, so "TWININGS ENG BRKFST 20CT" is Twinings english breakfast
-     * tea, 20 bags, the second time without anybody saying so again. Matched on the line's words
-     * as printed, whatever their case: this household's own receipts first, then anybody's on the
-     * server, since one shop's receipts say the same thing to everyone. Newest wins.
+     * tea, 20 bags, the second time without anybody saying so again. Matched on what the line is
+     * remembered by ({@link ReceiptReader#matchKey}), so a product code in front, a nought read
+     * for an O or a stray comma does not make it a stranger.
+     *
+     * Whose word counts, in order: this household's at the same chain (one chain's till prints the
+     * same thing the same way, and means one thing by it), this household's anywhere, anybody's at
+     * the same chain, then anybody's on the server — newest first within each.
      *
      * A size somebody gave beats one read off the name ("20CT" said as 20 bags), but never a
      * weight or a count the receipt printed: those are this shop's, not last time's. What another
@@ -145,8 +148,9 @@ public class ReceiptService {
      */
     private ReceiptDraft remembered(UUID householdId, ReceiptDraft draft) {
         List<String> said = draft.lines().stream()
-                .filter(l -> ReceiptLine.ITEM.equals(l.kind()) && l.text() != null && !l.text().isBlank())
-                .map(l -> l.text().trim().toUpperCase(Locale.ROOT))
+                .filter(l -> ReceiptLine.ITEM.equals(l.kind()))
+                .map(l -> ReceiptReader.matchKey(l.text()))
+                .filter(key -> !key.isEmpty())
                 .distinct()
                 .toList();
         if (said.isEmpty()) {
@@ -161,16 +165,18 @@ public class ReceiptService {
         args.add(householdId);
         args.addAll(said);
         args.add(householdId);
+        args.add(sameChain(draft.storeName()));
         jdbc.query("""
-                SELECT DISTINCT ON (upper(rl.text))
-                       upper(rl.text) AS said, rl.brand, rl.quantity, rl.unit, rl.unit_price,
+                SELECT DISTINCT ON (rl.match_key)
+                       rl.match_key AS said, rl.brand, rl.quantity, rl.unit, rl.unit_price,
                        rl.ingredient_id, i.name AS ingredient_name, r.household_id = ? AS ours
                 FROM receipt_lines rl
                 JOIN receipts r ON r.id = rl.receipt_id
                 LEFT JOIN ingredients i ON i.id = rl.ingredient_id
-                WHERE rl.kind = 'ITEM' AND upper(rl.text) IN (%s)
+                WHERE rl.kind = 'ITEM' AND rl.match_key IN (%s)
                   AND (rl.brand IS NOT NULL OR rl.ingredient_id IS NOT NULL)
-                ORDER BY upper(rl.text), (r.household_id = ?) DESC, r.created_at DESC
+                ORDER BY rl.match_key, (r.household_id = ?) DESC, coalesce(r.store_id = ANY (?), false) DESC,
+                         r.created_at DESC
                 """.formatted(places), rs -> {
             before.put(rs.getString("said"), new Said(
                     rs.getString("brand"),
@@ -186,7 +192,7 @@ public class ReceiptService {
         }
         List<DraftLine> lines = draft.lines().stream()
                 .map(line -> {
-                    Said last = line.text() == null ? null : before.get(line.text().trim().toUpperCase(Locale.ROOT));
+                    Said last = before.get(ReceiptReader.matchKey(line.text()));
                     if (last == null || !ReceiptLine.ITEM.equals(line.kind())) {
                         return line;
                     }
@@ -199,11 +205,31 @@ public class ReceiptService {
                             line.unitPrice(), line.price(), line.onSale(),
                             takeIngredient ? last.ingredientId() : line.ingredientId(),
                             takeIngredient ? last.ingredientName() : line.ingredientName(),
-                            line.brand() != null ? line.brand() : last.brand());
+                            line.brand() != null ? line.brand() : last.brand(),
+                            takeIngredient ? DraftLine.REMEMBERED : line.ingredientSource());
                 })
                 .toList();
         return new ReceiptDraft(draft.storeName(), draft.storeId(), draft.purchasedOn(), draft.subtotal(), draft.tax(),
                 draft.total(), draft.sumMatches(), draft.duplicateOf(), lines, draft.unreadLines());
+    }
+
+    /**
+     * Every shop on the server that is the same chain as the one the receipt is from (by {@link
+     * StoreChains}, so another household's "KINGS FOOD MARKETS" is our "Kings"). None for a
+     * receipt from nobody knows where.
+     */
+    private UUID[] sameChain(String storeName) {
+        String chain = StoreChains.key(storeName);
+        if (chain.isEmpty()) {
+            return new UUID[0];
+        }
+        List<UUID> same = new ArrayList<>();
+        jdbc.query("SELECT id, name FROM stores", rs -> {
+            if (chain.equals(StoreChains.key(rs.getString("name")))) {
+                same.add(rs.getObject("id", UUID.class));
+            }
+        });
+        return same.toArray(UUID[]::new);
     }
 
     /** A line nothing has said anything about yet: a guess from what anybody on the server has priced. */
@@ -219,7 +245,8 @@ public class ReceiptService {
                     }
                     return ReceiptReader.guessIngredient(line.text(), others)
                             .map(guess -> new DraftLine(line.text(), line.kind(), line.quantity(), line.unit(),
-                                    line.unitPrice(), line.price(), line.onSale(), guess.id(), guess.name(), line.brand()))
+                                    line.unitPrice(), line.price(), line.onSale(), guess.id(), guess.name(), line.brand(),
+                                    DraftLine.OTHERS))
                             .orElse(line);
                 })
                 .toList();
@@ -289,17 +316,92 @@ public class ReceiptService {
                 .place(place)
                 .createdBy(by)
                 .build();
+        addLines(receipt, request.lines());
+        receipt = receiptRepository.save(receipt);
 
-        for (int i = 0; i < request.lines().size(); i++) {
-            SaveLine line = request.lines().get(i);
+        Set<UUID> priced = teachPrices(receipt, by);
+        // The list's prices are read with SQL, so what was just saved has to be where SQL sees it.
+        priceObservationRepository.flush();
+        groceryListService.pricesChanged(householdId, priced);
+        return toResponse(receipt);
+    }
+
+    /**
+     * Puts a saved receipt right: its shop, its day, its totals, its lines and its pages, as the
+     * review screen now has them. The prices it taught are taken back and taught again from the
+     * lines as they are now — under the shop it is filed at now, on the day it now says — so a
+     * line that has come to count as something else, or as nothing, stops pricing what it did.
+     * The rows for everything it priced before or prices now go out to every phone again.
+     *
+     * The barcode and the text the phone read stay as first saved: they are what was scanned, not
+     * what somebody corrected. The branch is {@link #linkPlace}'s. Pages left out stay; a list of
+     * them is the receipt's pages from now on, and any it no longer has are deleted, as they would
+     * have been with the receipt. Another household's receipt is not there to be found.
+     */
+    @Transactional
+    public ReceiptResponse edit(UUID householdId, UUID receiptId, UUID requesterId, SaveReceiptRequest request) {
+        householdService.assertMember(householdId, requesterId);
+        Household household = householdRepository.lockById(householdId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Household not found"));
+        Receipt receipt = find(householdId, receiptId);
+        User by = userRepository.findById(requesterId).orElse(null);
+        List<UUID> pages = request.photoIds() != null ? photos(householdId, request.photoIds()) : null;
+
+        // The old prices point at the old lines, so they go first — and are gone from the database
+        // before the lines they point at are.
+        List<PriceObservation> taught = priceObservationRepository.findByReceipt(receiptId);
+        Set<UUID> changed = new LinkedHashSet<>();
+        taught.forEach(o -> changed.add(o.getIngredient().getId()));
+        priceObservationRepository.deleteAll(taught);
+        priceObservationRepository.flush();
+
+        String storeName = Stores.tidy(request.storeName()) != null ? request.storeName()
+                : receipt.getPlace() != null ? receipt.getPlace().getName() : null;
+        receipt.setStore(stores.findOrCreate(household, storeName));
+        receipt.setPurchasedOn(request.purchasedOn());
+        receipt.setSubtotal(request.subtotal());
+        receipt.setTax(request.tax());
+        receipt.setTotal(request.total());
+        receipt.getLines().clear();
+        addLines(receipt, request.lines());
+        List<UUID> dropped = new ArrayList<>();
+        if (pages != null) {
+            receipt.getPhotoIds().stream().filter(id -> !pages.contains(id)).forEach(dropped::add);
+            receipt.getPhotoIds().clear();
+            receipt.getPhotoIds().addAll(pages);
+        }
+        // The new lines have to be rows before a price can point at one.
+        receiptRepository.flush();
+
+        changed.addAll(teachPrices(receipt, by));
+        priceObservationRepository.flush();
+        // The pictures were only ever the receipt's; one it no longer has goes, as on delete.
+        if (!dropped.isEmpty()) {
+            jdbc.update("DELETE FROM stored_images WHERE household_id = ? AND id = ANY (?)", householdId,
+                    dropped.toArray(UUID[]::new));
+        }
+        groceryListService.pricesChanged(householdId, changed);
+        return toResponse(receipt);
+    }
+
+    /**
+     * The confirmed lines, in order, onto the receipt. Each keeps its words as confirmed and what
+     * it is remembered by; an ITEM line counts as an ingredient by id or by the name typed for it,
+     * and a NOT_FOOD one never does.
+     */
+    private void addLines(Receipt receipt, List<SaveLine> lines) {
+        for (int i = 0; i < lines.size(); i++) {
+            SaveLine line = lines.get(i);
             if (line == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "One of the lines is empty.");
             }
             String kind = kind(line.kind());
+            String text = line.text() == null ? "" : line.text().trim();
             receipt.getLines().add(ReceiptLine.builder()
                     .receipt(receipt)
                     .position(i)
-                    .text(line.text() == null ? "" : line.text().trim())
+                    .text(text)
+                    .matchKey(ReceiptReader.matchKey(text))
                     .kind(kind)
                     .quantity(line.quantity())
                     .unit(blankToNull(line.unit()))
@@ -310,17 +412,22 @@ public class ReceiptService {
                     .ingredient(ReceiptLine.ITEM.equals(kind) ? ingredient(line) : null)
                     .build());
         }
-        receipt = receiptRepository.save(receipt);
+    }
 
-        LocalDate observedOn = request.purchasedOn() != null ? request.purchasedOn() : LocalDate.now(ZoneId.systemDefault());
+    /**
+     * A price for each of the receipt's lines that counts as an ingredient: at its shop, dated the
+     * day on it (today when there is none). Returns what was priced, for the list to send out.
+     */
+    private Set<UUID> teachPrices(Receipt receipt, User by) {
+        LocalDate observedOn = receipt.getPurchasedOn() != null ? receipt.getPurchasedOn() : LocalDate.now(ZoneId.systemDefault());
         Set<UUID> priced = new LinkedHashSet<>();
         for (ReceiptLine line : receipt.getLines()) {
             if (line.getIngredient() == null) {
                 continue;
             }
             priceObservationRepository.save(PriceObservation.builder()
-                    .household(household)
-                    .store(store)
+                    .household(receipt.getHousehold())
+                    .store(receipt.getStore())
                     .ingredient(line.getIngredient())
                     .price(line.getPrice())
                     .quantity(line.getQuantity())
@@ -334,10 +441,7 @@ public class ReceiptService {
                     .build());
             priced.add(line.getIngredient().getId());
         }
-        // The list's prices are read with SQL, so what was just saved has to be where SQL sees it.
-        priceObservationRepository.flush();
-        groceryListService.pricesChanged(householdId, priced);
-        return toResponse(receipt);
+        return priced;
     }
 
     /** The pages, each one of this household's own images; anybody else's is refused. */

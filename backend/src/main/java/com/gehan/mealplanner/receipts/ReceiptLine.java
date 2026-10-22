@@ -48,6 +48,14 @@ public class ReceiptLine {
     @Column(nullable = false, length = 200)
     private String text;
 
+    /**
+     * The line as it is remembered by ({@link ReceiptReader#matchKey}), so that what somebody said
+     * about it is found again the next time the same thing is bought, however the phone read it.
+     * Set with the text; lines from before it existed get theirs from StartupBackfills.
+     */
+    @Column(length = 200)
+    private String matchKey;
+
     @Column(nullable = false, length = 20)
     @Builder.Default
     private String kind = ITEM;
