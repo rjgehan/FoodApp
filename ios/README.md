@@ -38,6 +38,13 @@ minutes after upload, once Apple has processed it — no review for internal tes
 someone: App Store Connect → Users and Access → + (they accept the email invite), then
 TestFlight → Family → Testers → +. Each build works for 90 days; any newer upload replaces it.
 
+A phone that has the app from this Mac (`update-phones.sh`, Xcode) is not one TestFlight
+updates: it keeps that copy until somebody opens TestFlight on it and taps Install once (or
+deletes the app and installs it from TestFlight). From then on TestFlight updates it by itself,
+with Automatic Updates on (TestFlight → the app → Automatic Updates). A phone that cannot be
+reached from here — not on this Mac's Wi-Fi, or locked — gets the next upload that way, so a
+change that only needs to reach one more phone is one more `./release.sh` from a new commit.
+
 ## Updating everybody's phone
 
 ```bash
