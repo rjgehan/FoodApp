@@ -436,8 +436,9 @@ taught again — the receipt, Receipts and, when Receipts closes, the grocery li
 
 Store shorthand ("KNGS GRK YGRT PLN") is read by Apple Intelligence on a phone that has it
 (`ReceiptAssist.swift` has the rules, `OnDeviceReceipts.swift` the model). As soon as the draft
-arrives, every food line the server could not name — or only guessed from other households'
-receipts (`ingredientSource` OTHERS) — is asked about, two at a time, one short greedy session each
+arrives — and when a saved receipt is opened to edit — every food line not filled in yet (no name,
+or only a guess from other households' receipts, `ingredientSource` OTHERS) is asked about, however
+long the receipt, two at a time, one short greedy session each
 ("Reading names… 2 of 5"): which of the grocery list's names it is (ticked rows and the shop just
 finished first) as a guided `.anyOf`, or "something else", then a plain name of a few words or "not
 food". Lines the server REMEMBERED or MATCHED are never asked about. A name the model gave, or the
@@ -461,6 +462,26 @@ is 5 oz, an OCR'd "50Z" too, "20CT" 20 ct), and remembers what was said about th
 (another household's "counts as" only where this one's list has nothing that fits). A weight or
 count the till printed is never overwritten. The item sheet's typed price has the same Size and
 Brand boxes, and every price shows them: "Last paid $4.99 for Twinings, 20 bags at Kings".
+
+A packet's own barcode says what a line is (`Features/Receipts/ReceiptBarcodes.swift`, the
+cupboard scanner's AVFoundation `BarcodeCamera` and catalogue, `GET /api/barcodes/{code}`). On a
+line's sheet, Scan its barcode turns the sheet into a small camera and back (no sheet over a
+sheet): the packet fills in Counts as, the Brand when the line has none (or Use / Keep when it says
+another) and How much when the line has none and the packet's size reads as an amount ("32 oz";
+"6 x 330 ml" does not). Counts as is the household's own name when every word of one is on the
+packet (the longest, plurals either way: "greek yogurt" for "Chobani Greek Yogurt Plain"), else
+Apple Intelligence's answer on a phone that has it (`ReceiptAssist.guess`, the packet's name and
+brand as the line, the household's names as the options), else the packet's name without the
+brand or size. Scan items, over the check screen's lines (new and edit modes), is the same
+camera full screen and continuous: each packet is matched to the food line it most looks like
+(`ProductMatch.swift`: a till word stands for a packet word when it starts it, or its letters come
+in order inside it from the same first letter — GRK greek, YGRT yogurt, CHOB chobani; numbers and
+sizes ignored; the share of the line's words matched, then letters matched, then lines with no
+name or only a Guess first), and the card offers "Looks like: CHOB GRK YGRT · $5.99" with That's
+it, Pick another line (the rest, likeliest first) and Not on this receipt; then the next packet.
+A line filled from a packet is the person's own doing — no Guess pill. A packet the catalogue
+does not know leaves the line alone. Previews and the Gallery tap sample packets instead of the
+camera and send nothing; the Simulator types the number. `./checks/run.sh` checks the matcher.
 
 A grocery row shows what it last cost (`lastPrice`, "≈ $3.49"), the list's title "≈ $86 · 3 not
 priced" for what is still to buy, and an item's sheet "Last paid $3.49 at Kings Food Markets ·

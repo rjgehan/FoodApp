@@ -24,13 +24,19 @@ import SwiftUI
  own guesses from other households, until somebody taps the line. Lines the server remembered
  or matched against the household's own ingredients are left alone.
 
+ Scan items (over the lines) opens the camera for the packets themselves: each barcode read is
+ matched to the line it most looks like, and That's it fills that line in — what it counts as,
+ the brand, the size — as the person's own doing, so with no Guess pill (ReceiptBarcodes.swift).
+ A line's sheet has the same for one line, Scan its barcode.
+
  Save keeps the receipt and gives every food line with a name a price for that day. Cancel throws
  it all away.
 
  The same screen puts right a receipt saved before (Edit on the receipt, `init(session:editing:…)`):
  its shop, day and lines as saved, its pictures as kept, no barcode and no duplicate warning, no
- store guessing (the branch is the receipt's own Which store?) and no Apple Intelligence. Save
- sends it back (`PUT /receipts/{id}`) with the totals as they were; Cancel changes nothing.
+ store guessing (the branch is the receipt's own Which store?) and no reading of names by Apple
+ Intelligence (a scanned packet may still be named by it). Save sends it back (`PUT /receipts/{id}`)
+ with the totals as they were; Cancel changes nothing.
  */
 struct ReceiptReviewView: View {
     var session: Session
@@ -85,6 +91,8 @@ struct ReceiptReviewView: View {
     /// "Reading names… 2 of 5": how many lines it is reading, and how many are done.
     @State private var namesAsked = 0
     @State private var namesDone = 0
+    /// Scan items: the camera for the packets, each matched to its line.
+    @State private var scanningItems = false
 
     /// The line whose sheet is open: one on the receipt by its place, or a new one to add (from
     /// nothing, or from words it could not read).
@@ -222,6 +230,17 @@ struct ReceiptReviewView: View {
 
                 SectionLabel("What you bought", trailing: "\(pricedCount) of \(foodCount) priced")
                     .pageRow(top: 4, bottom: 8)
+
+                if foodCount > 0 {
+                    Button {
+                        scanningItems = true
+                    } label: {
+                        Label("Scan items", systemImage: "barcode.viewfinder")
+                    }
+                    .buttonStyle(.kitchen(.soft, size: .small))
+                    .accessibilityHint("Scan each packet's barcode to say which line it is")
+                    .pageRow(bottom: 10)
+                }
             }
             if lines.isEmpty {
                 Text("No lines with prices were found on it.")
@@ -292,14 +311,15 @@ struct ReceiptReviewView: View {
         }
         .sheet(item: $picking) { pick in
             if let index = pick.index, lines.indices.contains(index) {
-                ReceiptLineSheet(line: lines[index], choices: allChoices, onRemove: { remove(index) }) { edited in
+                ReceiptLineSheet(line: lines[index], choices: allChoices, onRemove: { remove(index) },
+                                 sample: sample) { edited in
                     if lines.indices.contains(index) {
                         lines[index] = edited
                         settled(index)
                     }
                 }
             } else if let new = pick.new {
-                ReceiptLineSheet(line: new, choices: allChoices, isNew: true) { added in
+                ReceiptLineSheet(line: new, choices: allChoices, isNew: true, sample: sample) { added in
                     withAnimation(.snappy(duration: 0.2)) {
                         lines.append(added)
                         lineKeys.append(UUID())
@@ -308,6 +328,11 @@ struct ReceiptReviewView: View {
                         }
                     }
                 }
+            }
+        }
+        .fullScreenCover(isPresented: $scanningItems) {
+            ReceiptItemScanner(items: scanItems, choices: allChoices, sample: sample) { key, fill in
+                assign(key, fill)
             }
         }
         .sheet(isPresented: $choosingStore) {
@@ -474,6 +499,23 @@ struct ReceiptReviewView: View {
         }
     }
 
+    /// The food lines as Scan items matches packets to them: those with no name yet, or only a
+    /// guess, are the open ones it prefers.
+    private var scanItems: [ReceiptItemScanner.Item] {
+        zip(lineKeys, lines).filter { _, line in line.kind == .item }.map { key, line in
+            ReceiptItemScanner.Item(key: key, line: line, open: line.countsAs == nil || guessed.contains(key))
+        }
+    }
+
+    /// Scan items said a packet is this line: filled in from it, as somebody putting it right would.
+    private func assign(_ key: UUID, _ fill: ProductFill) {
+        guard let index = lineKeys.firstIndex(of: key), lines.indices.contains(index) else { return }
+        withAnimation(.snappy(duration: 0.2)) {
+            fill.apply(to: &lines[index])
+            settled(index)
+        }
+    }
+
     /// Somebody has looked at the line and said what it is: no longer a guess, and no model
     /// answer still on its way changes it.
     private func settled(_ index: Int) {
@@ -486,12 +528,13 @@ struct ReceiptReviewView: View {
     // MARK: - Apple Intelligence
 
     /**
-     Once, on a new scan: the food lines with no name (or only another household's guess) to
-     Apple Intelligence, a couple at a time, each filled in as its answer comes. A line put right
-     by hand meanwhile, or removed, is left as it is; one with no answer stays as the server sent it.
+     Once, on a new scan and when editing a saved receipt: every food line not filled in yet (no
+     name, or only another household's guess) to Apple Intelligence, a couple at a time, each
+     filled in as its answer comes. A line put right by hand meanwhile, or removed, is left as it
+     is; one with no answer stays as it was.
      */
     private func readNames() async {
-        guard !isEditing, !assisted, let thinker = ReceiptAI.thinker else { return }
+        guard !assisted, let thinker = ReceiptAI.thinker else { return }
         assisted = true
         // Not a line put right by hand, nor one already answered before the screen went away.
         let unanswered = assistLines.filter { !touched.contains($0.key) && !answeredKeys.contains($0.key) }
@@ -800,6 +843,11 @@ private struct KindButton: View {
 
  The brand and the size have boxes of their own so "Counts as" can be the thing itself — english
  breakfast tea, not "TWININGS english breakfast tea 20 bags" — and the list's tea finds its price.
+
+ Scan its barcode turns the sheet into a small camera (ReceiptBarcodes.swift) and back: the
+ packet fills in what the line counts as, the brand when the line has none (or a tap says to use
+ the packet's instead) and the size when the line has none. A packet the catalogue does not know
+ leaves the line as it was.
  */
 struct ReceiptLineSheet: View {
     let line: ReceiptLine
@@ -808,6 +856,8 @@ struct ReceiptLineSheet: View {
     var isNew = false
     /// Takes the line off the receipt; nil for one being added.
     var onRemove: (() -> Void)? = nil
+    /// Previews and the Gallery: sample packets instead of the camera, nothing sent.
+    var sample = false
     var onDone: (ReceiptLine) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -819,13 +869,23 @@ struct ReceiptLineSheet: View {
     @State private var amountText: String
     /// What the size box said when the sheet opened, so a weight the till printed is kept unless changed.
     private let originalAmount: String
+    /// Scan its barcode: the sheet is the camera for now.
+    @State private var scanning = false
+    /// A scanned packet being worked out (Apple Intelligence may be asked what it counts as).
+    @State private var filling = false
+    /// The packet last scanned, and how what it counts as was reached.
+    @State private var scanned: Product?
+    @State private var scannedHow: String?
+    /// The packet's make, when the line already had another: used only if the person says so.
+    @State private var otherBrand: String?
 
     init(line: ReceiptLine, choices: [IngredientChoice], isNew: Bool = false, onRemove: (() -> Void)? = nil,
-         onDone: @escaping (ReceiptLine) -> Void) {
+         sample: Bool = false, onDone: @escaping (ReceiptLine) -> Void) {
         self.line = line
         self.choices = choices
         self.isNew = isNew
         self.onRemove = onRemove
+        self.sample = sample
         self.onDone = onDone
         _name = State(initialValue: line.ingredientName ?? "")
         _priceText = State(initialValue: isNew && line.price == 0 ? "" : Money.field(line.price))
@@ -855,71 +915,81 @@ struct ReceiptLineSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SheetHeader(isNew ? "Add a line" : line.text,
-                            subtitle: isNew ? (line.text.isEmpty ? "Something the reading missed" : "From \"\(line.text)\"")
-                                : line.weighed,
-                            onClose: { dismiss() })
+                if scanning {
+                    LineBarcodeScanner(lineText: line.text, sample: sample,
+                                       onFound: { product in Task { await fill(from: product) } },
+                                       onClose: { withAnimation(.snappy(duration: 0.2)) { scanning = false } })
+                } else {
+                    SheetHeader(isNew ? "Add a line" : line.text,
+                                subtitle: isNew ? (line.text.isEmpty ? "Something the reading missed" : "From \"\(line.text)\"")
+                                    : line.weighed,
+                                onClose: { dismiss() })
 
-                SegmentedControl(selection: $kind.animation(.snappy(duration: 0.2)),
-                                 options: [(ReceiptLineKind.item, "Food"), (ReceiptLineKind.notFood, "Not food")])
+                    SegmentedControl(selection: $kind.animation(.snappy(duration: 0.2)),
+                                     options: [(ReceiptLineKind.item, "Food"), (ReceiptLineKind.notFood, "Not food")])
 
-                if kind == .item {
-                    VStack(alignment: .leading, spacing: 10) {
-                        FieldBox("Counts as", text: $name, prompt: "english breakfast tea", systemImage: "leaf",
-                                 hint: "The thing itself, as the grocery list says it. Its price is kept under this name.")
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                        if !suggestions.isEmpty {
-                            ChipFlow(spacing: 8) {
-                                ForEach(suggestions, id: \.name) { choice in
-                                    Chip(choice.name, isOn: false) { name = choice.name }
+                    if kind == .item {
+                        VStack(alignment: .leading, spacing: 10) {
+                            FieldBox("Counts as", text: $name, prompt: "english breakfast tea", systemImage: "leaf",
+                                     hint: "The thing itself, as the grocery list says it. Its price is kept under this name.")
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                            if !suggestions.isEmpty {
+                                ChipFlow(spacing: 8) {
+                                    ForEach(suggestions, id: \.name) { choice in
+                                        Chip(choice.name, isOn: false) { name = choice.name }
+                                    }
                                 }
                             }
+                            scanControl
                         }
+                        FieldBox("Brand", text: $brand, prompt: "Twinings", systemImage: "tag",
+                                 hint: "Who made it, if it matters. Optional.")
+                            .autocorrectionDisabled()
+                        if let otherBrand {
+                            brandQuestion(otherBrand)
+                        }
+                        FieldBox("How much", text: $amountText, prompt: "20 bags, 5 oz, 1.32 lb", systemImage: "scalemass",
+                                 hint: amount == nil ? "Start with a number — 20 bags, 5 oz, 1/2 lb."
+                                     : line.unitPrice != nil && amountText == originalAmount
+                                         ? "Weighed or counted at the till."
+                                         : "What the price was for. Empty is one of it.")
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    } else {
+                        if isNew && line.text.isEmpty {
+                            FieldBox("What it is", text: $name, prompt: "Bag fee", systemImage: "bag")
+                        }
+                        Text("Bags, deposits and gift cards keep no price.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.muted)
                     }
-                    FieldBox("Brand", text: $brand, prompt: "Twinings", systemImage: "tag",
-                             hint: "Who made it, if it matters. Optional.")
-                        .autocorrectionDisabled()
-                    FieldBox("How much", text: $amountText, prompt: "20 bags, 5 oz, 1.32 lb", systemImage: "scalemass",
-                             hint: amount == nil ? "Start with a number — 20 bags, 5 oz, 1/2 lb."
-                                 : line.unitPrice != nil && amountText == originalAmount
-                                     ? "Weighed or counted at the till."
-                                     : "What the price was for. Empty is one of it.")
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                } else {
-                    if isNew && line.text.isEmpty {
-                        FieldBox("What it is", text: $name, prompt: "Bag fee", systemImage: "bag")
+
+                    // Numbers with a return key: the decimal pad has none, and covered the button under it.
+                    FieldBox("Price paid", text: $priceText, prompt: "0.00", systemImage: "dollarsign",
+                             hint: "What the line cost after any discount under it.")
+                        .keyboardType(.numbersAndPunctuation)
+                        .submitLabel(.done)
+
+                    Toggle("On sale", isOn: $onSale)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Palette.text)
+                        .padding(.horizontal, 4)
+
+                    Button(isNew ? "Add line" : "Done", action: apply)
+                        .buttonStyle(.primary)
+                        .disabled(price == nil || (kind == .item && amount == nil) || (isNew && typed.isEmpty && line.text.isEmpty))
+
+                    if let onRemove {
+                        Button(role: .destructive) {
+                            onRemove()
+                            dismiss()
+                        } label: {
+                            Label("Remove from receipt", systemImage: "trash")
+                        }
+                        .buttonStyle(.kitchen(.danger, size: .small))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHint("For a line the reading got wrong: it keeps no price")
                     }
-                    Text("Bags, deposits and gift cards keep no price.")
-                        .font(.system(size: 13)).foregroundStyle(Palette.muted)
-                }
-
-                // Numbers with a return key: the decimal pad has none, and covered the button under it.
-                FieldBox("Price paid", text: $priceText, prompt: "0.00", systemImage: "dollarsign",
-                         hint: "What the line cost after any discount under it.")
-                    .keyboardType(.numbersAndPunctuation)
-                    .submitLabel(.done)
-
-                Toggle("On sale", isOn: $onSale)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Palette.text)
-                    .padding(.horizontal, 4)
-
-                Button(isNew ? "Add line" : "Done", action: apply)
-                    .buttonStyle(.primary)
-                    .disabled(price == nil || (kind == .item && amount == nil) || (isNew && typed.isEmpty && line.text.isEmpty))
-
-                if let onRemove {
-                    Button(role: .destructive) {
-                        onRemove()
-                        dismiss()
-                    } label: {
-                        Label("Remove from receipt", systemImage: "trash")
-                    }
-                    .buttonStyle(.kitchen(.danger, size: .small))
-                    .frame(maxWidth: .infinity)
-                    .accessibilityHint("For a line the reading got wrong: it keeps no price")
                 }
             }
             .padding(.horizontal, 20)
@@ -930,6 +1000,81 @@ struct ReceiptLineSheet: View {
         .scrollDismissesKeyboard(.interactively)
         .tint(Palette.herb)
         .kitchenSheet([.medium, .large])
+    }
+
+    // MARK: Scan its barcode
+
+    /// The way into the scanner, "Reading the packet…" while it is worked out, and what it filled in.
+    @ViewBuilder private var scanControl: some View {
+        if filling {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Reading the packet…").font(.system(size: 13)).foregroundStyle(Palette.muted)
+            }
+            .padding(.vertical, 8)
+        } else {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { scanning = true }
+            } label: {
+                Label(scanned == nil ? "Scan its barcode" : "Scan another barcode", systemImage: "barcode.viewfinder")
+            }
+            .buttonStyle(.kitchen(.soft, size: .small, fill: false))
+            .accessibilityHint("Fills in what it counts as, the brand and the size from the packet")
+            if let scanned {
+                NoteBox(text: Text("From the barcode: **\(scanned.name)**. \(scannedHow ?? "")"),
+                        tone: .sky, systemImage: "barcode")
+            }
+        }
+    }
+
+    /// The packet's make when the line already says another: which to keep.
+    private func brandQuestion(_ packet: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("The packet says \(packet).")
+                .font(.system(size: 13)).foregroundStyle(Palette.muted)
+            HStack(spacing: 8) {
+                Button("Use \(packet)") {
+                    brand = packet
+                    otherBrand = nil
+                }
+                .buttonStyle(.kitchen(.secondary, size: .small, fill: false))
+                Button("Keep \(brand.trimmingCharacters(in: .whitespaces))") { otherBrand = nil }
+                    .buttonStyle(.kitchen(.ghost, size: .small, fill: false))
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /**
+     A packet read off its barcode, onto the boxes (nothing is kept until Done): what it counts as,
+     the brand when the box is empty (or asks, when it says another), the size when the box is
+     empty and the packet's reads as an amount.
+     */
+    private func fill(from product: Product) async {
+        withAnimation(.snappy(duration: 0.2)) {
+            scanning = false
+            filling = true
+        }
+        let found = await ProductFill.make(for: product, choices: choices, thinker: ReceiptAI.thinker)
+        withAnimation(.snappy(duration: 0.2)) {
+            filling = false
+            kind = .item
+            if !found.countsAs.isEmpty { name = found.countsAs }
+            otherBrand = nil
+            if let made = found.brand {
+                let mine = brand.trimmingCharacters(in: .whitespaces)
+                if mine.isEmpty {
+                    brand = made
+                } else if mine.caseInsensitiveCompare(made) != .orderedSame {
+                    otherBrand = made
+                }
+            }
+            if amountText.trimmingCharacters(in: .whitespaces).isEmpty, let size = found.amountText {
+                amountText = size
+            }
+            scanned = product
+            scannedHow = found.countsAs.isEmpty ? nil : found.howWords
+        }
     }
 
     /**
@@ -1008,5 +1153,12 @@ struct ReceiptLineSheet: View {
 #Preview("A line") {
     Color.clear.sheet(isPresented: .constant(true)) {
         ReceiptLineSheet(line: SampleData.receiptDraft.lines[3], choices: SampleData.receiptChoices) { _ in }
+    }
+}
+
+#Preview("A line in shorthand — scan its barcode") {
+    Color.clear.sheet(isPresented: .constant(true)) {
+        ReceiptLineSheet(line: SampleData.receiptDraftShorthand.lines[0], choices: SampleData.receiptChoices,
+                         sample: true) { _ in }
     }
 }

@@ -77,8 +77,8 @@ enum ReceiptAssist {
     static let mostWords = 4
     /// Lines asked at once: the model is on the phone, and two keeps the screen quick.
     static let atOnce = 2
-    /// At most this many lines are asked about on one receipt.
-    static let perReceipt = 30
+    /// Every line not filled in is asked about; this only stops a runaway (a long receipt is ~60).
+    static let perReceipt = 200
 
     /// Where the server's own guess at a line came from (`DraftLine.ingredientSource`).
     enum Source {

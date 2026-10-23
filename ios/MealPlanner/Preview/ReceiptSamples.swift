@@ -104,6 +104,27 @@ extension SampleData {
         unreadLines: []
     )
 
+    /// Packets as the barcode catalogue answers for them, for Scan its barcode and Scan items: the
+    /// shorthand receipt's yogurt and milk, and a box of tea that is on no receipt here.
+    static let receiptProducts: [Product] = [
+        Product(barcode: "0818290014269", name: "Chobani Greek Yogurt Plain", brand: "Chobani", size: "32 oz"),
+        Product(barcode: "0052159000127", name: "Stonyfield Organic Whole Milk", brand: "Stonyfield",
+                size: "64 fl oz"),
+        Product(barcode: "0070177154097", name: "Twinings English Breakfast Tea", brand: "Twinings", size: "20 bags"),
+    ]
+
+    /// A barcode the catalogue has never heard of.
+    static let unknownBarcode = "0000000000017"
+
+    /// The shorthand receipt's food lines as Scan items has them: the ones with no name, or only
+    /// other households' guess, are open.
+    static let receiptScanItems: [ReceiptItemScanner.Item] = receiptDraftShorthand.lines
+        .filter { $0.kind == .item }
+        .map { line in
+            ReceiptItemScanner.Item(key: UUID(), line: line,
+                                    open: line.countsAs == nil || line.ingredientSource == "OTHERS")
+        }
+
     /// The same shop with the thighs misread as $18.86, so the lines no longer add up.
     static let receiptDraftMismatch: ReceiptDraft = {
         var draft = receiptDraft

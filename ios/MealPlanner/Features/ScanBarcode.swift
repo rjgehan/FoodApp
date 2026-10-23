@@ -43,9 +43,7 @@ struct ScanBarcodeScreen: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(red: 0x3B / 255, green: 0x30 / 255, blue: 0x29 / 255),
-                                    Color(red: 0x15 / 255, green: 0x10 / 255, blue: 0x0D / 255)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            ScannerBackdrop()
                 .ignoresSafeArea()
             if scanning && sample == nil {
                 BarcodeCamera(torch: torch) { code in Task { await lookUp(code) } }
@@ -54,9 +52,9 @@ struct ScanBarcodeScreen: View {
             window
             VStack(spacing: 0) {
                 HStack {
-                    round("xmark", label: "Close") { dismiss() }
+                    ScannerRoundButton("xmark", label: "Close") { dismiss() }
                     Spacer()
-                    round(torch ? "flashlight.on.fill" : "flashlight.off.fill", label: torch ? "Torch off" : "Torch on") {
+                    ScannerRoundButton(torch ? "flashlight.on.fill" : "flashlight.off.fill", label: torch ? "Torch off" : "Torch on") {
                         torch.toggle()
                     }
                 }
@@ -80,31 +78,10 @@ struct ScanBarcodeScreen: View {
         }
     }
 
-    /// The window to aim through: the screen dimmed round a rounded box, and the accent's scan line.
+    /// The window to aim through, and what to do or what went wrong under it.
     private var window: some View {
         VStack(spacing: 18) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(.white.opacity(0.95), lineWidth: 3)
-                Rectangle()
-                    .fill(Palette.accent)
-                    .frame(height: 2)
-                    .shadow(color: Palette.accent, radius: 6)
-                    .padding(.horizontal, 18)
-            }
-            .frame(width: 270, height: 170)
-            .background {
-                // Everything but the window darkens a little, so the eye goes to the window.
-                Rectangle().fill(.black.opacity(0.25))
-                    .frame(width: 4000, height: 4000)
-                    .mask {
-                        Rectangle().frame(width: 4000, height: 4000)
-                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .frame(width: 270, height: 170).blendMode(.destinationOut))
-                            .compositingGroup()
-                    }
-                    .allowsHitTesting(false)
-            }
+            BarcodeAimBox()
             Text(problem ?? "Point at a barcode")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
@@ -113,18 +90,6 @@ struct ScanBarcodeScreen: View {
         }
         .offset(y: -40)
         .opacity(scanning ? 1 : 0.6)
-    }
-
-    private func round(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(.white.opacity(0.18), in: Circle())
-        }
-        .buttonStyle(PressFade())
-        .accessibilityLabel(label)
     }
 
     /// What was read, and where it can go.
@@ -288,6 +253,77 @@ struct ScanBarcodeScreen: View {
             .reduce(into: "") { $0.append($1) }
             .split(separator: " ")
             .joined(separator: " ")
+    }
+}
+
+// MARK: - The viewfinder
+
+/**
+ The pieces every barcode screen is drawn with — the cupboard's scanner, and a receipt's Scan its
+ barcode and Scan items: the dark backdrop the camera fills, the window to aim through and the
+ round white buttons over it.
+ */
+struct ScannerBackdrop: View {
+    var body: some View {
+        LinearGradient(colors: [Color(red: 0x3B / 255, green: 0x30 / 255, blue: 0x29 / 255),
+                                Color(red: 0x15 / 255, green: 0x10 / 255, blue: 0x0D / 255)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+/// The window to aim through: the screen dimmed round a rounded box, and the accent's scan line.
+struct BarcodeAimBox: View {
+    var width: CGFloat = 270
+    var height: CGFloat = 170
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(.white.opacity(0.95), lineWidth: 3)
+            Rectangle()
+                .fill(Palette.accent)
+                .frame(height: 2)
+                .shadow(color: Palette.accent, radius: 6)
+                .padding(.horizontal, 18)
+        }
+        .frame(width: width, height: height)
+        .background {
+            // Everything but the window darkens a little, so the eye goes to the window.
+            Rectangle().fill(.black.opacity(0.25))
+                .frame(width: 4000, height: 4000)
+                .mask {
+                    Rectangle().frame(width: 4000, height: 4000)
+                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .frame(width: width, height: height).blendMode(.destinationOut))
+                        .compositingGroup()
+                }
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// A round white button over the camera: Close, the torch.
+struct ScannerRoundButton: View {
+    let systemImage: String
+    let label: String
+    let action: () -> Void
+
+    init(_ systemImage: String, label: String, action: @escaping () -> Void) {
+        self.systemImage = systemImage
+        self.label = label
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.18), in: Circle())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel(label)
     }
 }
 

@@ -165,6 +165,10 @@ struct GalleryView: View {
                                               onCancel: {}, onSaved: { _ in })
                         }
                     }
+                    entry("Check a receipt — scan items", "barcode.viewfinder") {
+                        ReceiptItemScanner(items: SampleData.receiptScanItems, choices: SampleData.receiptChoices,
+                                           sample: true, startWith: SampleData.receiptProducts[0]) { _, _ in }
+                    }
                     entry("Edit a saved receipt", "square.and.pencil") {
                         NavigationStack {
                             ReceiptReviewView(session: session, editing: SampleData.receiptDetail,

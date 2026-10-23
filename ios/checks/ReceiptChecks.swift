@@ -6,6 +6,9 @@ import Foundation
  other households) are asked about, that a pick off the list or a wordy, empty or echoed name is
  thrown away, that "not food" flips a line, that a refusal leaves a line as it was, and that no
  more than a couple of lines are asked at once.
+
+ And for a packet's barcode (ProductMatch.swift): which receipt line it is, through the till's
+ shorthand, and which of the household's names it counts as.
 */
 
 /// Answers from a script; anything unscripted is refused, as a guardrail would.
@@ -154,4 +157,74 @@ func receiptChecks() async {
         let guess = await ReceiptAssist.guess(for: questions[0], options: ReceiptAssist.options(from: []), thinker: model)
         check(guess == .named("greek yogurt") && model.picked.isEmpty, "with no names to offer, it is asked for one")
     }
+
+    productMatchChecks()
+}
+
+/// Scan its barcode and Scan items: the packet against the receipt's lines and the household's names.
+func productMatchChecks() {
+    // MARK: A till's word for a packet's
+
+    check(ProductMatch.abbreviates("grk", "greek"), "GRK is greek: the vowels dropped")
+    check(ProductMatch.abbreviates("ygrt", "yogurt"), "YGRT is yogurt")
+    check(ProductMatch.abbreviates("chob", "chobani"), "CHOB is chobani: the start of it")
+    check(ProductMatch.abbreviates("stnyfld", "stonyfield"), "STNYFLD is stonyfield")
+    check(!ProductMatch.abbreviates("rgk", "greek"), "an abbreviation starts with the word's own letter")
+    check(!ProductMatch.abbreviates("ygrtz", "yogurt"), "and has no letter the word lacks")
+    check(ProductMatch.lineWords("CHOB GRK YGRT 32OZ 2 LB CT") == ["chob", "grk", "ygrt"],
+          "numbers and sizes are no words to match")
+    check(ProductMatch.score(line: "GRK YGRT 2 32OZ LB", product: ProductMatch.words("Greek Yogurt")).score == 1,
+          "and don't count against a line")
+
+    // MARK: Which line
+
+    let thighs = UUID(), kings = UUID(), chobani = UUID(), milk = UUID()
+    let lines = [
+        ProductMatch.Candidate(key: thighs, text: "BELL&EVANS THIGHS", open: false),
+        ProductMatch.Candidate(key: kings, text: "KNGS GRK YGRT PLN"),
+        ProductMatch.Candidate(key: chobani, text: "CHOB GRK YGRT 32OZ"),
+        ProductMatch.Candidate(key: milk, text: "STNYFLD WHL MLK"),
+    ]
+    check(ProductMatch.best(lines, name: "Chobani Greek Yogurt Plain", brand: "Chobani") == chobani,
+          "the line every word of which is the packet's")
+    check(Array(ProductMatch.ranked(lines, name: "Chobani Greek Yogurt Plain", brand: "Chobani").map(\.key).prefix(2))
+          == [chobani, kings], "then the next most like it")
+    check(ProductMatch.best(lines, name: "Organic Whole Milk", brand: "Stonyfield") == milk,
+          "the brand is the packet's words too")
+    check(ProductMatch.best(lines, name: "Twinings English Breakfast Tea", brand: "Twinings") == nil,
+          "a packet like no line is no match")
+    check(ProductMatch.best([], name: "Chobani Greek Yogurt", brand: "Chobani") == nil, "nor on a receipt with no lines")
+
+    let named = UUID(), unnamed = UUID()
+    check(ProductMatch.best([ProductMatch.Candidate(key: named, text: "CHOB GRK YGRT", open: false),
+                             ProductMatch.Candidate(key: unnamed, text: "CHOB GRK YGRT")],
+                            name: "Chobani Greek Yogurt", brand: "Chobani") == unnamed,
+          "a tie goes to the line nobody has named yet")
+    let short = UUID(), long = UUID()
+    check(ProductMatch.best([ProductMatch.Candidate(key: short, text: "GRK YGRT"),
+                             ProductMatch.Candidate(key: long, text: "CHOB GRK YGRT")],
+                            name: "Chobani Greek Yogurt", brand: "Chobani") == long,
+          "and before that, to the line with more letters matched")
+
+    // MARK: What it counts as
+
+    let names = ["yogurt", "greek yogurt", "milk", "chickpeas", "berries", "tomato", "nutella"]
+    check(ProductMatch.choice(among: names, name: "Chobani Greek Yogurt Plain", brand: "Chobani") == "greek yogurt",
+          "the longest of the household's names on the packet")
+    check(ProductMatch.choice(among: names, name: "Organic Chickpea 15 oz", brand: "Goya") == "chickpeas",
+          "plural on the list, singular on the packet")
+    check(ProductMatch.choice(among: names, name: "Cherry Tomatoes", brand: "") == "tomato",
+          "singular on the list, plural on the packet")
+    check(ProductMatch.choice(among: names, name: "Mixed Berry Medley", brand: "") == "berries", "berry is berries")
+    check(ProductMatch.choice(among: names, name: "Hazelnut Spread with Cocoa", brand: "Nutella") == "nutella",
+          "a name on the brand counts")
+    check(ProductMatch.choice(among: ["oat milk"], name: "Organic Whole Milk", brand: "Stonyfield") == nil,
+          "every word of a name has to be on the packet")
+    check(ProductMatch.choice(among: names, name: "Twinings English Breakfast Tea", brand: "Twinings") == nil,
+          "none of the household's names fits: no choice")
+
+    check(ProductMatch.plainName("Chobani Greek Yogurt, Plain 32 oz", brand: "Chobani") == "greek yogurt plain",
+          "otherwise the packet's name, less the brand and the size")
+    check(ProductMatch.plainName("Chickpeas 400g tin", brand: "") == "chickpeas tin", "a size written as one word goes too")
+    check(ProductMatch.plainName("Nutella", brand: "Nutella") == "nutella", "a name that is only the brand stays")
 }
