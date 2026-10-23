@@ -102,6 +102,10 @@ public final class ReceiptReader {
                     + "(?<unit>FL\\.?\\s?OZ|OZ|0Z|LBS?|CT|PK|PACK|GAL|QT|PT|ML|LTR|L|KG|GR|G)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    // Eggs by the dozen: "EGGS LG DZ", "2 DOZ", "1/2 DZ". A count, as twelve of them.
+    private static final Pattern DOZEN = Pattern.compile(
+            "(?<![\\w./])(?:(?<half>1/2)|(?<qty>\\d{1,2}))?\\s?(?:DZ|DOZ|DOZEN)\\b", Pattern.CASE_INSENSITIVE);
+
     /** An amount at the end of an item's words, before the price paid: the "Price" column. */
     private static final Pattern LISTED = Pattern.compile("\\s\\$?(\\d{1,4}\\.\\d{2})$");
 
@@ -194,7 +198,7 @@ public final class ReceiptReader {
     private static final Set<String> NOT_WHAT_IT_IS = Set.of(
             "kngs", "kings", "kng", "kf", "kfm",
             "oz", "fl", "floz", "lb", "lbs", "ct", "gal", "qt", "pt", "ml", "ltr", "l", "g", "kg",
-            "pk", "pack", "ea", "each", "pc", "pcs", "sz", "size", "lg", "sm", "md", "xl",
+            "pk", "pack", "ea", "each", "pc", "pcs", "sz", "size", "lg", "sm", "md", "xl", "dz", "doz", "dozen",
             "org", "organic", "fresh", "the", "and", "of", "with", "a");
 
     private ReceiptReader() {
@@ -261,9 +265,9 @@ public final class ReceiptReader {
     }
 
     /**
-     * The pack size in a line's name, its unit as the app writes units: "5OZ" is 5 oz. A count
-     * beats a size ("COLA 12PK 12OZ" is a 12 pack, which is what the price was for); otherwise the
-     * last size in the name.
+     * The pack size in a line's name, its unit as the app writes units: "5OZ" is 5 oz, "DZ" is 12
+     * ct. A count beats a size ("COLA 12PK 12OZ" is a 12 pack, which is what the price was for);
+     * otherwise the last size in the name.
      */
     static Optional<PackSize> packSize(String text) {
         if (text == null) {
@@ -292,6 +296,14 @@ public final class ReceiptReader {
             });
             if (count == null && ("ct".equals(last.unit()) || "pack".equals(last.unit()))) {
                 count = last;
+            }
+        }
+        Matcher dozen = DOZEN.matcher(text);
+        if (count == null && dozen.find()) {
+            int eggs = dozen.group("half") != null ? 6
+                    : 12 * (dozen.group("qty") != null ? Integer.parseInt(dozen.group("qty")) : 1);
+            if (eggs > 0) {
+                count = new PackSize(BigDecimal.valueOf(eggs), "ct");
             }
         }
         return Optional.ofNullable(count != null ? count : last);

@@ -284,7 +284,13 @@ class ReceiptReaderTest {
         assertThat(ReceiptReader.packSize("KNGS BABY SPINACH 50Z")).contains(new ReceiptReader.PackSize(new BigDecimal("5"), "oz"));
         // A count beats a size: the price was for the 12 pack.
         assertThat(ReceiptReader.packSize("COLA 12PK 12OZ")).map(ReceiptReader.PackSize::unit).contains("pack");
+        // Eggs by the dozen are a count of them.
+        assertThat(ReceiptReader.packSize("EGGS LG DZ")).contains(new ReceiptReader.PackSize(new BigDecimal("12"), "ct"));
+        assertThat(ReceiptReader.packSize("BROWN EGGS 2 DOZ")).contains(new ReceiptReader.PackSize(new BigDecimal("24"), "ct"));
+        assertThat(ReceiptReader.packSize("EGGS 1/2 DOZEN")).contains(new ReceiptReader.PackSize(new BigDecimal("6"), "ct"));
+        assertThat(ReceiptReader.packSize("EGGS LARGE 18CT")).contains(new ReceiptReader.PackSize(new BigDecimal("18"), "ct"));
         // Not sizes.
+        assertThat(ReceiptReader.packSize("OPN NAT EGGS BROWN")).isEmpty();
         assertThat(ReceiptReader.packSize("GROUND BEEF 85%")).isEmpty();
         assertThat(ReceiptReader.packSize("V8 SPLASH")).isEmpty();
         assertThat(ReceiptReader.packSize(null)).isEmpty();
