@@ -3,9 +3,9 @@ import SwiftUI
 
 /**
  Receipts (Groceries ••• → Receipts): every receipt the household has scanned, newest first —
- "Kings Food Markets · Oct 18 · $86.40 · 23 priced". Tap one to see it as it was saved; swipe
- left to delete it, which takes the prices it saved with it (after asking, since those prices are
- what the grocery list shows).
+ "Kings Food Markets · Oct 18 · $86.40 · 23 priced". Tap one to see it as it was saved (and Edit
+ it there); swipe left to delete it, which takes the prices it saved with it (after asking, since
+ those prices are what the grocery list shows).
  */
 struct ReceiptsView: View {
     var session: Session
@@ -13,6 +13,8 @@ struct ReceiptsView: View {
     var sample: [ReceiptSummary]?
     /// The receipt a sample row opens.
     var sampleDetail: ReceiptResponse?
+    /// What a line can count as when a receipt is edited: the grocery list's names.
+    var choices: [IngredientChoice] = []
     /// Scan a receipt from here, which replaces this screen with the scanner.
     var onScan: () -> Void
 
@@ -60,7 +62,9 @@ struct ReceiptsView: View {
             BarTextButton("Scan", placement: .topBarTrailing, bold: true, action: onScan)
         }
         .navigationDestination(for: UUID.self) { id in
-            ReceiptDetailView(session: session, id: id, sample: sampleDetail)
+            // An edited receipt's shop, day and count of prices change its row here.
+            ReceiptDetailView(session: session, id: id, sample: sampleDetail, choices: choices,
+                              onChanged: { saved in Task { await changed(saved) } })
         }
         .confirmationDialog("Delete this receipt?",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -102,7 +106,8 @@ struct ReceiptsView: View {
 
     private func load() async {
         if let sample {
-            receipts = sample
+            // Once: coming back from a receipt keeps a sample row put right there.
+            if !loaded { receipts = sample }
             loaded = true
             return
         }
@@ -114,6 +119,19 @@ struct ReceiptsView: View {
             self.error = error.localizedDescription
         }
         loaded = true
+    }
+
+    /// A receipt edited on its own screen: the list again from the server (a sample's row is
+    /// put right here).
+    private func changed(_ saved: ReceiptResponse) async {
+        if sample != nil {
+            guard let index = receipts.firstIndex(where: { $0.id == saved.id }) else { return }
+            receipts[index] = ReceiptSummary(id: saved.id, storeName: saved.storeName, purchasedOn: saved.purchasedOn,
+                                             total: saved.total, itemCount: saved.itemCount,
+                                             pricedCount: saved.pricedCount, createdAt: saved.createdAt)
+            return
+        }
+        await load()
     }
 
     /// Gone from the list at once; back again if the server says no.
@@ -157,8 +175,11 @@ struct ReceiptSummaryRow: View {
 /**
  A saved receipt: the shop, the day, the total and how many lines kept a price, the branch it was
  bought at (with the way there), then every line as it was saved — what it counts as, the price,
- Sale, Not food. The lines are as saved; the branch can be linked, changed or unlinked, and a
- branch of another shop re-files the receipt there, its prices with it.
+ Sale, Not food. The branch can be linked, changed or unlinked, and a branch of another shop
+ re-files the receipt there, its prices with it.
+
+ Edit opens the receipt on the review screen to put right what the reading got wrong — its
+ shop, day and lines — and saving there teaches its prices again (`PUT /receipts/{id}`).
  */
 struct ReceiptDetailView: View {
     var session: Session
@@ -167,11 +188,16 @@ struct ReceiptDetailView: View {
     var sample: ReceiptResponse?
     /// Where back goes: the list, or the review screen that opened an earlier copy.
     var backLabel = "Receipts"
+    /// What a line can count as while it is edited: the grocery list's names.
+    var choices: [IngredientChoice] = []
+    /// The receipt was edited, so the list behind can show it as it is now.
+    var onChanged: ((ReceiptResponse) -> Void)? = nil
 
     @State private var receipt: ReceiptResponse?
     @State private var error: String?
     @State private var choosingStore = false
     @State private var linking = false
+    @State private var editing = false
 
     var body: some View {
         ScrollView {
@@ -219,6 +245,20 @@ struct ReceiptDetailView: View {
         .navigationTitle(receipt?.storeName ?? "Receipt")
         .navigationBarTitleDisplayMode(.inline)
         .textBackButton(backLabel)
+        .toolbar {
+            if receipt != nil {
+                BarTextButton("Edit", placement: .topBarTrailing, disabled: linking) { editing = true }
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            if let receipt {
+                NavigationStack {
+                    ReceiptReviewView(session: session, editing: receipt, choices: choices, sample: sample != nil,
+                                      onCancel: { editing = false },
+                                      onSaved: { saved in edited(saved) })
+                }
+            }
+        }
         .sheet(isPresented: $choosingStore) {
             if let receipt {
                 StorePicker(session: session, suggest: receipt.storeName, current: receipt.place,
@@ -259,6 +299,17 @@ struct ReceiptDetailView: View {
         }
     }
 
+    /**
+     Saved from the review screen: shown as the server now has it, and the list behind told. The
+     grocery list's prices are fetched again when Receipts closes (GroceriesView does that).
+     */
+    private func edited(_ saved: ReceiptResponse) {
+        receipt = saved
+        error = nil
+        editing = false
+        onChanged?(saved)
+    }
+
     private func header(_ receipt: ReceiptResponse) -> some View {
         Card(spacing: 6) {
             Text(receipt.storeName ?? "A shop").titleFont(24).foregroundStyle(Palette.text)
@@ -293,7 +344,8 @@ struct ReceiptDetailView: View {
 
     private func load() async {
         if let sample {
-            receipt = sample
+            // Once: back from Edit (a full-screen cover runs this again) keeps the sample as edited.
+            if receipt == nil { receipt = sample }
             return
         }
         guard let household = session.household?.id else { return }

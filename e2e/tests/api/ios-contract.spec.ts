@@ -394,9 +394,13 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   for (const key of ['storeName', 'storeId', 'purchasedOn', 'subtotal', 'tax', 'total', 'sumMatches', 'duplicateOf', 'lines', 'unreadLines']) {
     expect(draft).toHaveProperty(key);
   }
-  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName', 'brand']) {
+  for (const key of ['text', 'kind', 'quantity', 'unit', 'unitPrice', 'price', 'onSale', 'ingredientId', 'ingredientName', 'brand',
+    'ingredientSource']) {
     expect(draft.lines[0]).toHaveProperty(key);
   }
+  // Where each guess came from: the household's own list here; nothing for a line with no guess.
+  expect(draft.lines[0].ingredientSource).toBe('MATCHED');
+  expect(draft.lines.find((l: any) => l.text === 'PAPER BAG').ingredientSource).toBeNull();
   // The line nobody could read is why the rest do not add up to the subtotal.
   expect(draft).toMatchObject({ purchasedOn: '2026-10-18', sumMatches: false, duplicateOf: null });
   expect(draft.unreadLines).toEqual(['MYSTERY 0.89 ??']);
@@ -491,6 +495,28 @@ test('receipt prices: read, review, save, the list, a typed price, and the field
   expect(typeof kings.listTotal).toBe('number');
   // Whose a price was is never said, beyond "yours".
   expect(JSON.stringify(chains)).not.toMatch(/householdId|householdName|ownerName|addedBy/);
+
+  // ReceiptDetailView's Edit: the review screen's Save body again, as PUT, with the pages it kept and
+  // no barcode; back comes the receipt as GET gives it.
+  const opened = await call('GET', `${base}/receipts/${saved.id}`, { token });
+  const edited = await call('PUT', `${base}/receipts/${saved.id}`, {
+    token,
+    body: {
+      storeName: 'Kings Food Markets', purchasedOn: '2026-10-18', subtotal: 4.98, total: 4.98, photoIds: [],
+      lines: [
+        { text: 'KNGS BABY SPINACH 5OZ', kind: 'ITEM', quantity: 5, unit: 'oz', price: 3.99, onSale: false,
+          ingredientId: spinach.ingredientId, ingredientName: 'baby spinach', brand: 'Kings' },
+        { text: 'MYSTERY', kind: 'ITEM', price: 0.89, onSale: false, ingredientName: 'mystery mints' },
+        { text: 'PAPER BAG', kind: 'NOT_FOOD', price: 0.1, onSale: false },
+      ],
+    },
+  });
+  expect(Object.keys(edited).sort()).toEqual(Object.keys(opened).sort());
+  expect(edited).toMatchObject({ id: saved.id, itemCount: 2, pricedCount: 2, place: branch, photoIds: [] });
+  expect(edited.lines[1]).toMatchObject({ text: 'MYSTERY', ingredientName: 'mystery mints', ingredientId: expect.any(String) });
+  expect(await call('GET', `${base}/receipts/${saved.id}`, { token })).toEqual(edited);
+  // The barcode is the scanned receipt's still.
+  expect((await call('POST', `${base}/receipts/read`, { token, body: { lines, barcode: '0412553100018' } })).duplicateOf).toBe(saved.id);
 
   // Swipe to delete.
   await call('DELETE', `${base}/receipts/${saved.id}`, { token });

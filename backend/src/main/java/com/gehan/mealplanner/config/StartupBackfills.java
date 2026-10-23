@@ -1,6 +1,7 @@
 package com.gehan.mealplanner.config;
 
 import com.gehan.mealplanner.domain.Household;
+import com.gehan.mealplanner.receipts.ReceiptReader;
 import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.service.ApplianceDetector;
 import com.gehan.mealplanner.service.CupboardService;
@@ -274,6 +275,47 @@ public class StartupBackfills {
                 log.warn("Could not mark grocery rows as asked for: {}", e.getMessage());
             }
         };
+    }
+
+    /**
+     * Receipt lines saved before lines were remembered by their match key — matched as printed,
+     * which a product code or a misread letter defeated. Give each its key, so what somebody said
+     * about it is found the next time the same thing is bought.
+     */
+    @Bean
+    public ApplicationRunner rememberReceiptLinesByTheirKey(JdbcTemplate jdbc) {
+        return args -> {
+            try {
+                int filled = fillReceiptLineMatchKeys(jdbc);
+                if (filled > 0) {
+                    log.info("Worked out what {} receipt lines are remembered by", filled);
+                }
+            } catch (Exception e) {
+                log.warn("Could not work out what receipt lines are remembered by: {}", e.getMessage());
+            }
+        };
+    }
+
+    /**
+     * Only lines with no key yet, a thousand at a time, each update only taking while the line
+     * still has none — a line saved meanwhile already has its own, and is left as it is. Every
+     * line gets a key (empty for one with no words), so this never sees the same line twice and
+     * a repeat finds nothing to do. Returns how many lines it filled.
+     */
+    public static int fillReceiptLineMatchKeys(JdbcTemplate jdbc) {
+        int filled = 0;
+        while (true) {
+            List<Object[]> batch = new ArrayList<>();
+            jdbc.query("SELECT id, text FROM receipt_lines WHERE match_key IS NULL LIMIT 1000", rs -> {
+                batch.add(new Object[]{ReceiptReader.matchKey(rs.getString("text")), rs.getObject("id", UUID.class)});
+            });
+            if (batch.isEmpty()) {
+                return filled;
+            }
+            for (int updated : jdbc.batchUpdate("UPDATE receipt_lines SET match_key = ? WHERE id = ? AND match_key IS NULL", batch)) {
+                filled += Math.max(updated, 0);
+            }
+        }
     }
 
     /**

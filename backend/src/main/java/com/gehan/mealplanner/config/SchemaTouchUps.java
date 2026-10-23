@@ -253,8 +253,11 @@ public class SchemaTouchUps {
      * whatever the case, as tags are — "Kings Food Markets" and "KINGS FOOD MARKETS" are one shop.
      * A receipt's barcode is unique in its household only where there is one: it is there to catch
      * the same receipt saved twice, and most saves have none. The newest price per ingredient is
-     * what every grocery list read asks for, so it gets an index in that order. Each gets a try of
-     * its own, so one that will not build does not leave the others unmade.
+     * what every grocery list read asks for, so it gets an index in that order. Every read of a
+     * receipt looks its lines up by what they are remembered by, then goes to their receipt for
+     * whose it was — the household is the receipt's, not the line's, so the receipt's id rides in
+     * the index beside the key. Each gets a try of its own, so one that will not build does not
+     * leave the others unmade.
      */
     @Bean
     public ApplicationRunner receiptIndexes(JdbcTemplate jdbc) {
@@ -264,7 +267,9 @@ public class SchemaTouchUps {
                     "CREATE UNIQUE INDEX IF NOT EXISTS uk_receipts_household_barcode ON receipts (household_id, barcode)"
                             + " WHERE barcode IS NOT NULL",
                     "CREATE INDEX IF NOT EXISTS idx_price_observations_newest"
-                            + " ON price_observations (household_id, ingredient_id, observed_on DESC)");
+                            + " ON price_observations (household_id, ingredient_id, observed_on DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_receipt_lines_match_key ON receipt_lines (match_key, receipt_id)"
+                            + " WHERE kind = 'ITEM'");
             for (String index : indexes) {
                 try {
                     jdbc.execute(index);

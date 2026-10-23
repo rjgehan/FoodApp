@@ -58,13 +58,72 @@ extension SampleData {
     ]
 
     /// What the server makes of `receiptText`: everything but the smudged bread, which is why it
-    /// does not add up until that is put on by hand.
+    /// does not add up until that is put on by hand. Each guess says where it came from — the
+    /// household's own words, a line put right before, or (the beef) other households' receipts.
     static let receiptDraft = ReceiptDraft(
         storeName: "Kings Food Markets", storeId: kings, purchasedOn: "2026-10-18",
         subtotal: 44.10, tax: 0.01, total: 44.11, sumMatches: false, duplicateOf: nil,
-        lines: receiptLines,
+        lines: receiptDraftLines,
         unreadLines: ["KNGS ARTSN BRD 4.Z9 F"]
     )
+
+    /// `receiptLines` as a draft has them, each guess with where it came from.
+    private static let receiptDraftLines: [ReceiptLine] = {
+        // bananas, lemons, spinach, thighs, beef, oat milk; nothing for the boule or the bag.
+        let sources: [String] = ["MATCHED", "MATCHED", "REMEMBERED", "REMEMBERED", "OTHERS", "REMEMBERED"]
+        var out: [ReceiptLine] = []
+        for (index, line) in receiptLines.enumerated() {
+            var drafted = line
+            drafted.ingredientSource = index < sources.count ? sources[index] : nil
+            out.append(drafted)
+        }
+        return out
+    }()
+
+    /**
+     A receipt in the till's own shorthand, the way most of them really read: two lines the
+     server has never seen (for Apple Intelligence to read on the phone), one it only guessed from
+     other households, and the rest it knew.
+     */
+    static let receiptDraftShorthand = ReceiptDraft(
+        storeName: "Kings Food Markets", storeId: kings, purchasedOn: "2026-10-18",
+        subtotal: 33.83, tax: 0, total: 33.83, sumMatches: true, duplicateOf: nil,
+        lines: [
+            ReceiptLine(text: "KNGS GRK YGRT PLN", price: 5.99),
+            ReceiptLine(text: "BELL&EVANS THIGHS", quantity: 1.84, unit: "lb", unitPrice: 6.99, price: 12.86,
+                        ingredientId: thighsId, ingredientName: "chicken thighs", ingredientSource: "REMEMBERED"),
+            ReceiptLine(text: "ORG BNNS", quantity: 1.32, unit: "lb", unitPrice: 0.69, price: 0.91,
+                        ingredientId: bananasId, ingredientName: "bananas", ingredientSource: "OTHERS"),
+            ReceiptLine(text: "STNYFLD WHL MLK", price: 4.49),
+            ReceiptLine(text: "KNGS BBY SPNCH 5OZ", quantity: 5, unit: "oz", price: 3.99, ingredientId: spinachId,
+                        ingredientName: "baby spinach", ingredientSource: "MATCHED"),
+            ReceiptLine(text: "OATLY OAT MILK", price: 5.49, ingredientId: oatMilkId, ingredientName: "oat milk",
+                        brand: "Oatly", ingredientSource: "REMEMBERED"),
+            ReceiptLine(text: "BAG FEE", kind: .notFood, price: 0.10),
+        ],
+        unreadLines: []
+    )
+
+    /// Packets as the barcode catalogue answers for them, for Scan its barcode and Scan items: the
+    /// shorthand receipt's yogurt and milk, and a box of tea that is on no receipt here.
+    static let receiptProducts: [Product] = [
+        Product(barcode: "0818290014269", name: "Chobani Greek Yogurt Plain", brand: "Chobani", size: "32 oz"),
+        Product(barcode: "0052159000127", name: "Stonyfield Organic Whole Milk", brand: "Stonyfield",
+                size: "64 fl oz"),
+        Product(barcode: "0070177154097", name: "Twinings English Breakfast Tea", brand: "Twinings", size: "20 bags"),
+    ]
+
+    /// A barcode the catalogue has never heard of.
+    static let unknownBarcode = "0000000000017"
+
+    /// The shorthand receipt's food lines as Scan items has them: the ones with no name, or only
+    /// other households' guess, are open.
+    static let receiptScanItems: [ReceiptItemScanner.Item] = receiptDraftShorthand.lines
+        .filter { $0.kind == .item }
+        .map { line in
+            ReceiptItemScanner.Item(key: UUID(), line: line,
+                                    open: line.countsAs == nil || line.ingredientSource == "OTHERS")
+        }
 
     /// The same shop with the thighs misread as $18.86, so the lines no longer add up.
     static let receiptDraftMismatch: ReceiptDraft = {

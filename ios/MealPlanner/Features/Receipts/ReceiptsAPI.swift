@@ -37,10 +37,16 @@ struct ReceiptLine: Codable, Hashable {
     var ingredientName: String?
     /// Who made it ("Twinings"). What it counts as stays the thing itself: english breakfast tea.
     var brand: String?
+    /**
+     On a draft, where the server's guess at the ingredient came from (`ReceiptAssist.Source`):
+     REMEMBERED (somebody put this line right before), MATCHED (the household's own ingredients),
+     OTHERS (other households' receipts — a guess), or nil for no guess. Never sent back.
+     */
+    var ingredientSource: String?
 
     init(text: String, kind: ReceiptLineKind = .item, quantity: Double? = nil, unit: String? = nil,
          unitPrice: Double? = nil, price: Double, onSale: Bool = false, ingredientId: UUID? = nil,
-         ingredientName: String? = nil, brand: String? = nil) {
+         ingredientName: String? = nil, brand: String? = nil, ingredientSource: String? = nil) {
         self.text = text
         self.kind = kind
         self.quantity = quantity
@@ -51,6 +57,7 @@ struct ReceiptLine: Codable, Hashable {
         self.ingredientId = ingredientId
         self.ingredientName = ingredientName
         self.brand = brand
+        self.ingredientSource = ingredientSource
     }
 
     /// Forgiving: a line missing its kind, its sale flag or even its price still shows, to be
@@ -67,6 +74,7 @@ struct ReceiptLine: Codable, Hashable {
         ingredientId = try c.decodeIfPresent(UUID.self, forKey: .ingredientId)
         ingredientName = try c.decodeIfPresent(String.self, forKey: .ingredientName)
         brand = try c.decodeIfPresent(String.self, forKey: .brand)
+        ingredientSource = try c.decodeIfPresent(String.self, forKey: .ingredientSource)
     }
 
     /// The name the price will be kept under, if it will be kept: a food line with an ingredient.
@@ -252,6 +260,15 @@ extension APIClient {
      */
     func saveReceipt(household: UUID, body: [String: Any]) async throws -> ReceiptResponse {
         try await send("POST", "/api/households/\(household.uuidString)/receipts", body: body)
+    }
+
+    /**
+     Puts right a saved receipt (`ReceiptReviewView`'s edit mode builds the body, the same shape
+     as Save's): its shop, its day and its lines, and so the prices it saved. The barcode, the
+     words and the branch stay as they were, and so do the pictures, since none are sent.
+     */
+    func updateReceipt(household: UUID, id: UUID, body: [String: Any]) async throws -> ReceiptResponse {
+        try await send("PUT", "/api/households/\(household.uuidString)/receipts/\(id.uuidString)", body: body)
     }
 
     /// Newest first.

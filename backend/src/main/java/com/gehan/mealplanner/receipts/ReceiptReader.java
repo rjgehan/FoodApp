@@ -230,7 +230,8 @@ public final class ReceiptReader {
                     return new DraftLine(item.text, item.kind, item.quantity, item.unit, item.unitPrice,
                             item.price.setScale(2, RoundingMode.HALF_UP), item.onSale,
                             guess.map(KnownIngredient::id).orElse(null),
-                            guess.map(KnownIngredient::name).orElse(null), null);
+                            guess.map(KnownIngredient::name).orElse(null), null,
+                            guess.isPresent() ? DraftLine.MATCHED : null);
                 })
                 .toList();
 
@@ -945,6 +946,49 @@ public final class ReceiptReader {
                         .thenComparingDouble(Candidate::covered)
                         .thenComparing(c -> -c.ingredient().name().length()))
                 .map(Candidate::ingredient);
+    }
+
+    // --- The same line, however it was read ---
+
+    private static final Pattern LEADING_CODE = Pattern.compile("^\\d{4,14}\\s+");
+    /** An amount at the end of the line, with the tax flags after it: "3.99 F", "$1.00- TF". */
+    private static final Pattern TRAILING_AMOUNT = Pattern.compile(
+            "\\s*-?\\$?\\s?\\d{0,4}[.,]\\d{2}-?(?:\\s*[A-Z*]{1,2}){0,2}$");
+    /** An amount anywhere else: Kings' "Price" column, "2/5.00". */
+    private static final Pattern AMOUNT = Pattern.compile("(?<!\\S)-?\\$?\\d{0,4}[.,]\\d{2}-?(?!\\S)");
+    /** A word the OCR spoilt with a digit or two that look like letters: "Y0GURT", "M1LK", "5PINACH". */
+    private static final Pattern LETTERS_AND_LOOKALIKES = Pattern.compile("[A-Z015]*[A-Z][A-Z015]*");
+
+    /**
+     * What a printed line is remembered by: the same thing bought, however the phone read it this
+     * time. In capitals, without the product code in front, the amounts and the tax flags behind,
+     * and the numbers standing on their own (a till's item count, a price split by a misread
+     * point); punctuation is a space; and a word that is letters but for a nought, a one or a five
+     * is read as the O, I or S it almost certainly was — "KNGS GRK Y0GURT PLN" and "KNGS GRK
+     * YOGURT, PLN" are one line. A size like "32OZ" keeps its digits: "SOZ" for a "5OZ" read as
+     * "50Z" is the same either way. Empty for a line with no words in it.
+     */
+    public static String matchKey(String text) {
+        if (text == null) {
+            return "";
+        }
+        String line = text.toUpperCase(Locale.ROOT).trim();
+        line = LEADING_CODE.matcher(line).replaceFirst("");
+        line = TRAILING_AMOUNT.matcher(line).replaceFirst("");
+        line = AMOUNT.matcher(line).replaceAll(" ");
+        line = line.replaceAll("[^A-Z0-9]+", " ");
+        List<String> kept = new ArrayList<>();
+        for (String word : line.trim().split(" ")) {
+            if (word.isEmpty() || word.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            if (LETTERS_AND_LOOKALIKES.matcher(word).matches()) {
+                word = word.replace('0', 'O').replace('1', 'I').replace('5', 'S');
+            }
+            kept.add(word);
+        }
+        String key = String.join(" ", kept);
+        return key.length() > 200 ? key.substring(0, 200).trim() : key;
     }
 
     /** The words that say what something is, in order, each in its singular. */

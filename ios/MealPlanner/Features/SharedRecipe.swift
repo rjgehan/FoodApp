@@ -559,7 +559,10 @@ struct SharedRecipeView: View {
         defer { busy = false }
         note = "A recipe shared from Waxwing. Saving a copy…"
         do {
-            copy = try await SharedRecipeLink.save(token: token, household: household)
+            let copied = try await SharedRecipeLink.save(token: token, household: household)
+            copy = copied
+            // Into the house the app is on: Recipes shows it at once, with no pull to refresh.
+            NotificationCenter.default.post(name: .recipesChanged, object: copied)
             note = nil
         } catch {
             note = nil
@@ -577,6 +580,8 @@ struct SharedRecipeView: View {
         do {
             kept = try await APIClient.shared.saveLink(household: household, url: url, name: name, section: section,
                                                        coverImageId: cover)
+            // No recipe to hand over: Recipes fetches everything again, Saved links with it.
+            NotificationCenter.default.post(name: .recipesChanged, object: nil)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -937,6 +942,16 @@ struct SharedRecipeView: View {
         #endif
     }
 
+    /**
+     Tells Recipes (and the Plan) a recipe was saved, so it shows at once rather than after a pull
+     to refresh: the recipe itself when it went into the house the app is on, else nothing, which
+     fetches everything again.
+     */
+    private func announce(_ created: Recipe, in household: UUID) {
+        let here = household == session.household?.id
+        NotificationCenter.default.post(name: .recipesChanged, object: here ? created : nil)
+    }
+
     private func savePage(_ recipe: StructuredRecipe, anotherCopy: Bool = false) async {
         guard let household = target, !savingRecipe, !sample else { return }
         savingRecipe = true
@@ -975,6 +990,7 @@ struct SharedRecipeView: View {
             let created = try await APIClient.shared.createRecipe(household: household, body: body,
                                                                   allowDuplicate: anotherCopy)
             saved = "Saved as \(created.name)"
+            announce(created, in: household)
         } catch let apiError as APIError where apiError.duplicateRecipe != nil {
             retry = { await savePage(recipe, anotherCopy: true) }
             duplicate = apiError.duplicateRecipe
@@ -1021,6 +1037,7 @@ struct SharedRecipeView: View {
             let created = try await APIClient.shared.createRecipe(household: household, body: body,
                                                                   allowDuplicate: anotherCopy)
             saved = "Saved as \(created.name)"
+            announce(created, in: household)
         } catch let apiError as APIError where apiError.duplicateRecipe != nil {
             retry = { await save(recipe, anotherCopy: true) }
             duplicate = apiError.duplicateRecipe

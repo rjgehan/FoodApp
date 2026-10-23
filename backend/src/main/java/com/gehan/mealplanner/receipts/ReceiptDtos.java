@@ -65,7 +65,11 @@ public class ReceiptDtos {
      * One thing bought. `kind` is ITEM or NOT_FOOD. `quantity` null is one and `unit` null is
      * each; `unitPrice` is what the receipt said one (or one lb) cost, when it said. `price` is
      * what was paid for the line after its discounts, and `onSale` says a discount came off.
-     * The ingredient is the reader's guess from the household's own — null when it had none.
+     * The ingredient is the reader's guess — null when it had none — and `ingredientSource` says
+     * where the guess came from, so the phone knows which ones are worth a second look:
+     * {@link #REMEMBERED} somebody said so about the same line before, {@link #MATCHED} its words
+     * are one of the household's own ingredients, {@link #OTHERS} it is what other households have
+     * priced. Null with no guess. Last, so an older phone that has never heard of it is none the worse.
      */
     public record DraftLine(
             String text,
@@ -77,13 +81,22 @@ public class ReceiptDtos {
             boolean onSale,
             UUID ingredientId,
             String ingredientName,
-            String brand) {
+            String brand,
+            String ingredientSource) {
+
+        public static final String REMEMBERED = "REMEMBERED";
+        public static final String MATCHED = "MATCHED";
+        public static final String OTHERS = "OTHERS";
     }
 
     /**
      * The receipt as somebody confirmed it. The store is found or made by name; leaving it blank
      * saves a receipt from nowhere in particular. A line counts as an ingredient by its id, or by
      * a name typed on the review screen, which is found or made like one typed on the list.
+     *
+     * Editing a saved receipt sends the same thing back. There the barcode and the raw text stay as
+     * they were first saved, the branch is `PUT …/place`'s business, and `photoIds` left out keeps
+     * the pictures it has, where a list makes them exactly those.
      */
     public record SaveReceiptRequest(
             @Size(max = 80, message = "Keep the store's name to 80 characters.") String storeName,

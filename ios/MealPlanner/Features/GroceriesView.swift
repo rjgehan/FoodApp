@@ -88,12 +88,15 @@ struct GroceriesView: View {
         return missing > 0 ? "\(total) · \(missing) not priced" : total
     }
 
-    /// What a receipt line can count as: the list's names, ticked rows and the shop just
-    /// finished included, each name once.
+    /// What a receipt line can count as: the list's names, each once — the shop just finished and
+    /// the ticked rows first, since those are what the receipt is most likely of (Apple
+    /// Intelligence is offered them in this order), then the rest of the list.
     private var ingredientChoices: [IngredientChoice] {
         var seen = Set<String>()
-        let fromList = items.map { IngredientChoice(name: $0.name, ingredientId: $0.ingredientId) }
-        return (fromList + justBought).filter { seen.insert($0.name.lowercased()).inserted }
+        let choice = { (item: GroceryItem) in IngredientChoice(name: item.name, ingredientId: item.ingredientId) }
+        let bought = justBought + ticked.map(choice)
+        let rest = items.filter { !$0.checked }.map(choice)
+        return (bought + rest).filter { seen.insert($0.name.lowercased()).inserted }
     }
 
     var body: some View {
@@ -316,10 +319,11 @@ struct GroceriesView: View {
                 ReceiptsView(session: session,
                              sample: sampled ? SampleData.receipts : nil,
                              sampleDetail: sampled ? SampleData.receiptDetail : nil,
+                             choices: ingredientChoices,
                              onScan: { receiptScreen = .scan })
             }
-            // A receipt deleted in there takes its prices with it, and nothing tells this phone:
-            // the list is fetched again on the way out, or it goes on showing them.
+            // A receipt deleted or edited in there changes the prices it saved, and nothing tells
+            // this phone: the list is fetched again on the way out, or it goes on showing the old ones.
             .onDisappear { Task { await load() } }
         }
     }

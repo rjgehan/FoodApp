@@ -61,6 +61,18 @@ public class ReceiptsController {
         return receiptService.get(householdId, receiptId, userId);
     }
 
+    /**
+     * A saved receipt put right: the same body as saving one, and its prices taught again from the
+     * lines as they are now. The barcode, the raw text and the branch stay as they were.
+     */
+    @PutMapping("/receipts/{receiptId}")
+    public ReceiptResponse edit(@AuthenticationPrincipal UUID userId,
+                                @PathVariable UUID householdId,
+                                @PathVariable UUID receiptId,
+                                @Valid @RequestBody SaveReceiptRequest request) {
+        return receiptService.edit(householdId, receiptId, userId, request);
+    }
+
     /** Links a saved receipt to the branch it was bought at, or unlinks it. */
     @PutMapping("/receipts/{receiptId}/place")
     public ReceiptResponse linkPlace(@AuthenticationPrincipal UUID userId,

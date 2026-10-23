@@ -630,6 +630,41 @@ class ReceiptReaderTest {
         ReceiptDraft draft = ReceiptReader.read(List.of("BABY SPINACH 3.99"), List.of(), List.of());
         assertThat(draft.lines().get(0).ingredientId()).isNull();
         assertThat(draft.lines().get(0).ingredientName()).isNull();
+        assertThat(draft.lines().get(0).ingredientSource()).isNull();
+    }
+
+    @Test
+    void aGuessFromTheHouseholdsOwnSaysItWasMatched() {
+        ReceiptDraft draft = ReceiptReader.read(List.of("KNGS BABY SPINACH 5OZ 3.99 F", "MYSTERY THING 1.00 F"),
+                PANTRY, List.of());
+        assertThat(draft.lines()).extracting(DraftLine::ingredientName, DraftLine::ingredientSource)
+                .containsExactly(tuple("baby spinach", DraftLine.MATCHED), tuple(null, null));
+    }
+
+    // --- What a line is remembered by ---
+
+    @Test
+    void theSameLineReadDifferentlyIsRememberedAsOne() {
+        String key = ReceiptReader.matchKey("KNGS GRK YGRT PLN");
+        assertThat(key).isEqualTo("KNGS GRK YGRT PLN");
+        // Whatever the case, the spacing, the punctuation, a product code in front or the price behind.
+        assertThat(ReceiptReader.matchKey("  kngs grk ygrt pln ")).isEqualTo(key);
+        assertThat(ReceiptReader.matchKey("KNGS GRK. YGRT, PLN")).isEqualTo(key);
+        assertThat(ReceiptReader.matchKey("2410044077 KNGS GRK YGRT PLN")).isEqualTo(key);
+        assertThat(ReceiptReader.matchKey("KNGS GRK YGRT PLN 5.49 F")).isEqualTo(key);
+        assertThat(ReceiptReader.matchKey("KNGS GRK YGRT PLN 5.99 5.49 TF")).isEqualTo(key);
+        assertThat(ReceiptReader.matchKey("KNGS GRK YGRT PLN $1.00-")).isEqualTo(key);
+        // A nought, a one or a five in a word that is otherwise letters is the letter it looks like.
+        assertThat(ReceiptReader.matchKey("KNGS GRK YGRT PLN")).isEqualTo(ReceiptReader.matchKey("KNG5 GRK YGRT PLN"));
+        assertThat(ReceiptReader.matchKey("WH0LE M1LK")).isEqualTo("WHOLE MILK");
+        // A number on its own is not part of what it is; a size keeps its digits.
+        assertThat(ReceiptReader.matchKey("2 KNGS GRK YGRT PLN 32OZ")).isEqualTo("KNGS GRK YGRT PLN 32OZ");
+        assertThat(ReceiptReader.matchKey("BABY SPINACH 5OZ")).isEqualTo(ReceiptReader.matchKey("BABY SPINACH 50Z"));
+        assertThat(ReceiptReader.matchKey("MILK 2%")).isEqualTo("MILK");
+        // Different things stay different.
+        assertThat(ReceiptReader.matchKey("KNGS GRK YGRT VAN")).isNotEqualTo(key);
+        assertThat(ReceiptReader.matchKey("1234")).isEmpty();
+        assertThat(ReceiptReader.matchKey(null)).isEmpty();
     }
 
     @Test

@@ -1,9 +1,9 @@
 import Foundation
 
 /*
- Checks for what Apple Intelligence may do in Nutrition facts (NutritionAssist.swift) and Meal
- plans (MealPlanAssist.swift, in MealPlanChecks.swift), run on a
- Mac with no app, no simulator and no model: ./checks/run.sh from ios/.
+ Checks for what Apple Intelligence may do in Nutrition facts (NutritionAssist.swift), Meal
+ plans (MealPlanAssist.swift, in MealPlanChecks.swift) and on a scanned receipt (ReceiptAssist.swift,
+ in ReceiptChecks.swift), run on a Mac with no app, no simulator and no model: ./checks/run.sh from ios/.
 
  A Simulator only has the on-device model when its Mac does, so the paths a real iPhone takes are tested here
  with a scripted stand-in: which lines are asked about, that only shortlisted foods and in-range
@@ -380,6 +380,10 @@ check(NutritionText.isBarcode("5000112637922") && !NutritionText.isBarcode("egg"
 // MARK: - Meal plans (MealPlanChecks.swift)
 
 run { await mealPlanChecks() }
+
+// MARK: - Receipts (ReceiptChecks.swift)
+
+run { await receiptChecks() }
 
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

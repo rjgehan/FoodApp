@@ -119,6 +119,62 @@ test('the same receipt twice: the draft says so, saving is a 409, and Save anywa
   expect(await call('GET', `${base}/receipts`, { token })).toHaveLength(2);
 });
 
+test('a saved receipt put right: its lines, shop and day change and its prices with them; its barcode stays', async () => {
+  const hh = await newHousehold();
+  const { token } = await admin();
+  const base = `/api/households/${hh.id}`;
+  const eggs = await add(hh.id, token, unique('eggs').toLowerCase());
+  const milk = await add(hh.id, token, unique('milk').toLowerCase());
+  const barcode = unique('9913');
+  const saved = await call('POST', `${base}/receipts`, {
+    token,
+    body: { storeName: 'Kings Food Markets', purchasedOn: '2026-10-18', total: 9.28, barcode, rawText: 'EGGS 4.99\nMILK 4.29',
+      lines: [
+        { text: 'EGGS', kind: 'ITEM', price: 4.99, onSale: false, ingredientId: eggs.ingredientId },
+        { text: 'MILK', kind: 'ITEM', price: 4.29, onSale: false, ingredientId: milk.ingredientId },
+      ] },
+  });
+
+  // The same body as a save; the barcode and raw text sent here are not the receipt's to change.
+  const shop = unique('Corner Shop');
+  const edited = await call('PUT', `${base}/receipts/${saved.id}`, {
+    token,
+    body: { storeName: shop, purchasedOn: '2026-10-19', total: 5.59, barcode: 'something else', rawText: 'something else',
+      lines: [
+        { text: 'EGGS LG', kind: 'ITEM', quantity: 12, unit: 'ct', price: 5.49, onSale: true, ingredientId: eggs.ingredientId,
+          brand: 'Vital Farms' },
+        { text: 'MILK', kind: 'NOT_FOOD', price: 0.1, onSale: false },
+      ] },
+  });
+  expect(edited).toMatchObject({ id: saved.id, storeName: shop, purchasedOn: '2026-10-19', total: 5.59, itemCount: 1,
+    pricedCount: 1, photoIds: [] });
+  expect(edited.lines.map((l: any) => [l.text, l.kind, l.price, l.ingredientName, l.brand])).toEqual([
+    ['EGGS LG', 'ITEM', 5.49, eggs.name, 'Vital Farms'],
+    ['MILK', 'NOT_FOOD', 0.1, null, null],
+  ]);
+  expect(await call('GET', `${base}/receipts/${saved.id}`, { token })).toEqual(edited);
+  expect((await call('GET', `${base}/receipts`, { token })).map((r: any) => [r.id, r.storeName, r.itemCount, r.pricedCount]))
+    .toEqual([[saved.id, shop, 1, 1]]);
+
+  // The list: eggs at the new shop, on the new day, at the new price; milk no longer priced at all.
+  const list = await call('GET', `${base}/grocery-list`, { token });
+  expect(find(list, eggs.name).lastPrice).toEqual({
+    price: 5.49, quantity: 12, unit: 'ct', storeName: shop, observedOn: '2026-10-19', onSale: true, source: 'RECEIPT', brand: 'Vital Farms',
+  });
+  expect(find(list, milk.name).lastPrice).toBeNull();
+
+  // Still the receipt that was scanned: its barcode still finds it.
+  expect((await call('POST', `${base}/receipts/read`, { token, body: { lines: ['BREAD 4.00'], barcode } })).duplicateOf).toBe(saved.id);
+
+  // What a save refuses, an edit refuses; somebody else's receipt, or none, is not there.
+  expect(await statusOf('PUT', `${base}/receipts/${saved.id}`, { token, body: { storeName: shop, lines: [] } })).toBe(400);
+  expect(await statusOf('PUT', `${base}/receipts/${saved.id}`, { token,
+    body: { storeName: shop, lines: [{ text: 'X', kind: 'SNACK', price: 1, onSale: false }] } })).toBe(400);
+  expect(await statusOf('PUT', `${base}/receipts/${crypto.randomUUID()}`, { token,
+    body: { storeName: shop, lines: [{ text: 'X', kind: 'ITEM', price: 1, onSale: false }] } })).toBe(404);
+  expect((await call('GET', `${base}/receipts/${saved.id}`, { token })).lines).toHaveLength(2);
+});
+
 test('a price typed on a row: kept as today, shown at once, and only for a row that is a thing', async () => {
   const hh = await newHousehold();
   const member = await newMember(hh.id);

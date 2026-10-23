@@ -73,6 +73,8 @@ test('an outsider cannot reach another household’s data', async () => {
     ['GET', `/api/households/${O}/receipts`],
     ['GET', `/api/households/${O}/receipts/${receipt.id}`],
     ['GET', `/api/households/${T}/receipts/${receipt.id}`],
+    ['PUT', `/api/households/${O}/receipts/${receipt.id}`, { storeName: 'Sneaky', lines: [{ text: 'x', kind: 'ITEM', price: 0.01, onSale: false }] }],
+    ['PUT', `/api/households/${T}/receipts/${receipt.id}`, { storeName: 'Sneaky', lines: [{ text: 'x', kind: 'ITEM', price: 0.01, onSale: false }] }],
     ['PUT', `/api/households/${O}/receipts/${receipt.id}/place`, { place: { name: 'Sneaky', latitude: 1, longitude: 1 } }],
     ['PUT', `/api/households/${T}/receipts/${receipt.id}/place`, { place: { name: 'Sneaky', latitude: 1, longitude: 1 } }],
     ['DELETE', `/api/households/${O}/receipts/${receipt.id}`],
@@ -107,6 +109,8 @@ test('an outsider cannot reach another household’s data', async () => {
   expect(list[0].lastPrice).toMatchObject({ price: 9.99, storeName: 'Kings Food Markets', source: 'RECEIPT' });
   const receipts = await call('GET', `/api/households/${O}/receipts`, { token: owner.token });
   expect(receipts.map((r: any) => r.id)).toEqual([receipt.id]);
+  expect((await call('GET', `/api/households/${O}/receipts/${receipt.id}`, { token: owner.token })).lines
+    .map((l: any) => [l.text, l.price])).toEqual([['BEEF', 9.99]]);
   expect((await call('GET', `/api/households/${O}/stores`, { token: owner.token })).map((s: any) => s.name)).toEqual(['Kings Food Markets']);
   expect(await call('GET', `/api/households/${T}/stores`, { token: owner.token })).toEqual([]);
   const house = (await call('GET', '/api/households', { token: owner.token })).find((h: any) => h.id === O);
