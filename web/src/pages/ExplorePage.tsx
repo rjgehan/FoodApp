@@ -5,9 +5,8 @@ import { isoDay, type PlanNutrition } from '../api/nutrition';
 import { useHousehold } from '../household/HouseholdContext';
 import { PageTitle } from '../components/PageTitle';
 import type { MealPlansHome } from '../api/mealPlans';
-import { GlobalRecipesDoor, MealPlansDoor, NutritionDoor } from '../components/explore/ExploreParts';
-import { useFeatures } from '../utils/features';
-import { cx } from '../components/ui';
+import { GlobalRecipesDoor, MealIdeasDoor, MealPlansDoor, NutritionDoor } from '../components/explore/ExploreParts';
+import { kitchenOf, useFeatures } from '../utils/features';
 
 /**
  * The front door of Explore (the mockup's 5.1): three doors.
@@ -21,11 +20,12 @@ import { cx } from '../components/ui';
  * the coming week's plan adds up to, a day on average. Meal plans leads straight into cooking
  * from the cupboard or into a plan, and says what the cupboard has to cook from.
  *
- * A household that does not plan meals has no Meal plans door (every plan is put on the Plan)
- * and no week on Nutrition's; one without a cupboard has no cupboard on the Meal plans door.
+ * A household that does not plan meals has Meal ideas where the Meal plans door would be (every
+ * plan is put on the Plan; ideas go straight onto Groceries) and no week on Nutrition's; one without
+ * a cupboard has no cupboard on the Meal plans door.
  */
 export default function ExplorePage() {
-  const { activeHouseholdId } = useHousehold();
+  const { activeHouseholdId, activeHousehold } = useHousehold();
   const features = useFeatures();
   const [count, setCount] = useState<number | null>(null);
   const [week, setWeek] = useState<PlanNutrition | null>(null);
@@ -55,10 +55,14 @@ export default function ExplorePage() {
   return (
     <div>
       <PageTitle title="Explore" />
-      <div className={cx('grid gap-3.5 md:grid-cols-[3fr_2fr]', features.plan && 'md:grid-rows-[auto_auto]')}>
-        <GlobalRecipesDoor count={count} besideTwo={features.plan} />
+      <div className="grid gap-3.5 md:grid-cols-[3fr_2fr] md:grid-rows-[auto_auto]">
+        <GlobalRecipesDoor count={count} />
         <NutritionDoor week={week} showsWeek={features.plan} />
-        {features.plan && <MealPlansDoor home={plans} cupboard={features.cupboard} />}
+        {features.plan ? (
+          <MealPlansDoor home={plans} cupboard={features.cupboard} />
+        ) : (
+          <MealIdeasDoor kitchenKnown={kitchenOf(activeHousehold) !== null} />
+        )}
       </div>
     </div>
   );

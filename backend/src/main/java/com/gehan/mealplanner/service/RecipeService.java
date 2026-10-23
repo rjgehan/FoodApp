@@ -280,6 +280,19 @@ public class RecipeService {
     }
 
     /**
+     * These recipes as the household sees them on their pages, its own filing attached, in the
+     * order given. No membership check: for a feature that has made its own and chosen recipes
+     * the household can use (Meal ideas).
+     */
+    @Transactional(readOnly = true)
+    public List<RecipeResponse> asSeenBy(UUID householdId, List<Recipe> recipes) {
+        return recipes.stream()
+                .map(r -> toResponse(r, filingRepository.findByHouseholdIdAndRecipeId(householdId, r.getId()).orElse(null),
+                        householdId))
+                .toList();
+    }
+
+    /**
      * The recipe as its own household sees it, filing and all, with no membership check — for
      * the admin pages only, which have already checked that the reader is the admin.
      */

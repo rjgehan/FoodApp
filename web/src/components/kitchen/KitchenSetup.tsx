@@ -144,7 +144,7 @@ export default function KitchenSetup({ household: given, onClose }: { household:
           {step === 0 && (
             <>
               <Heading title="What's in your kitchen?">
-                Tap everything you have. Recipes show which machines they need.
+                Tap everything you have. Waxwing only suggests recipes you can make with them.
               </Heading>
               <MachineGrid selected={machines} onToggle={toggleMachine} />
               <p className="px-1 text-[0.8125rem] text-muted">You can change this any time in Household settings.</p>

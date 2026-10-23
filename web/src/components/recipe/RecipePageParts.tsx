@@ -5,7 +5,11 @@ import { formatQuantity } from '../../utils/recipeFormat';
 import { unitFor } from '../groceries/groceryParts';
 import { isSafeLink, isVideoLink, linkName, videoHostLabel } from '../../utils/videoLink';
 import { Icon } from '../icons';
-import { cx, EmptyState, Pill, StepNumber } from '../ui';
+import { Link } from 'react-router-dom';
+import { useHousehold } from '../../household/HouseholdContext';
+import { kitchenOf } from '../../utils/features';
+import { missingMachines, missingWords } from '../../utils/machines';
+import { cx, EmptyState, NoteBox, Pill, StepNumber } from '../ui';
 
 /*
  The pieces of the recipe page under its hero (the mockup's 3.7): the tabs that stick to the top
@@ -308,5 +312,24 @@ export function StepButton({
     >
       <Icon name={direction === 'prev' ? 'chevL' : 'chevR'} size={24} />
     </button>
+  );
+}
+
+/**
+ * "Your kitchen has no slow cooker." — on a recipe that needs a machine this household doesn't
+ * have (utils/machines.ts missingMachines), with the way to say it does. Nothing for a kitchen
+ * that has not said what is in it, or a recipe it can make.
+ */
+export function KitchenNote({ appliances }: { appliances: string[] | undefined }) {
+  const { activeHousehold } = useHousehold();
+  const missing = missingMachines(appliances ?? [], kitchenOf(activeHousehold));
+  if (missing.length === 0) return null;
+  return (
+    <NoteBox tone="mustard" icon="alert">
+      Your kitchen has no {missingWords(missing)}.{' '}
+      <Link to="/household/kitchen" className="font-medium underline">
+        Change your kitchen
+      </Link>
+    </NoteBox>
   );
 }

@@ -17,6 +17,10 @@ names, bundle id and domain still say so.)
 - **Plan** a week at a time (a meal can be a main plus its sides) and keep a **Cupboard**, so the
   list skips what is already at home. Both are optional: a household turns them on or off under
   Household → Kitchen & features.
+- **The kitchen's machines** (oven, air fryer, slow cooker…) are saved per household, and every
+  suggestion respects them: generated meal plans and, for a household that doesn't plan, **Meal
+  ideas** in Explore only pick recipes it can make, and **Can make** narrows a drawer or Explore's
+  Global recipes to them.
 
 ## Running it locally
 

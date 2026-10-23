@@ -93,6 +93,8 @@ final class Session {
     var planOn: Bool { household?.plansMeals ?? true }
     /// Whether the open house keeps a cupboard — the Cupboard tab and everything that reads it.
     var cupboardOn: Bool { household?.tracksCupboard ?? true }
+    /// The machines in the open house's kitchen, or nil while it has not said which.
+    var kitchen: [String]? { household?.kitchen }
 
     /// A house this person just made: its kitchen questions come next, always.
     func askKitchenSetup(for household: UUID) {

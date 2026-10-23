@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { imageUrl } from '../../api/client';
 import type { Recipe } from '../../api/types';
 import { formatMinutes } from '../../utils/recipeFormat';
-import { orderedMachines } from '../../utils/machines';
+import { missingMachines, orderedMachines } from '../../utils/machines';
+import { kitchenOf } from '../../utils/features';
+import { useHousehold } from '../../household/HouseholdContext';
 import { sectionLabel } from '../../utils/recipeMeta';
 import { Icon, type IconName } from '../icons';
 import { MachineIcon } from '../MachineIcons';
@@ -32,6 +34,9 @@ export default function RecipeHero({
 }) {
   const filed = drawerPill(recipe);
   const machines = orderedMachines(recipe.appliances ?? []);
+  // The ones this kitchen hasn't got are drawn dashed; the note under the hero says so in words.
+  const { activeHousehold } = useHousehold();
+  const lacking = new Set(missingMachines(recipe.appliances ?? [], kitchenOf(activeHousehold)).flat().map((m) => m.key));
   const facts: { icon: IconName; text: string; label: string }[] = [];
   if (recipe.prepTimeMinutes) {
     facts.push({ icon: 'clock', text: `${shortMinutes(recipe.prepTimeMinutes)} prep`, label: `Prep ${formatMinutes(recipe.prepTimeMinutes)}` });
@@ -103,8 +108,12 @@ export default function RecipeHero({
               {machines.map((m) => (
                 <li
                   key={m.key}
-                  title={m.label}
-                  className="flex items-center gap-1 rounded-full border border-white/40 px-2 py-[1px] text-[0.75rem] font-medium"
+                  title={lacking.has(m.key) ? `${m.label} — not in your kitchen` : m.label}
+                  aria-label={lacking.has(m.key) ? `${m.label}, not in your kitchen` : undefined}
+                  className={cx(
+                    'flex items-center gap-1 rounded-full border px-2 py-[1px] text-[0.75rem] font-medium',
+                    lacking.has(m.key) ? 'border-dashed border-white/60 opacity-75' : 'border-white/40',
+                  )}
                 >
                   <MachineIcon machine={m.key} size={13} strokeWidth={2.2} />
                   {m.short}

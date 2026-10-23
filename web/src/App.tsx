@@ -17,6 +17,7 @@ import ExplorePage from './pages/ExplorePage';
 import ExploreRecipesPage from './pages/ExploreRecipesPage';
 import ExploreRecipePage from './pages/ExploreRecipePage';
 import MealPlansPage from './pages/MealPlansPage';
+import MealIdeasPage from './pages/MealIdeasPage';
 import { CupboardResultPage, CupboardSetupPage } from './pages/CupboardPlanPage';
 import TargetPlanPage from './pages/TargetPlanPage';
 import TargetPlanFormPage from './pages/TargetPlanFormPage';
@@ -144,6 +145,7 @@ export default function App() {
               ready-made plan, and your own private ones with the form that makes and changes them.
               Each is put on the Plan, so they are there only while the household plans meals; and
               cooking from the cupboard needs a cupboard too. */}
+          <Route path="/explore/meal-ideas" element={<MealIdeasPage />} />
           <Route path="/explore/meal-plans" element={<Needs plan><MealPlansPage /></Needs>} />
           <Route path="/explore/meal-plans/cupboard" element={<Needs plan cupboard><CupboardSetupPage /></Needs>} />
           <Route path="/explore/meal-plans/cupboard/plan" element={<Needs plan cupboard><CupboardResultPage /></Needs>} />

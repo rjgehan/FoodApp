@@ -27,7 +27,9 @@ extension Recipe {
 /**
  Global recipes (5.2): search what any household has published, open one, or move it straight
  into your own recipes with its +. It comes newest published first; the chips narrow it to what
- you have not kept yet, or what this house published itself, and All is the lot.
+ you have not kept yet, or what this house published itself, and All is the lot. Can make, beside
+ them and on top of whichever is chosen, leaves out what needs a machine this house hasn't got —
+ there once the kitchen says what it has.
  */
 struct GlobalRecipesScreen: View {
     var session: Session
@@ -38,6 +40,8 @@ struct GlobalRecipesScreen: View {
     @State private var recipes: [Recipe]?
     @State private var query = ""
     @State private var filter: Filter = .all
+    /// Only what the kitchen can make; says nothing while the kitchen has not said what it has.
+    @State private var canMakeChosen = false
     @State private var moving: Recipe?
     @State private var toast: String?
     #if DEBUG
@@ -45,11 +49,14 @@ struct GlobalRecipesScreen: View {
     @State private var debugOpen: Recipe?
     #endif
 
+    private var canOnly: Bool { canMakeChosen && session.kitchen != nil }
+
     private var shown: [Recipe] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         return (recipes ?? []).filter { r in
             if filter == .notKept && (!r.shared || r.isKept) { return false }
             if filter == .yours && r.shared { return false }
+            if canOnly && !KitchenMachine.canMake(r.appliances ?? [], kitchen: session.kitchen) { return false }
             guard !q.isEmpty else { return true }
             return r.name.lowercased().contains(q)
                 || (r.description ?? "").lowercased().contains(q)
@@ -70,6 +77,11 @@ struct GlobalRecipesScreen: View {
                         Chip("Not kept yet", isOn: filter == .notKept) { filter = .notKept }
                         if (recipes ?? []).contains(where: { !$0.shared }) {
                             Chip("Published by you", isOn: filter == .yours) { filter = .yours }
+                        }
+                        if session.kitchen != nil {
+                            Rectangle().fill(Palette.border).frame(width: 1, height: 22)
+                            Chip("Can make", systemImage: "checkmark", isOn: canOnly) { canMakeChosen = !canOnly }
+                                .accessibilityHint("Only what your kitchen can make")
                         }
                     }
                     .padding(.horizontal, 20)
@@ -142,6 +154,7 @@ struct GlobalRecipesScreen: View {
 
     private var emptyText: String {
         if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "Nothing matches that." }
+        if canOnly && !(recipes ?? []).isEmpty { return "Nothing here your kitchen can make." }
         if filter == .notKept && !(recipes ?? []).isEmpty { return "You keep every one of them already." }
         return "Nothing published yet. Open one of your recipes and choose ••• › Share › In Explore to put the first one here."
     }
@@ -375,6 +388,7 @@ struct GlobalRecipeScreen: View {
             if let description = recipe.description, !description.isEmpty {
                 Text(description).font(.system(size: 15)).foregroundStyle(Palette.muted)
             }
+            KitchenNote(appliances: recipe.appliances, session: session)
             let links = recipe.allLinks.filter { $0.destination != nil }
             if !links.isEmpty {
                 // Where it came from and its videos, as the recipe page's chips: one tap opens it.

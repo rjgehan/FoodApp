@@ -5,7 +5,7 @@ import type { Recipe } from '../api/types';
 import { useHousehold } from '../household/HouseholdContext';
 import { Button, EmptyState, NavBar } from '../components/ui';
 import { usePushedScreen } from '../components/Layout';
-import { IngredientList, LinkButtons, MethodSteps, PhotoGrid, RecipeBottomBar } from '../components/recipe/RecipePageParts';
+import { IngredientList, KitchenNote, LinkButtons, MethodSteps, PhotoGrid, RecipeBottomBar } from '../components/recipe/RecipePageParts';
 import { ExploreFacts, ExploreHero, isKept, useMoveIntoMine } from '../components/explore/ExploreParts';
 import { instructionSteps } from '../utils/recipeFormat';
 
@@ -86,6 +86,7 @@ export default function ExploreRecipePage() {
       <div className="flex flex-col gap-3.5 pt-4">
         <ExploreFacts recipe={recipe} />
         {recipe.description && <p className="text-[0.9375rem] leading-normal text-muted">{recipe.description}</p>}
+        <KitchenNote appliances={recipe.appliances} />
         <LinkButtons links={recipe.links} />
 
         <h2 className="title-section pt-1">Ingredients</h2>

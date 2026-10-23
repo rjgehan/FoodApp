@@ -37,7 +37,7 @@ test('a household made in the app asks its three questions, and the answers are 
   await kitchen.getByRole('checkbox', { name: 'Air fryer' }).click();
   await kitchen.getByRole('checkbox', { name: 'Stovetop' }).click();
   // Says only what the machines do today: recipes show them. Nothing is hidden for want of one.
-  await expect(kitchen.getByText('Tap everything you have. Recipes show which machines they need.')).toBeVisible();
+  await expect(kitchen.getByText('Tap everything you have. Waxwing only suggests recipes you can make with them.')).toBeVisible();
   await expect(kitchen.getByText('You can change this any time in Household settings.')).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('kitchen-1-machines.png') });
   await kitchen.getByRole('button', { name: 'Next' }).click();
@@ -190,7 +190,9 @@ test('an answer given in Household → Kitchen & features counts as setting up, 
 
   await page.goto('/household/kitchen');
   await expect(
-    page.getByText('Saved for your household. Recipes show the machines they need, and a drawer can be filtered by machine.'),
+    page.getByText(
+      'Saved for your household. Waxwing only suggests recipes you can make with these, and Can make shows just those in a drawer or on Explore.',
+    ),
   ).toBeVisible();
   await page.getByRole('checkbox', { name: 'Air fryer' }).click();
   await expect.poll(async () => household(hh.id, hh.owner.token)).toMatchObject({ machines: ['air-fryer'], kitchenSetUp: true });

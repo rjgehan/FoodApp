@@ -15,8 +15,9 @@ import SwiftUI
  the server has said it has meal plans; a server from before them keeps the old "coming soon"
  door instead. The same three doors as the web, in the same order and colours.
 
- A household that does not plan meals has no Meal plans door (every plan is put on the Plan) and
- no week on Nutrition's; one without a cupboard has no cupboard on the Meal plans door.
+ A household that does not plan meals has Meal ideas where the Meal plans door would be (every
+ plan is put on the Plan; ideas go straight onto Groceries) and no week on Nutrition's; one without
+ a cupboard has no cupboard on the Meal plans door.
 
  Grocery stores, last, is the map of the shops around you with what things cost at each, from
  everybody's receipts on the server (`Explore/StoreMap.swift`). Its door is always there — the map
@@ -64,9 +65,14 @@ struct ExploreView: View {
                             }
                             .buttonStyle(PressFade())
                         }
-                        // Every meal plan is put on the Plan, so a house without one has no door to them.
+                        // Every meal plan is put on the Plan, so a house without one has Meal ideas
+                        // instead, once the server has said it has them.
                         if !session.planOn {
-                            EmptyView()
+                            if mealPlans.hasMealIdeas {
+                                MealIdeasDoor(kitchenKnown: session.kitchen != nil) { meal in
+                                    path.append(ExploreRoute.mealIdeas(meal))
+                                }
+                            }
                         } else if sampleMealPlans != nil || mealPlans.available == true {
                             MealPlansDoor(home: plansHome, cupboard: session.cupboardOn) { route in openMealPlans(route) }
                         } else if mealPlans.available == nil {
@@ -111,6 +117,8 @@ struct ExploreView: View {
                     } else {
                         NutritionScreen(session: session)
                     }
+                case .mealIdeas(let meal):
+                    MealIdeasScreen(session: session, meal: meal)
                 case .soon(let kind):
                     if let destination = SoonDestination.all.first(where: { $0.kind == kind }) {
                         SoonScreen(destination: destination)
@@ -171,7 +179,7 @@ struct ExploreView: View {
     /// The same answer the Meal plans page opens with, so the door and the page agree.
     private func loadMealPlans() async {
         if let sampleMealPlans { plansHome = sampleMealPlans; return }
-        guard session.planOn else { return }
+        // Asked with the Plan off too: whether there are Meal ideas is in the same answer.
         await mealPlans.check()
         // No answer (a first launch can ask before the network is up): ask again a few times
         // rather than leave the door saying "Checking…".
@@ -180,7 +188,7 @@ struct ExploreView: View {
             if Task.isCancelled { return }
             await mealPlans.check()
         }
-        guard mealPlans.available == true, let household = session.household?.id else { return }
+        guard session.planOn, mealPlans.available == true, let household = session.household?.id else { return }
         if let home = try? await APIClient.shared.mealPlansHome(household: household) { plansHome = home }
     }
 
@@ -255,6 +263,8 @@ enum ExploreRoute: Hashable {
     case nutrition
     case soon(SoonDestination.Kind)
     case stores
+    /// Meal ideas, opened on one meal's.
+    case mealIdeas(MealType)
 }
 
 // MARK: - The doors

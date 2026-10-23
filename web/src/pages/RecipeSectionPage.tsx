@@ -11,10 +11,12 @@ import { toast } from '../components/toast';
 import { isNewShare, markSharedSeen, SHARED_KEY, sectionFromSlug, sectionLabel, sharedSeenAt } from '../utils/recipeMeta';
 import { timeAgo } from '../utils/savedLinks';
 import { formatMinutes, totalMinutes } from '../utils/recipeFormat';
-import { orderedMachines, type Machine } from '../utils/machines';
+import { canMake, orderedMachines, type Machine } from '../utils/machines';
+import { kitchenOf } from '../utils/features';
 import { readTagNames, sameName, suggestTags, tagNamed, tagsIn, wears } from '../utils/tags';
 import {
   AddTagChip,
+  CanMakeChip,
   ChipRow,
   HideTabBar,
   MachineChip,
@@ -36,7 +38,8 @@ function errorMessage(err: unknown, fallback: string): string {
  * One drawer of the catalogue (the mockup's 3.3 and 3.4, flattened into tags). Every recipe in
  * the drawer is a photo card, with the drawer's tags as a row of chips over them: tap one to see
  * only those, tap two to see what wears both. The machines its recipes need are a second row,
- * for "what can I make in the air fryer". What is chosen is kept in the address (?tags=Chicken),
+ * for "what can I make in the air fryer", led by Can make: only what this household's kitchen has
+ * the machines for (utils/machines.ts missingMachines). What is chosen is kept in the address (?tags=Chicken),
  * so coming back from a recipe finds the drawer as it was left.
  *
  * Tagging is quick on purpose: "+ Tag" makes one and goes straight to picking its recipes; Select
@@ -92,6 +95,8 @@ function Drawer({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { activeHousehold } = useHousehold();
+  const kitchen = kitchenOf(activeHousehold);
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const [naming, setNaming] = useState(false);
@@ -132,6 +137,8 @@ function Drawer({
   const chosen = tags.filter((t) => chosenNames.some((n) => sameName(n, t.name)));
   const untaggedOnly = params.get('untagged') === '1' && chosen.length === 0;
   const machines = (params.get('machines') ?? '').split(',').filter(Boolean);
+  // Only what this kitchen can make (?can=1). Says nothing while the kitchen has not said what it has.
+  const canOnly = params.get('can') === '1' && kitchen !== null;
   const editing = params.get('edit') === '1';
 
   // ...and the address follows, so a reload or a copied link says what is on screen. Not from
@@ -184,6 +191,9 @@ function Drawer({
     return n;
   }, [all]);
   const machineChips = orderedMachines([...machineCounts.keys(), ...machines]);
+  const makeable = useMemo(() => (kitchen ? all.filter((r) => canMake(r.appliances, kitchen)).length : 0), [all, kitchen]);
+  // Beside the machines, while there are some: a drawer that needs none can make everything in it.
+  const showCanMake = kitchen !== null && (machineChips.length > 0 || canOnly);
 
   const q = query.trim().toLowerCase();
   // Picking a tag's recipes looks through the whole drawer, whatever the chips said: only the
@@ -192,7 +202,8 @@ function Drawer({
     (r) =>
       (pickingFor ||
         ((untaggedOnly ? isUntagged(r) : chosen.every((t) => wears(r, t))) &&
-          machines.every((m) => (r.appliances ?? []).includes(m)))) &&
+          machines.every((m) => (r.appliances ?? []).includes(m)) &&
+          (!canOnly || canMake(r.appliances, kitchen)))) &&
       (!q ||
         r.name.toLowerCase().includes(q) ||
         r.categories.some((c) => c.toLowerCase().includes(q)) ||
@@ -208,7 +219,7 @@ function Drawer({
     [untagged, tags, dismissed, householdId, section],
   );
 
-  function setFilters(change: { tags?: string[]; untagged?: boolean; machines?: string[] }) {
+  function setFilters(change: { tags?: string[]; untagged?: boolean; machines?: string[]; can?: boolean }) {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -216,6 +227,7 @@ function Drawer({
         if (change.tags) put('tags', change.tags.join(','));
         if (change.untagged !== undefined) put('untagged', change.untagged ? '1' : '');
         if (change.machines) put('machines', change.machines.join(','));
+        if (change.can !== undefined) put('can', change.can ? '1' : '');
         return next;
       },
       { replace: true },
@@ -489,8 +501,9 @@ function Drawer({
               </ChipRow>
             )}
 
-            {machineChips.length > 0 && (
+            {(machineChips.length > 0 || showCanMake) && (
               <ChipRow label="Machines">
+                {showCanMake && <CanMakeChip count={makeable} active={canOnly} onClick={() => setFilters({ can: !canOnly })} />}
                 {machineChips.map((m) => (
                   <MachineChip
                     key={m.key}
@@ -504,7 +517,7 @@ function Drawer({
             )}
 
             {/* About the untagged recipes, so not while looking at a tag or a machine. */}
-            {!selecting && !q && chosen.length === 0 && machines.length === 0 && suggestion && (
+            {!selecting && !q && chosen.length === 0 && machines.length === 0 && !canOnly && suggestion && (
               <QuickTagCard
                 name={suggestion.name}
                 count={suggestion.recipeIds.length}
@@ -547,7 +560,10 @@ function Drawer({
             untaggedOnly={untaggedOnly}
             chosen={chosen}
             machines={orderedMachines(machines)}
-            onTagRecipes={!q && machines.length === 0 && chosen.length === 1 ? () => startPicking(chosen[0]) : undefined}
+            canMakeOnly={canOnly}
+            onTagRecipes={
+              !q && machines.length === 0 && !canOnly && chosen.length === 1 ? () => startPicking(chosen[0]) : undefined
+            }
           />
         ) : (
           <RecipePhotoGrid recipes={shown} picked={selecting ? picked : undefined} onPick={selecting ? togglePicked : undefined} />
@@ -644,6 +660,7 @@ function NothingMatches({
   untaggedOnly,
   chosen,
   machines,
+  canMakeOnly,
   onTagRecipes,
 }: {
   drawerName: string;
@@ -651,9 +668,15 @@ function NothingMatches({
   untaggedOnly: boolean;
   chosen: RecipeCategory[];
   machines: Machine[];
+  canMakeOnly: boolean;
   onTagRecipes?: () => void;
 }) {
-  const needs = machines.length ? ` needs the ${machineWords(machines)}` : '';
+  const machinesNeeded = machines.length ? ` needs the ${machineWords(machines)}` : '';
+  const needs = canMakeOnly
+    ? machinesNeeded
+      ? `${machinesNeeded} and can be made in your kitchen`
+      : ' your kitchen can make'
+    : machinesNeeded;
   const names = chosen.map((t) => t.name).join(' + ');
   const line = searching
     ? `Nothing in ${drawerName} matches that.`

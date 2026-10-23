@@ -436,6 +436,21 @@ the household. All made by Hibernate on start; older iPhone builds neither send 
 Rolling back leaves the columns unread; the old backend cannot delete a household that hid a place
 until `hidden_places`' foreign key is dropped (add it to the list in the `DO $$ … $$` above).
 
+## Suggestions that respect the kitchen (nothing to do)
+
+The release after it puts the machines to use. Generated meal plans (from the cupboard, for a
+health target, and the iPhone's Apple Intelligence candidates) only choose recipes the household's
+kitchen can make; a household that doesn't plan gets **Meal ideas** in Explore (`POST
+/api/households/{id}/meal-ideas`), which go straight onto the grocery list; and a drawer and
+Global recipes get a **Can make** chip. A kitchen with no machines saved leaves nothing out, the
+stovetop is taken to be in every kitchen, and a recipe naming two machines that do the same job
+(oven or air fryer, slow cooker or Instant Pot, blender or food processor) needs only one of them.
+
+No schema change and nothing to run. `GET /api/meal-plans` lists `meal-ideas` among its features,
+which is what the iPhone waits for before it shows the door, so an iPhone ahead of its server
+shows none; an older iPhone build keeps working and just doesn't have the new pieces until it is
+updated. Plans saved before a kitchen changed keep their meals.
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

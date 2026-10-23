@@ -35,9 +35,9 @@ struct KitchenScreen: View {
                     saveMachinesSoon(picked)
                 }))
                 .disabled(!loaded)
-                // Only what is true today: the machines are kept, and recipes are marked with theirs.
-                // Making meals from what the house can make is for later, and not promised here.
-                Text("Saved for your household. Recipes show the machines they need, and a drawer can be filtered by machine.")
+                // What the machines do: suggestions (Meal ideas, generated plans) only pick what they can
+                // make, and Can make filters a drawer or Global recipes to it. The web's words.
+                Text("Saved for your household. Waxwing only suggests recipes you can make with these, and Can make shows just those in a drawer or on Explore.")
                     .font(.system(size: 13)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
@@ -87,7 +87,7 @@ struct KitchenScreen: View {
             return "Off. Your \(planned) planned \(planned == 1 ? "meal stays" : "meals stay") saved, for when it's back on."
         }
         return plan ? "Plan the week together and add it all to Groceries in one tap."
-            : "Off. Add a recipe to Groceries from its page instead."
+            : "Off. Add a recipe to Groceries from its page, or pick some from Meal ideas in Explore."
     }
 
     /// What the cupboard is for, and what turning it off means for "Always have".

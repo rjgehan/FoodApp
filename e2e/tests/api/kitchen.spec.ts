@@ -52,6 +52,42 @@ test('the server, the web and the phone list the same machines, in the same orde
   expect(listed.map((m: { key: string; label: string }) => [m.key, m.label])).toEqual(server);
 });
 
+test('the server, the web and the phone agree on which machines stand in for each other', async () => {
+  // "Bake, or air fry": a recipe naming two of one family needs only one of them. Each copy
+  // decides what a kitchen can make, so they have to say the same.
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const block = (text: string, start: RegExp) => {
+    const at = text.search(start);
+    expect(at, `${start} not found`).toBeGreaterThan(-1);
+    return text.slice(at, text.indexOf(';', at) === -1 ? undefined : text.indexOf(';', at));
+  };
+  const java = read('../../../backend/src/main/java/com/gehan/mealplanner/service/KitchenMachines.java');
+  const constants = new Map([...java.matchAll(/String ([A-Z_]+) = "([a-z-]+)";/g)].map((m) => [m[1], m[2]]));
+  const server = [...block(java, /STAND_INS = List\.of\(/).matchAll(/List\.of\(([A-Z_]+), ([A-Z_]+)\)/g)].map((m) => [
+    constants.get(m[1]),
+    constants.get(m[2]),
+  ]);
+  expect(server).toEqual([['oven', 'air-fryer'], ['slow-cooker', 'pressure-cooker'], ['blender', 'food-processor']]);
+
+  const web = [...block(read('../../../web/src/utils/machines.ts'), /export const STAND_INS/).matchAll(/\['([a-z-]+)', '([a-z-]+)'\]/g)]
+    .map((m) => [m[1], m[2]]);
+  expect(web).toEqual(server);
+
+  if (existsSync(new URL(IOS_MACHINES, import.meta.url))) {
+    const swift = read(IOS_MACHINES);
+    const at = swift.search(/static let standIns/);
+    expect(at, 'KitchenMachine.standIns').toBeGreaterThan(-1);
+    // Up to the blank line after the declaration.
+    const declared = swift.slice(at);
+    const end = declared.search(/\r?\n\s*\r?\n/);
+    const ios = [...declared.slice(0, end === -1 ? undefined : end).matchAll(/\["([a-z-]+)", "([a-z-]+)"\]/g)].map((m) => [
+      m[1],
+      m[2],
+    ]);
+    expect(ios).toEqual(server);
+  }
+});
+
 test('the phone draws every machine with the web’s own drawing, exported into its asset catalog', async () => {
   // web/scripts/export-machine-icons.mjs writes one template imageset per machine. A drawing
   // changed on the web and not exported again shows here as a mismatch.

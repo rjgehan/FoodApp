@@ -12,6 +12,7 @@ import RecipeClassifier from '../RecipeClassifier';
 import { Icon, type IconName } from '../icons';
 import { averageWords, gramsText, kcalText, type PlanNutrition } from '../../api/nutrition';
 import { MEAL_PLANS, planIcon, planPath, type MealPlansHome } from '../../api/mealPlans';
+import { IDEA_MEALS, MEAL_IDEAS } from '../../api/mealIdeas';
 import { Stat } from '../nutrition/NutritionParts';
 import { toast } from '../toast';
 import { Avatar, Button, CheckCircle, cx, ErrorText, List, Photo, Pill, Row, SectionLabel, Sheet, Tile, type Tone } from '../ui';
@@ -28,18 +29,14 @@ import { Avatar, Button, CheckCircle, cx, ErrorText, List, Photo, Pill, Row, Sec
 /**
  * Global recipes' door (5.1): a big green picture with how many there are on it, set first and
  * largest because it is the one of the three that is open. On a wide screen it stands as tall as
- * the two doors beside it — or, with only Nutrition beside it (a household that does not plan),
- * as tall as that one door.
+ * the two doors beside it: Nutrition, and Meal plans or (a household that does not plan) Meal ideas.
  */
-export function GlobalRecipesDoor({ count, besideTwo = true }: { count: number | null; besideTwo?: boolean }) {
+export function GlobalRecipesDoor({ count }: { count: number | null }) {
   return (
     <Link
       to="/explore/recipes"
       aria-label={`Global recipes${count != null ? `, ${count} published` : ''}`}
-      className={cx(
-        'press relative block h-[12.25rem] overflow-hidden rounded-[24px] md:h-auto',
-        besideTwo ? 'md:row-span-2 md:min-h-[19rem]' : 'md:min-h-[12.25rem]',
-      )}
+      className="press relative block h-[12.25rem] overflow-hidden rounded-[24px] md:row-span-2 md:h-auto md:min-h-[19rem]"
     >
       <Photo hue="green" icon="globe" large className="absolute inset-0 h-full w-full" />
       <span className="absolute inset-0 flex flex-col p-[18px] text-white md:p-6">
@@ -150,6 +147,44 @@ export function MealPlansDoor({ home, cupboard: keepsCupboard = true }: { home: 
                 }`}
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Meal ideas' door, where Meal plans would be for a household that doesn't plan ahead: its tile,
+ * name and line, then a chip straight into each meal's ideas. The chips are links of their own,
+ * laid over the door's, as Meal plans' are.
+ */
+export function MealIdeasDoor({ kitchenKnown }: { kitchenKnown: boolean }) {
+  const chip =
+    'press relative z-[1] inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3 py-[7px] text-[0.8125rem] font-medium text-ink active:bg-surface2';
+  return (
+    <div className="card relative flex flex-col gap-3 p-4">
+      <Link
+        to={MEAL_IDEAS}
+        aria-label="Meal ideas"
+        className="press flex items-center gap-3 after:absolute after:inset-0 after:rounded-card after:content-['']"
+      >
+        <Tile icon="utensils" tone="mustard" size={44} />
+        <span className="min-w-0 flex-1">
+          <span className="title-section block">Meal ideas</span>
+          <span className="block text-[0.8125rem] leading-snug text-muted">
+            {kitchenKnown
+              ? 'Meals your kitchen can make, straight onto Groceries'
+              : 'Meals from your recipes, straight onto Groceries'}
+          </span>
+        </span>
+        <Icon name="chevR" size={18} className="shrink-0 text-faint" />
+      </Link>
+      <span className="flex flex-wrap gap-2">
+        {IDEA_MEALS.map((m) => (
+          <Link key={m.value} to={`${MEAL_IDEAS}?meal=${m.value.toLowerCase()}`} className={chip}>
+            <Icon name={mealIcon(null, m.value)} size={14} />
+            {m.label}
+          </Link>
+        ))}
+      </span>
     </div>
   );
 }
