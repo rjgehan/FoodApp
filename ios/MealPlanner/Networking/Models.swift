@@ -54,6 +54,9 @@ struct HouseholdSummary: Codable, Identifiable, Hashable {
     var tracksCupboard: Bool { cupboardEnabled ?? true }
     /// Only a server that says "not yet" gets the kitchen questions asked.
     var kitchenAnswered: Bool { kitchenSetUp ?? true }
+    /// The machines in its kitchen, or nil while it has not said which (none saved): then nothing
+    /// is "can't make", and the Can make chips stay away — the web's kitchenOf.
+    var kitchen: [String]? { (machines ?? []).isEmpty ? nil : machines }
 }
 
 /// Somewhere you eat that is not this kitchen — the pub, the Thai place on the corner.

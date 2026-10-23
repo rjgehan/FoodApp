@@ -57,6 +57,11 @@ struct RecipeDetailView: View {
         return ([recipe.coverImageId].compactMap { $0 } + (recipe.photoIds ?? [])).filter { seen.insert($0).inserted }
     }
 
+    /// The machines it needs that this household's kitchen hasn't got.
+    private var lacking: Set<String> {
+        Set(KitchenMachine.missing(recipe.appliances ?? [], kitchen: session?.kitchen).flatMap { $0 }.map(\.key))
+    }
+
     private var index: Int? { siblings.firstIndex { $0.id == recipe.id } }
     private var previous: Recipe? { index.flatMap { $0 > 0 ? siblings[$0 - 1] : nil } }
     private var next: Recipe? { index.flatMap { $0 + 1 < siblings.count ? siblings[$0 + 1] : nil } }
@@ -67,7 +72,7 @@ struct RecipeDetailView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     RecipeHero(recipe: recipe, topInset: top, back: { dismissDetail() }, share: mine ? { sharing = true } : nil,
-                               options: { sheet = .options })
+                               options: { sheet = .options }, lacking: lacking)
                         .padding(.top, -top)
                         .background {
                             GeometryReader { geo in
@@ -215,6 +220,7 @@ struct RecipeDetailView: View {
             if let description = recipe.description, !description.isEmpty {
                 Text(description).font(.system(size: 15)).foregroundStyle(Palette.muted)
             }
+            KitchenNote(appliances: recipe.appliances, session: session)
             HStack(alignment: .top, spacing: 8) {
                 let links = recipe.allLinks.filter { $0.destination != nil }
                 if links.isEmpty {

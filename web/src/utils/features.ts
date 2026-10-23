@@ -31,6 +31,16 @@ export function needsKitchenSetup(household: Household | null | undefined): bool
 }
 
 /**
+ * The machines in the household's kitchen, or null while it has not said which (none saved:
+ * skipped, never asked, or an older server). With null nothing is "can't make", so the Can make
+ * chips stay away rather than offering a filter that filters nothing.
+ */
+export function kitchenOf(household: Household | null | undefined): string[] | null {
+  const machines = household?.machines ?? [];
+  return machines.length > 0 ? machines : null;
+}
+
+/**
  * The household on screen is known: it is in the list kept from the last visit, or today's list
  * has been fetched. Not yet, on the first open in a browser that kept no list — the first visit
  * after an update, a new phone — when what it has turned on is anybody's guess.

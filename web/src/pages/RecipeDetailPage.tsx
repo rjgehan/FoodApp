@@ -17,6 +17,7 @@ import RecipeHero, { HeroButton } from '../components/recipe/RecipeHero';
 import {
   GroceriesButton,
   IngredientList,
+  KitchenNote,
   LinkButtons,
   MethodSteps,
   PhotoGrid,
@@ -243,6 +244,7 @@ export default function RecipeDetailPage() {
             </div>
           )}
           {recipe.description && <p className="text-[0.9375rem] leading-normal text-muted">{recipe.description}</p>}
+          <KitchenNote appliances={recipe.appliances} />
           <div className="flex items-start justify-between gap-3">
             <LinkButtons links={recipe.links} />
             {/* With no links to show, the way to add one would be behind •••; it is here too. */}

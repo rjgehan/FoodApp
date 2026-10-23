@@ -23,7 +23,7 @@ public class MealPlansStatusController {
     public record StatusResponse(boolean ready, List<String> features) {
     }
 
-    static final List<String> FEATURES = List.of("cupboard", "use-by", "targets", "candidates");
+    static final List<String> FEATURES = List.of("cupboard", "use-by", "targets", "candidates", "meal-ideas");
 
     private final TargetPlans targetPlans;
 

@@ -273,9 +273,21 @@ slot, ahead of the add-an-email prompt and "Time to restock?", so no two of them
 A recipe's machines (`appliances` on the wire) are spotted in its method by the server. The
 recipe page shows them on its picture after the quick facts, and the recipe form's Machines chips
 set them by hand — sent only when somebody changed them, since a list tells the server to stop
-spotting them; a new recipe says it will spot them when it is saved. The household's own machines
-are only kept for now: nothing hides or narrows recipes by them yet, and the kitchen's words say
-no more than that (recipes show their machines, and a drawer can be filtered by machine).
+spotting them; a new recipe says it will spot them when it is saved.
+
+The household's own machines decide what is suggested. `KitchenMachine.missing` is the rule, the
+same as the server's `KitchenMachines.missing` and the web's `missingMachines` (the e2e suite
+checks the three agree on which machines stand in for each other): a kitchen with none saved lacks
+nothing, the stovetop is in every kitchen, and a recipe naming two of oven / air fryer, slow
+cooker / Instant Pot or blender / food processor needs only one. A drawer's Machines row starts
+with **Can make** and Global recipes has the same chip, both only once the kitchen says what it
+has; a recipe it can't make draws the missing machine dashed on its picture and says "Your kitchen
+has no slow cooker." with a way to Household → Kitchen & features (`KitchenNote`). Generated meal
+plans never choose such a recipe — the server sees to that. A household with the Plan off has
+**Meal ideas** where Explore's Meal plans door would be (`Features/Explore/MealIdeas.swift`, once
+`/api/meal-plans` lists `meal-ideas`): five ideas for a meal, the household's own first, each
+ticked; swap one, Shuffle, and Add puts every ticked one on Groceries through the recipe page's own
+call and brings the Groceries tab to the front.
 
 ## A recipe's public link, shared into the app
 

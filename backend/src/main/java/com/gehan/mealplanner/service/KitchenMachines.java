@@ -55,6 +55,21 @@ public final class KitchenMachines {
 
     public static final List<String> KEYS = ALL.stream().map(Machine::key).toList();
 
+    /**
+     * Machines that do the same job, so a recipe naming two of one family is asking for either:
+     * "bake, or air fry at 180C", "in the slow cooker or the Instant Pot", "a blender or food
+     * processor". ApplianceDetector tags a recipe with every machine its method offers, which is
+     * right for the drawer's filter (the air fryer's owner finds it) but would ask a kitchen to
+     * have both. Named alone, a machine is still needed: a smoothie is the blender's.
+     *
+     * The apps carry the same families (STAND_INS in machines.ts, KitchenMachine.standIns), and the
+     * e2e suite fails if the three drift apart.
+     */
+    public static final List<List<String>> STAND_INS = List.of(
+            List.of(OVEN, AIR_FRYER),
+            List.of(SLOW_COOKER, PRESSURE_COOKER),
+            List.of(BLENDER, FOOD_PROCESSOR));
+
     private static final Set<String> KNOWN = Set.copyOf(KEYS);
 
     private KitchenMachines() {
@@ -97,5 +112,40 @@ public final class KitchenMachines {
         }
         Set<String> wanted = new HashSet<>(keys);
         return KEYS.stream().filter(wanted::contains).toList();
+    }
+
+    /**
+     * What a kitchen lacks to make a recipe that needs these machines, in the catalogue's order:
+     * empty when it can make it. What every suggestion is checked against — generated meal plans,
+     * Meal ideas — and what the apps' "Can make" chips check too, with their own copy of the rule.
+     *
+     * <ul>
+     *   <li>A kitchen with no machines saved has never said what is in it, so it lacks nothing:
+     *   skipping the question never hides a recipe.</li>
+     *   <li>The stovetop is taken to be in every kitchen, ticked or not. Never spotted on a
+     *   recipe, it can only be picked by hand, and never stands in the way.</li>
+     *   <li>Two or more of one {@link #STAND_INS} family are either-or: one of them will do. A
+     *   kitchen with none of them lacks all those named.</li>
+     * </ul>
+     */
+    public static List<String> missing(Collection<String> needs, Collection<String> kitchen) {
+        if (needs == null || needs.isEmpty() || kitchen == null || kitchen.isEmpty()) {
+            return List.of();
+        }
+        Set<String> wanted = new HashSet<>(needs);
+        wanted.remove(STOVETOP);
+        for (List<String> family : STAND_INS) {
+            List<String> named = family.stream().filter(wanted::contains).toList();
+            if (named.size() > 1 && named.stream().anyMatch(kitchen::contains)) {
+                named.forEach(wanted::remove);
+            }
+        }
+        wanted.removeAll(new HashSet<>(kitchen));
+        return inOrder(wanted);
+    }
+
+    /** Whether a kitchen with these machines can make a recipe that needs those; see {@link #missing}. */
+    public static boolean canMake(Collection<String> needs, Collection<String> kitchen) {
+        return missing(needs, kitchen).isEmpty();
     }
 }

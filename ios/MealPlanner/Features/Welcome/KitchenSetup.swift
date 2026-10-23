@@ -156,7 +156,7 @@ struct KitchenSetupSheet: View {
 
     private var machinesStep: some View {
         VStack(alignment: .leading, spacing: 18) {
-            heading("What's in your kitchen?", "Tap everything you have. Recipes show which machines they need.")
+            heading("What's in your kitchen?", "Tap everything you have. Waxwing only suggests recipes you can make with them.")
             MachineGrid(selected: $machines)
             Text("You can change this any time in Household settings.")
                 .font(.system(size: 13)).foregroundStyle(Palette.muted)

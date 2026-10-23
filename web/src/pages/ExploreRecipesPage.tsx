@@ -6,6 +6,9 @@ import { useHousehold } from '../household/HouseholdContext';
 import { Chip, EmptyState, NavBar, SearchField } from '../components/ui';
 import { usePushedScreen } from '../components/Layout';
 import { GlobalRecipeCard, isKept, useMoveIntoMine } from '../components/explore/ExploreParts';
+import { CanMakeChip } from '../components/catalogue/CatalogueParts';
+import { kitchenOf } from '../utils/features';
+import { canMake } from '../utils/machines';
 
 type Filter = 'all' | 'not-kept' | 'yours';
 
@@ -16,7 +19,8 @@ type Filter = 'all' | 'not-kept' | 'yours';
  *
  * Recipes is what this house cooks; this is what every other house on the server has decided to
  * share, newest published first. The chips narrow it to what you have not kept yet, or what this
- * house published itself; All is the lot.
+ * house published itself; All is the lot. Can make, beside them and on top of whichever is chosen,
+ * leaves out what needs a machine this house hasn't got — there once the kitchen says what it has.
  */
 export default function ExploreRecipesPage() {
   const { activeHouseholdId, activeHousehold } = useHousehold();
@@ -24,6 +28,9 @@ export default function ExploreRecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const kitchen = kitchenOf(activeHousehold);
+  const [canOnlyChosen, setCanOnly] = useState(false);
+  const canOnly = canOnlyChosen && kitchen !== null;
 
   const load = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -46,6 +53,7 @@ export default function ExploreRecipesPage() {
     return (recipes ?? []).filter((r) => {
       if (filter === 'not-kept' && (!r.shared || isKept(r))) return false;
       if (filter === 'yours' && r.shared) return false;
+      if (canOnly && !canMake(r.appliances, kitchen)) return false;
       if (!q) return true;
       return (
         r.name.toLowerCase().includes(q) ||
@@ -54,7 +62,7 @@ export default function ExploreRecipesPage() {
         r.ingredients.some((i) => i.ingredientName.toLowerCase().includes(q))
       );
     });
-  }, [recipes, query, filter]);
+  }, [recipes, query, filter, canOnly, kitchen]);
 
   if (!activeHouseholdId) {
     return <NoHousehold />;
@@ -89,6 +97,12 @@ export default function ExploreRecipesPage() {
               {c.label}
             </Chip>
           ))}
+          {kitchen && (
+            <>
+              <span aria-hidden="true" className="my-1.5 w-px shrink-0 bg-line" />
+              <CanMakeChip active={canOnly} onClick={() => setCanOnly(!canOnly)} />
+            </>
+          )}
         </div>
       </div>
 
@@ -99,6 +113,8 @@ export default function ExploreRecipesPage() {
           <EmptyState>
             {query.trim() ? (
               'Nothing matches that.'
+            ) : canOnly && count > 0 ? (
+              'Nothing here your kitchen can make.'
             ) : filter === 'not-kept' && count > 0 ? (
               'You keep every one of them already.'
             ) : (

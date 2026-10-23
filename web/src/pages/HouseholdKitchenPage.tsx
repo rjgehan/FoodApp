@@ -77,7 +77,7 @@ export default function HouseholdKitchenPage() {
     ? 'Plan the week together and add it all to Groceries in one tap.'
     : planned
       ? `Off. Your ${planned} planned ${planned === 1 ? 'meal stays' : 'meals stay'} saved, for when it's back on.`
-      : 'Off. Add a recipe to Groceries from its page instead.';
+      : 'Off. Add a recipe to Groceries from its page, or pick some from Meal ideas in Explore.';
   const cupboardLine = cupboard
     ? 'Remembers what’s at home, so the list can skip it. Turning it off puts “Always have” things (salt, oil…) back on lists.'
     : 'Off. “Always have” things like salt and oil go on grocery lists like everything else.';
@@ -94,7 +94,8 @@ export default function HouseholdKitchenPage() {
           </SectionLabel>
           <MachineGrid selected={machines} onToggle={toggleMachine} roomy />
           <p className="px-1 pt-2.5 text-[0.8125rem] leading-snug text-muted">
-            Saved for your household. Recipes show the machines they need, and a drawer can be filtered by machine.
+            Saved for your household. Waxwing only suggests recipes you can make with these, and Can make shows just
+            those in a drawer or on Explore.
           </p>
         </section>
 

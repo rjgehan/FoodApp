@@ -187,12 +187,14 @@ final class MealPlansAvailability {
 
     /// The server takes a phone's model's picks and hands out candidates.
     var takesChoices: Bool { features.contains("candidates") }
+    /// The server suggests Meal ideas for a household that doesn't plan (POST /meal-ideas).
+    var hasMealIdeas: Bool { features.contains("meal-ideas") }
 
     #if DEBUG
     static func preview(_ yes: Bool = true) -> MealPlansAvailability {
         let a = MealPlansAvailability()
         a.available = yes
-        a.features = ["cupboard", "use-by", "targets", "candidates"]
+        a.features = ["cupboard", "use-by", "targets", "candidates", "meal-ideas"]
         a.askedOf = Config.baseURL
         return a
     }

@@ -38,7 +38,9 @@ Uses the Chrome already installed (`channel: 'chrome'`), so there's no Playwrigh
 | `tests/api/groups.spec.ts` | Tags (still "recipe-categories" on the wire): one drawer each, one name per drawer, bulk tag and untag, old phones' calls |
 | `tests/ui/catalog.spec.ts` | Drawers and tags: tag and machine chips, "+ Tag" and picking its recipes (with search), the quick-tag card, select mode's Tag and Move, Manage tags, a filter that follows a rename, a tag made on another phone, a slow refresh, the recipe hero |
 | `tests/ui/plan-picker.spec.ts` | Filling a slot: Mains (a protein tag counts), Sides, and the household's tags as filters |
-| `tests/api/kitchen.spec.ts` | The kitchen PATCH: machines, Plan and Cupboard on and off, setting up; the machine list agreeing on server, web and iPhone |
+| `tests/api/kitchen.spec.ts` | The kitchen PATCH: machines, Plan and Cupboard on and off, setting up; the machine list and its stand-ins agreeing on server, web and iPhone |
+| `tests/api/kitchen-suggestions.spec.ts` | What the kitchen can make: Meal ideas (stand-ins, stovetop, unknown kitchen, meal fit, on the list already, published ones, members only) and generated plans never choosing a recipe it can't make |
+| `tests/ui/kitchen-suggestions.spec.ts` | Can make in a drawer and on Global recipes, a recipe saying which machine the kitchen lacks, Meal ideas with the Plan off putting the ticked ones on Groceries |
 | `tests/ui/kitchen-setup.spec.ts` | The kitchen questions: who is asked, Skip, starting from the house's answers, the card on Recipes, Kitchen & features counting as set up, the starter list with nothing slipping in first |
 | `tests/ui/features-off.spec.ts` | Plan and Cupboard turned off: tabs, redirects, Done shopping with no cupboard, Kitchen & features, no flash of the tabs before the household list arrives |
 | `tests/ui/machines.spec.ts` | The machines a recipe needs, in the form: starting from the recipe's, sent only when changed |

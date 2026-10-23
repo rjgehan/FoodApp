@@ -4,8 +4,10 @@ import com.gehan.mealplanner.domain.Recipe;
 import com.gehan.mealplanner.domain.RecipeFiling;
 import com.gehan.mealplanner.domain.RecipeIngredient;
 import com.gehan.mealplanner.domain.RecipeSection;
+import com.gehan.mealplanner.repository.HouseholdRepository;
 import com.gehan.mealplanner.repository.RecipeFilingRepository;
 import com.gehan.mealplanner.repository.RecipeRepository;
+import com.gehan.mealplanner.service.KitchenMachines;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,10 @@ import java.util.UUID;
  *
  * Each comes with the drawer it is filed in, which is what says whether it suits breakfast or
  * dinner: the household's own filing, else the drawer its owner keeps it in.
+ *
+ * Only what the household's kitchen can make is offered ({@link KitchenMachines#missing}): a plan
+ * that puts slow-cooker chili on a house with no slow cooker has planned nothing. Reading back a
+ * saved plan ({@link #forIds}) is not choosing, so a meal chosen before the kitchen changed stays.
  */
 @Service
 public class RecipePool {
@@ -86,10 +92,18 @@ public class RecipePool {
 
     private final RecipeRepository recipes;
     private final RecipeFilingRepository filings;
+    private final HouseholdRepository households;
 
-    public RecipePool(RecipeRepository recipes, RecipeFilingRepository filings) {
+    public RecipePool(RecipeRepository recipes, RecipeFilingRepository filings, HouseholdRepository households) {
         this.recipes = recipes;
         this.filings = filings;
+        this.households = households;
+    }
+
+    /** The machines in the household's kitchen; empty when it has not said. */
+    @Transactional(readOnly = true)
+    public Set<String> kitchen(UUID householdId) {
+        return households.findById(householdId).map(h -> Set.copyOf(h.getMachines())).orElse(Set.of());
     }
 
     /**
@@ -128,9 +142,24 @@ public class RecipePool {
         return ownerFiling;
     }
 
-    /** Recipes with no ingredients are left out: there is nothing to plan or count with them. */
+    /**
+     * What a plan may choose from: every recipe {@link #everything} has that the household's
+     * kitchen can make.
+     */
     @Transactional(readOnly = true)
     public List<PoolRecipe> forHousehold(UUID householdId, boolean includePublished) {
+        Set<String> kitchen = kitchen(householdId);
+        return everything(householdId, includePublished).stream()
+                .filter(r -> KitchenMachines.canMake(r.recipe().getAppliances(), kitchen))
+                .toList();
+    }
+
+    /**
+     * Every recipe the household could choose from, whatever is in its kitchen. Recipes with no
+     * ingredients are left out: there is nothing to plan or count with them.
+     */
+    @Transactional(readOnly = true)
+    public List<PoolRecipe> everything(UUID householdId, boolean includePublished) {
         Map<UUID, Recipe> chosen = new HashMap<>();
         Set<UUID> yours = new HashSet<>();
         Set<Recipe> ordered = new LinkedHashSet<>();

@@ -225,6 +225,23 @@ export function MachineChip({
 }
 
 /**
+ * "Can make": only the recipes this household's kitchen has the machines for, with how many
+ * there are. First on a drawer's Machines row, and beside Global recipes' filters.
+ */
+export function CanMakeChip({
+  count,
+  active,
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & { count?: number; active: boolean }) {
+  return (
+    <Chip active={active} icon="check" title="Only what your kitchen can make" {...props}>
+      Can make
+      {count !== undefined && <ChipCount n={count} active={active} />}
+    </Chip>
+  );
+}
+
+/**
  * A row of chips that scrolls sideways on a phone — five rows of wrapped tags would push the
  * recipes off the screen — and wraps once there is room for them. On a phone its right edge
  * fades, so a row that runs off the screen looks like one, rather than looking complete.

@@ -19,6 +19,9 @@ struct RecipeHero: View {
     /// Nil for a recipe that is not yours to share.
     var share: (() -> Void)?
     var options: () -> Void
+    /// The machines it needs that this kitchen hasn't got: drawn dashed, and said so. The note
+    /// under the hero (KitchenNote) says it in words.
+    var lacking: Set<String> = []
 
     /// The drawer it is in, or who shared it while it is not filed.
     private var filed: String? {
@@ -143,15 +146,20 @@ struct RecipeHero: View {
     /// A machine it needs, on the picture: its drawing and its short name in a see-through pill,
     /// like the tags above — `MachinePill` is the same thing for a plain background.
     private func machinePill(_ machine: KitchenMachine) -> some View {
-        HStack(spacing: 4) {
+        let missing = lacking.contains(machine.key)
+        return HStack(spacing: 4) {
             machine.image.resizable().scaledToFit().frame(width: 13, height: 13)
             Text(machine.short).lineLimit(1)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .background(.white.opacity(0.2), in: Capsule())
+        .background(.white.opacity(missing ? 0.08 : 0.2), in: Capsule())
+        .overlay {
+            if missing { Capsule().strokeBorder(.white.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [3, 2])) }
+        }
+        .opacity(missing ? 0.8 : 1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Needs: \(machine.label)")
+        .accessibilityLabel(missing ? "Needs: \(machine.label), not in your kitchen" : "Needs: \(machine.label)")
     }
 
     /// "15", "1 hr 10": the facts say "prep" and "cook" after them.
@@ -247,4 +255,28 @@ struct RecipeToast: View {
     }
     .ignoresSafeArea(edges: .top)
     .pageBackground()
+}
+
+/**
+ "Your kitchen has no slow cooker." — on a recipe that needs a machine this household doesn't have
+ (KitchenMachine.missing), with the way to say it does. Nothing for a kitchen that has not said
+ what is in it, or a recipe it can make. The web's KitchenNote, word for word.
+ */
+struct KitchenNote: View {
+    let appliances: [String]?
+    let session: Session?
+
+    var body: some View {
+        let missing = KitchenMachine.missing(appliances ?? [], kitchen: session?.kitchen)
+        if !missing.isEmpty, let session {
+            NavigationLink {
+                KitchenScreen(session: session)
+            } label: {
+                NoteBox(text: Text("Your kitchen has no \(KitchenMachine.missingWords(missing)). ")
+                            + Text("Change your kitchen").underline(),
+                        tone: .mustard, systemImage: "exclamationmark.circle")
+            }
+            .buttonStyle(.plain)
+        }
+    }
 }

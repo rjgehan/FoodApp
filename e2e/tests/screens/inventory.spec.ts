@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API_URL, admin, call, isoDate, newHousehold, newMember, newRecipe, plan } from '../../lib/api';
+import { API_URL, admin, call, isoDate, newHousehold, newMember, newRecipe, plan, setKitchen } from '../../lib/api';
 import { fromMenu, newRecipeWay, sheet, signIn, swipeLeft } from '../../lib/ui';
 
 /**
@@ -478,6 +478,19 @@ test('capture every screen', async ({ page }) => {
     await page.goto('/household/kitchen');
     await page.getByRole('switch', { name: 'Meal planning' }).and(page.locator('[aria-checked="false"]')).waitFor();
     await shot(page, 'Household → Kitchen & features (both off)', '', { full: true });
+    // With the Plan off, Explore's third door is Meal ideas: what this kitchen can make.
+    await setKitchen(core.id, { machines: ['oven', 'stovetop'] });
+    await newRecipe(core.id, 'Sheet-pan Gnocchi', [{ name: 'gnocchi', qty: 500, unit: 'g' }], { appliances: ['oven'] });
+    await newRecipe(core.id, 'Slow Cooker Chili', [{ name: 'kidney beans', qty: 2, unit: 'tins' }], { appliances: ['slow-cooker'] });
+    await page.goto('/explore');
+    await page.getByRole('link', { name: 'Meal ideas' }).waitFor();
+    await shot(page, 'Explore · Plan off', 'Meal ideas where Meal plans would be, with a chip into each meal.');
+    await page.getByRole('link', { name: 'Meal ideas' }).click();
+    await page.getByRole('list', { name: 'Meal ideas' }).waitFor();
+    await shot(page, 'Meal ideas', 'Only what the kitchen can make, its own recipes first. Swap one or Shuffle; Add puts the ticked ones on Groceries.', { full: true });
+    await page.goto('/recipes/section/dinner');
+    await page.getByRole('button', { name: /^Can make/ }).waitFor();
+    await shot(page, 'Drawer · Can make', 'First on the Machines row once the kitchen says what it has.');
   });
   await signIn(page, owner, hh.id);
 

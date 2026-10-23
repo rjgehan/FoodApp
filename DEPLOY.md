@@ -389,6 +389,21 @@ DELETE FROM household_machines m WHERE NOT EXISTS (SELECT 1 FROM households h WH
 DELETE FROM grocery_list_item_recipes g WHERE NOT EXISTS (SELECT 1 FROM grocery_list_items i WHERE i.id = g.grocery_list_item_id);"
 ```
 
+## Suggestions that respect the kitchen (nothing to do)
+
+The release after it puts the machines to use. Generated meal plans (from the cupboard, for a
+health target, and the iPhone's Apple Intelligence candidates) only choose recipes the household's
+kitchen can make; a household that doesn't plan gets **Meal ideas** in Explore (`POST
+/api/households/{id}/meal-ideas`), which go straight onto the grocery list; and a drawer and
+Global recipes get a **Can make** chip. A kitchen with no machines saved leaves nothing out, the
+stovetop is taken to be in every kitchen, and a recipe naming two machines that do the same job
+(oven or air fryer, slow cooker or Instant Pot, blender or food processor) needs only one of them.
+
+No schema change and nothing to run. `GET /api/meal-plans` lists `meal-ideas` among its features,
+which is what the iPhone waits for before it shows the door, so an iPhone ahead of its server
+shows none; an older iPhone build keeps working and just doesn't have the new pieces until it is
+updated. Plans saved before a kitchen changed keep their meals.
+
 ## Things worth knowing
 
 - **The schema updates itself.** `ddl-auto: update` means Hibernate adds new tables and

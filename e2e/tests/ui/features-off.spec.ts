@@ -28,11 +28,13 @@ test('with the Plan and the Cupboard off, their tabs go and their screens send y
     await expect(page).toHaveURL(/\/recipes$/);
   }
 
-  // Explore: no Meal plans door (every plan goes on the Plan), and Nutrition without the week.
+  // Explore: Meal ideas where the Meal plans door was (every plan goes on the Plan), and Nutrition
+  // without the week.
   await page.goto('/explore');
   await expect(page.getByRole('link', { name: 'Nutrition facts' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Meal plans' })).toHaveCount(0);
   await expect(page.getByText('kcal / day')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Meal ideas' })).toBeVisible();
   await page.goto('/explore/nutrition');
   await expect(page.getByText('Recent lookups', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: "This week's plan" })).toHaveCount(0);
@@ -95,6 +97,8 @@ test('with the Cupboard off and the Plan on, meal plans stay but cooking from th
   await expect(door).toBeVisible();
   await expect(page.getByText('Built for a health goal')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Cook from cupboard' })).toHaveCount(0);
+  // Planning households have Meal plans; Meal ideas are for the ones that don't plan.
+  await expect(page.getByRole('link', { name: 'Meal ideas' })).toHaveCount(0);
   await door.click();
   await expect(page).toHaveURL(/\/explore\/meal-plans$/);
   await expect(page.getByText('Plans for health targets')).toBeVisible();

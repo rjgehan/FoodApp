@@ -3,7 +3,8 @@ import SwiftUI
 /**
  One drawer (the mockup's 3.3 and 3.4, flattened): every recipe in it as photo cards, with the
  drawer's tags as a row of chips over them — tap one to see only those, tap two to see what has
- both. The machines its recipes need are a second row, for "what can I make in the air fryer".
+ both. The machines its recipes need are a second row, for "what can I make in the air fryer",
+ led by Can make: only what this household's kitchen has the machines for (KitchenMachine.missing).
 
  A drawer is one level now. A tag is a sticker on a recipe rather than a shelf it lives on, so a
  recipe can be Chicken and Quick at once and nothing has to be opened to be found — the web's
@@ -23,6 +24,8 @@ struct DrawerView: View {
     /// Only recipes with no tag at all. Never together with tags: "untagged and Chicken" is nothing.
     @State private var untaggedOnly = false
     @State private var machines: Set<String> = []
+    /// Only what the kitchen can make. Says nothing while the kitchen has not said what it has.
+    @State private var canMakeChosen = false
     @State private var naming = false
     @State private var newTag = ""
     @FocusState private var typing: Bool
@@ -80,6 +83,16 @@ struct DrawerView: View {
         return counts
     }
 
+    /// The machines in this household's kitchen; nil while it has not said.
+    private var kitchen: [String]? { store.session?.kitchen }
+    private var canOnly: Bool { canMakeChosen && kitchen != nil }
+
+    /// How many of the drawer's recipes the kitchen can make.
+    private var makeable: Int {
+        let kitchen = self.kitchen
+        return all.filter { KitchenMachine.canMake($0.appliances ?? [], kitchen: kitchen) }.count
+    }
+
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
 
     /// The chips, the machines and the search, all at once.
@@ -87,6 +100,7 @@ struct DrawerView: View {
         let wanted = chosenTags
         let onlyUntagged = untaggedOnly
         let typed = q
+        let kitchen = canOnly ? self.kitchen : nil
         return all.filter { recipe in
             if onlyUntagged {
                 guard isUntagged(recipe) else { return false }
@@ -94,6 +108,7 @@ struct DrawerView: View {
                 guard wanted.allSatisfy({ store.has(recipe, $0) }) else { return false }
             }
             guard machines.allSatisfy({ (recipe.appliances ?? []).contains($0) }) else { return false }
+            guard KitchenMachine.canMake(recipe.appliances ?? [], kitchen: kitchen) else { return false }
             return matches(recipe, typed)
         }
     }
@@ -133,9 +148,9 @@ struct DrawerView: View {
                 } else {
                     tagRow
                     let counts = machineCounts
-                    if !counts.isEmpty { machineRow(counts) }
+                    if !counts.isEmpty || canOnly { machineRow(counts) }
                     // About the untagged recipes, so not while looking at a tag or a machine.
-                    if !selecting, q.isEmpty, chosenTags.isEmpty, machines.isEmpty, let suggestion {
+                    if !selecting, q.isEmpty, chosenTags.isEmpty, machines.isEmpty, !canOnly, let suggestion {
                         QuickTagCard(name: suggestion.name, count: suggestion.recipeIds.count, busy: busy) {
                             Task { await quickTag(suggestion) }
                         } onDismiss: {
@@ -280,10 +295,21 @@ struct DrawerView: View {
         }
     }
 
-    /// The machines this drawer's recipes need, in the catalogue's order, each a filter of its own.
+    /// The machines this drawer's recipes need, in the catalogue's order, each a filter of its own —
+    /// after Can make, once the kitchen has said what it has.
     private func machineRow(_ counts: [String: Int]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if kitchen != nil {
+                    let count = makeable
+                    Button { canMakeChosen = !canOnly } label: {
+                        CanMakePill(count: count, isOn: canOnly)
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel("Can make, \(count)")
+                    .accessibilityHint("Only what your kitchen can make")
+                    .accessibilityAddTraits(canOnly ? .isSelected : [])
+                }
                 ForEach(KitchenMachine.ordered(counts.keys)) { machine in
                     let on = machines.contains(machine.key)
                     let count = counts[machine.key] ?? 0
@@ -332,13 +358,16 @@ struct DrawerView: View {
     private var nothingMatches: some View {
         let names = chosenTags.map(\.name).joined(separator: " + ")
         let needs = KitchenMachine.ordered(machines)
-        // The web's words: "Nothing tagged Chicken needs the oven and air fryer."
-        let machineWords = needs.isEmpty ? "" : " needs the \(KitchenMachine.words(needs))"
+        // The web's words: "Nothing tagged Chicken needs the oven and air fryer.", and with Can
+        // make on, "Nothing here your kitchen can make."
+        let needed = needs.isEmpty ? "" : " needs the \(KitchenMachine.words(needs))"
+        let machineWords = !canOnly ? needed
+            : needed.isEmpty ? " your kitchen can make" : "\(needed) and can be made in your kitchen"
         let line: String
         if !q.isEmpty {
             line = "Nothing in \(section.title) matches that."
         } else if untaggedOnly {
-            line = needs.isEmpty ? "Every recipe here has a tag." : "No untagged recipe\(machineWords)."
+            line = machineWords.isEmpty ? "Every recipe here has a tag." : "No untagged recipe\(machineWords)."
         } else if !names.isEmpty {
             line = "Nothing tagged \(names)\(machineWords)."
         } else {
@@ -346,7 +375,7 @@ struct DrawerView: View {
         }
         return VStack(spacing: 14) {
             Text(line).font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
-            if q.isEmpty, machines.isEmpty, chosenTags.count == 1, let tag = chosenTags.first {
+            if q.isEmpty, machines.isEmpty, !canOnly, chosenTags.count == 1, let tag = chosenTags.first {
                 Button { startPicking(tag) } label: { Label("Tag recipes", systemImage: "tag") }
                     .buttonStyle(.kitchen(.soft, size: .small))
             }
@@ -449,6 +478,7 @@ struct DrawerView: View {
         chosen = []
         untaggedOnly = false
         machines = []
+        canMakeChosen = false
         query = ""
         pickingFor = tag
         picked = Set(all.filter { store.has($0, tag) }.map(\.id))

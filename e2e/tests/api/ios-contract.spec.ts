@@ -378,3 +378,37 @@ test('Add to groceries from a recipe, the 409 the phone asks about, and Done sho
   expect(await call('GET', `/api/households/${hh.id}/grocery-list`, { token })).toEqual([]);
   expect(await call('GET', `/api/households/${hh.id}/cupboard`, { token })).toEqual([]);
 });
+
+test('meal ideas: the status the door waits for, the request the phone sends, and the fields it decodes', async () => {
+  const hh = await newHousehold({ plan: false });
+  const { token } = await admin();
+  // MealPlansAvailability.hasMealIdeas: the door is only drawn once the server says it has them.
+  expect((await call('GET', '/api/meal-plans', { token })).features).toContain('meal-ideas');
+  await call('PATCH', `/api/households/${hh.id}/kitchen`, { token, body: { machines: ['oven', 'stovetop'] } });
+  const pie = await newRecipe(hh.id, 'Phone pie', [{ name: 'potatoes', qty: 1, unit: 'kg' }], { appliances: ['oven'] });
+  const stew = await newRecipe(hh.id, 'Phone stew', [{ name: 'carrots', qty: 3 }], { appliances: ['slow-cooker'] });
+
+  // APIClient.mealIdeas: meal as its raw value, a count, and the ideas on screen as uuid strings.
+  const ideas = await call('POST', `/api/households/${hh.id}/meal-ideas`, {
+    token, body: { meal: 'DINNER', count: 5, exclude: [] },
+  });
+  for (const key of ['meal', 'ideas', 'canMake', 'leftOut']) expect(ideas).toHaveProperty(key);
+  expect(ideas.meal).toBe('DINNER');
+  expect(ideas.ideas[0]).toMatchObject({ id: pie.id, name: 'Phone pie', appliances: ['oven'], shared: false });
+  // Every field the phone's Recipe decodes without a default.
+  for (const key of ['id', 'name', 'servings', 'categories', 'shared', 'ingredients']) expect(ideas.ideas[0]).toHaveProperty(key);
+  expect(ideas.ideas.map((r: any) => r.id)).not.toContain(stew.id);
+
+  // A swap: one more, everything on screen left out.
+  const swap = await call('POST', `/api/households/${hh.id}/meal-ideas`, {
+    token, body: { meal: 'DINNER', count: 1, exclude: [pie.id] },
+  });
+  expect(swap.ideas.map((r: any) => r.id)).not.toContain(pie.id);
+  expect(swap.ideas.length).toBeLessThanOrEqual(1);
+
+  // Add: the recipe page's own call, once per ticked idea, with the stepper's servings.
+  const added = await call('POST', `/api/households/${hh.id}/grocery-list/add-recipe/${pie.id}`, {
+    token, body: { servings: 2, includedOptionalIngredientIds: [] },
+  });
+  expect(added.map((i: any) => i.name)).toEqual(['potatoes']);
+});
