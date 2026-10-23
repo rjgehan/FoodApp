@@ -174,13 +174,16 @@ struct GroceryItemSheet: View {
     }
 
     /**
-     "Last paid at each shop": one line per shop, the newest price there, what size it was, the day
-     and whether it was on sale. When every shop's price is for the same kind of amount, the
-     cheapest (per unit, if the sizes differ) is marked — a carton against a pound is not a fair
-     fight, so then nothing is.
+     "Last paid at each shop": one line per shop, the newest price there, what size it was and what
+     that comes to per egg, lb or fl oz, the day and whether it was on sale. The cheapest is marked
+     by that per-one price, never the total — 12 eggs for less is not cheaper than 18 for a little
+     more — so only when every shop's price has a size that compares with the others; otherwise a
+     line says what is missing.
      */
     private var shopPrices: some View {
-        let cheapest = cheapestShopIndex
+        let priced = byShop.map(\.priced)
+        let cheapest = UnitPrice.cheapest(priced)
+        let rates = UnitPrice.rates(priced)
         return VStack(alignment: .leading, spacing: 8) {
             Text("Last paid at each shop").font(.label).foregroundStyle(Palette.muted)
             ForEach(Array(byShop.enumerated()), id: \.offset) { index, price in
@@ -197,12 +200,18 @@ struct GroceryItemSheet: View {
                         Text(Money.text(price.price))
                             .font(.system(size: 15, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Palette.text)
-                        Text(shopDetail(price))
+                        Text(shopDetail(price, rate: rates[index]))
                             .font(.system(size: 12))
                             .foregroundStyle(price.onSale == true ? Palette.herb : Palette.muted)
                     }
                 }
                 .accessibilityElement(children: .combine)
+            }
+            if let why = noCheapestWords(priced, cheapest: cheapest) {
+                Text(why)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.leading, 62)
@@ -215,28 +224,39 @@ struct GroceryItemSheet: View {
         return name.isEmpty ? "No shop given" : name
     }
 
-    /// "Twinings, 20 bags · Oct 18 · on sale"
-    private func shopDetail(_ price: LastPrice) -> String {
-        let parts: [String?] = [
-            ReceiptWords.what(brand: price.brand, quantity: price.quantity, unit: price.unit),
-            ReceiptWords.day(price.observedOn),
-            price.onSale == true ? "on sale" : nil,
-        ]
-        return parts.compactMap { $0 }.joined(separator: " · ")
+    /// "Twinings, 20 bags · $0.21 each · Oct 18 · on sale", or "no size" in place of the size when
+    /// there are shops to compare and this one's price says nothing about how much it was for.
+    private func shopDetail(_ price: LastPrice, rate: UnitPrice.Rate?) -> String {
+        var parts: [String] = []
+        if let what = ReceiptWords.what(brand: price.brand, quantity: price.quantity, unit: price.unit) {
+            parts.append(what)
+        }
+        if let rate {
+            parts.append(rateWords(rate))
+        } else if byShop.count > 1 {
+            parts.append("no size")
+        }
+        if let day = ReceiptWords.day(price.observedOn) { parts.append(day) }
+        if price.onSale == true { parts.append("on sale") }
+        return parts.joined(separator: " · ")
     }
 
-    /// The cheapest shop's place in `byShop`, or nil when there is only one shop or their prices are
-    /// for different kinds of amount (a carton and a pound).
-    private var cheapestShopIndex: Int? {
-        guard byShop.count > 1 else { return nil }
-        let units = Set(byShop.map { ($0.unit ?? "").lowercased() })
-        guard units.count == 1 else { return nil }
-        let perUnit: [Double] = byShop.map { price in
-            if let quantity = price.quantity, quantity > 0 { return price.price / quantity }
-            return price.price
+    /// "$0.36 each", "$3.99/lb".
+    private func rateWords(_ rate: UnitPrice.Rate) -> String {
+        if rate.per == "each" { return "\(Money.rate(rate.price)) each" }
+        return "\(Money.rate(rate.price))/\(rate.per)"
+    }
+
+    /// Why no shop is marked cheapest, when there are shops to compare and none is.
+    private func noCheapestWords(_ priced: [UnitPrice.Priced], cheapest: Int?) -> String? {
+        guard priced.count > 1, cheapest == nil else { return nil }
+        if priced.contains(where: { UnitPrice.measure($0) == nil }) {
+            return "To see which shop is cheapest, each price needs its size — 12 eggs, 16 oz. Add it on the receipt it came from, or Change the price with its size."
         }
-        guard let lowest = perUnit.min(), perUnit.filter({ $0 == lowest }).count == 1 else { return nil }
-        return perUnit.firstIndex(of: lowest)
+        if UnitPrice.sharedKind(priced) == nil {
+            return "These sizes don't compare (a weight and a count), so no shop is marked cheapest."
+        }
+        return nil
     }
 
     private func loadByShop() async {

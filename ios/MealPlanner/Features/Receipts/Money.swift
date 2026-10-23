@@ -17,6 +17,15 @@ enum Money {
         value.formatted(.currency(code: code))
     }
 
+    /// "$0.36", "$0.042": what one egg or one fl oz comes to — a third place under a dollar, where
+    /// two shops' cents alone could look the same.
+    static func rate(_ value: Double) -> String {
+        if value < 1 {
+            return value.formatted(.currency(code: code).precision(.fractionLength(2...3)))
+        }
+        return text(value)
+    }
+
     /// "$86" — a rough total, where the cents would only pretend to be exact.
     static func whole(_ value: Double) -> String {
         value.formatted(.currency(code: code).precision(.fractionLength(0)))
@@ -126,6 +135,11 @@ enum ReceiptWords {
 }
 
 extension LastPrice {
+    /// The price and its size, to put beside another shop's (`UnitPrice`).
+    var priced: UnitPrice.Priced {
+        UnitPrice.Priced(price: price, quantity: quantity, unit: unit)
+    }
+
     /**
      The item sheet's Price row: "Last paid $3.49 at Kings Food Markets · Oct 18 (on sale)",
      with "for Twinings, 20 bags" after the price when somebody said whose or how much.

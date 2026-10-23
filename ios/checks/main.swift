@@ -385,5 +385,9 @@ run { await mealPlanChecks() }
 
 run { await receiptChecks() }
 
+// MARK: - Comparing shops by unit price (UnitPriceChecks.swift)
+
+unitPriceChecks()
+
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

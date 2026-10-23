@@ -149,10 +149,12 @@ extension SampleData {
 
     /// What oat milk last cost at each shop, newest first: the item sheet's "Last paid at each shop".
     static let pricesByShop: [LastPrice] = [
-        LastPrice(price: 4.49, quantity: 1, unit: "carton", storeName: "Kings Food Markets",
+        // The dearest carton is the cheapest per fl oz: $0.070 against $0.081 and $0.079.
+        LastPrice(price: 4.49, quantity: 64, unit: "fl oz", storeName: "Kings Food Markets",
                   observedOn: "2026-10-18", onSale: false, source: "RECEIPT", brand: "Oatly"),
-        LastPrice(price: 4.19, storeName: nil, observedOn: "2026-10-12", onSale: false, source: "MANUAL"),
-        LastPrice(price: 3.79, quantity: 1, unit: "carton", storeName: "ShopRite of Hoboken",
+        LastPrice(price: 4.19, quantity: 52, unit: "fl oz", storeName: nil, observedOn: "2026-10-12", onSale: false,
+                  source: "MANUAL"),
+        LastPrice(price: 3.79, quantity: 48, unit: "fl oz", storeName: "ShopRite of Hoboken",
                   observedOn: "2026-10-04", onSale: true, source: "RECEIPT", brand: "Califia"),
     ]
 

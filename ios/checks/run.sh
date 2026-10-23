@@ -15,8 +15,10 @@ xcrun swiftc -swift-version 5 -D DEBUG -o "$OUT/checks" \
   MealPlanner/Features/MealPlans/MealPlanAssist.swift \
   MealPlanner/Features/Receipts/ReceiptAssist.swift \
   MealPlanner/Features/Receipts/ProductMatch.swift \
+  MealPlanner/Features/Receipts/UnitPrice.swift \
   checks/AppTypes.swift \
   checks/MealPlanChecks.swift \
   checks/ReceiptChecks.swift \
+  checks/UnitPriceChecks.swift \
   checks/main.swift
 "$OUT/checks"

@@ -498,7 +498,12 @@ camera and send nothing; the Simulator types the number. `./checks/run.sh` check
 A grocery row shows what it last cost (`lastPrice`, "≈ $3.49"), the list's title "≈ $86 · 3 not
 priced" for what is still to buy, and an item's sheet "Last paid $3.49 at Kings Food Markets ·
 Oct 18 (on sale)" with Add / Change to type one in (`PUT …/items/{id}/price`, today's price).
-Money is written in the phone's own currency (`Money`). The whole flow is one full-screen cover,
+Under it, Last paid at each shop gives each shop's newest price with what it comes to per one
+("12 ct · $0.42 each", "$3.99/lb"; `UnitPrice.swift`), and marks the Cheapest by that, never the
+total — 18 eggs for $6.49 beats 12 for $4.99. Only when every shop's price has a size that
+compares (a weight, a volume, or a count: ct, eggs, dozen, a pack of more than one); a price with
+no size, "1 carton" or a bare "2" says "no size", and a line says to add it on the receipt.
+`./checks/run.sh` checks the comparing. Money is written in the phone's own currency (`Money`). The whole flow is one full-screen cover,
 each step replacing the last, so nothing stacks on the prompt slot. In the Simulator, which has no
 document camera, a debug build offers "Read a sample receipt": the sample's words sent to the real
 server, the whole flow minus the camera. Not yet: tidying abbreviations with Apple Intelligence,
