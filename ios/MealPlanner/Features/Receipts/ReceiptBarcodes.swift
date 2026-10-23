@@ -114,12 +114,16 @@ struct ProductFill: Equatable {
             countsAs = mine
             how = .list
         } else if let thinker, !name.isEmpty {
-            let question = ReceiptQuestion(key: UUID(), text: name, brand: brand.isEmpty ? nil : brand)
-            let guess = await ReceiptAssist.guess(for: question, options: ReceiptAssist.options(from: names),
-                                                  thinker: thinker)
-            if case .named(let said)? = guess {
+            let madeBy: String? = brand.isEmpty ? nil : brand
+            let question = ReceiptQuestion(key: UUID(), text: name, brand: madeBy)
+            let offered = ReceiptAssist.options(from: names)
+            let guess: ReceiptGuess? = await ReceiptAssist.guess(for: question, options: offered, thinker: thinker)
+            switch guess {
+            case .some(.named(let said)):
                 countsAs = said
                 how = .model
+            case .some(.notFood), .none:
+                break
             }
         }
         if countsAs.isEmpty, !name.isEmpty {
@@ -295,12 +299,17 @@ struct LineBarcodeScanner: View {
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    /// What to do while it waits for a barcode.
+    private var aimWords: String {
+        if sample { return "No camera in a preview: try a sample packet." }
+        if noCamera { return "There's no camera here. Type the number under the stripes." }
+        return "Hold the packet's barcode in the window."
+    }
+
     @ViewBuilder private var status: some View {
         switch stage {
         case .scanning:
-            Text(sample ? "No camera in a preview: try a sample packet."
-                 : noCamera ? "There's no camera here. Type the number under the stripes."
-                 : "Hold the packet's barcode in the window.")
+            Text(aimWords)
                 .font(.system(size: 14)).foregroundStyle(Palette.muted)
         case .asking(let code):
             Text("Looking up \(code)…")
@@ -508,12 +517,36 @@ struct ReceiptItemScanner: View {
         .background(Palette.bg, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 
+    /// The line a packet most looks like: the first ranked, if it has a word of the packet at all.
+    private func bestItem(in lines: [Ranked]) -> Item? {
+        guard let top = lines.first, top.score > 0 else { return nil }
+        return top.item
+    }
+
+    /// Pick another line: every food line but the one offered (all of them when none was).
+    private func otherLines(_ lines: [Ranked], besides best: Item?) -> [Ranked] {
+        guard choosing, let best else { return lines }
+        return lines.filter { $0.item.key != best.key }
+    }
+
+    /// "Chobani · 32 oz · counts as greek yogurt", under the packet's name.
+    private func foundDetail(_ product: Product, _ fill: ProductFill) -> String {
+        var parts: [String] = []
+        let made = product.makeAndSize
+        if !made.isEmpty { parts.append(made) }
+        if !fill.countsAs.isEmpty { parts.append("counts as \(fill.countsAs)") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func pickWords(_ best: Item?) -> String {
+        if best == nil { return "No line on this receipt looks like it. Which one is it?" }
+        return "Which line is it?"
+    }
+
     @ViewBuilder private func foundCard(_ product: Product, _ fill: ProductFill) -> some View {
         let lines = ranked(for: product)
-        let best = lines.first.flatMap { $0.score > 0 ? $0.item : nil }
-        productLine(title: product.name,
-                    detail: [product.makeAndSize, fill.countsAs.isEmpty ? "" : "counts as \(fill.countsAs)"]
-                        .filter { !$0.isEmpty }.joined(separator: " · "))
+        let best = bestItem(in: lines)
+        productLine(title: product.name, detail: foundDetail(product, fill))
         if let best, !choosing {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Looks like: **\(best.line.text) · \(Money.text(best.line.price))**")
@@ -535,8 +568,8 @@ struct ReceiptItemScanner: View {
                     .buttonStyle(.kitchen(.secondary, size: .small))
             }
         } else {
-            let others = lines.filter { choosing ? $0.item.key != best?.key : true }
-            Text(best == nil ? "No line on this receipt looks like it. Which one is it?" : "Which line is it?")
+            let others = otherLines(lines, besides: best)
+            Text(pickWords(best))
                 .font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.text)
             if others.isEmpty {
                 Text("There are no other food lines on it.")

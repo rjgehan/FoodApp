@@ -360,9 +360,11 @@ struct DrawerView: View {
         let needs = KitchenMachine.ordered(machines)
         // The web's words: "Nothing tagged Chicken needs the oven and air fryer.", and with Can
         // make on, "Nothing here your kitchen can make."
-        let needed = needs.isEmpty ? "" : " needs the \(KitchenMachine.words(needs))"
-        let machineWords = !canOnly ? needed
-            : needed.isEmpty ? " your kitchen can make" : "\(needed) and can be made in your kitchen"
+        let needed: String = needs.isEmpty ? "" : " needs the \(KitchenMachine.words(needs))"
+        var machineWords = needed
+        if canOnly {
+            machineWords = needed.isEmpty ? " your kitchen can make" : "\(needed) and can be made in your kitchen"
+        }
         let line: String
         if !q.isEmpty {
             line = "Nothing in \(section.title) matches that."

@@ -90,17 +90,29 @@ enum ProductMatch {
     /// Every line, best first, for a product called `name` made by `brand`.
     static func ranked(_ lines: [Candidate], name: String, brand: String) -> [Scored] {
         let product = words(name + " " + brand)
-        let scored = lines.enumerated().map { (offset, line) -> (order: Int, open: Bool, scored: Scored) in
+        var entries: [RankEntry] = []
+        for (offset, line) in lines.enumerated() {
             let fit = score(line: line.text, product: product)
-            return (offset, line.open, Scored(key: line.key, score: fit.score, letters: fit.letters))
+            let scored = Scored(key: line.key, score: fit.score, letters: fit.letters)
+            entries.append(RankEntry(order: offset, open: line.open, scored: scored))
         }
-        return scored.sorted { a, b in
-            if a.scored.score != b.scored.score { return a.scored.score > b.scored.score }
-            if a.scored.letters != b.scored.letters { return a.scored.letters > b.scored.letters }
-            if a.open != b.open { return a.open }
-            return a.order < b.order
-        }
-        .map { $0.scored }
+        return entries.sorted(by: rankedBefore).map(\.scored)
+    }
+
+    /// A line with where it stood on the receipt, while the lines are put in order.
+    private struct RankEntry {
+        let order: Int
+        let open: Bool
+        let scored: Scored
+    }
+
+    /// Best first: the higher score, then more letters matched, then a line nobody has named yet,
+    /// then the one higher on the receipt.
+    private static func rankedBefore(_ a: RankEntry, _ b: RankEntry) -> Bool {
+        if a.scored.score != b.scored.score { return a.scored.score > b.scored.score }
+        if a.scored.letters != b.scored.letters { return a.scored.letters > b.scored.letters }
+        if a.open != b.open { return a.open }
+        return a.order < b.order
     }
 
     /// The line the product most looks like, or nil when no line has a word of it.

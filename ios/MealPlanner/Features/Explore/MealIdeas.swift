@@ -135,12 +135,25 @@ struct MealIdeasScreen: View {
 
     private var chosen: [Recipe] { (ideas?.ideas ?? []).filter { ticked.contains($0.id) } }
 
+    /// The line over the chips: what the ideas are drawn from.
+    private var intro: String {
+        if session.kitchen != nil {
+            return "\(meal.title) ideas your kitchen can make. Swap any you don't fancy, then put them on Groceries."
+        }
+        return "\(meal.title) ideas from your recipes and Explore. Swap any you don't fancy, then put them on Groceries."
+    }
+
+    /// The bottom bar's button: "Add 3 to Groceries".
+    private var addTitle: String {
+        if busy == "add" { return "Adding…" }
+        if chosen.isEmpty { return "Add to Groceries" }
+        return "Add \(chosen.count) to Groceries"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(session.kitchen != nil
-                     ? "\(meal.title) ideas your kitchen can make. Swap any you don't fancy, then put them on Groceries."
-                     : "\(meal.title) ideas from your recipes and Explore. Swap any you don't fancy, then put them on Groceries.")
+                Text(intro)
                     .font(.system(size: 15)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
@@ -162,8 +175,7 @@ struct MealIdeasScreen: View {
             MealPlanBottomBar {
                 ServingsStepper(value: $servings, disabled: busy != nil)
                 Button { Task { await add() } } label: {
-                    Label(busy == "add" ? "Adding…" : chosen.isEmpty ? "Add to Groceries" : "Add \(chosen.count) to Groceries",
-                          systemImage: "cart")
+                    Label(addTitle, systemImage: "cart")
                 }
                 .buttonStyle(.primary)
                 .disabled(busy != nil || chosen.isEmpty)
@@ -193,8 +205,7 @@ struct MealIdeasScreen: View {
             if ideas.ideas.isEmpty {
                 VStack(spacing: 12) {
                     Tile("fork.knife", tone: .mustard, size: 48)
-                    Text(ideas.canMake == 0 ? "No \(meal.plural) your kitchen can make yet."
-                         : "Every \(meal.title.lowercased()) your kitchen can make is on Groceries already.")
+                    Text(emptyWords(ideas))
                         .font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -247,41 +258,60 @@ struct MealIdeasScreen: View {
 
     /// "Yours · 25 min · Oven", "From the Smiths": whose it is, and what there is to know.
     private func line(_ r: Recipe) -> String {
-        let whose = !r.shared ? "Yours" : r.section != nil ? "In your recipes" : "From \(r.ownerName ?? "Explore")"
+        var parts: [String] = []
+        if !r.shared {
+            parts.append("Yours")
+        } else if r.section != nil {
+            parts.append("In your recipes")
+        } else {
+            parts.append("From \(r.ownerName ?? "Explore")")
+        }
         let total = (r.prepTimeMinutes ?? 0) + (r.cookTimeMinutes ?? 0)
+        if total > 0 { parts.append("\(total) min") }
         let machines = KitchenMachine.ordered(r.appliances ?? []).map(\.short).joined(separator: ", ")
-        return [whose, total > 0 ? "\(total) min" : nil, machines.isEmpty ? nil : machines]
-            .compactMap { $0 }.joined(separator: " · ")
+        if !machines.isEmpty { parts.append(machines) }
+        return parts.joined(separator: " · ")
     }
 
-    @ViewBuilder
+    /// Nothing to suggest: none the kitchen can make, or every one is on the list already.
+    private func emptyWords(_ ideas: MealIdeas) -> String {
+        if ideas.canMake == 0 { return "No \(meal.plural) your kitchen can make yet." }
+        return "Every \(meal.title.lowercased()) your kitchen can make is on Groceries already."
+    }
+
+    /// Under the ideas: what they are chosen from, and the way to the kitchen's machines.
     private var kitchenLine: some View {
-        if session.kitchen != nil {
-            let leftOut = ideas?.leftOut ?? 0
-            NavigationLink {
-                KitchenScreen(session: session)
-            } label: {
-                (Text(leftOut > 0
-                      ? "Only recipes your kitchen can make: \(leftOut) \(leftOut == 1 ? "needs a machine" : "need machines") you don't have. "
-                      : "Only recipes your kitchen can make. ")
-                 + Text("Your kitchen").foregroundStyle(Palette.accentInk).underline())
-                    .font(.system(size: 13)).foregroundStyle(Palette.muted)
-                    .multilineTextAlignment(.leading)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 4)
-        } else {
-            NavigationLink {
-                KitchenScreen(session: session)
-            } label: {
-                (Text("Say what's in your kitchen and ideas will only be what you can make. ")
-                 + Text("Set up your kitchen").foregroundStyle(Palette.accentInk).underline())
-                    .font(.system(size: 13)).foregroundStyle(Palette.muted)
-                    .multilineTextAlignment(.leading)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 4)
+        NavigationLink {
+            KitchenScreen(session: session)
+        } label: {
+            kitchenWords
+                .font(.system(size: 13)).foregroundStyle(Palette.muted)
+                .multilineTextAlignment(.leading)
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+    }
+
+    /// "Only recipes your kitchen can make: 3 need machines you don't have. Your kitchen", or the
+    /// way to set the kitchen up while it has not said what it has.
+    private var kitchenWords: Text {
+        let link: Text
+        let said: String
+        if session.kitchen == nil {
+            link = Text("Set up your kitchen").foregroundColor(Palette.accentInk).underline()
+            said = "Say what's in your kitchen and ideas will only be what you can make. "
+        } else {
+            link = Text("Your kitchen").foregroundColor(Palette.accentInk).underline()
+            let leftOut = ideas?.leftOut ?? 0
+            if leftOut == 1 {
+                said = "Only recipes your kitchen can make: 1 needs a machine you don't have. "
+            } else if leftOut > 1 {
+                said = "Only recipes your kitchen can make: \(leftOut) need machines you don't have. "
+            } else {
+                said = "Only recipes your kitchen can make. "
+            }
+        }
+        return Text(said) + link
     }
 
     // MARK: - Asking

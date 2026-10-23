@@ -34,8 +34,8 @@ import SwiftUI
 
  The same screen puts right a receipt saved before (Edit on the receipt, `init(session:editing:…)`):
  its shop, day and lines as saved, its pictures as kept, no barcode and no duplicate warning, no
- store guessing (the branch is the receipt's own Which store?) and no reading of names by Apple
- Intelligence (a scanned packet may still be named by it). Save sends it back (`PUT /receipts/{id}`)
+ store guessing (the branch is the receipt's own Which store?). Apple Intelligence still reads the
+ lines nobody has named yet, as on a new scan. Save sends it back (`PUT /receipts/{id}`)
  with the totals as they were; Cancel changes nothing.
  */
 struct ReceiptReviewView: View {
@@ -510,8 +510,10 @@ struct ReceiptReviewView: View {
     /// Scan items said a packet is this line: filled in from it, as somebody putting it right would.
     private func assign(_ key: UUID, _ fill: ProductFill) {
         guard let index = lineKeys.firstIndex(of: key), lines.indices.contains(index) else { return }
+        var line = lines[index]
+        fill.apply(to: &line)
         withAnimation(.snappy(duration: 0.2)) {
-            fill.apply(to: &lines[index])
+            lines[index] = line
             settled(index)
         }
     }
