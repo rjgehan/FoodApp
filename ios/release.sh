@@ -9,6 +9,8 @@
 #
 # The build number is the number of commits on this branch, so every upload is higher than the
 # last without anybody remembering to bump it — App Store Connect refuses a number it has seen.
+# The version people see (1.1, 1.2, …) is the project's MARKETING_VERSION: ./bump-version.sh
+# before a release worth noticing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,12 +44,13 @@ if [[ -z "$TEAM" ]]; then
 fi
 
 BUILD=$(git -C "$ROOT" rev-list --count HEAD)
+VERSION=$(sed -n 's/.*MARKETING_VERSION = \([0-9.]*\);.*/\1/p' "$ROOT/MealPlanner.xcodeproj/project.pbxproj" | head -1)
 WORK="$ROOT/.build-release"
 ARCHIVE="$WORK/MealPlanner.xcarchive"
 rm -rf "$WORK"
 mkdir -p "$WORK"
 
-echo "Team $TEAM, build $BUILD"
+echo "Team $TEAM, version $VERSION, build $BUILD"
 echo "Archiving…"
 xcodebuild \
   -project "$ROOT/MealPlanner.xcodeproj" \
@@ -89,7 +92,7 @@ xcodebuild \
   -quiet
 
 if [[ $UPLOAD == 1 ]]; then
-  echo "Uploaded build $BUILD. App Store Connect takes 5–15 minutes to process it; it then shows"
+  echo "Uploaded version $VERSION, build $BUILD. App Store Connect takes 5–15 minutes to process it; it then shows"
   echo "in TestFlight, where internal testers get it automatically."
 else
   echo "Exported to $WORK/export (not uploaded)."
